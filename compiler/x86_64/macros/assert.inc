@@ -77,10 +77,10 @@
 ; predictable from source, so the condition is elided as tokens, not merely
 ; skipped at runtime. Where `rassert` sits relative to the CF/eax error
 ; protocol (an internal contract violation traps here and never touches
-; CF) is this wave's own failure-channel synthesis, not spec text and not
-; yet written into docs/asm-conventions.md's "1.3 Error protocol: CF / eax"
-; (out of this file's author's amendment scope this wave) -- see this
-; wave's report for the table and the recommendation to add it there.
+; CF) is one of four failure channels, now normative in
+; docs/asm-conventions.md, "1.3 Error protocol: CF / eax". It is synthesis,
+; not spec text -- that section says so, and says why rassert must never
+; route through CF.
 ; -----------------------------------------------------------------------------
 
 macro rassert? cond&

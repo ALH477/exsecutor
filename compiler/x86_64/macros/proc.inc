@@ -28,7 +28,7 @@
 ; DEVIATION FROM docs/asm-conventions.md's proc.inc section ("3.1
 ; macros/proc.inc -- procedure declaration")'s "proposed -- not implemented"
 ; syntax, recorded here per CLAUDE.md evidence discipline ("never present a
-; re-derivation as a restoration") and flagged in this wave's report -- that
+; re-derivation as a restoration") -- that
 ; section's own preamble names it a hypothesis, not verified fasmg source,
 ; and invites exactly this correction. Two changes, both forced by empirical
 ; fasmg behavior (see the probes this file's author ran before writing it):
@@ -160,7 +160,7 @@
 ; every module `proc`/`locals` gets used in, and this is the cheapest
 ; point at which to close it. Applied whole-tree in the same change: every
 ; `proc`/`slot` name already written anywhere in this repo was swept
-; against this list before this guard was added (see this wave's report);
+; against this list before this guard was added;
 ; the one real hit (`str_slice`'s `start`) was renamed in the same pass.
 macro __proc_reserved_check? tok
 	match =start?, tok

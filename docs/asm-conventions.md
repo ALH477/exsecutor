@@ -9,12 +9,32 @@ not architecture-specific, the eventual `compiler/aarch64/` and
 `compiler/riscv64/` trees. It is a normative reference, not a tutorial: it
 says what the rules are and why, not how to write assembly.
 
-Two things named below do not exist yet and are marked accordingly. Read the
-markers; do not treat proposed syntax as working code. Everything else here —
-the calling convention, register discipline, source conventions, the include
-idiom, and syscall discipline — is a binding rule as of this revision, even
-though very little code exists to follow it yet (`compiler/x86_64/` is empty
-directories at time of writing; see the repository root `README.md`).
+Everything here is a binding rule, and as of wave 1 every rule in section 3 describes
+code that exists and passes: `compiler/x86_64/macros/` and
+`compiler/x86_64/rt/` are 2,827 lines under 25 fixtures. Narrower
+`[UNIMPLEMENTED]` markers remain on specific gaps (unsigned comparisons,
+nesting past six levels, a seventh stack-passed argument) and mean what they
+say.
+
+An earlier revision of this document proposed syntax for section 3 that had never
+been assembled. Three separate proposals turned out to be wrong, two of them
+producing silent memory corruption rather than an error. Where that happened
+it is recorded in place rather than quietly overwritten — prose describing
+unwritten code is a hypothesis, and section 3 is where this document learned it.
+
+> **Citing sections.** A bare `§N` anywhere in this repository means the
+> *spec*, and `tools/spec-check.sh` resolves it there. This document refers to
+> its own sections by name in prose — *"Error protocol: `CF` / `eax`," above* —
+> and writes `spec §9.3` when it means the spec. Using a bare section mark for
+> a section of *this* file is how a dangling citation gets introduced, and the
+> check caught exactly that during this revision.
+>
+> Two further notes, both learned the same way. Most such mistakes are *not*
+> caught, because a self-reference like the register-discipline or macro-dialect
+> section number happens to resolve to an unrelated spec heading — it is wrong
+> and silent. And a section mark inside backticks is still a citation to a
+> grep, so this paragraph deliberately describes the mistake rather than
+> showing it.
 
 ---
 
@@ -121,6 +141,45 @@ that case is unaddressed here rather than guessed at.
   error-checked call site with routines that can fail, so callers can use one
   uniform `jc` regardless of which routine they just called.
 
+#### The four failure channels
+
+`CF`/`eax` above is one channel of four. The other three existed in practice
+before they were written down here — this table was synthesized during wave 1
+while `rt/` was being built, lived in `rt/sys.inc`'s header, and was
+cross-referenced from four other files that each had to explain the same rule
+again. It belongs here.
+
+| the failure is | the channel is |
+|---|---|
+| diagnosable about the source being compiled | `CF` set, `eax` = the `EXS-E` numeric part |
+| a host/OS syscall failure, for which no `EXS-E` code exists | `CF` set, `eax` = the kernel's own negative return (already `-errno`) |
+| an expected "absent" result | a sentinel; `CF` is not meaningful |
+| an internal contract violation — a compiler bug | `rassert` trap; **never** `CF` |
+
+Four rules follow, and the reasons matter more than the table:
+
+- **The errno channel is scoped to `rt/sys.inc`'s wrappers**, plus callers that
+  propagate one verbatim without reinterpreting it (`arena_init` forwarding
+  `sys_mmap`'s value, for instance). Nothing else may put a kernel errno in
+  `eax`. Without that scope the two `CF` channels are indistinguishable to a
+  caller, since both set `CF` and both leave a number in `eax`.
+- **A syscall wrapper does not `rassert` its own arguments.** A bad fd or
+  pointer is the kernel's to report, through the errno channel. Pre-validating
+  would duplicate the check and diverge from it.
+- **The sentinel channel is a design smell where it is ambiguous.**
+  `map_get` returns 0 for both "the value is 0" and "no such key," and those
+  are not distinguishable — recorded in `rt/map.inc`'s header as a known
+  limitation, not defended.
+- **`rassert` never sets `CF`.** A violated internal contract is not a value a
+  caller can handle; it traps (`ud2`, exit 132). Routing it through `CF` would
+  invite a caller to swallow a compiler bug as an ordinary error.
+
+**This is synthesis, not derivation.** Neither CLAUDE.md nor spec §13 states
+it; spec §13 registers codes for the *program being compiled* and has nothing to say
+about `exsc`'s own host failures. It is recorded here because it was applied
+consistently across every `rt/` module in wave 1 and held, which is evidence
+but not proof.
+
 ---
 
 ## 2. Register discipline
@@ -195,47 +254,71 @@ implementations in this same pass and are current.
 
 ### 3.1 `macros/proc.inc` — procedure declaration
 
-Intent: one macro pair (`proc` / `endp`) that emits a SysV-conforming
-prologue and epilogue, binds named locals to stack slots, and threads the
-`CF`/`eax` error protocol ("Error protocol: `CF` / `eax`," above) through a
-single exit point so a `fail` from anywhere in the body still restores
-callee-saved registers correctly.
+**Implemented and verified** (asm-rt, wave 1) — and **not** with the syntax
+this section originally proposed. `proc`/`endp` emit a SysV-conforming
+prologue and epilogue, bind named arguments and locals to stack slots, and
+thread the `CF`/`eax` protocol ("Error protocol: `CF` / `eax`," above) through
+a single exit point, so a `fail`
+from anywhere in the body still restores callee-saved registers.
+
+The example below is lifted from `tests/unit/proc_calling_convention.asm`,
+which passes.
 
 ```fasmg
-; proposed — not implemented
-proc    lexer_advance, uses rbx r12, ctx, delta
+proc safe_div, a, b
+        uses    rbx, r12                ; separate statement, comma-separated
         locals
-                saved_pos      dq      ?
-                scratch32      dd      ?
+                slot tmp, dd            ; `slot NAME, DECL` -- not `tmp dd ?`
         endl
 
-        mov     rbx, [ctx]              ; named argument, spilled to its home slot
-        mov     eax, [delta]
-        mov     [saved_pos], rbx
-        cmp     eax, 0
-        jl      .bad_delta
-        ; ... body ...
-        clc                             ; success
-        ret
-
-.bad_delta:
-        fail    EXS_E0311               ; sets eax, sets CF, still runs the epilogue
+        mov     eax, [b]
+        mov     [tmp], eax
+        cmp     dword [tmp], 0
+        jne     .nonzero
+        fail    99                      ; sets eax, sets CF, runs the epilogue
+  .nonzero:
+        mov     eax, [a]
+        cdq
+        idiv    dword [tmp]
+        return                          ; success -- NOT `clc` + `ret`
 endp
 ```
 
-- `uses rbx r12` declares which callee-saved registers this routine clobbers;
-  `proc` emits the matching push/pop pairs so the caller-facing contract in
-  the register table above holds without the author hand-writing
-  save/restore code.
-- `locals` / `endl` names stack slots instead of hand-computed `[rbp-N]`
-  offsets.
-- `fail CODE` is the one legal way to set the error path: it is intended to
-  set `eax` to `CODE`'s numeric value, set `CF`, and jump to the routine's
-  epilogue — never `ret` directly from an error branch, or callee-saved
-  registers restored by the epilogue get skipped.
-- `r15` is deliberately absent from `uses` lists in every example: per "The
-  `r15` pin," above, it is never clobbered, so it is never something a
-  routine needs to save.
+- **Up to six arguments**, positional, no gaps. A seventh (stack-passed)
+  argument is `[UNIMPLEMENTED]`; nothing has needed one.
+- **`uses` is its own statement**, comma-separated, after `proc`. Not part of
+  the argument list.
+- **`locals` / `endl` is a required pair, even when empty.** Fields inside it
+  must use `slot NAME, DECL`.
+- `fail CODE` sets `eax`, sets `CF`, and jumps to the epilogue. Never `ret`
+  from an error branch — the epilogue's pops get skipped.
+- `return` is the success path.
+- `r15` never appears in a `uses` list: per "The `r15` pin," above, it is
+  never clobbered.
+
+**Argument and local names are unmangled globals.** fasmg has one flat
+namespace, so `proc f, start` defines a top-level `start` and silently
+redefines anything else by that name. `proc.inc` rejects `start` and `main`
+outright for this reason; the list grows only when a real collision is found.
+Beware bare instruction mnemonics too — an argument named `cmp` or a struct
+named `Str` collides with `CMP`/`STR` and fails immediately but unhelpfully.
+
+> **What the original proposal got wrong.** Recorded because two of the three
+> were not stylistic preferences but memory corruption, and because prose that
+> was never assembled is exactly how they survived:
+>
+> 1. `proc name, uses rbx r12, ctx, delta` — inline `uses` mixed into the
+>    argument list. Does not work; `uses` is a separate statement.
+> 2. `saved_pos dq ?` as a `locals` field. Assembles clean and **emits live
+>    data bytes into the middle of the prologue**, then segfaults. Unlike
+>    `assert`, native directives cannot be shadowed, so `slot` is mandatory.
+> 3. `clc` + `ret` on the success path. A bare `ret` **skips the epilogue's
+>    pops**, so every `uses`-saved register is left unrestored — the exact
+>    failure `proc` exists to prevent, recommended by the document describing
+>    it.
+>
+> Full empirical notes, including four further bugs found by running rather
+> than by inspection, are in `macros/proc.inc`'s own header.
 
 ### 3.2 `macros/flow.inc` — structured control flow
 

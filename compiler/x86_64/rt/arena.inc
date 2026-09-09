@@ -25,7 +25,7 @@
 ; as the single largest measured memory-model effect (2.8x over malloc,
 ; larger than every refcounting effect combined -- `[UNREPRODUCED]` in the
 ; spec itself, sources absent from the tree; this file does not re-assert
-; that figure as its own result, see this wave's report), and this file is
+; that figure as its own result), and this file is
 ; where that decision lands for `exsc`'s own internals: every other rt/
 ; module (vec, map, intern, str) allocates through an `Arena`, never
 ; through a libc `malloc` this freestanding binary does not have.
@@ -94,8 +94,8 @@ proc arena_init, arena, capacity
   .mmap_failed:
 	; propagate sys_mmap's own CF/eax verbatim -- this failure genuinely
 	; originated in a rt/sys.inc wrapper, so its channel is honored, not
-	; re-encoded (this wave's failure-channel synthesis; see this file's
-	; header and this wave's report).
+	; re-encoded -- the errno channel explicitly permits verbatim
+	; propagation (docs/asm-conventions.md, "1.3 Error protocol: CF / eax").
 	fail	eax
 endp
 

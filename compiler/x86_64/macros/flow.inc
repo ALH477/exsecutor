@@ -31,7 +31,7 @@
 ; implemented" syntax, same evidence-discipline reasoning as macros/proc.inc
 ; records for itself -- that section's own preamble names it a hypothesis,
 ; not verified fasmg source. Both were found by running this, not by
-; inspection; see this wave's report for the fuller account.
+; inspection; the fuller account is in this header.
 ;
 ; 1. NO LEADING DOT. The proposal spelled these `.if`/`.elseif`/etc. This
 ;    does not work -- not "is risky", DOES NOT WORK -- once a construct is

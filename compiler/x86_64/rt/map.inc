@@ -54,8 +54,9 @@
 ; bucket layout (though never iteration order) vary run to run.
 ;
 ; `map_get` on a miss returns the sentinel `0` in `rax`, CF not meaningful
-; (the "expected absent result" channel; see rt/sys.inc's header for the
-; full failure-channel table this wave synthesized). Consequently **a
+; (the "expected absent result" channel; the four failure channels are
+; normative in docs/asm-conventions.md, "1.3 Error protocol: CF / eax").
+; That section names this exact case as a design smell. Consequently **a
 ; value of exactly 0 cannot be distinguished from "not found"** -- callers
 ; that need to store 0 must offset or box it. `rt/intern.inc` sidesteps
 ; this by construction: its IDs are the dense array's length AFTER

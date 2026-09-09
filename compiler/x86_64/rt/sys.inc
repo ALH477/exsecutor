@@ -44,9 +44,10 @@
 ; whatever `proc` put in that named argument's home slot, regardless of
 ; which register it arrived in.
 ;
-; Failure-channel taxonomy (this wave's synthesis over CLAUDE.md/spec §13 --
-; flagged as synthesis, not derived from prior text; see this wave's
-; report and the note in macros/assert.inc's header):
+; Failure-channel taxonomy. NORMATIVE COPY: docs/asm-conventions.md,
+; "1.3 Error protocol: CF / eax". Repeated here because this file is the
+; only one allowed to emit a raw syscall and therefore the only origin of
+; the errno channel. If the two disagree, that document wins:
 ;
 ;   Diagnosable about the source being compiled   -> CF set, eax = EXS-E
 ;                                                     numeric part (out of

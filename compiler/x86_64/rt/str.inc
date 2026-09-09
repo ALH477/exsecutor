@@ -86,7 +86,7 @@ end struct
 ; O(1) -- pure arithmetic, no copy, no scan. `rassert`s that the requested
 ; sub-span actually fits within [0, len) -- an out-of-range slice from this
 ; compiler's own code is an internal contract violation, not a source-level
-; condition (rt/sys.inc's header carries the full failure-channel table).
+; condition (docs/asm-conventions.md, "1.3 Error protocol: CF / eax").
 ;
 ; Parameter named `off`, NOT `start`: `macros/proc.inc` binds each argument
 ; to a plain, unmangled, global `=` symbol (documented there), and `start`

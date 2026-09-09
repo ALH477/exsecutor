@@ -152,8 +152,8 @@ endp
 ; vec_get(vec, index) -> rax = pointer to element `index`. `rassert`s
 ; (traps) if `index >= len` -- an out-of-bounds access from this
 ; compiler's own code is an internal contract violation, not a source-level
-; diagnosable condition (this wave's failure-channel synthesis; see
-; rt/sys.inc's header for the full table).
+; diagnosable condition (docs/asm-conventions.md, "1.3 Error protocol:
+; CF / eax", carries the four failure channels).
 proc vec_get, vec, index
 	locals
 	endl
