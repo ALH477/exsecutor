@@ -531,6 +531,29 @@
             patchShebangs repo/tools   # no /usr/bin/env in the sandbox
             cd repo
             bash tools/syscall-audit.sh --self-test
+
+            # Audit the REAL binary once there is one -- not just the two
+            # fixtures. This is where §9.3's "no network access, ever, at any
+            # phase" stops being a property of a test and becomes a property
+            # of the shipped artifact. `make audit` already switches this way
+            # (Makefile:61-66); without this, `nix flake check` would keep
+            # self-testing while make audited exsc, and CI would be weaker
+            # than the developer's own command.
+            #
+            # Rendered as a shell flag rather than Nix string concatenation:
+            # compilerExists reads false for an untracked file (see the note
+            # at compilerSrcPath), so this silently skips until exsc.asm is
+            # BOTH present and `git add`-ed. That is the same trap that once
+            # let checks.test run 4 of 19 fixtures and still print PASS.
+            EXSC_PRESENT=${if compilerExists then "1" else "0"}
+            if [ "$EXSC_PRESENT" = 1 ]; then
+              echo "auditing the real exsc, not the fixtures"
+              "${fasmgPkg}/bin/fasmg" compiler/x86_64/exsc.asm exsc.bin
+              bash tools/syscall-audit.sh exsc.bin
+            else
+              echo "no tracked compiler/x86_64/exsc.asm -- fixtures only"
+            fi
+
             mkdir -p "$out"
             echo "syscall audit self-test passed" > "$out"/result
           '';

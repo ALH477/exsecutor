@@ -23,6 +23,12 @@ cd "$ROOT"
 EXSC="build/exsc"
 SRC="examples/saluta.exsc"
 GOLD="examples/saluta.expected"
+# spec §9.5: "`exsc` with no `--hospes` is an error. No default-to-build-
+# platform." This gate first invoked a bare `exsc SRC OUT`, which that rule
+# makes permanently impossible -- it would have failed at step 3 forever, and
+# a gate that cannot pass is worse than no gate. The invocation shape is
+# pinned in spec §12.
+HOSPES="${HOSPES:-x86_64-linux}"
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 
 fail=0
@@ -49,7 +55,7 @@ yes "compiler source exists"
 if make >/dev/null 2>&1 && [[ -x "$EXSC" ]]; then yes "exsc builds"; else no "exsc does not build"; fi
 
 # --- 3. working: it compiles and runs -------------------------------------
-if [[ -x "$EXSC" ]] && "$EXSC" "$SRC" "$WORK/saluta" >"$WORK/log" 2>&1; then
+if [[ -x "$EXSC" ]] && "$EXSC" aedifica --hospes "$HOSPES" "$SRC" -o "$WORK/saluta" >"$WORK/log" 2>&1; then
   yes "exsc compiles $SRC"
   if "$WORK/saluta" >"$WORK/out" 2>/dev/null; then yes "the result runs"
   else no "the result does not run"; fi
@@ -66,8 +72,10 @@ fi
 
 # --- 5. proven: reproducible (spec §9.3) ----------------------------------
 if [[ -x "$EXSC" ]]; then
-  ( cd "$WORK" && TZ=UTC LC_ALL=C "$ROOT/$EXSC" "$ROOT/$SRC" a >/dev/null 2>&1 )
-  ( cd /tmp && TZ=Asia/Tokyo LC_ALL=tr_TR.UTF-8 "$ROOT/$EXSC" "$ROOT/$SRC" "$WORK/b" >/dev/null 2>&1 )
+  ( cd "$WORK" && TZ=UTC LC_ALL=C \
+      "$ROOT/$EXSC" aedifica --hospes "$HOSPES" "$ROOT/$SRC" -o a >/dev/null 2>&1 )
+  ( cd /tmp && TZ=Asia/Tokyo LC_ALL=tr_TR.UTF-8 \
+      "$ROOT/$EXSC" aedifica --hospes "$HOSPES" "$ROOT/$SRC" -o "$WORK/b" >/dev/null 2>&1 )
   if [[ -f "$WORK/a" && -f "$WORK/b" ]] && cmp -s "$WORK/a" "$WORK/b"; then
     yes "byte-identical across directory, TZ and locale (§9.3)"
   else

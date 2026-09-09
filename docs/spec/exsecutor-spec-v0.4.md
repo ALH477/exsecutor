@@ -1185,7 +1185,7 @@ scheduled.
 
 `exsc` is a pure function of (source, `ego`, lockfile, flags):
 
-- Reads **no** environment variables except an explicit `--env KEY=VALUE` allowlist.
+- Reads **no** environment variables. `--env KEY=VALUE` *supplies* values on the command line instead (below).
 - Never calls `setlocale`; internal text handling obeys the same rules imposed on user code.
 - No `$HOME`, no user config, no dotfile discovery.
 - **No network access, ever, at any phase.**
@@ -1195,6 +1195,37 @@ scheduled.
 - Byte-identical output for identical inputs across directories, times, locales, hostnames.
 
 `exsc proba-reproducibilitatem` builds twice under deliberately divergent ambient conditions and diffs. Ships in v1, runs in CI.
+
+### `--env` and `--epoch`
+
+Both were named once each and never specified. A driver cannot be written
+against that, and an implementer guessing is how a purity contract acquires an
+undocumented exception.
+
+**`--env KEY=VALUE` supplies a value; it does not permit a read.** `exsc` never
+calls `getenv`, not even for an allowlisted key. The value comes from the
+command line, which means it is already covered by *"a pure function of (source,
+`ego`, lockfile, flags)"* — the ambient environment is not consulted, so there
+is nothing to be non-deterministic about. An allowlist that permitted reads
+would leave the value ambient and merely gated.
+
+- Repeatable. `KEY` matches an identifier (§8.2); `VALUE` is the rest of the
+  argument verbatim, including `=` and spaces.
+- **A repeated `KEY` is an error, not a last-wins.** Last-wins makes the result
+  depend on argument order, which is exactly the class this section removes.
+- Order is therefore not observable, and two invocations differing only in
+  `--env` order produce identical bytes.
+
+**`--epoch N`** is decimal seconds since the Unix epoch. Optional, **defaulting
+to 0**. A fixed default is deterministic — what §9.3 forbids is an *implicit
+clock*, not a constant — and 0 has the useful property of being obviously not
+now: a 1970 timestamp in an artifact is a visible signal that nobody set it,
+where a default of "build time" would be silent and wrong.
+
+**Neither is an `EXS-E` diagnostic.** §13 registers codes for the program being
+compiled; a malformed flag is a usage error about the invocation, not about any
+source. `exsc` exits nonzero with a message and no code, and the four failure
+channels in `docs/asm-conventions.md` (§1.3) are unaffected.
 
 **Runtime:** calls `setlocale(LC_ALL, "C")` at startup. The FFI documentation states plainly that the locale guarantee stops at the `externus` boundary — a C library may call `setlocale` itself, which is the mechanism behind CVE-2025-49003.
 
@@ -1318,6 +1349,13 @@ Non-negotiable; a language without these is a toy.
 - **Package manager** — thin, because `ego` is declarative and resolution is separate from building.
 
 One tool: `exsc aedifica | proba | forma | lsp | ego | emenda | documenta | novum | lexicon | curre`.
+
+**The minimum build invocation is `exsc aedifica --hospes TRIPLE SOURCE -o OUT`.**
+Pinned because it was not written down anywhere and two things already needed
+it: `tools/publish-gate.sh` was invoking a bare `exsc SOURCE OUT`, which §9.5
+makes an error outright — *"`exsc` with no `--hospes` is an error"* — and a
+driver cannot be implemented against an unspecified spelling. A subcommand is
+required; there is no bare form.
 
 `exsc novum` scaffolds a working project with a valid `ego.exsc` in one command — first running program under 60 seconds or onboarding has failed.
 

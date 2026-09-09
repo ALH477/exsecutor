@@ -8,7 +8,7 @@
 #      This is the only phase that can do anything today -- there is no
 #      compiler yet, so the only thing under test is the toolchain itself
 #      and tools/syscall-audit.sh.
-#   2. run_conformance_tests: tests/conformance/ (spec §14, 20 entries) is
+#   2. run_conformance_tests: tests/conformance/ (spec §14, 23 entries) is
 #      a deliberate no-op until compiler/x86_64/exsc.asm exists to drive
 #      it. Kept as a separate function/phase precisely so wiring it up
 #      later does not require touching run_unit_tests.
@@ -146,7 +146,7 @@ run_conformance_tests() {
   fi
   if [[ "$n" -eq 0 ]]; then
     note "0 entries -- expected: compiler/x86_64/exsc.asm does not exist yet."
-    note "§14 lists 20 required entries (18 diagnostic-code cases plus the"
+    note "§14 lists 23 required entries (20 diagnostic-code cases, plus the"
     note "reproducibility and cross-compilation cases); none can run without"
     note "a compiler to drive. This phase is intentionally a no-op, not a"
     note "failure, until that changes."

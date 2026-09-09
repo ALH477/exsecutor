@@ -8,7 +8,7 @@ calls):
    the only thing that can actually be tested in this repo is the
    toolchain itself (`fasmg` + `vendor/fasmg-x86`) and `tools/syscall-audit.sh`,
    so that is what these fixtures exercise.
-2. **`tests/conformance/`** — spec §14's 17-entry suite. **Empty on
+2. **`tests/conformance/`** — spec §14's 23-entry suite. **Empty on
    purpose.** Every entry needs `exsc` to compile something and check a
    diagnostic code, or (entries 16–17) check byte-identical output; there
    is no compiler yet (`compiler/x86_64/exsc.asm` is unwritten — see
@@ -21,28 +21,30 @@ calls):
 ## What is deliberately absent
 
 - **`tests/conformance/` entries.** See above. When `exsc` exists, each of
-  the 17 rows in spec §14 needs a source fixture plus an expectation (a
+  the 23 rows in spec §14 needs a source fixture plus an expectation (a
   diagnostic code for 15 of them; byte-identical output under varied
   conditions for #16, which is exactly what `tools/reproduce.sh` already
   checks; byte-identical output cross-host for #17).
 
-  **§14 does not cover every registered code, and that is a real gap.** §13
-  registers six codes in the source-policy range; §14 exercises only three of
-  them — `EXS-E0102` (non-NFC identifier, entry 5), `EXS-E0103` (bidi in a
-  comment, entry 3) and `EXS-E0105` (cross-module homoglyph, entry 4). Three
-  are registered but cited by no conformance entry at all:
+  **§14's source-policy coverage gap is closed.** It once exercised only
+  three of §13's six source-policy codes; `EXS-E0101`, `EXS-E0104` and
+  `EXS-E0106` had no entry at all, which is exactly the set a Stage 1 lexer
+  implements first. Spec §14 entries **18-20** now cover them, appended rather
+  than interleaved because entries are cited by number elsewhere — renumbering
+  a referenced list is the same mistake as renumbering an error code (§8.3).
 
-  | code | meaning | §14 coverage |
-  |---|---|---|
-  | `EXS-E0101` | source not UTF-8, or BOM present | **none** |
-  | `EXS-E0104` | mixed-script identifier (UTS #39) | **none** |
-  | `EXS-E0106` | CRLF line ending | **none** |
+  Entries **21-23** followed, covering §5.2's bit-width rules. Entry 23 is
+  different in kind from the other twenty-two: they are cases this project
+  wrote for itself, while 23 is an external certificate it must satisfy —
+  `vendor/hydramesh-wire/golden_vectors.json`, 246 vectors, equivalent under
+  its own theorem to agreeing with the reference on all 2^108 frames.
 
-  The lexer must implement all three regardless — §8.1 and §8.2 require them
-  and the codes are permanent — so the gap is in the conformance suite, not in
-  the language. Whoever builds out `tests/conformance/` should add entries for
-  these rather than treating §14's list as exhaustive; whoever amends §14
-  should note that renumbering is not needed, only extension.
+  **23 entries, five rule shapes.** Most are "rejects with exactly code
+  EXS-Exxxx". Entries 16 and 17 instead require byte-identical output across
+  conditions and hosts. Entry 23 is the certificate. Entry 15 is a runtime
+  abort, not a compile failure. Entry 1 is a capability absence with no code
+  assigned. A runner that assumes one shape will quietly mis-handle four.
+
 - **Performance/benchmark tests.** Nothing to benchmark yet. CLAUDE.md:
   "Never report a benchmark you did not run" — there will be no benchmark
   fixtures here until there is something real to measure.
