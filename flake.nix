@@ -1,5 +1,9 @@
 # flake.nix -- Exsecutor build and development environment.
 #
+# Exsecutor -- GPL-3.0-or-later WITH the output-and-runtime exception in
+# LICENSE.EXCEPTION. Compiling with exsc places no GPL obligation on the
+# compiled program. vendor/ is third-party and keeps its own license.
+#
 # Binding invariants (see /CLAUDE.md and docs/spec/exsecutor-spec-v0.4.md):
 #
 #   - spec §18: "The build closure is `{fasmg}`." A *package* build (fasmg-x86,
@@ -159,6 +163,12 @@
             main = "exsc.asm";
             meta = {
               description = "Exsecutor compiler (exsc) -- freestanding x86-64, assembled by fasmg";
+              # GPL-3.0-or-later WITH an output-and-runtime exception, so that
+              # code compiled by exsc carries no GPL obligation -- the GCC/Bison/
+              # FAUST model. nixpkgs has no SPDX id for a bespoke exception, so
+              # the base license is named here and LICENSE.EXCEPTION carries the
+              # grant. See docs/decisions/0006-license-gpl3-with-exception.md.
+              license = nixpkgsLib.licenses.gpl3Plus;
               platforms = [ system ];
             };
           }
@@ -176,6 +186,7 @@
             '';
             meta = {
               description = "placeholder: compiler/x86_64/exsc.asm does not exist yet";
+              license = nixpkgsLib.licenses.gpl3Plus;   # see LICENSE.EXCEPTION
               # Deliberately NOT `broken = true`: nixpkgs' mkDerivation refuses to
               # even evaluate a broken-marked package (an assert in
               # lib/customisation.nix) unless the caller sets

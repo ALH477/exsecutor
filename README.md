@@ -113,3 +113,30 @@ What does not exist yet: **the compiler**. `compiler/x86_64/` is a set of empty
 directories. `make audit` therefore reports that there is nothing to audit, and
 the conformance suite holds 0 of §14's 17 entries. Both say so plainly rather
 than passing vacuously.
+
+## License
+
+**GPL-3.0-or-later, with an output-and-runtime exception.**
+
+The compiler is free software and stays free. What you write in Exsecutor is
+yours: compiling a program with `exsc` places no licensing obligation on that
+program, on the code `exsc` emits from it, or on the resulting binaries. The
+same holds for programs that incorporate the Exsecutor target runtime.
+
+This is the arrangement GCC, Bison and FAUST use, and for the same reason — a
+compiler's freedom should not be contagious through its output.
+
+- `LICENSE` — GNU GPL v3, verbatim
+- `LICENSE.EXCEPTION` — the grant, its limits, and the precedents it follows
+
+One distinction the exception spells out, because the word is overloaded:
+`compiler/x86_64/rt/` is the **compiler's own** internal runtime — arena, map,
+interner, syscall wrappers — linked into `exsc` and never into your program. It
+is part of the compiler and carries no exception. The *target* runtime, which
+does get incorporated into compiled programs, is the excepted one. It does not
+exist yet; the terms are written forward so the position is settled before the
+code lands.
+
+`vendor/` is third-party and keeps its own license — `vendor/fasmg-x86/` is
+BSD-3-Clause (Tomasz Grysztar), which is GPL-compatible. Do not relicense it or
+strip its notices.

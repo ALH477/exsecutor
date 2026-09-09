@@ -328,12 +328,21 @@ exists to prevent, not a clever use of it.
 
   ```fasmg
   ; compiler/x86_64/lexer/advance.asm
+  ; SPDX-License-Identifier: GPL-3.0-or-later WITH exsecutor-output-exception
   ; ---------------------------------------------------------------------------
   ; Single-codepoint lexer advance: UTF-8 decode plus the §8.1 source-hygiene
   ; checks (BOM, NFC, bidi/invisible controls).
   ; Spec: docs/spec/exsecutor-spec-v0.4.md §8.1, §8.2
   ; ---------------------------------------------------------------------------
   ```
+
+  The SPDX line is required on every project-authored source file. The
+  exception identifier is bespoke — no registered SPDX id covers it — so it is
+  a pointer to `LICENSE.EXCEPTION`, not something a scanner will resolve. See
+  `docs/decisions/0006-license-gpl3-with-exception.md`. Note that
+  `compiler/x86_64/rt/` is the *compiler's own* runtime and is **not** covered
+  by that exception; it still carries the same SPDX line, because the exception
+  is granted by `LICENSE.EXCEPTION`'s own terms, not by the header.
 
 - **§8.1 self-application (CLAUDE.md).** All *project-authored* source in this
   repository is UTF-8, no BOM, LF line endings, NFC-normalized — the same bar
