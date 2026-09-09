@@ -328,7 +328,26 @@ exists to prevent, not a clever use of it.
 
   ```fasmg
   ; compiler/x86_64/lexer/advance.asm
-  ; SPDX-License-Identifier: GPL-3.0-or-later WITH exsecutor-output-exception
+  ; SPDX-License-Identifier: GPL-3.0-or-later
+  ; Copyright (C) 2026 The Exsecutor authors.
+  ;
+  ; DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  ;
+  ; This code is free software; you can redistribute it and/or modify it under
+  ; the terms of the GNU General Public License as published by the Free
+  ; Software Foundation, either version 3 of the License, or (at your option)
+  ; any later version.
+  ;
+  ; This code is distributed in the hope that it will be useful, but WITHOUT
+  ; ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+  ; FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+  ; more details.
+  ;
+  ; You should have received a copy of the GNU General Public License along
+  ; with this code. If not, see <https://www.gnu.org/licenses/>.
+  ;
+  ; Code produced by this compiler is not covered by the GPL --
+  ; see Exception A in LICENSE.EXCEPTION.
   ; ---------------------------------------------------------------------------
   ; Single-codepoint lexer advance: UTF-8 decode plus the §8.1 source-hygiene
   ; checks (BOM, NFC, bidi/invisible controls).
@@ -336,13 +355,23 @@ exists to prevent, not a clever use of it.
   ; ---------------------------------------------------------------------------
   ```
 
-  The SPDX line is required on every project-authored source file. The
-  exception identifier is bespoke — no registered SPDX id covers it — so it is
-  a pointer to `LICENSE.EXCEPTION`, not something a scanner will resolve. See
-  `docs/decisions/0006-license-gpl3-with-exception.md`. Note that
-  `compiler/x86_64/rt/` is the *compiler's own* runtime and is **not** covered
-  by that exception; it still carries the same SPDX line, because the exception
-  is granted by `LICENSE.EXCEPTION`'s own terms, not by the header.
+  This is **Form 1** in `LICENSE.EXCEPTION`, and it is what every file under
+  `compiler/`, `tools/` and `tests/` carries. Everything in this repository
+  today uses Form 1.
+
+  **Form 2** adds one paragraph designating a file as subject to the
+  Classpath-style linking exception, and changes the SPDX line to
+  `GPL-3.0-or-later WITH Classpath-exception-2.0`. It applies only to target-
+  runtime files — the reference-counting support of §6 and the `norma.*`
+  modules the compiler links into a *compiled program*. **No such file exists
+  yet, and none is yours to designate.** Designation is per-file and explicit
+  (OpenJDK's mechanism), precisely so that nothing is excepted by category or
+  by resemblance.
+
+  Note the trap this avoids: `compiler/x86_64/rt/` is the **compiler's own**
+  runtime — arena, map, interner, syscall wrappers — linked into `exsc` and
+  never into a user's program. It is Form 1, plain GPL, no exception, despite
+  being called "rt". See `docs/decisions/0006-license-gpl3-with-exception.md`.
 
 - **§8.1 self-application (CLAUDE.md).** All *project-authored* source in this
   repository is UTF-8, no BOM, LF line endings, NFC-normalized — the same bar

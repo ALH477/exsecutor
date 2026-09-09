@@ -1,92 +1,180 @@
-EXSECUTOR COMPILER OUTPUT AND RUNTIME EXCEPTION
-Version 1.0, 2026-09-09
+EXSECUTOR LICENSE EXCEPTIONS
+Version 2.0, 2026-09-09
 
-Additional permission under section 7 of the GNU General Public License,
+Additional permissions under section 7 of the GNU General Public License,
 version 3, as published by the Free Software Foundation.
 
-This exception accompanies the LICENSE file in this repository and forms part
-of the terms under which Exsecutor is distributed. Where this exception grants
-a permission the GPL would otherwise withhold, this exception controls.
+These exceptions accompany the LICENSE file in this repository and form part of
+the terms under which Exsecutor is distributed. Where an exception grants a
+permission the GPL would otherwise withhold, the exception controls.
 
 The intent, stated plainly before the terms: **the Exsecutor compiler is free
 software and must stay free. What you write in Exsecutor is yours.** Compiling
-a program with `exsc` places no licensing obligation on that program, on the
-code `exsc` emits from it, or on the resulting binaries -- exactly as compiling
-with GCC or generating a parser with Bison does not make your program GPL.
+a program with `exsc` places no licensing obligation on that program, and
+linking a designated runtime file into it places none either.
+
+There are two distinct exceptions here, and they solve two different problems.
+Exception A is automatic and covers what the compiler *produces*. Exception B
+is per-file and covers what gets *linked into* your program.
 
 
-0. DEFINITIONS
+===========================================================================
+EXCEPTION A -- COMPILER OUTPUT
+===========================================================================
+
+Modelled on the FAUST compiler's GPL notice, the GCC Runtime Library
+Exception, and the Bison parser exception.
+
+A1. DEFINITIONS
 
 "The Compiler" means the Exsecutor compiler `exsc`, together with everything in
-this repository used to build, test, or verify it. This includes, without
-limitation, `compiler/`, `tools/`, `tests/`, the build configuration, and the
-compiler-internal runtime described in section 2 below.
+this repository used to build, test, or verify it.
 
-"Compiler Output" means any work produced by running the Compiler on input
-supplied by you. This includes the C source the backend emits, generated
-assembly, object code, executables, interface (`ego`) files, diagnostics, and
-any intermediate representation the Compiler writes out.
+"Compiler Output" means any work produced by running the Compiler on input you
+supply: emitted C source, generated assembly, object code, executables,
+interface (`ego`) files, diagnostics, and any intermediate representation the
+Compiler writes out.
 
-"Target Runtime" means those parts of this distribution that are designed to be
-incorporated into Compiler Output rather than into the Compiler -- the
-memory-management and reference-counting support required by section 6 of the
-specification, and any module of the standard library (`norma.*`) that the
-Compiler links into, or emits into, a compiled program.
+A2. GRANT
 
-"Your Program" means a work you write in the Exsecutor language, or any work
-you compile using the Compiler.
+You have permission to propagate Compiler Output under terms of your choosing.
+Compiler Output is not a work based on the Compiler, and you are not required
+to license it under the GNU General Public License.
 
+Your program does not become a work based on the Compiler merely by having been
+compiled with it.
 
-1. GRANT OF EXCEPTION
+A3. LIMIT
 
-You have permission to propagate Compiler Output, and to propagate a work
-formed by combining Your Program with the Target Runtime, under terms of your
-choosing, and you are not required to license such a work under the GNU General
-Public License.
-
-This permission applies regardless of how the Target Runtime is combined with
-Your Program -- static linking, dynamic linking, source inclusion, or emission
-of Target Runtime code into Compiler Output by the Compiler itself.
-
-You do not lose this permission by modifying Your Program, and Your Program
-does not become a work based on the Compiler merely by having been compiled
-with it.
+This exception does not permit distributing a modified Compiler under terms
+other than the GPL. If you change the Compiler and distribute it, the GPL
+applies to your changes.
 
 
-2. WHAT THIS EXCEPTION DOES *NOT* COVER
+===========================================================================
+EXCEPTION B -- LINKING ("CLASSPATH-STYLE")
+===========================================================================
 
-This distinction is load-bearing and is stated here so it is not misread later.
+Modelled on the GNU Classpath exception, as used by OpenJDK. The mechanism is
+deliberately the same: the exception attaches to **individually designated
+files**, not to a category described in prose.
 
-The Compiler contains its own internal runtime at `compiler/x86_64/rt/` --
-arena allocator, vector, insertion-ordered map, string interner, and syscall
-wrappers. That code is **part of the Compiler**. It is statically linked into
-the `exsc` binary, it is never emitted into Compiler Output, and it is never
-linked into Your Program. It is therefore covered by the GPL with no exception,
-and this exception grants nothing in respect of it.
+B1. THE EXCEPTION
 
-"Target Runtime" and "the compiler-internal runtime" are different things that
-share a word. Only the former is excepted.
+  Linking this file statically or dynamically with other modules is making a
+  combined work based on this file. Thus, the terms and conditions of the GNU
+  General Public License cover the whole combination.
 
-At the time of writing, no Target Runtime exists yet -- the compiler is under
-construction and nothing is emitted into user programs. Section 1 is written
-forward so that the licensing position is settled before the code lands, rather
-than renegotiated afterwards when contributors have accrued.
+  As a special exception, the copyright holders of this file give you
+  permission to link this file with independent modules to produce an
+  executable, regardless of the license terms of these independent modules, and
+  to copy and distribute the resulting executable under terms of your choice,
+  provided that you also meet, for each linked independent module, the terms
+  and conditions of the license of that module. An independent module is a
+  module which is not derived from or based on this file. If you modify this
+  file, you may extend this exception to your version of the file, but you are
+  not obligated to do so. If you do not wish to do so, delete this exception
+  statement from your version.
 
-This exception also does not permit:
+B2. HOW A FILE BECOMES SUBJECT TO EXCEPTION B
 
-  (a) distributing a modified Compiler under terms other than the GPL. If you
-      change the Compiler and distribute it, the GPL applies to your changes;
+A file is subject to Exception B **if and only if its own header says so**, in
+these words:
 
-  (b) using the Target Runtime with a compiler other than the Compiler in order
-      to escape the GPL on that other compiler's own terms;
+    This particular file is designated as subject to the "Linking" exception
+    as provided in the LICENSE.EXCEPTION file that accompanies this code.
 
-  (c) removing or altering this exception's notices when redistributing.
+No file is covered by Exception B by category, by directory, by resemblance, or
+by anyone's later interpretation of what a "runtime" is. Designation is
+explicit, per file, and visible in the file itself.
+
+This is the whole reason for adopting OpenJDK's mechanism rather than defining
+the boundary in prose. An earlier version of this document tried to describe
+the excepted set as "the target runtime," which required a reader to correctly
+distinguish two different things that share a word -- see B3. A designation
+line cannot be misread.
+
+B3. THE DISTINCTION THIS MECHANISM EXISTS TO REMOVE
+
+The word "runtime" names two different things in this repository:
+
+  compiler/x86_64/rt/    The COMPILER's own internals -- arena allocator,
+                         vector, insertion-ordered map, string interner,
+                         syscall wrappers. Statically linked into the `exsc`
+                         binary. Never emitted into Compiler Output, never
+                         linked into your program.
+
+                         NOT designated. Plain GPL. No exception.
+
+  the target runtime     Reference-counting and memory-management support
+                         (specification section 6), and standard library
+                         (`norma.*`) modules the Compiler links or emits into
+                         a compiled program.
+
+                         DESIGNATED, file by file, once it exists.
+
+At the time of writing **no target runtime exists** -- the compiler is under
+construction and nothing is emitted into user programs. No file in this
+repository currently carries a designation line. Exception B is written forward
+so that the licensing position is settled before that code lands, rather than
+renegotiated afterwards once contributors hold copyright in it.
+
+B4. LIMIT
+
+Exception B does not permit taking a designated file and using it with a
+compiler other than the Compiler in order to escape that compiler's own terms.
 
 
-3. THIRD-PARTY COMPONENTS
+===========================================================================
+FILE HEADERS
+===========================================================================
+
+Two forms. Every project-authored source file carries one of them.
+
+--- FORM 1: compiler files (the default; no Exception B) -------------------
+
+    ; <path>
+    ; SPDX-License-Identifier: GPL-3.0-or-later
+    ; Copyright (C) 2026 The Exsecutor authors.
+    ;
+    ; DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+    ;
+    ; This code is free software; you can redistribute it and/or modify it
+    ; under the terms of the GNU General Public License as published by the
+    ; Free Software Foundation, either version 3 of the License, or (at your
+    ; option) any later version.
+    ;
+    ; This code is distributed in the hope that it will be useful, but WITHOUT
+    ; ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+    ; FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+    ; more details.
+    ;
+    ; You should have received a copy of the GNU General Public License along
+    ; with this code. If not, see <https://www.gnu.org/licenses/>.
+    ;
+    ; Code produced by this compiler is not covered by the GPL --
+    ; see Exception A in LICENSE.EXCEPTION.
+
+--- FORM 2: designated files (Exception B applies) -------------------------
+
+Identical to Form 1, with one additional paragraph after the first, exactly as
+OpenJDK designates its own files:
+
+    ; This particular file is designated as subject to the "Linking" exception
+    ; as provided in the LICENSE.EXCEPTION file that accompanies this code.
+
+Use `#` rather than `;` as the comment leader in shell and Python sources, and
+the SPDX identifier for a designated file is:
+
+    SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
+
+
+===========================================================================
+THIRD-PARTY COMPONENTS
+===========================================================================
 
 `vendor/` contains third-party code that is **not** covered by the GPL or by
-this exception, and is redistributed under its own terms:
+either exception, and is redistributed under its own terms:
 
   vendor/fasmg-x86/   flat assembler g (fasmg) x86 macro package
                       Copyright (c) Tomasz Grysztar
@@ -98,53 +186,16 @@ directory keeps its own license and its own copyright notice, and must not be
 relicensed or have its notices stripped.
 
 
-4. PRECEDENT
+===========================================================================
+NO WARRANTY, AND NOT LEGAL ADVICE
+===========================================================================
 
-This exception follows well-established practice for compilers and code
-generators. It is modelled on:
+The disclaimer of warranty in sections 15 and 16 of the GPL applies to these
+exceptions as it does to the rest of the distribution.
 
-  - the FAUST compiler, whose GPL notice states that code generated by the
-    FAUST compiler is not covered by the GPL;
-  - the GCC Runtime Library Exception, which is why compiling proprietary
-    software with GCC does not make it GPL;
-  - the Bison parser exception, which permits distributing generated parsers
-    under terms of your choice.
-
-It is deliberately shorter and plainer than the GCC Runtime Library Exception,
-which carries machinery for problems this project does not have.
-
-
-5. NO WARRANTY, AND NOT LEGAL ADVICE
-
-The disclaimer of warranty in sections 15 and 16 of the GPL applies to this
-exception as it does to the rest of the distribution.
-
-This text was drafted by reference to the precedents named in section 4. It has
-not been reviewed by a lawyer. If the licensing position of this project comes
-to matter commercially -- to you or to anyone relying on it -- have counsel read
-it before relying on it.
-
-
----
-
-To apply this exception to a source file, place the following notice in its
-header, after the copyright line:
-
-    This file is part of the Exsecutor compiler.
-
-    Exsecutor is free software: you can redistribute it and/or modify it under
-    the terms of the GNU General Public License as published by the Free
-    Software Foundation, either version 3 of the License, or (at your option)
-    any later version.
-
-    Exsecutor is distributed in the hope that it will be useful, but WITHOUT
-    ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-    FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
-    more details.
-
-    You should have received a copy of the GNU General Public License along
-    with this program. If not, see <https://www.gnu.org/licenses/>.
-
-    Additional permission under GNU GPL version 3 section 7: see
-    LICENSE.EXCEPTION. Code produced by this compiler, and programs
-    incorporating the Exsecutor target runtime, are not covered by the GPL.
+Exception B's operative paragraph (B1) is the GNU Classpath exception, adapted
+only in that it says "this file" where the original says "this library" --
+matching OpenJDK's per-file designation practice. Exception A was drafted by
+reference to FAUST, GCC and Bison. Neither has been reviewed by a lawyer. If
+the licensing position of this project comes to matter commercially, have
+counsel read it before relying on it.

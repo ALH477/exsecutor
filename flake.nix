@@ -163,11 +163,13 @@
             main = "exsc.asm";
             meta = {
               description = "Exsecutor compiler (exsc) -- freestanding x86-64, assembled by fasmg";
-              # GPL-3.0-or-later WITH an output-and-runtime exception, so that
-              # code compiled by exsc carries no GPL obligation -- the GCC/Bison/
-              # FAUST model. nixpkgs has no SPDX id for a bespoke exception, so
-              # the base license is named here and LICENSE.EXCEPTION carries the
-              # grant. See docs/decisions/0006-license-gpl3-with-exception.md.
+              # Plain GPL-3.0-or-later is correct for the compiler itself. The
+              # output grant (Exception A, LICENSE.EXCEPTION) has no registered
+              # SPDX id, so it cannot be expressed here -- it is prose, and an
+              # auditor must read the file. Exception B (Classpath, per-file
+              # designation) DOES have one, but applies only to target-runtime
+              # files, none of which exist yet.
+              # See docs/decisions/0006-license-gpl3-with-exception.md.
               license = nixpkgsLib.licenses.gpl3Plus;
               platforms = [ system ];
             };

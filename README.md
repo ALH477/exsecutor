@@ -116,26 +116,38 @@ than passing vacuously.
 
 ## License
 
-**GPL-3.0-or-later, with an output-and-runtime exception.**
+**GPL-3.0-or-later, with two exceptions.**
 
 The compiler is free software and stays free. What you write in Exsecutor is
-yours: compiling a program with `exsc` places no licensing obligation on that
-program, on the code `exsc` emits from it, or on the resulting binaries. The
-same holds for programs that incorporate the Exsecutor target runtime.
+yours.
 
-This is the arrangement GCC, Bison and FAUST use, and for the same reason — a
-compiler's freedom should not be contagious through its output.
+- **Exception A — compiler output.** Compiling with `exsc` places no licensing
+  obligation on your program, on the code `exsc` emits from it, or on the
+  resulting binaries. Automatic. This is the FAUST / GCC / Bison arrangement:
+  a compiler's freedom should not be contagious through its output.
+- **Exception B — linking.** The GNU Classpath exception, as OpenJDK uses it,
+  for runtime files linked into compiled programs.
 
-- `LICENSE` — GNU GPL v3, verbatim
-- `LICENSE.EXCEPTION` — the grant, its limits, and the precedents it follows
+Files: `LICENSE` (GNU GPL v3, verbatim) and `LICENSE.EXCEPTION` (both grants,
+their limits, and the precedents they follow).
 
-One distinction the exception spells out, because the word is overloaded:
-`compiler/x86_64/rt/` is the **compiler's own** internal runtime — arena, map,
-interner, syscall wrappers — linked into `exsc` and never into your program. It
-is part of the compiler and carries no exception. The *target* runtime, which
-does get incorporated into compiled programs, is the excepted one. It does not
-exist yet; the terms are written forward so the position is settled before the
-code lands.
+### Which files are excepted
+
+Exception B attaches to **individually designated files** — a file is covered
+if and only if its own header says so, in OpenJDK's words. Nothing is excepted
+by category, by directory, or by resemblance.
+
+That matters because one word names two different things here:
+
+| | | |
+|---|---|---|
+| `compiler/x86_64/rt/` | the **compiler's own** internals — arena, map, interner, syscall wrappers, linked into `exsc` and never into your program | plain GPL, **not** designated |
+| the **target runtime** | §6's refcount support and the `norma.*` modules linked into a *compiled program* | designated, per file |
+
+No target runtime exists yet — there is no backend, so nothing is emitted into
+user programs, and **no file in this repository currently carries a designation
+line.** The terms are written forward so the position is settled before that
+code lands rather than renegotiated once contributors hold copyright in it.
 
 `vendor/` is third-party and keeps its own license — `vendor/fasmg-x86/` is
 BSD-3-Clause (Tomasz Grysztar), which is GPL-compatible. Do not relicense it or
