@@ -355,6 +355,86 @@ Explicit ABI and layout; no "whatever C does." The frontend implements the C ABI
 
 Minimum ABI coverage for v1: SysV AMD64, AArch64 AAPCS, RISC-V lp64d.
 
+## 5.4 Numeric semantics
+
+`[OPEN]` — designed, nothing implemented. Stage 2 for integers, Stage 3 for vectors.
+
+The floating-point environment is ambient state, and this document exists to
+retire ambient state. `-ffast-math` is `setlocale` for numbers: a global,
+invisible switch that changes the semantics of code that never asked for it,
+appears in no interface, and lets two libraries with byte-identical headers
+compute different answers. MXCSR/FPCR rounding mode is worse — thread-local
+mutable state that silently alters every result downstream of a call.
+
+§5.2 puts byte order in the type. This section closes the same gap for
+arithmetic.
+
+### Floating point
+
+Semantics are declared per module in the `ego`'s `numeri` block (§10.1), not
+set by a compiler flag:
+
+| declaration | meaning | default |
+|---|---|---|
+| `rotundatio` | rounding mode | `ad_parem` (nearest, ties to even) |
+| `reassociatio` | may the compiler reassociate? | `vetita` — forbidden |
+| `contractio` | FMA formation | `explicita` — only where written |
+| `subnormales` | subnormal handling | `conservata` — no FTZ/DAZ |
+
+`reassociatio vetita` is the default because reassociation is the part of
+`-ffast-math` that silently changes results. A module wanting it must say so in
+its interface, where a caller can see it.
+
+**`numeri` is interface-affecting.** Changing it changes callers' results, so it
+feeds the interface hash and dependents rebuild (§9.6). Calling between modules
+with incompatible `numeri` requires an explicit coercion that names the
+assumption — the same rule §5.2 applies to `mensura`.
+
+Directed rounding (`ad_superius`, `ad_inferius`) is declarable because validated
+numerics — interval arithmetic with provable error bounds — is impossible
+without it.
+
+### Reduction shape is semantics, not optimization
+
+Floating-point addition is not associative, so a parallel reduction is a
+*reassociation*. Summing across eight lanes gives a different answer than
+summing left to right. Most languages let the optimizer choose, which is why a
+dot product changes value when the core count changes.
+
+**The reduction tree shape is part of the operation.**
+
+```exsecutor
+summa_ordinata(v)         // strict left-to-right, exactly reproducible
+summa_arborea(v, 8)       // fixed-width pairwise tree
+```
+
+A declared tree shape is deterministic *and* parallel. The machine decides how
+long the reduction takes; it never decides what the reduction computes. This is
+what makes byte-identical numerical output achievable across core counts and
+target ISAs.
+
+### Vectors
+
+`acies<f32, 8>` carries its lane count **in the type**. Lane count is never
+inferred from the host: a target-inferred width makes results machine-dependent,
+which is the failure this document is written against. The compiler lowers to
+AVX-512, AVX2, NEON, or a scalar loop as the target allows; the lowering changes
+performance and never changes the value.
+
+### Integers
+
+- **Arbitrary widths.** `u7`, `i23`, `u1`. Width is exact, not a minimum.
+- **No implicit promotion.** C's integer promotion is a defect factory. Widening
+  is explicit and names the target assumption, as `mensura` already requires
+  (§5.2).
+- **Overflow behaviour is in the operator, not a compiler flag.** `+` traps,
+  `+%` wraps, `+|` saturates, `+?` yields an optional. A flag that changes
+  whether arithmetic traps is ambient state by another name.
+- `@transitus` extends to explicit **bit** offsets. No implicit bit padding, for
+  the same reason §5.2 forbids implicit byte padding.
+
+---
+
 ---
 
 # 6. Memory
@@ -557,6 +637,8 @@ Nix's trichotomy as language-level concepts: `buildPlatform`, `hostPlatform`, `t
 
 > **The interface hash governs whether dependents rebuild. Cache identity is the full content hash of the module plus its transitive input closure. These are two different hashes and must never be conflated.**
 
+The `numeri` block (§5.4, §10.1) is on the **interface** side of this line: floating-point semantics change what a call computes, so a dependent must rebuild when they change. Numeric policy is interface, not implementation detail.
+
 Keying a build cache on the interface hash lets an attacker change only an implementation and ship it under an unchanged key — a poisoned shared or remote cache serves it to everyone. Named as an invariant because it is subtle enough to be got wrong by implementation judgment.
 
 ---
@@ -583,6 +665,13 @@ ego norma.textus {
     hospites [ x86_64-linux, aarch64-linux, riscv64-linux, wasm32-wasi, none-eabi ]
 
     potestates { }                          // observes nothing
+
+    numeri {                                // §5.4 -- interface-affecting
+        rotundatio    ad_parem
+        reassociatio  vetita
+        contractio    explicita
+        subnormales   conservata
+    }
 
     publica typus       textus
     publica typus       grapha
