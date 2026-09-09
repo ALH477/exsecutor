@@ -711,7 +711,7 @@ Ships with v1. Each entry must **fail to compile**, or in the last two cases pro
 Worst first.
 
 1. **Closure capture in capability rows** (§4.2). The substitution foundation is built and validated against six attacks; a lambda capturing a capability from an enclosing `sub` is untested. Blocks Stage 1.
-2. **Lexicon derivation test** (§16). Cannot be retired by more engineering — needs human subjects. Gates whether §3 is load-bearing.
+2. **Lexicon derivation test** (§16). Cannot be retired by more engineering — needs human subjects. No longer gates whether §3 is load-bearing (ADR 0005); §3 is retained regardless. What remains open is the *size of its cost*, which is unmeasured.
 3. **Reference cycles** (§6.7). No answer. Accepted cost, with a DoS exposure to document.
 4. **Root coinage governance** (§3.8). No Latin for hash, socket, mutex. Coinable, but coining needs a process.
 5. **Generics × capability rows × dictionary layout** (§7.1). Unprototyped three-way interaction.
@@ -728,7 +728,7 @@ Worst first.
 Remaining, before Stage 1:
 - **Closure capture in the prototype.** ~1 week.
 - **The derivation test.** Print the affix table and twenty roots; give twenty derivation tasks; score against recall accuracy on an equivalent English API. Days, no compiler, no engineering. **Cheapest high-value experiment in the project.**
-  - **Kill criterion:** if derivation accuracy does not clearly beat English recall, §3 is decorative — and everything else in this spec survives unchanged with English roots in the same derivational frame.
+  - **No longer a kill criterion.** v0.3 originally read: *"if derivation accuracy does not clearly beat English recall, §3 is decorative — and everything else in this spec survives unchanged with English roots in the same derivational frame."* That branch has been closed by decision — §3 is retained whatever the number says, because the lexicon is an identity commitment rather than a hypothesis (ADR 0005). The test is still worth running as **calibration**: it measures what §3 costs, which affixes and roots produce errors, and therefore which of `EXS-E0601`–`EXS-E0610` need the best diagnostics and the widest `exsc emenda` coverage. The English control is kept because it makes that cost measurable rather than anecdotal.
 
 **Stage 1 — frontend (3–4 months).** Lexer with the full §8.1 policy. Lossless CST. Typed AST. Diagnostics with spans and stable codes.
 *Kill:* diagnostics quality is not retrofittable. Bad here → stop and fix.
@@ -750,7 +750,7 @@ Remaining, before Stage 1:
 
 # 17. What would make this fail
 
-- The derivation test comes back negative and §3 is decorative after all.
+- The derivation test comes back negative and §3 costs more than it returns. Since ADR 0005 retains §3 regardless, this failure mode is now **accepted rather than mitigated** — the documented fallback of English roots in the same derivational frame has been closed by choice. The risk below is the same risk, undiluted.
 - Closure capture cannot be checked soundly, and the audit view — the strongest artifact here — becomes theatre.
 - Naming constraints prove to be the thing developers will not tolerate. This is the largest adoption risk in the project, larger than ARC or capabilities.
 - The no-build-scripts constraint blocks real FFI work.
