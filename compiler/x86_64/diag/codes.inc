@@ -63,7 +63,7 @@
 ; Spec: docs/spec/exsecutor-spec-v0.4.md §8.3, §13
 ; -----------------------------------------------------------------------------
 
-DIAG_CODE_COUNT = 24
+DIAG_CODE_COUNT = 25
 DIAG_CODE_STR_STRIDE = 9	; "EXS-E" + 4 digits, always
 
 ; ---- fixed-stride code-string table (9 bytes each, no separator, no NUL) ---
@@ -92,6 +92,7 @@ diag_code_str:
 	db	'EXS-E0602'
 	db	'EXS-E0603'
 	db	'EXS-E0610'
+	db	'EXS-E0701'
 
 ; ---- parallel numeric-part table (dd each; the CF/eax protocol's value) ----
 diag_code_numeric:
@@ -119,6 +120,7 @@ diag_code_numeric:
 	dd	602
 	dd	603
 	dd	610
+	dd	701
 
 ; ---- parallel canonical-message length table (dd each, bytes) --------------
 diag_code_msg_len:
@@ -146,6 +148,7 @@ diag_code_msg_len:
 	dd	44
 	dd	29
 	dd	44
+	dd	40
 
 ; ---- parallel canonical-message pointer table (dq each, forward refs) ------
 diag_code_msg_ptr:
@@ -173,6 +176,7 @@ diag_code_msg_ptr:
 	dq	diag_msg21
 	dq	diag_msg22
 	dq	diag_msg23
+	dq	diag_msg24
 
 ; ---- canonical English message text (§8.3: "English text is canonical.
 ;      Translation, if ever, is a lookup keyed on code.") -----------------
@@ -200,3 +204,4 @@ diag_msg20 db	'public name does not decompose into the morpheme table'	; EXS-E06
 diag_msg21 db	'suffix contract disagrees with declared type'	; EXS-E0602
 diag_msg22 db	'prefix signature law violated'	; EXS-E0603
 diag_msg23 db	'composition depth exceeded (max two affixes)'	; EXS-E0610
+diag_msg24 db	'target cannot honour the declared numeri'	; EXS-E0701

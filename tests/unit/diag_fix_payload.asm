@@ -332,6 +332,13 @@ segment readable writeable
 	dd	602, 1	; EXS-E0602
 	dd	603, 1	; EXS-E0603
 	dd	610, 1	; EXS-E0610
+	dd	701, 0	; EXS-E0701 -- NO fix. §8.3 scopes machine-applicable
+			;   fixes to capability and lexicon errors. This is a
+			;   TARGET failure: the source is well-formed and the
+			;   target cannot deliver it. "Pick another target" is
+			;   not a source edit, and "relax numeri" changes what
+			;   the program computes -- the one thing a fix-it must
+			;   never do quietly.
   REQ_COUNT = ($ - req_tab) / 8
   ; This fixture's expectation table must cover the GENERATED one exactly --
   ; a §13 amendment that adds a code and a regeneration that picks it up must

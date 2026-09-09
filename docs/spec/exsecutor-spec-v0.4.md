@@ -475,8 +475,13 @@ express one. A field in a `@transitus` type may declare any width `uN` for
 1. Sub-byte fields **pack MSB-first in declaration order**. The
    first-declared field occupies the high bits, which is what wire formats
    universally do and what a field table reads like.
-2. A field wider than 8 bits **must begin on a byte boundary**. Otherwise
-   byte order has nothing to be an order *of*.
+2. A field wider than 8 bits **must begin on a byte boundary and be a whole
+   number of bytes**. Byte order is an order over bytes; a 12-bit field has
+   no defined one, and nothing here should have to invent a convention for
+   the trailing nibble. So the widths are `u1`–`u7` (sub-byte, rule 1) and
+   `u8 u16 u24 u32 u40 u48 u56 u64`. `u12` is not a type and does not parse.
+   Widths in between were admitted by the first draft of this rule, which
+   said only "must begin on a byte boundary" and left the *end* undefined.
 3. **Byte order is required above 8 bits and is not part of the grammar at or
    below it.** An unannotated multi-byte field in a `@transitus` type *is*
    `:nativus` and is therefore already `EXS-E0321`; `u4:maior` does not parse,
@@ -595,6 +600,25 @@ A declared tree shape is deterministic *and* parallel. The machine decides how
 long the reduction takes; it never decides what the reduction computes. This is
 what makes byte-identical numerical output achievable across core counts and
 target ISAs.
+
+**The remainder is part of the shape.** `arborea w` over `n` elements where `w`
+does not divide `n` is defined as `ceil(n / w)` groups in index order, the last
+holding the remainder, combined by the same rule. Leaving this to the
+implementation would put the machine back in charge of what is computed, which
+is the one thing this section exists to prevent. `summa_arborea(v, 8)` on a
+20-element vector is groups `[0..8) [8..16) [16..20)`, in that order, always.
+
+**A running accumulator is not readable inside the reduction body**
+(`contrahe`, §8.5). If the body could observe the partial total, the summation
+order would be observable, and no tree shape but strictly-left-to-right would
+be a valid implementation — the declaration would become a lie the moment
+anything used it. The accumulator is write-only until the reduction completes.
+
+**`rumpe` is forbidden inside an iteration carrying a `contrahe`.** An early
+exit makes the result depend on which iterations ran, and under `quisque` that
+is not even well defined. Use `per` with an explicit accumulator if an
+early-exit fold is what is wanted; it is then ordinary sequential code and
+claims nothing about shape.
 
 ### Vectors
 
@@ -1331,6 +1355,7 @@ Scratch work without ambient authority: `exsc curre --potestates omnes scratch.e
 | `EXS-E0602` | suffix contract disagrees with declared type |
 | `EXS-E0603` | prefix signature law violated |
 | `EXS-E0610` | composition depth exceeded (max two affixes) |
+| `EXS-E0701` | target cannot honour the declared `numeri` |
 
 The `02xx` range is deliberately coarse. Code granularity and message quality
 are independent axes: a consumer branches on *what class of thing broke* — which
@@ -1340,6 +1365,14 @@ structured fix payload §8.3 already requires. `EXS-E0220` earns a code of its
 own on frequency: §8.4's keywords are Latin words that read like plausible
 identifiers, so reserved-word-as-identifier is the predictable error, and its
 fix is mechanically derivable.
+
+`EXS-E0701` opens a `07xx` range for **target** failures — the compilation is
+well-formed and the *target* cannot deliver it. §5.5 has required "a target
+that cannot honour the declared `numeri` fails the build" since it was written,
+and §9.2 extended that to backends, but neither had a code to fail with.
+Found by writing ADR 0012 against the amended §9.2, which is the first time
+anything tried to use it. CLAUDE.md is explicit that a new code needs a §13
+amendment *first*; this one was owed.
 
 Codes are permanent and never renumbered (§8.3), so under-committing is
 recoverable and over-committing is not. `0204`-`0209`, `0211`-`0219` and
@@ -1479,7 +1512,7 @@ Recorded so the constraints are not rediscovered later. Nothing here changes a d
 - **§9.3's purity contract stops being a discipline and becomes a property of the artifact.** A freestanding static binary cannot call `setlocale`, read `$HOME`, or discover a dotfile, because the code to do so is not linked into it. "No network access, ever, at any phase" becomes checkable rather than promised: extract every `syscall` site and its `rax` value from the binary and diff against the declared allowlist. CI enforces this. No other candidate host language offered a guarantee of this shape.
 - **Byte-identical output (§9.3) is close to free.** Insertion-ordered maps, no allocator nondeterminism, explicit symbol and section emission order — all of it under direct control rather than inherited from a runtime.
 - **The build closure is `{fasmg}` plus a vendored macro package.** §1's Nix-native claim applied to the compiler itself rather than only to what it produces. The qualification is load-bearing, and was found by measurement rather than assumed: fasmg is architecture-neutral in the strong sense — the binary knows no machine instructions at all, and `mov eax, 60` on its own is `Error: illegal instruction`. The x86-64 instruction set and the ELF64 executable writer are *macro packages*, ordinary fasmg source, and the nixpkgs derivation ships only `bin/fasmg`. They are vendored at `vendor/fasmg-x86/`, which also retires the last network dependency in the build: upstream publishes to a rolling URL whose bytes have already drifted from the hash nixpkgs pins, so the package builds today only from cache. See `vendor/fasmg-x86/PROVENANCE.md`.
-- **§9.2's C backend emits text, not machine code** — among the easier things to do in assembly. The costly parts of the pipeline are the CST (§9.1) and the Unicode layer (§8), not codegen.
+- **Both of §9.2's backends emit text, not machine code** — C for the reach backend, fasmg source for the reference one, and neither is machine encoding. Among the easier things to do in assembly. The costly parts of the pipeline are the CST (§9.1) and the Unicode layer (§8), not codegen. The reference backend also emits into the *same* assembler the compiler is written in, so it inherits the vendored macro package rather than needing a second emitter.
 
 ## 18.2 Accepted costs
 
