@@ -22,7 +22,7 @@ The name is well-formed under this document's own §3 rules, which is the reason
 
 **What was given up.** "Nomos" was chosen because νόμος (convention) opposes φύσις (nature) — the classical distinction between what holds by human agreement and what is intrinsic, which is §1's thesis in one word. *Exsecutor* means "enforcer," not that distinction. It fits a compiler whose entire character is refusing to compile, but it is a weaker thematic fit than the name it replaces. Recorded rather than argued away.
 
-**Extension:** `.xsc` — **Interface file:** `ego.xsc`
+**Extension:** `.exsc` — **Interface file:** `ego.exsc`
 
 ---
 
@@ -160,6 +160,28 @@ Greek roots cover what Latin lacks: `crypt-`, `graph-`, `metr-`, `morph-`, `chro
 | `-orium` | supine | instrument | `structura` |
 
 A name whose suffix disagrees with its declaration is `EXS-E0602`. This is a well-formedness condition relating a name to a type, not a style lint.
+
+**`-e` is a morphological category, not a spelling.** It is the present-stem
+imperative, and Latin realises that differently by conjugation: `-e` in the
+third (`leg-` → `lege`), **`-a` in the first** (`plica-` → `plica`,
+`applica-` → `applica`, `saluta-` → `saluta`). The table names one surface
+form because §3.3's worked root, `leg-`, is third-conjugation.
+
+This was stated as a spelling, and taken literally it rejects most of this
+document's own function names — `applica` (§4.2), `plica_unicode` and
+`plica_sermone` (§5.1, §10.1) all end in `-a`. A checker built from the table
+as written would have failed the spec before it failed any user. Corrected
+here rather than left for the checker to discover.
+
+Two names in this document remain **unresolved** against §3.4 and are flagged
+rather than quietly excused. `nocens` (§4.2) is a present participle, a form
+the table does not list. `exterior` (§4.2) ends in `-or`, which the table
+assigns to agents declared `structura` — and §14 entry 14 is precisely
+*"`-or` name declared as `functio` → `EXS-E0602`"*. It is genuine Latin (a
+comparative in `-ior`), so a longest-suffix matcher and a morphological one
+disagree about it. `[OPEN]` — both are illustrative names in examples, and
+whether §3.4 grows a participle row or the examples get renamed is a decision
+for when the lexicon checker is written.
 
 ## 3.5 Prefixes carry signature laws
 
@@ -356,9 +378,9 @@ publica functio exterior(v: f32) -> f32 poscit alloc {
 }
 ```
 
-**Closure capture: found by measurement, fixed, and re-measured.** The probe (`prototypes/capcheck/`) first *accepted* `cases/bad_closure_capture.xsc`, a genuine violation in which a lambda closes over a `sub`-bound `rete`, escapes as a function-typed value, and is forwarded by a caller declaring only `alloc`. Every individual function in that file is correct; the rule could not see the composition.
+**Closure capture: found by measurement, fixed, and re-measured.** The probe (`prototypes/capcheck/`) first *accepted* `cases/bad_closure_capture.exsc`, a genuine violation in which a lambda closes over a `sub`-bound `rete`, escapes as a function-typed value, and is forwarded by a caller declaring only `alloc`. Every individual function in that file is correct; the rule could not see the composition.
 
-Under the revised rule the same file is rejected as `EXS-E0421`, and `cases/ok_closure_declared.xsc` — the same shape with the row correctly declared — is still accepted. That second case is load-bearing: a checker that rejects the violation *and* the correct version is not a fix, and an earlier attempt at this change did exactly that by double-counting a `sicut`-declared row.
+Under the revised rule the same file is rejected as `EXS-E0421`, and `cases/ok_closure_declared.exsc` — the same shape with the row correctly declared — is still accepted. That second case is load-bearing: a checker that rejects the violation *and* the correct version is not a fix, and an earlier attempt at this change did exactly that by double-counting a `sicut`-declared row.
 
 `[UNTESTED]` as a soundness claim. What exists is nine cases passing in a Python probe, not a proof and not a compiler. §15 #5's generics-by-dictionary-passing interaction is made harder by this change, not easier.
 
@@ -902,6 +924,11 @@ All already in evidence in this document, recorded here rather than introduced.
   scans only identifiers is defeated by an override sitting in a comment.
 - String literals are `"…"`. §8.1's rule applies inside these too. Escapes are
   the only legal way to produce a bidi or invisible control codepoint.
+- **A string literal may contain raw newlines.** They are part of the value,
+  LF only (§8.1 rejects CRLF in source, so a literal cannot smuggle one in).
+  There is no separate multiline form and no indentation stripping — stripping
+  would mean the value depends on the source's leading whitespace, which is
+  the ambient-state class §1 exists to remove.
 - A malformed literal is `EXS-E0210`; an unterminated one is `EXS-E0202`.
 - Layout is not significant. Blocks are `{ }`.
 
@@ -947,12 +974,20 @@ below — one word, one meaning, two places.
 ### Selection
 
 ```exsecutor
-discerne forma {
+discerne modus {
     casus arborea  { … }
     casus ordinata { … }
     aliter         { … }
 }
 ```
+
+The scrutinee is an ordinary expression. This example first read `discerne
+forma` — using `forma`, which §8.4 reserves two lines above, as an identifier.
+That is `EXS-E0220`, the code added in the same amendment, and the example
+would have been rejected by the rule it was written to illustrate. Recorded
+rather than silently corrected: it is the first evidence that §8.4's reserved
+set is checkable against real text, and the first thing it caught was this
+document.
 
 **Exhaustive, with no fallthrough.** A missing arm is a diagnostic that *lists
 the missing cases* and ships the edit — mechanically derivable, which is exactly
@@ -1121,7 +1156,7 @@ Keying a build cache on the interface hash lets an attacker change only an imple
 ## 10.1 Format
 
 ```exsecutor
-// ego.xsc — generated by `exsc ego --emitte`, verified in CI. Never hand-edited.
+// ego.exsc — generated by `exsc ego --emitte`, verified in CI. Never hand-edited.
 
 ego norma.textus {
     versio    "0.4.1"
@@ -1211,9 +1246,9 @@ Non-negotiable; a language without these is a toy.
 
 One tool: `exsc aedifica | proba | forma | lsp | ego | emenda | documenta | novum | lexicon | curre`.
 
-`exsc novum` scaffolds a working project with a valid `ego.xsc` in one command — first running program under 60 seconds or onboarding has failed.
+`exsc novum` scaffolds a working project with a valid `ego.exsc` in one command — first running program under 60 seconds or onboarding has failed.
 
-Scratch work without ambient authority: `exsc curre --potestates omnes scratch.xsc`. Grants typed on the command line — explicit, not ambient, one flag of friction.
+Scratch work without ambient authority: `exsc curre --potestates omnes scratch.exsc`. Grants typed on the command line — explicit, not ambient, one flag of friction.
 
 **The demo:** `exsc aedifica --hospes riscv64-linux` on a Mac, no toolchain setup, static binary, byte-identical to CI. Zig's cross-compilation demo is most of why Zig got noticed; here it falls out of the design rather than being engineered. **Dropped** under the assembly implementation (§18.2): the compiler is x86-64 machine code and a Mac is aarch64. The nearest surviving demo is the same command from an `x86_64-linux` host.
 

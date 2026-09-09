@@ -1,0 +1,21 @@
+// The canonical Exsecutor program.
+//
+// It does not print. Printing is I/O, I/O is authority, and authority is
+// declared -- so `saluta` returns the greeting and says, by declaring nothing,
+// that it can do nothing else. `poscit` is absent because the empty row is the
+// honest one: no allocation, no clock, no filesystem, no network. Whoever
+// writes this to a terminal declares that capability themselves, and §10.3's
+// audit will show it.
+//
+// Most languages open with a program that performs I/O. This one opens with a
+// program that cannot.
+
+publica functio saluta() -> textus {
+    redde "Ave, mundus.
+
+Ex silentio surgit forma.
+Ex signo nascitur vox.
+Ex codice fit lumen.
+
+Hodie incipimus."
+}

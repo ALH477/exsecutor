@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Capability-row checker prototype. Must accept ok_*.xsc and reject bad_*.xsc.
+# Capability-row checker prototype. Must accept ok_*.exsc and reject bad_*.exsc.
 #
 # exsecutor_check.py does not exist in this tree yet, and cases/ is empty.
 # See prototypes/capcheck/README.md for why, and for what rebuilding this
@@ -16,12 +16,12 @@ if [ ! -f exsecutor_check.py ]; then
     exit 1
 fi
 
-if ! compgen -G "cases/ok_*.xsc" >/dev/null || ! compgen -G "cases/bad_*.xsc" >/dev/null; then
+if ! compgen -G "cases/ok_*.exsc" >/dev/null || ! compgen -G "cases/bad_*.exsc" >/dev/null; then
     echo "error: no case files under prototypes/capcheck/cases/" >&2
-    echo "Need cases/ok_*.xsc (legitimate programs) and cases/bad_*.xsc (attacks)." >&2
+    echo "Need cases/ok_*.exsc (legitimate programs) and cases/bad_*.exsc (attacks)." >&2
     echo "See prototypes/capcheck/README.md for what they need to cover." >&2
     exit 1
 fi
 
-python3 exsecutor_check.py -v cases/ok_*.xsc
-python3 exsecutor_check.py cases/bad_*.xsc
+python3 exsecutor_check.py -v cases/ok_*.exsc
+python3 exsecutor_check.py cases/bad_*.exsc

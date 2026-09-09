@@ -20,8 +20,8 @@ compiler is being built.
 
 | | |
 |---|---|
-| Source extension | `.xsc` |
-| Interface file | `ego.xsc` |
+| Source extension | `.exsc` |
+| Interface file | `ego.exsc` |
 | Compiler | `exsc` |
 | Diagnostics | `EXS-E####` (§13) |
 

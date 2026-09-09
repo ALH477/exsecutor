@@ -49,9 +49,9 @@ search-unique; the accepted, recorded cost is constant autocorrection to
 "Executor."
 
 **Decided identifiers**, numerically/structurally unchanged from the
-Nomos-era draft — only the letters moved: source extension `.xsc`, compiler
+Nomos-era draft — only the letters moved: source extension `.exsc`, compiler
 binary `exsc`, diagnostic prefix `EXS-E####` (§8.3, §13 — `NOM-` became `EXS-`,
-the numbers did not move), interface file `ego.xsc` (§10.1), spec version v0.3.
+the numbers did not move), interface file `ego.exsc` (§10.1), spec version v0.3.
 
 ## Consequences
 

@@ -5,7 +5,7 @@
 exsecutor_check.py -- capability-row checker probe.
 
 Re-derives spec Sec 4.2's substitution rule from prose, against a tiny,
-deliberately-limited surface parser for the .xsc case files under cases/.
+deliberately-limited surface parser for the .exsc case files under cases/.
 This is NOT a general Exsecutor parser: it recognizes exactly the constructs
 the case files use (functio declarations, poscit rows, sub bindings, single-
 line lambda literals, impl/dyn casts, module-level mutabilis) and nothing
@@ -13,10 +13,10 @@ else. See README.md for why this file has no history before this change --
 this is a re-derivation, not a restoration (CLAUDE.md).
 
 Self-verifying CLI contract: for each input file, the expected verdict comes
-from its filename (cases/ok_*.xsc -> accept, cases/bad_*.xsc -> reject),
+from its filename (cases/ok_*.exsc -> accept, cases/bad_*.exsc -> reject),
 UNLESS the file's first ~300 chars contain the marker "KNOWN-GAP", in which
 case the expected verdict is "accept despite being a real violation" --
-used for exactly one file, cases/bad_closure_capture.xsc. See
+used for exactly one file, cases/bad_closure_capture.exsc. See
 SYNTAX-PROPOSAL.md for why that file is marked this way instead of tuning
 the checker to catch it. Exit 0 iff every file's actual verdict matches
 what was expected of it.
@@ -320,7 +320,7 @@ def effective_row(f, funcs):
     # demands, I demand", which IS a declaration: the row is polymorphic and
     # the obligation passes to the caller, where substitution meets it. Adding
     # it here too would reject every correctly row-polymorphic HOF, which is
-    # what ok_closure_declared.xsc exists to catch.
+    # what ok_closure_declared.exsc exists to catch.
     polymorphic = set(f.sicut_entries())
     for pname, ptype in f.params:
         if pname not in polymorphic:

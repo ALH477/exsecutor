@@ -57,13 +57,13 @@ directory is design probes, never shipped, never a build dependency (see
 sites, flagging any row that doesn't reduce to something the caller already
 declared.
 
-**2. Case files: `cases/ok_*.xsc` and `cases/bad_*.xsc`.** The spec does not
+**2. Case files: `cases/ok_*.exsc` and `cases/bad_*.exsc`.** The spec does not
 say which six attacks or two legitimate programs the original file used —
 that detail did not survive with the file. What §4 does supply is enough
 rule content to derive candidates for a rebuild's case set. This list is
 **inference from the spec text, not a recovered list**:
 
-Attack candidates for `bad_*.xsc` (one rule violation each):
+Attack candidates for `bad_*.exsc` (one rule violation each):
 
 - Capability laundering through row substitution — §4.2's own
   `nocens`/`exterior` example, `EXS-E0421`.
@@ -88,7 +88,7 @@ That is seven candidates for six slots; the spec supports more attack
 surface than the original file evidently tested, so a rebuild has room to
 choose. Closure capture should not be the one left out again.
 
-Legitimate-program candidates for `ok_*.xsc` (checking for false positives):
+Legitimate-program candidates for `ok_*.exsc` (checking for false positives):
 
 - A pure function — no `poscit`, no capability parameters — that allocates
   or diverges but never observes the host (§4.1 rule 6: pure with respect to

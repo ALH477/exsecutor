@@ -40,7 +40,7 @@ capturing a `sub`-bound capability once the closure escapes its
 construction site?**
 
 **No.** Reproduced by running the checker, not asserted:
-`cases/bad_closure_capture.xsc` is a real violation — `exterior` declares
+`cases/bad_closure_capture.exsc` is a real violation — `exterior` declares
 only `alloc` but its call chain exercises `rete` — and `exsecutor_check.py`
 accepts it (see the `GAP` line in `run.sh`'s output). The file carries a
 `KNOWN-GAP` marker specifically so this is a visible, checked, expected
@@ -62,7 +62,7 @@ substitution is defined over. Once a closure built from such a capture is
 returned, stored, or threaded through an ordinary function-typed parameter,
 it arrives at its eventual call site as a bare **value**: not a top-level
 function, not a lambda literal syntactically present at that point, just an
-identifier of function type with nothing attached. `cases/bad_closure_capture.xsc`
+identifier of function type with nothing attached. `cases/bad_closure_capture.exsc`
 isolates exactly this: `fabrica` legitimately owns and correctly declares
 `rete`; `consumidor` correctly declares `sicut f`; `exterior` receives the
 already-built closure as a plain parameter `cerrado` and never writes the
