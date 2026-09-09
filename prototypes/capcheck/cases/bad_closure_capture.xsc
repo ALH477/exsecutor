@@ -1,0 +1,38 @@
+// KNOWN-GAP: this file IS a genuine capability-row violation, and this
+// checker's positional substitution does NOT catch it. See Sec 15 open
+// problem #1 and SYNTAX-PROPOSAL.md for why, and for the shape a fix
+// would need. The marker above tells exsecutor_check.py to expect
+// "accept" here without treating that as a checker failure -- the point
+// of this file is to make the gap executable and visible, not to hide it.
+//
+// fabrica legitimately owns `rete` (poscit rete, sub-bound) and closes
+// over it in a returned lambda -- this function is entirely correct on
+// its own and must NOT be flagged.
+//
+// `cerrado` in exterior models the closure after it has escaped: some
+// earlier fabrica(...) call produced it, and it reached exterior through
+// ordinary data flow (a return value stored and forwarded, a struct
+// field, anything) with no remaining syntactic trace of "fabrica" at the
+// point of use -- exterior never writes the name `fabrica` at all. This
+// is deliberate: it is what makes the escape real rather than a
+// still-traceable direct call.
+//
+// exterior declares only alloc and forwards cerrado into consumidor,
+// which correctly declares `poscit sicut f`. Positional substitution asks
+// "what is the capability row of the actual argument `cerrado`?" -- but
+// `cerrado` is a bare parameter name, not a named top-level function and
+// not an inline lambda literal, so it matches neither case substitution
+// knows how to look up. There is no name for the row to be attached to.
+
+publica functio fabrica(v: f32, m: Mundus) -> functio(f32) -> f32 poscit rete {
+    sub rete = deriva_rete(m);
+    redde functio(x: f32) -> f32 { redde envia(rete, x) }
+}
+
+publica functio consumidor(x: f32, f: functio(f32) -> f32) -> f32 poscit sicut f {
+    redde f(x)
+}
+
+publica functio exterior(v: f32, cerrado: functio(f32) -> f32) -> f32 poscit alloc {
+    redde consumidor(v, cerrado)
+}

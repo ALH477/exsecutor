@@ -1,0 +1,15 @@
+// Sec 4.2's applica(v, f) shape, called correctly: the actual argument's
+// row (inocens: alloc) is a subset of the caller's declared row (alloc).
+// Expect: accept.
+
+publica functio applica(v: f32, f: functio(f32) -> f32) -> f32 poscit alloc, sicut f {
+    redde f(construe(v))
+}
+
+functio inocens(x: f32) -> f32 poscit alloc {
+    redde x
+}
+
+publica functio bonus(v: f32) -> f32 poscit alloc {
+    redde applica(v, inocens)
+}

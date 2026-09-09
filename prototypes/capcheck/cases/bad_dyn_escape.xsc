@@ -1,0 +1,11 @@
+// Sec 4.4: constructing a trait object from an impl whose mark exceeds the
+// dyn bound. Scriptor's impl needs {rete, archivum}; the cast only grants
+// {rete}. Expect: reject, EXS-E0510.
+
+impl Scriptura for Scriptor poscit rete, archivum {
+    functio scribe(self) -> i32 { redde 0 }
+}
+
+publica functio obtine() -> i32 {
+    redde Scriptor{} as dyn Scriptura poscit rete
+}

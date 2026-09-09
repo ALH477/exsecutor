@@ -1,0 +1,7 @@
+// A HOF that calls its own function-typed parameter but never declares
+// `sicut f` at all -- illegal at its own definition, independent of any
+// caller. Expect: reject, EXS-E0421. Conformance suite item 9.
+
+publica functio applica_malus(v: f32, f: functio(f32) -> f32) -> f32 poscit alloc {
+    redde f(construe(v))
+}

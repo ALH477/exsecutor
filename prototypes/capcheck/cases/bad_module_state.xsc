@@ -1,0 +1,8 @@
+// Rule 7: no module-level mutable state, even without a capability.
+// Expect: reject, EXS-E0500.
+
+mutabilis contator: i32 = 0;
+
+publica functio incrementa() -> i32 {
+    redde contator
+}

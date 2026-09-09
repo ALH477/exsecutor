@@ -1,0 +1,8 @@
+// Rule 7, sharper form: module-level mutable state whose type is itself a
+// capability. Expect: reject, EXS-E0501.
+
+mutabilis conexio_globalis: rete = fabrica_rete();
+
+publica functio scribe() -> i32 {
+    redde 0
+}

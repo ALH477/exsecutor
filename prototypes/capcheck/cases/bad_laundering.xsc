@@ -1,0 +1,16 @@
+// Sec 4.2's own canonical example. exterior declares only alloc; nocens
+// needs rete; applica's `sicut f` substitutes nocens's row at the call
+// site, so exterior ends up requiring rete without declaring it.
+// Expect: reject, EXS-E0421. Conformance suite item 10.
+
+publica functio applica(v: f32, f: functio(f32) -> f32) -> f32 poscit alloc, sicut f {
+    redde f(construe(v))
+}
+
+publica functio nocens(x: f32) -> f32 poscit rete {
+    redde x
+}
+
+publica functio exterior(v: f32) -> f32 poscit alloc {
+    redde applica(v, nocens)
+}

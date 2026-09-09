@@ -1,0 +1,6 @@
+// Rule 6: no poscit, no capability parameters -> pure w.r.t. ambient state.
+// May allocate and diverge; must not observe the host. Expect: accept.
+
+publica functio quadra(x: f32) -> f32 {
+    redde multiplica(x, x)
+}

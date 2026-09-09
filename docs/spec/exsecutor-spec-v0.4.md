@@ -352,7 +352,11 @@ publica functio exterior(v: f32) -> f32 poscit alloc {
 }
 ```
 
-`[OPEN]` **Closure capture is unimplemented.** The prototype handles named functions and function-typed parameters. A lambda capturing a capability from an enclosing `sub` is the sharpest form of this attack and is untested. Highest-priority remaining work.
+`[OPEN]` **Closure capture defeats positional substitution. Measured, not assumed.** The rebuilt probe (`prototypes/capcheck/`) accepts `cases/bad_closure_capture.xsc`, which is a genuine violation: a lambda closes over a `sub`-bound `rete` inside a function that legitimately holds it, escapes as an ordinary function-typed value, and is forwarded by a caller declaring only `alloc`. Every individual function in that file is correct.
+
+The failure is **structural, not a missing case**. Substitution resolves a row *by name at the call site* — it can look up a named function's declared `poscit`, or read an inline lambda's body. An escaped closure arrives as a bare value of function type and matches neither, so there is nothing for a row to attach to.
+
+A fix requires capability rows to **travel with function-typed values** rather than being looked up by name — closer to row-polymorphic effect typing than to the positional rule above. That is a design change to this section, not an implementation gap beneath it. Highest-priority remaining work.
 
 ## 4.3 Capability-bearing types
 
@@ -987,7 +991,7 @@ Ships with v1. Each entry must **fail to compile**, or in the last two cases pro
 
 Worst first.
 
-1. **Closure capture in capability rows** (§4.2). The substitution foundation is built and validated against six attacks; a lambda capturing a capability from an enclosing `sub` is untested. Blocks Stage 1.
+1. **Closure capture in capability rows** (§4.2). No longer untested — **tested, and it fails.** The probe accepts a genuine violation, because substitution resolves rows by name at the call site and an escaped closure has no name. Rows must travel with function-typed values instead. Still blocks Stage 1, but is now a known design defect rather than an unknown. Note also that the six attacks the original prototype was said to be validated against were never enumerated anywhere; the rebuilt probe **chose** six, and says so.
 2. **Lexicon derivation test** (§16). Cannot be retired by more engineering — needs human subjects. No longer gates whether §3 is load-bearing (ADR 0005); §3 is retained regardless. What remains open is the *size of its cost*, which is unmeasured.
 3. **Reference cycles** (§6.7). No answer. Accepted cost, with a DoS exposure to document. **Still open for the full language.** The `certus` safety-critical profile (`docs/design/profile-certus.md`, ADR 0010) dissolves it by forbidding reference counting outright — arena-only, sized at `initium` — so cycles are structurally impossible there. That is a restriction, not a solution, and does not close this item.
 4. **Root coinage governance** (§3.8). Resolved as design by §3.9 — exhaustion test, a five-rung coinage ladder, review, permanent registration against the content-addressed morpheme table, and a loan register kept as a running measurement of whether §3 scales. `[UNTESTED]`: no root has been coined through it, and `norma.algebra` (which needs *lane*, *stride*, *pivot*, *eigenvalue*) is its first real exercise.
@@ -1003,7 +1007,7 @@ Worst first.
 **Stage 0 — validation.** Four of five kill criteria retired with evidence: CVE gate passed (§2), ARC measured (§6.2), compile speed measured (§9.2), capability rows prototyped (§4.2).
 
 Remaining, before Stage 1:
-- **Closure capture in the prototype.** ~1 week.
+- **Closure capture in the prototype.** Done — the probe exists and the case runs. The *experiment* is closed; the *problem* is not. It returned a negative: §4.2's positional rule cannot see an escaped closure, so the remaining work is a design change to §4.2, no longer an unknown to be measured.
 - **The derivation test.** Print the affix table and twenty roots; give twenty derivation tasks; score against recall accuracy on an equivalent English API. Days, no compiler, no engineering. **Cheapest high-value experiment in the project.**
   - **No longer a kill criterion.** v0.3 originally read: *"if derivation accuracy does not clearly beat English recall, §3 is decorative — and everything else in this spec survives unchanged with English roots in the same derivational frame."* That branch has been closed by decision — §3 is retained whatever the number says, because the lexicon is an identity commitment rather than a hypothesis (ADR 0005). The test is still worth running as **calibration**: it measures what §3 costs, which affixes and roots produce errors, and therefore which of `EXS-E0601`–`EXS-E0610` need the best diagnostics and the widest `exsc emenda` coverage. The English control is kept because it makes that cost measurable rather than anecdotal.
 
@@ -1028,7 +1032,7 @@ Remaining, before Stage 1:
 # 17. What would make this fail
 
 - The derivation test comes back negative and §3 costs more than it returns. Since ADR 0005 retains §3 regardless, this failure mode is now **accepted rather than mitigated** — the documented fallback of English roots in the same derivational frame has been closed by choice. The risk below is the same risk, undiluted.
-- Closure capture cannot be checked soundly, and the audit view — the strongest artifact here — becomes theatre.
+- Closure capture cannot be checked soundly, and the audit view — the strongest artifact here — becomes theatre. **This is no longer hypothetical.** §4.2's rule as written does not catch it, demonstrated by a running probe. The failure mode is live until rows travel with values.
 - Naming constraints prove to be the thing developers will not tolerate. This is the largest adoption risk in the project, larger than ARC or capabilities.
 - The no-build-scripts constraint blocks real FFI work.
 - It never gets users, which is how almost all of them fail.
