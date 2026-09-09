@@ -8,7 +8,7 @@
 #      This is the only phase that can do anything today -- there is no
 #      compiler yet, so the only thing under test is the toolchain itself
 #      and tools/syscall-audit.sh.
-#   2. run_conformance_tests: tests/conformance/ (spec §14, 17 entries) is
+#   2. run_conformance_tests: tests/conformance/ (spec §14, 20 entries) is
 #      a deliberate no-op until compiler/x86_64/exsc.asm exists to drive
 #      it. Kept as a separate function/phase precisely so wiring it up
 #      later does not require touching run_unit_tests.
@@ -23,6 +23,22 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 FASMG="${FASMG:-fasmg}"
 export INCLUDE="${INCLUDE:-$REPO_ROOT/vendor/fasmg-x86}"
 AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
+
+# Minimum number of tests/unit/*.asm fixtures that MUST be discovered. Fewer
+# than this is a FAILURE, not a pass.
+#
+# This exists because a check that cannot see what it is checking reports
+# green, and this project has produced that outcome four times: a smoke
+# fixture asserted against the wrong syscall, a determinism diff between two
+# empty directories, a vacuous registry check, and -- the one that motivated
+# this line -- `nix flake check` running 4 of 19 fixtures because the other 15
+# were untracked and flakes filter source to the git-tracked tree. Every one
+# of those printed PASS.
+#
+# Raise it deliberately when fixtures are added. A floor that drifts below the
+# real count still catches the failure mode that matters: a discovery
+# mechanism silently finding nothing.
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-19}"
 
 PASS=0
 FAIL=0
@@ -52,7 +68,7 @@ run_unit_tests() {
   shopt -s nullglob
   local src
   for src in "$REPO_ROOT"/tests/unit/*.asm; do
-    found=1
+    found=$((found + 1))
     local name run_flag expect_exit audit_flag directive kv
     name="$(basename "$src")"
     echo "-- $name"
@@ -107,8 +123,16 @@ run_unit_tests() {
   shopt -u nullglob
 
   rm -rf "$workdir"
-  if [[ "$found" -eq 0 ]]; then
-    note "no fixtures found in tests/unit/"
+  if [[ "$found" -lt "$UNIT_FIXTURE_FLOOR" ]]; then
+    bad "discovered $found fixtures in tests/unit/, floor is $UNIT_FIXTURE_FLOOR"
+    note "a harness that finds nothing must not report success -- see"
+    note "UNIT_FIXTURE_FLOOR at the top of this file for why this check exists"
+    if [[ "$found" -gt 0 ]]; then
+      note "under Nix, check that the fixtures are git-tracked: flakes filter"
+      note "source to the tracked tree, so an untracked fixture is invisible"
+    fi
+  else
+    note "discovered $found fixtures (floor $UNIT_FIXTURE_FLOOR)"
   fi
 }
 
@@ -121,7 +145,7 @@ run_conformance_tests() {
   fi
   if [[ "$n" -eq 0 ]]; then
     note "0 entries -- expected: compiler/x86_64/exsc.asm does not exist yet."
-    note "§14 lists 17 required entries (15 diagnostic-code cases plus the"
+    note "§14 lists 20 required entries (18 diagnostic-code cases plus the"
     note "reproducibility and cross-compilation cases); none can run without"
     note "a compiler to drive. This phase is intentionally a no-op, not a"
     note "failure, until that changes."

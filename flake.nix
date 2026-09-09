@@ -147,11 +147,20 @@
       compilerSrcPath = ./compiler/x86_64/exsc.asm;
       # NOTE: under `nix flake check`/`nix build` without --impure, this also
       # reads false for a file that exists on disk but is not yet tracked by
-      # git -- flakes filter their source to the tracked tree (verified
-      # empirically: this is also why vendor/fasmg-x86 below needs `path:...
-      # --impure` today, since vendor/ is not yet git-tracked either). Once
-      # exsc.asm exists AND is `git add`-ed (even just `-N`), this flips to
-      # true under plain evaluation too -- no flake.nix change needed then.
+      # git -- flakes filter their source to the tracked tree. Once exsc.asm
+      # exists AND is `git add`-ed (even just `-N`), this flips to true under
+      # plain evaluation too -- no flake.nix change needed then.
+      #
+      # That same filter is load-bearing for `checks.test` below, and it once
+      # hid a real defect. The check stages ./compiler (added 2026-09-09)
+      # because 14 of 19 tests/unit fixtures `include` ../../compiler/x86_64/
+      # by relative path. Before that line existed the check still passed --
+      # not because the includes resolved, but because only 4 of the 19
+      # fixtures were git-tracked, and those 4 are exactly the ones that touch
+      # no compiler/ path. A green check that cannot see what it is checking
+      # is the failure mode to watch for here: staging a directory is only
+      # half the fix, the files must also be tracked. tests/run.sh carries a
+      # fixture-count floor for this reason.
       compilerExists = builtins.pathExists compilerSrcPath;
 
       exscPkg =
@@ -450,6 +459,7 @@
             mkdir -p repo/vendor
             cp -r --no-preserve=mode -- ${./tests} repo/tests
             cp -r --no-preserve=mode -- ${./tools} repo/tools
+            cp -r --no-preserve=mode -- ${./compiler} repo/compiler
             cp -r --no-preserve=mode -- ${./vendor/fasmg-x86} repo/vendor/fasmg-x86
             chmod +x repo/tests/run.sh repo/tools/*.sh
             # The sandbox has no /usr/bin/env, and tests/run.sh invokes the
@@ -481,6 +491,7 @@
             mkdir -p repo/vendor
             cp -r --no-preserve=mode -- ${./tests} repo/tests
             cp -r --no-preserve=mode -- ${./tools} repo/tools
+            cp -r --no-preserve=mode -- ${./compiler} repo/compiler
             cp -r --no-preserve=mode -- ${./vendor/fasmg-x86} repo/vendor/fasmg-x86
             chmod +x repo/tools/*.sh
             patchShebangs repo/tools   # no /usr/bin/env in the sandbox

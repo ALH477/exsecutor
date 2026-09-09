@@ -22,7 +22,7 @@ export INCLUDE
 SRC     = compiler/x86_64/exsc.asm
 OUT     = build/exsc
 
-.PHONY: all clean test audit reproduce smoke
+.PHONY: all clean test audit reproduce smoke spec-check map-order-probe check
 
 all: $(OUT)
 
@@ -50,12 +50,40 @@ test: $(EXSC_DEP)
 	tests/run.sh
 
 # §9.3: "No network access, ever, at any phase." Verified, not promised.
+#
+# Degrades the same way the other scripts do. With no compiler to audit, the
+# useful thing is still available: --self-test assembles the tests/unit/
+# fixtures and asserts the audit ACCEPTS the clean one and REJECTS the socket
+# one, which proves the audit catches what it claims before there is any exsc
+# to point it at. Passing a nonexistent $(OUT) instead just exits 2 and checks
+# nothing. flake.nix's `audit` check has always used --self-test; this brings
+# `make audit` into line with it.
 audit: $(EXSC_DEP)
+ifneq ($(wildcard $(SRC)),)
 	tools/syscall-audit.sh $(OUT)
+else
+	tools/syscall-audit.sh --self-test
+endif
 
 # §9.3: byte-identical output under divergent ambient conditions.
 reproduce: $(EXSC_DEP)
 	tools/reproduce.sh
+
+# Read-only spec integrity: §13 registry vs. diag/codes.inc, citation
+# validity, evidence-marker discipline. No toolchain needed, so it is safe to
+# run anywhere and cheap enough to run often.
+spec-check:
+	tools/spec-check.sh
+
+# rt/map.inc's insertion-order guarantee, checked against two real memory
+# layouts rather than asserted. Needs fasmg and the probe fixtures.
+map-order-probe:
+	tools/rt-map-order-probe.sh
+
+# Everything that can be checked without a compiler, in one target. These were
+# each invoked by nothing before -- not make, not flake.nix, not run.sh -- and
+# a check that is never run is indistinguishable from one that does not exist.
+check: spec-check test audit map-order-probe
 
 # Assembles a tiny known-good fixture through the fasmg+INCLUDE toolchain, so
 # the toolchain itself can be checked before compiler/x86_64/exsc.asm exists.
