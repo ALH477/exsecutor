@@ -1,0 +1,26 @@
+// The companion to saluta.exsc.
+//
+// `saluta` is pure and therefore cannot print. This is what printing looks
+// like when authority has to be declared.
+//
+// Note what the row is NOT: it is not `poscit archivum`. The authority comes
+// from the writer that was handed in, so this function requires exactly what
+// its `Scriptor` requires and nothing more (§4.2 -- rows travel with the
+// value's type). Point it at a file-backed writer and it needs the
+// filesystem; point it at an in-memory one and it needs nothing at all. The
+// function does not get to decide, and does not have to guess.
+
+publica functio imprime_gutenbergio(s: Scriptor, t: textus) -> mensura poscit sicut s {
+    redde s.scribe(t);
+}
+
+// Usage, and where the authority actually gets declared:
+//
+//     publica functio principium(a: archivum) -> mensura poscit archivum {
+//         firma s = Scriptor.ad_exitum(a);
+//         redde imprime_gutenbergio(s, saluta());
+//     }
+//
+// `poscit archivum` appears once, at the boundary, on the function that
+// genuinely has the authority. §10.3's audit reads it straight out of the
+// interface.
