@@ -35,10 +35,11 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # were untracked and flakes filter source to the git-tracked tree. Every one
 # of those printed PASS.
 #
-# Raise it deliberately when fixtures are added. A floor that drifts below the
-# real count still catches the failure mode that matters: a discovery
-# mechanism silently finding nothing.
-UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-25}"
+# Raise it deliberately when fixtures are added. Adding fixtures never TRIPS
+# this -- the test is `found < floor` -- so a floor that drifts below the real
+# count still catches the failure mode that matters: a discovery mechanism
+# silently finding nothing. Drift costs precision, not the guarantee.
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-32}"
 
 PASS=0
 FAIL=0

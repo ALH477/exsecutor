@@ -1,0 +1,321 @@
+; tests/unit/diag_escape_bidi.asm
+; SPDX-License-Identifier: GPL-3.0-or-later
+; Copyright (C) 2026 The Exsecutor authors.
+;
+; DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+;
+; This code is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free
+; Software Foundation, either version 3 of the License, or (at your option)
+; any later version.
+;
+; This code is distributed in the hope that it will be useful, but WITHOUT
+; ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+; more details.
+;
+; You should have received a copy of the GNU General Public License along
+; with this code. If not, see <https://www.gnu.org/licenses/>.
+;
+; Code produced by this compiler is not covered by the GPL --
+; see Exception A in LICENSE.EXCEPTION.
+; -----------------------------------------------------------------------------
+; THE fixture spec §8.3 exists for. A diagnostic that renders a raw bidi
+; override or an invisible control out of the offending source turns the
+; error message itself into the attack surface -- so the property under test
+; is not "the escaper produces nice output," it is "the raw codepoint NEVER
+; reaches the output," and check 3 asserts exactly that, by searching the
+; emitted bytes for each dangerous sequence rather than by trusting check 1's
+; expected string.
+;
+; The sample carries every codepoint in §8.1's class -- all of U+202A-202E,
+; U+2066-2069, U+200B-200F and U+061C, fifteen in total, not a representative
+; one -- plus the cases that are about rendering hygiene rather than that
+; class (C0 controls, DEL, a C1 control, a quote, a backslash), plus text that
+; MUST survive verbatim (e-acute, Cyrillic a, a CJK ideograph -- escaping
+; those on principle would defeat EXS-E0105, whose entire job is showing a
+; user two glyphs that look alike), plus invalid UTF-8 (a stray 0xFF and a
+; truncated sequence at end of input -- EXS-E0101 exists because source CAN
+; be invalid, and a diagnostic about broken encoding still has to echo the
+; broken bytes safely).
+;
+;   1. text mode (`diag_escape`) is byte-identical to the expected rendering
+;   2. JSON mode (`diag_escape_json`) is byte-identical to its expected
+;      rendering -- the same classification, safe to drop into a JSON string
+;   3. NEITHER output contains the raw UTF-8 encoding of ANY of the fifteen
+;      dangerous codepoints, searched for directly
+;   4. `diag_is_dangerous_cp` answers 1 for all fifteen and 0 for the eight
+;      codepoints immediately outside the four ranges (U+2029, U+202F,
+;      U+2065, U+206A, U+200A, U+2010, U+061B, U+061D) -- an off-by-one at a
+;      range edge is the failure this half catches
+;
+; Exit 0 = all checks passed; 10+N = check N failed.
+;
+; TEST: run=yes expect-exit=0 audit=pass
+
+include 'format/format.inc'
+
+format ELF64 executable 3
+entry start
+
+include '../../compiler/x86_64/diag/escape.inc'
+
+segment readable executable
+  start:
+	; ---- check 1: text mode ----
+	lea	rdi, [sample]
+	mov	rsi, sample_len
+	lea	rdx, [outt]
+	mov	rcx, 4096
+	call	diag_escape
+	mov	[gott], rax
+	test	rdx, rdx
+	jnz	.fail1			; must NOT be truncated at cap 4096
+	lea	rdi, [outt]
+	mov	rsi, [gott]
+	lea	rdx, [expt]
+	mov	rcx, expt_len
+	call	diagt_eq
+	test	eax, eax
+	jz	.fail1
+
+	; ---- check 2: JSON mode ----
+	lea	rdi, [sample]
+	mov	rsi, sample_len
+	lea	rdx, [outj]
+	mov	rcx, 4096
+	call	diag_escape_json
+	mov	[gotj], rax
+	test	rdx, rdx
+	jnz	.fail2
+	lea	rdi, [outj]
+	mov	rsi, [gotj]
+	lea	rdx, [expj]
+	mov	rcx, expj_len
+	call	diagt_eq
+	test	eax, eax
+	jz	.fail2
+
+	; ---- check 3: no raw dangerous sequence survives, in either mode ----
+	xor	rbx, rbx
+  .scan:
+	cmp	rbx, ND_COUNT
+	jge	.scan_done
+	mov	r12d, [nd_tab + rbx*8]		; byte offset into sample
+	mov	r13d, [nd_tab + rbx*8 + 4]	; its length
+	lea	rdi, [outt]
+	mov	rsi, [gott]
+	lea	rdx, [sample]
+	add	rdx, r12
+	mov	rcx, r13
+	call	diagt_find
+	test	eax, eax
+	jnz	.fail3
+	mov	r12d, [nd_tab + rbx*8]
+	mov	r13d, [nd_tab + rbx*8 + 4]
+	lea	rdi, [outj]
+	mov	rsi, [gotj]
+	lea	rdx, [sample]
+	add	rdx, r12
+	mov	rcx, r13
+	call	diagt_find
+	test	eax, eax
+	jnz	.fail3
+	inc	rbx
+	jmp	.scan
+  .scan_done:
+
+	; ---- check 4: the classifier's range edges ----
+	xor	rbx, rbx
+  .cls:
+	cmp	rbx, CLS_COUNT
+	jge	.cls_done
+	mov	edi, [cls_tab + rbx*8]
+	call	diag_is_dangerous_cp
+	cmp	eax, [cls_tab + rbx*8 + 4]
+	jne	.fail4
+	inc	rbx
+	jmp	.cls
+  .cls_done:
+
+	mov	eax, 231
+	xor	edi, edi
+	syscall
+
+  .fail1:
+	mov	eax, 231
+	mov	edi, 11
+	syscall
+  .fail2:
+	mov	eax, 231
+	mov	edi, 12
+	syscall
+  .fail3:
+	mov	eax, 231
+	mov	edi, 13
+	syscall
+  .fail4:
+	mov	eax, 231
+	mov	edi, 14
+	syscall
+
+; ---- byte helpers (fixture-local; see this file's header) ------------------
+; diagt_eq(rdi=a, rsi=alen, rdx=b, rcx=blen) -> eax = 1 if identical.
+  diagt_eq:
+	cmp	rsi, rcx
+	jne	.ne
+	xor	r8, r8
+  .l:
+	cmp	r8, rsi
+	jge	.eq
+	mov	al, [rdi + r8]
+	cmp	al, [rdx + r8]
+	jne	.ne
+	inc	r8
+	jmp	.l
+  .eq:
+	mov	eax, 1
+	ret
+  .ne:
+	xor	eax, eax
+	ret
+
+; diagt_find(rdi=hay, rsi=hlen, rdx=needle, rcx=nlen) -> eax = 1 if `needle`
+; occurs anywhere in `hay`. This is what makes the "never the raw codepoint"
+; check independent of the expected-output comparison: even if BOTH the
+; renderer and this fixture's expected bytes were wrong in the same way, a
+; raw bidi override in the output would still be caught here.
+  diagt_find:
+	test	rcx, rcx
+	jz	.no
+	cmp	rsi, rcx
+	jb	.no
+	mov	r8, rsi
+	sub	r8, rcx			; last valid start offset
+	xor	r9, r9
+  .outer:
+	cmp	r9, r8
+	jg	.no
+	xor	r10, r10
+  .inner:
+	cmp	r10, rcx
+	jge	.yes
+	mov	r11, r9
+	add	r11, r10
+	mov	al, [rdi + r11]
+	cmp	al, [rdx + r10]
+	jne	.next
+	inc	r10
+	jmp	.inner
+  .next:
+	inc	r9
+	jmp	.outer
+  .yes:
+	mov	eax, 1
+	ret
+  .no:
+	xor	eax, eax
+	ret
+
+segment readable writeable
+  sample:
+	db	0x6F, 0x6B, 0x20, 0xD8, 0x9C, 0xE2, 0x80, 0x8B, 0xE2, 0x80, 0x8C, 0xE2
+	db	0x80, 0x8D, 0xE2, 0x80, 0x8E, 0xE2, 0x80, 0x8F, 0xE2, 0x80, 0xAA, 0xE2
+	db	0x80, 0xAB, 0xE2, 0x80, 0xAC, 0xE2, 0x80, 0xAD, 0xE2, 0x80, 0xAE, 0xE2
+	db	0x81, 0xA6, 0xE2, 0x81, 0xA7, 0xE2, 0x81, 0xA8, 0xE2, 0x81, 0xA9, 0x09
+	db	0x0A, 0x0D, 0x22, 0x5C, 0x00, 0x1F, 0x7F, 0xC2, 0x85, 0xC3, 0xA9, 0xD0
+	db	0xB0, 0xE6, 0xBC, 0xA2, 0xFF, 0xE2, 0x80
+  sample_len = $ - sample
+
+  expt:
+	db	0x6F, 0x6B, 0x20, 0x5C, 0x75, 0x7B, 0x30, 0x36, 0x31, 0x63, 0x7D, 0x5C
+	db	0x75, 0x7B, 0x32, 0x30, 0x30, 0x62, 0x7D, 0x5C, 0x75, 0x7B, 0x32, 0x30
+	db	0x30, 0x63, 0x7D, 0x5C, 0x75, 0x7B, 0x32, 0x30, 0x30, 0x64, 0x7D, 0x5C
+	db	0x75, 0x7B, 0x32, 0x30, 0x30, 0x65, 0x7D, 0x5C, 0x75, 0x7B, 0x32, 0x30
+	db	0x30, 0x66, 0x7D, 0x5C, 0x75, 0x7B, 0x32, 0x30, 0x32, 0x61, 0x7D, 0x5C
+	db	0x75, 0x7B, 0x32, 0x30, 0x32, 0x62, 0x7D, 0x5C, 0x75, 0x7B, 0x32, 0x30
+	db	0x32, 0x63, 0x7D, 0x5C, 0x75, 0x7B, 0x32, 0x30, 0x32, 0x64, 0x7D, 0x5C
+	db	0x75, 0x7B, 0x32, 0x30, 0x32, 0x65, 0x7D, 0x5C, 0x75, 0x7B, 0x32, 0x30
+	db	0x36, 0x36, 0x7D, 0x5C, 0x75, 0x7B, 0x32, 0x30, 0x36, 0x37, 0x7D, 0x5C
+	db	0x75, 0x7B, 0x32, 0x30, 0x36, 0x38, 0x7D, 0x5C, 0x75, 0x7B, 0x32, 0x30
+	db	0x36, 0x39, 0x7D, 0x5C, 0x74, 0x5C, 0x6E, 0x5C, 0x72, 0x5C, 0x22, 0x5C
+	db	0x5C, 0x5C, 0x75, 0x7B, 0x30, 0x30, 0x30, 0x30, 0x7D, 0x5C, 0x75, 0x7B
+	db	0x30, 0x30, 0x31, 0x66, 0x7D, 0x5C, 0x75, 0x7B, 0x30, 0x30, 0x37, 0x66
+	db	0x7D, 0x5C, 0x75, 0x7B, 0x30, 0x30, 0x38, 0x35, 0x7D, 0xC3, 0xA9, 0xD0
+	db	0xB0, 0xE6, 0xBC, 0xA2, 0x5C, 0x78, 0x7B, 0x66, 0x66, 0x7D, 0x5C, 0x78
+	db	0x7B, 0x65, 0x32, 0x7D, 0x5C, 0x78, 0x7B, 0x38, 0x30, 0x7D
+  expt_len = $ - expt
+
+  expj:
+	db	0x6F, 0x6B, 0x20, 0x5C, 0x5C, 0x75, 0x7B, 0x30, 0x36, 0x31, 0x63, 0x7D
+	db	0x5C, 0x5C, 0x75, 0x7B, 0x32, 0x30, 0x30, 0x62, 0x7D, 0x5C, 0x5C, 0x75
+	db	0x7B, 0x32, 0x30, 0x30, 0x63, 0x7D, 0x5C, 0x5C, 0x75, 0x7B, 0x32, 0x30
+	db	0x30, 0x64, 0x7D, 0x5C, 0x5C, 0x75, 0x7B, 0x32, 0x30, 0x30, 0x65, 0x7D
+	db	0x5C, 0x5C, 0x75, 0x7B, 0x32, 0x30, 0x30, 0x66, 0x7D, 0x5C, 0x5C, 0x75
+	db	0x7B, 0x32, 0x30, 0x32, 0x61, 0x7D, 0x5C, 0x5C, 0x75, 0x7B, 0x32, 0x30
+	db	0x32, 0x62, 0x7D, 0x5C, 0x5C, 0x75, 0x7B, 0x32, 0x30, 0x32, 0x63, 0x7D
+	db	0x5C, 0x5C, 0x75, 0x7B, 0x32, 0x30, 0x32, 0x64, 0x7D, 0x5C, 0x5C, 0x75
+	db	0x7B, 0x32, 0x30, 0x32, 0x65, 0x7D, 0x5C, 0x5C, 0x75, 0x7B, 0x32, 0x30
+	db	0x36, 0x36, 0x7D, 0x5C, 0x5C, 0x75, 0x7B, 0x32, 0x30, 0x36, 0x37, 0x7D
+	db	0x5C, 0x5C, 0x75, 0x7B, 0x32, 0x30, 0x36, 0x38, 0x7D, 0x5C, 0x5C, 0x75
+	db	0x7B, 0x32, 0x30, 0x36, 0x39, 0x7D, 0x5C, 0x5C, 0x74, 0x5C, 0x5C, 0x6E
+	db	0x5C, 0x5C, 0x72, 0x5C, 0x5C, 0x5C, 0x22, 0x5C, 0x5C, 0x5C, 0x5C, 0x5C
+	db	0x5C, 0x75, 0x7B, 0x30, 0x30, 0x30, 0x30, 0x7D, 0x5C, 0x5C, 0x75, 0x7B
+	db	0x30, 0x30, 0x31, 0x66, 0x7D, 0x5C, 0x5C, 0x75, 0x7B, 0x30, 0x30, 0x37
+	db	0x66, 0x7D, 0x5C, 0x5C, 0x75, 0x7B, 0x30, 0x30, 0x38, 0x35, 0x7D, 0xC3
+	db	0xA9, 0xD0, 0xB0, 0xE6, 0xBC, 0xA2, 0x5C, 0x5C, 0x78, 0x7B, 0x66, 0x66
+	db	0x7D, 0x5C, 0x5C, 0x78, 0x7B, 0x65, 0x32, 0x7D, 0x5C, 0x5C, 0x78, 0x7B
+	db	0x38, 0x30, 0x7D
+  expj_len = $ - expj
+
+  ; (byte offset into `sample`, length) for every dangerous codepoint's raw
+  ; UTF-8 encoding -- the needles check 3 searches the output for.
+  nd_tab:
+	dd	3, 2
+	dd	5, 3
+	dd	8, 3
+	dd	11, 3
+	dd	14, 3
+	dd	17, 3
+	dd	20, 3
+	dd	23, 3
+	dd	26, 3
+	dd	29, 3
+	dd	32, 3
+	dd	35, 3
+	dd	38, 3
+	dd	41, 3
+	dd	44, 3
+  ND_COUNT = ($ - nd_tab) / 8
+
+  ; (codepoint, expected diag_is_dangerous_cp result)
+  cls_tab:
+	dd	0x061C, 1
+	dd	0x200B, 1
+	dd	0x200C, 1
+	dd	0x200D, 1
+	dd	0x200E, 1
+	dd	0x200F, 1
+	dd	0x202A, 1
+	dd	0x202B, 1
+	dd	0x202C, 1
+	dd	0x202D, 1
+	dd	0x202E, 1
+	dd	0x2066, 1
+	dd	0x2067, 1
+	dd	0x2068, 1
+	dd	0x2069, 1
+	dd	0x2029, 0
+	dd	0x202F, 0
+	dd	0x2065, 0
+	dd	0x206A, 0
+	dd	0x200A, 0
+	dd	0x2010, 0
+	dd	0x061B, 0
+	dd	0x061D, 0
+  CLS_COUNT = ($ - cls_tab) / 8
+
+  gott	dq 0
+  gotj	dq 0
+  outt	rb 4096
+  outj	rb 4096
