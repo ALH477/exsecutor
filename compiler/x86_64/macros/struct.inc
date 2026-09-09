@@ -1,4 +1,24 @@
 ; compiler/x86_64/macros/struct.inc
+; SPDX-License-Identifier: GPL-3.0-or-later
+; Copyright (C) 2026 The Exsecutor authors.
+;
+; DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+;
+; This code is free software; you can redistribute it and/or modify it under
+; the terms of the GNU General Public License as published by the Free
+; Software Foundation, either version 3 of the License, or (at your option)
+; any later version.
+;
+; This code is distributed in the hope that it will be useful, but WITHOUT
+; ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+; FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+; more details.
+;
+; You should have received a copy of the GNU General Public License along
+; with this code. If not, see <https://www.gnu.org/licenses/>.
+;
+; Code produced by this compiler is not covered by the GPL --
+; see Exception A in LICENSE.EXCEPTION.
 ; -----------------------------------------------------------------------------
 ; struct / end struct: named, typed field declarations with assemble-time
 ; constant offsets (e.g. `Span.start`, `Span.length`), so field access reads
@@ -17,8 +37,9 @@
 ; including also means this macro survives independently of which object
 ; format (or none) a given translation unit happens to pull in.
 ;
-; Closes with `end struct`, NOT `ends` -- see docs/asm-conventions.md's §3.3
-; amendment: `ends` never appears anywhere in vendor/fasmg-x86; every block
+; Closes with `end struct`, NOT `ends` -- see docs/asm-conventions.md's
+; struct section ("3.3 macros/struct.inc") amendment: `ends` never appears
+; anywhere in vendor/fasmg-x86; every block
 ; there closes two-token (`end macro`, `end virtual`, `end struc`), and this
 ; macro literally expands `end struct` into `end struc` (native) underneath.
 ;

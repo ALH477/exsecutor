@@ -31,14 +31,14 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # green, and this project has produced that outcome four times: a smoke
 # fixture asserted against the wrong syscall, a determinism diff between two
 # empty directories, a vacuous registry check, and -- the one that motivated
-# this line -- `nix flake check` running 4 of 19 fixtures because the other 15
+# this line -- `nix flake check` running 4 of 25 fixtures because the rest
 # were untracked and flakes filter source to the git-tracked tree. Every one
 # of those printed PASS.
 #
 # Raise it deliberately when fixtures are added. A floor that drifts below the
 # real count still catches the failure mode that matters: a discovery
 # mechanism silently finding nothing.
-UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-19}"
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-25}"
 
 PASS=0
 FAIL=0
