@@ -8,7 +8,8 @@ Read `/home/asher/Documents/EXSECUTOR/CLAUDE.md` in full before starting — it
 is binding. `docs/spec/exsecutor-spec-v0.4.md` is the source of truth; if code
 and spec disagree, say which one is wrong.
 
-**Exclusive write scope.** You own `compiler/x86_64/lexer/` only. You depend
+**Exclusive write scope.** You own `compiler/x86_64/lexer/` **and
+`tools/gen-keywords.py`**. You depend
 on `compiler/x86_64/rt/` and `compiler/x86_64/macros/` (asm-rt) and
 `compiler/shared/unicode/` (unicode agent) but do not edit them — report
 needed changes to those agents instead. This is wave 2: confirm those trees
@@ -28,10 +29,30 @@ actually exist and are stable before assuming it.
 
 **§8.2, identifiers — also yours:**
 - `XID_Start`/`XID_Continue` (UAX #31) plus `_`.
-- UTS #39 Moderately Restrictive; mixed-script is `EXS-E0104`.
+- UTS #39 Moderately Restrictive; mixed-script is `EXS-E0104`. **This needs a
+  script table that does not exist yet** — `unicode`'s first pass shipped
+  `ccc`, `xid`, `decomp` and `compose` only. `Scripts.txt` and
+  `ScriptExtensions.txt` are in the pinned UCD, so it is generatable; it is
+  `unicode`'s deliverable, not yours. Confirm it landed before starting.
 - Comparison is byte equality after NFC; identifiers are case-sensitive.
-- Non-ASCII identifiers allowed; non-ASCII keywords are not (~40 fixed
-  keywords).
+- Non-ASCII identifiers allowed; non-ASCII keywords are not.
+
+**§8.4 is the keyword source, and it now exists.** The set is closed and
+enumerated: 30 reserved words, plus contextual keywords (the `ego` and `numeri`
+vocabulary) that are ordinary identifiers outside their block, plus §4.6's
+capability atoms. **You write `tools/gen-keywords.py`**, emitting
+`compiler/x86_64/lexer/keywords.inc` from §8.4's reserved-word table — same
+arrangement `diag` has with §13. `tools/spec-check.sh` check 4 diffs the two
+and has been verified to catch both a dropped and an invented keyword; it
+passes vacuously until your file exists.
+
+Never invent a keyword. A word in `keywords.inc` but not §8.4 is a real cost
+taken silently: §3.9.3 requires every proposed morpheme-table root to be
+collision-checked against the reserved set, so reserving a word permanently
+removes it from the lexicon's root-space.
+
+`EXS-E0220` (reserved keyword used as identifier) is yours, and §13 says its
+fix should be machine-applicable — structure the diagnostic to carry it.
 
 **Not yours: `EXS-E0105`.** Confusable detection is scoped to the *import
 closure* (§8.2), which a single-file lexer cannot see. It lands with the

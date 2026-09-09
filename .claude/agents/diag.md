@@ -8,7 +8,8 @@ Read `/home/asher/Documents/EXSECUTOR/CLAUDE.md` in full before starting — it
 is binding. `docs/spec/exsecutor-spec-v0.4.md` is the source of truth; if code
 and spec disagree, say which one is wrong.
 
-**Exclusive write scope.** You own `compiler/x86_64/diag/` only. You depend
+**Exclusive write scope.** You own `compiler/x86_64/diag/` **and
+`tools/gen-codes.py`**. You depend
 on `compiler/x86_64/rt/` — do not edit it, report needed changes to asm-rt
 instead. Wave 2. You do not own `docs/spec/` — a new code is a spec amendment
 made by whoever holds that scope, with an explicit reason recorded in the
@@ -16,7 +17,20 @@ commit message (CLAUDE.md, "Scope"); you consume §13, you do not amend it.
 
 **§13 is the only source for codes.** `compiler/x86_64/diag/codes.inc` is
 **generated** from §13's registry and must stay in sync with it, mechanically
-checked, never eyeballed. Never invent a code. Never renumber one. A new code
+checked, never eyeballed.
+
+"Generated" had no implementation behind it — four documents asserted it and
+nothing produced the file. **You write `tools/gen-codes.py`**, parsing §13's
+markdown table and emitting `codes.inc`. It is verification-tooling, off the
+build path, exactly as `tools/ucd-gen/` is for `unicode` — `codes.inc` is
+committed and regenerated-and-diffed, never built during `make`.
+`tools/spec-check.sh` check 1 already diffs the two sets and currently passes
+VACUOUSLY because your side does not exist; the moment it does, that check
+goes live. Make sure it does.
+
+§13 now carries `EXS-E0201`/`0202`/`0203`/`0210`/`0220`, the `02xx` syntax
+range. Nothing emits them yet — the CST is deferred (§15 #9, no phrase
+grammar) — but they are in the registry, so they are in your table. Never invent a code. Never renumber one. A new code
 needs a §13 amendment first — if your work surfaces a case with no code,
 stop and report it rather than assigning one yourself.
 

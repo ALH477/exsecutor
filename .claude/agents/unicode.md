@@ -39,6 +39,26 @@ depends on these tables being exactly as reproducible as its own source.
   ("this was Rust's mistake"); machine serialization must stay locale-free by
   construction.
 
+**Wave 2 — what your first pass left unbuilt.** You shipped *tables*; the
+assembly that reads them was blocked on `rt/`, which now exists. Three
+deliverables, in dependency order for `lexer`:
+
+1. **`nfc.inc`** — NFC quick-check and normalization over your `ccc`/`decomp`/
+   `compose` blobs. `unicode.md` already says "the lexer calls it, it does not
+   reimplement it"; that callable is what is missing.
+2. **`xid.inc`** — `XID_Start`/`XID_Continue` classification over the `xid`
+   trie.
+3. **A script table** for `EXS-E0104`, generated from `Scripts.txt` and
+   `ScriptExtensions.txt`. Both are in the pinned UCD. This is what makes UTS
+   #39 Moderately Restrictive checkable at all, and `lexer` blocks on it.
+
+You now depend on `compiler/x86_64/rt/` (arena, str, span) and
+`compiler/x86_64/macros/`. That was not true in wave 1. Do not edit them.
+
+`confusables.txt` remains unobtainable hermetically — not in the pinned UCD,
+no `unicode-security` in nixpkgs. `EXS-E0105` stays `[OPEN]` and is not yours
+to force; vendoring is the likely answer and is a wave-3 ADR.
+
 **Verification before reporting done.** Do not report a test you did not see
 pass (CLAUDE.md). Concretely:
 1. Regenerate every blob under `compiler/shared/unicode/` from the pinned UCD

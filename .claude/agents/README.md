@@ -1,6 +1,9 @@
 # Agent roster
 
-Eight agents cover this repo. Each owns exactly one directory for writes;
+Eight agents cover this repo. Two of them own a generator in `tools/`
+alongside their output tree, mirroring how `unicode` owns `tools/ucd-gen/`:
+spec tables are the normative source, the `.inc` is generated from them, and
+`tools/spec-check.sh` fails the build on drift (checks 1 and 4). Each owns exactly one directory for writes;
 `spec-guardian` owns none and writes nothing. Scopes are **exclusive** — an
 agent that needs a change outside its own directory reports it to the owning
 agent instead of making it.
@@ -9,9 +12,9 @@ agent instead of making it.
 |---|---|---|
 | `asm-rt` | `compiler/x86_64/macros/`, `compiler/x86_64/rt/` | §6.3, §9.3 |
 | `unicode` | `tools/ucd-gen/`, `compiler/shared/unicode/` | §8.1, §8.2, §11 |
-| `lexer` | `compiler/x86_64/lexer/` | §8.1, §8.2 |
+| `lexer` | `compiler/x86_64/lexer/`, `tools/gen-keywords.py` | §8.1, §8.2, §8.4 |
 | `cst` | `compiler/x86_64/cst/` | §9.1 |
-| `diag` | `compiler/x86_64/diag/` | §8.3, §13 |
+| `diag` | `compiler/x86_64/diag/`, `tools/gen-codes.py` | §8.3, §13 |
 | `capcheck-probe` | `prototypes/capcheck/` (Python, never shipped) | §4.2, §15 #1 |
 | `conformance` | `tests/conformance/` | §14 |
 | `spec-guardian` | none — read-only, whole tree | all |
@@ -23,9 +26,25 @@ agent instead of making it.
 `capcheck-probe` (§15 #1, named as blocking Stage 1), `spec-guardian`
 (continuous from the start).
 
-**Wave 2 — needs wave 1:**
-`lexer` (needs `rt/` + `compiler/shared/unicode/`), `cst` (needs `rt/`),
-`diag` (needs `rt/`).
+**Wave 2 — needs wave 1:** four agents, not three, and they are a dependency
+chain rather than a free-for-all.
+
+```
+rt/ complete
+ |-> unicode (second pass)  nfc.inc, xid.inc, script table
+ |-> diag                   gen-codes -> codes.inc, emission, escaping
+ \--------------------------> lexer   (needs both, plus spec §8.4)
+```
+
+`unicode` returns in wave 2. Its first pass shipped *tables*; the assembly
+consumers that read them (`nfc.inc`, `xid.inc`) were blocked on `rt/` and are
+still unwritten, and `EXS-E0104` additionally needs a script table generated
+from `Scripts.txt`/`ScriptExtensions.txt`. So `unicode` now depends on `rt/`,
+which was not true in wave 1.
+
+`lexer` starts when `unicode` and `diag` both report. `cst` is **deferred** —
+spec §15 #9: there is no phrase grammar, so there is nothing to parse against.
+That is the next wave's opening design act, not this one's.
 
 **Wave 3:**
 `conformance`, driver integration.
