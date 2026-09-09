@@ -416,6 +416,67 @@
             echo "$actual" > "$out"/digest
           '';
         };
+
+        # The unit fixtures and the syscall audit, run hermetically -- the same
+        # scripts `make test` and `make audit` invoke, staged into a repo-shaped
+        # tree so their own SCRIPT_DIR/.. root resolution works unchanged.
+        #
+        # These take python3 and binutils as *check* inputs. That does not widen
+        # the build closure: `packages.exsc` still builds from fasmg plus the
+        # vendored macro package and nothing else. A check is verification, not a
+        # shipped artifact, which is exactly the line spec §18.1 draws.
+        test = pkgs.stdenvNoCC.mkDerivation {
+          name = "check-unit-tests";
+          nativeBuildInputs = [
+            fasmgPkg pkgs.bash pkgs.python3 pkgs.binutils
+            pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.diffutils
+          ];
+          dontUnpack = true;
+          buildCommand = ''
+            set -e
+            mkdir -p repo/vendor
+            cp -r --no-preserve=mode -- ${./tests} repo/tests
+            cp -r --no-preserve=mode -- ${./tools} repo/tools
+            cp -r --no-preserve=mode -- ${./vendor/fasmg-x86} repo/vendor/fasmg-x86
+            chmod +x repo/tests/run.sh repo/tools/*.sh
+            # The sandbox has no /usr/bin/env, and tests/run.sh invokes the
+            # audit as an executable -- so the `#!/usr/bin/env bash` shebang is
+            # resolved by the kernel and fails. Rewrite to store paths here
+            # rather than changing the scripts, which must stay portable
+            # outside Nix.
+            patchShebangs repo/tests repo/tools
+            cd repo
+            bash tests/run.sh
+            mkdir -p "$out"
+            echo "unit fixtures passed" > "$out"/result
+          '';
+        };
+
+        # §9.3: "no network access, ever, at any phase" as a checkable property.
+        # --self-test asserts the audit PASSES the clean fixture and REJECTS the
+        # socket fixture, so the audit is proven to catch what it claims before
+        # there is any exsc to point it at.
+        audit = pkgs.stdenvNoCC.mkDerivation {
+          name = "check-syscall-audit";
+          nativeBuildInputs = [
+            fasmgPkg pkgs.bash pkgs.python3 pkgs.binutils
+            pkgs.coreutils pkgs.gnugrep pkgs.gawk
+          ];
+          dontUnpack = true;
+          buildCommand = ''
+            set -e
+            mkdir -p repo/vendor
+            cp -r --no-preserve=mode -- ${./tests} repo/tests
+            cp -r --no-preserve=mode -- ${./tools} repo/tools
+            cp -r --no-preserve=mode -- ${./vendor/fasmg-x86} repo/vendor/fasmg-x86
+            chmod +x repo/tools/*.sh
+            patchShebangs repo/tools   # no /usr/bin/env in the sandbox
+            cd repo
+            bash tools/syscall-audit.sh --self-test
+            mkdir -p "$out"
+            echo "syscall audit self-test passed" > "$out"/result
+          '';
+        };
       };
 
       # Re-vendoring helper: refetches the upstream fasmg.l8vn.zip archive,

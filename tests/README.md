@@ -25,6 +25,24 @@ calls):
   diagnostic code for 15 of them; byte-identical output under varied
   conditions for #16, which is exactly what `tools/reproduce.sh` already
   checks; byte-identical output cross-host for #17).
+
+  **§14 does not cover every registered code, and that is a real gap.** §13
+  registers six codes in the source-policy range; §14 exercises only three of
+  them — `EXS-E0102` (non-NFC identifier, entry 5), `EXS-E0103` (bidi in a
+  comment, entry 3) and `EXS-E0105` (cross-module homoglyph, entry 4). Three
+  are registered but cited by no conformance entry at all:
+
+  | code | meaning | §14 coverage |
+  |---|---|---|
+  | `EXS-E0101` | source not UTF-8, or BOM present | **none** |
+  | `EXS-E0104` | mixed-script identifier (UTS #39) | **none** |
+  | `EXS-E0106` | CRLF line ending | **none** |
+
+  The lexer must implement all three regardless — §8.1 and §8.2 require them
+  and the codes are permanent — so the gap is in the conformance suite, not in
+  the language. Whoever builds out `tests/conformance/` should add entries for
+  these rather than treating §14's list as exhaustive; whoever amends §14
+  should note that renumbering is not needed, only extension.
 - **Performance/benchmark tests.** Nothing to benchmark yet. CLAUDE.md:
   "Never report a benchmark you did not run" — there will be no benchmark
   fixtures here until there is something real to measure.

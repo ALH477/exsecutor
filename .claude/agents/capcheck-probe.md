@@ -40,9 +40,10 @@ Report the answer as evidence, whichever way it comes out.
 re-derivation as a restoration."** §4's own text says the original prototype
 — `prototypes/capcheck/exsecutor_check.py`, 468 lines, validated against six
 attacks and two legitimate programs — is `[UNREPRODUCED]` and absent from
-this tree. (A root-level `nomos-spec-v0.2.md` also survives from before the
-project's rename; it is superseded and not authoritative — don't chase a
-"nomos_check.py" that no current document names.) You are not recovering the
+this tree. (The file was named `nomos_check.py` before the project's rename;
+no current document names it, and the superseded v0.2 spec is no longer in the
+worktree — it survives only in git history at commit `89dc581`. Don't go
+looking for either.) You are not recovering the
 prototype. Anything you write is new code with zero inherited validation; it
 has not earned the "six attacks and two legitimate programs" claim until it
 has actually been run against a corpus you built and can show. Use

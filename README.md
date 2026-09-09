@@ -35,10 +35,17 @@ make smoke            # assemble a fixture -- checks the toolchain itself
 make test             # unit fixtures (conformance suite is still empty)
 make audit            # prove the binary makes no network syscall
 make reproduce        # byte-identical output under divergent conditions
-nix flake check       # all of the above, hermetically
+nix flake check       # test + audit + toolchain + vendor integrity,
+                      # hermetically. Not reproduce -- see below.
 ```
 
 Outside the devShell, plain `make` works too, given `fasmg` on `PATH`.
+
+`nix flake check` runs five sandboxed checks: `smoke`, `test`, `audit`,
+`buildExsecutorPackage-smoke`, and `vendor-integrity`. It does **not** run
+`make reproduce` — that builds the same source repeatedly under deliberately
+divergent ambient conditions, which is the one thing a hermetic sandbox
+cannot vary. Run it from the devShell.
 
 The compiler is written in **x86-64 assembly**, freestanding — no libc, no
 dynamic linking, direct syscalls only. That choice and its costs are recorded in
