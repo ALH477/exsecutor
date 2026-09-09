@@ -40,13 +40,17 @@ depends on it; see `RUBRIC.md`.
 15. The function `iunge` joins parts into a single whole and returns it.
     Design the function that **reverses** this: it takes that whole — the
     base function's return type — as its **first parameter**, and splits it
-    back into parts.
+    back into parts. (This is a stronger relationship than "takes some
+    type that differs from its return" — the new first parameter is
+    specifically the base function's own return type.)
 16. Name the type representing **the result** of loosening or dissolving
     something.
 17. Design a function that places a value **before** the others — prepends
     it.
-18. Using only `roots-20.md`, give the root for: (a) hidden/secret,
-    (b) time, (c) place.
+18. Using only `roots-20.md`, give the **Greek** root for: (a)
+    hidden/secret, (b) time, (c) place. (Say "Greek" to yourself before
+    answering (c) — `roots-20.md` also glosses a *Latin* root "place," and
+    that is not the one this asks for.)
 19. Design a function that reads two files **together**, and does so
     **again**.
 20. Design a function that folds a value. (No prefix needed.)

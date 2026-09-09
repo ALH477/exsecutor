@@ -56,7 +56,7 @@ spelling for each, used as-is wherever the root is needed.
 | `metr-` | measure |
 | `morph-` | form, shape |
 | `chron-` | time |
-| `top-` | place |
+| `top-` | place (the Greek nominal — as in *topology*; distinct from the Latin **verb** `pon-`/`posit-`, "place," above) |
 
 **Disclosed gap:** §3.3 names these six forms but does not gloss them — the
 sentence is "Greek roots cover what Latin lacks: `crypt-`, `graph-`,

@@ -6,9 +6,11 @@ Exsecutor score mean something instead of being a number nobody can
 interpret — see the "Design notes" section at the end for exactly how it is
 matched and, honestly, where that matching is weakest.
 
-A subject working this condition gets **only this document** (or, if the
-administrator wants to hide the answer key, everything above the **Answer
-key** heading) — not `affixes.md`, not `roots-20.md`, not the spec. The
+A subject working this condition gets **only the material above the
+"Answer key" heading below** — the rule, the verb list, the two tables, the
+spelling note, the ceiling, and the tasks — and nothing else: not
+`affixes.md`, not `roots-20.md`, not the spec, and not this document's own
+Answer key or Design notes sections. The
 "Control API" below is fictional: a small systems-utility library, invented
 for this test, with its own documented naming convention. It is deliberately
 **not** a real library, so that no subject can have prior exposure to it —
@@ -116,20 +118,22 @@ plainly that it does not fit in one name.
    in its own right. *(spelling — read the table above before answering.)*
 6. You need a **Type** representing the act of spooling, reified as a
    thing in its own right.
-7. You need a **Type** representing the outcome of parsing something.
-8. You need a **Type** representing the outcome of splitting something.
-9. You need a **Type** that is an instrument/rig for packing things.
+7. You need a **Type** representing the result of parsing something.
+8. You need a **Type** representing the result of splitting something.
+9. You need a **Type** that is an instrument for packing things.
 10. You need a **Function** that filters a list. (No prefix needed.)
 11. Design a **Function** that sends the same notification **again**.
 12. The Function `Spool` gathers items into a single bundle and returns
     it. Design the **Function** that **reverses** this: it takes that
     bundle — `Spool`'s return type — as its **first parameter**, and
-    unspools it back into individual items.
+    unspools it back into individual items. (This is a stronger
+    relationship than "takes some type that differs from its return" —
+    the new first parameter is specifically `Spool`'s own return type.)
 13. Design a **Function** that loads data **out of** a specified source
     (the source is the first parameter).
-14. Design a **Function** that saves data **into** a specified destination
+14. Design a **Function** that saves data **to** a specified destination
     (the destination is the first parameter).
-15. Design a **Function** that renders a document into a **different**
+15. Design a **Function** that renders a document **as** a different
     output format than its input (parameter type and return type differ).
 16. Design a **Function** that takes two or more lists and queues them
     **together** as one.
