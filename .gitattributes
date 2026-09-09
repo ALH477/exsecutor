@@ -1,0 +1,19 @@
+# Exsecutor source holds itself to §8.1: UTF-8, no BOM, LF.
+* text=auto eol=lf
+
+# --- vendor/: third-party, byte-exact, DO NOT NORMALISE ---
+#
+# vendor/fasmg-x86/ is upstream fasmg's x86 macro package, vendored verbatim.
+# Upstream ships CRLF; 71 of its 72 files contain CR. That is a deliberate
+# exception to the LF rule above, not an oversight.
+#
+# The whole reason vendoring is defensible is that the tree is byte-identical
+# to upstream and provable by hash (see vendor/fasmg-x86/PROVENANCE.md). If git
+# normalised these line endings on checkout -- which it would on any clone with
+# core.autocrlf=true -- the recorded digest would no longer reproduce and the
+# re-vendor diff would show every file as changed. `-text` disables all EOL
+# conversion in both directions.
+vendor/fasmg-x86/** -text
+
+# PROVENANCE.md is ours, not upstream's, and is excluded from the digest.
+vendor/fasmg-x86/PROVENANCE.md text eol=lf

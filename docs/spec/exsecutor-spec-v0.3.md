@@ -1,12 +1,26 @@
-# Nomos — Language Specification v0.2
+# Exsecutor — Language Specification v0.3
 
-**Status:** design complete, nothing implemented. Consolidates v0.1, Addenda A–C, Stage 0 measurements, the adversary audit, and the capability-row prototype. Supersedes all prior documents.
+**Status:** design complete, nothing implemented. Consolidates v0.1, Addenda A–C, Stage 0 measurements, the adversary audit, and the capability-row prototype. Supersedes all prior documents. v0.3 retires the v0.1–v0.2 placeholder name and records the implementation decision in §18; no design decision above §18 changed.
 
 **Evidence base:** every load-bearing claim in this document is backed by a benchmark, a prototype, or a cited CVE. Claims that are not are marked `[OPEN]` or `[UNTESTED]`. Three earlier versions asserted things that measurement then contradicted; the practice since has been that prose designs are hypotheses until code runs.
 
-**Name:** placeholder. A CMU research language (Das & Hoffmann, resource-aware session types) already uses "Nomos." Verify before committing. Chosen because νόμος (convention) opposes φύσις (nature) — the classical distinction between what holds by human agreement and what is intrinsic. That is the line this language draws.
+**Name:** resolved. *Exsecutor* — Latin, "one who carries out."
 
-**Extension:** `.nom` — **Interface file:** `ego.nom`
+The name is well-formed under this document's own §3 rules, which is the reason it was chosen:
+
+| part | rule | note |
+|---|---|---|
+| `ex-` | §3.5 prefix, "out of" | |
+| `secut-` | §3.3 root table, supine of `sequ-` "follow" | already in the published table |
+| `-or` | §3.4 suffix, supine stem + agent | |
+
+§3.6 concatenates without assimilating: `ex` + `secut` + `or` = `exsecutor`. That is also the classical Latin spelling, so unlike `conlege`, `transscribe`, and `inlege` the name carries none of the deliberate wrong-Latin friction. §3.8 caps composition at two affixes; this is exactly two. §17 names §3 as the largest adoption risk in the project — a language that can name itself in its own lexicon is worth the sentence it takes to say so.
+
+**Collision check**, discharging the instruction the v0.2 placeholder carried. "Exsecutor" as an exact string is unclaimed: no language, compiler, or notable project. The anglicised "Executor" is heavily overloaded — Java's `Executor`, the C++ executors proposal, Spark executors, the Mac 68k emulator — so the Latin `-s-` spelling is search-unique at the accepted, recorded cost of being autocorrected constantly. The retired placeholder "Nomos" collided with a CMU research language (Das & Hoffmann, resource-aware session types).
+
+**What was given up.** "Nomos" was chosen because νόμος (convention) opposes φύσις (nature) — the classical distinction between what holds by human agreement and what is intrinsic, which is §1's thesis in one word. *Exsecutor* means "enforcer," not that distinction. It fits a compiler whose entire character is refusing to compile, but it is a weaker thematic fit than the name it replaces. Recorded rather than argued away.
+
+**Extension:** `.xsc` — **Interface file:** `ego.xsc`
 
 ---
 
@@ -18,7 +32,7 @@ No operation may implicitly read the host locale, encoding, byte order, pointer 
 
 This cannot be a library — the point is closing the implicit path. It cannot be a lint — lints are opt-in and do not compose across dependencies. It has to be in the type system and the module system.
 
-The same rule turned on the compiler makes Nomos Nix-native rather than Nix-compatible. A compiler with no ambient authority is a pure function of its inputs by construction.
+The same rule turned on the compiler makes Exsecutor Nix-native rather than Nix-compatible. A compiler with no ambient authority is a pure function of its inputs by construction.
 
 **A second, independent thesis** (§3): public API names are a checked artifact, not free text. This is where the Latin/Greek does real work — the layer the evidence identifies as the actual barrier for non-English speakers.
 
@@ -80,16 +94,16 @@ Rejecting bidi at the lexer is correct and cheap. **It is not a differentiator.*
 | Class | Mechanism | Error |
 |---|---|---|
 | Locale case fold in program logic | `plica_unicode` total and locale-free; `plica_sermone` requires `sermo` | — |
-| Index computed on transformed text | Branded offsets (§5.1) | `NOM-E0332` |
-| Bidi source attack | Lexer rejects unbalanced controls | `NOM-E0103` |
-| Homoglyph identifier attack | UTS #39 over import closure | `NOM-E0105` |
-| NFC/NFD identifier divergence | Source must be NFC | `NOM-E0102` |
+| Index computed on transformed text | Branded offsets (§5.1) | `EXS-E0332` |
+| Bidi source attack | Lexer rejects unbalanced controls | `EXS-E0103` |
+| Homoglyph identifier attack | UTS #39 over import closure | `EXS-E0105` |
+| NFC/NFD identifier divergence | Source must be NFC | `EXS-E0102` |
 | Decimal separator drift in serialization | `sermo` absent from machine paths | — |
-| Endianness at a wire boundary | Byte order in the type | `NOM-E0321` |
-| Padding disclosure in wire structs | `@transitus` forbids implicit padding | `NOM-E0322` |
-| Byte-index panic / grapheme miscount | `octeti`/`scalares`/`grapha` distinct | `NOM-E0311` |
-| Ambient authority | §4 capability model | `NOM-E0421`, `E0500`, `E0501`, `E0510` |
-| Refcount race via FFI | Non-atomic `refero` cannot cross `externus` | `NOM-E0520` |
+| Endianness at a wire boundary | Byte order in the type | `EXS-E0321` |
+| Padding disclosure in wire structs | `@transitus` forbids implicit padding | `EXS-E0322` |
+| Byte-index panic / grapheme miscount | `octeti`/`scalares`/`grapha` distinct | `EXS-E0311` |
+| Ambient authority | §4 capability model | `EXS-E0421`, `E0500`, `E0501`, `E0510` |
+| Refcount race via FFI | Non-atomic `refero` cannot cross `externus` | `EXS-E0520` |
 | Refcount overflow → UAF | 64-bit saturating refcounts | runtime abort |
 | Build nondeterminism from host state | §9 purity contract | — |
 
@@ -97,7 +111,7 @@ Rejecting bidi at the lexer is correct and cheap. **It is not a differentiator.*
 
 # 3. The lexicon
 
-**This is where the Latin/Greek is load-bearing.** Prototype: `capcheck/lexicon.py`.
+**This is where the Latin/Greek is load-bearing.** Prototype: `prototypes/lexicon/lexicon.py`.
 
 ## 3.1 Rule
 
@@ -143,7 +157,7 @@ Greek roots cover what Latin lacks: `crypt-`, `graph-`, `metr-`, `morph-`, `chro
 | `-us` | supine | result | `typus` |
 | `-orium` | supine | instrument | `structura` |
 
-A name whose suffix disagrees with its declaration is `NOM-E0602`. This is a well-formedness condition relating a name to a type, not a style lint.
+A name whose suffix disagrees with its declaration is `EXS-E0602`. This is a well-formedness condition relating a name to a type, not a style lint.
 
 ## 3.5 Prefixes carry signature laws
 
@@ -157,11 +171,13 @@ A name whose suffix disagrees with its declaration is `NOM-E0602`. This is a wel
 | `con-` | together | takes two or more of the base's operand type |
 | `prae-`, `sub-` | before, under | positional only |
 
-Violating a prefix law is `NOM-E0603`.
+Violating a prefix law is `EXS-E0603`.
+
+Prefix laws constrain **`functio` signatures**. On a `structura`, `typus`, or `interfacies` declaration a prefix is positional and semantic only — there is no signature for it to bind. (The language's own name is an `-or` agent noun carrying `ex-`; see §Name.)
 
 ## 3.6 No assimilation — deliberately
 
-Real Latin assimilates: `con-` + `leg-` → *collega*; `trans-` + `scrib-` → *transcribe*; `in-` + `leg-` → *illeg-*. **Nomos concatenates without assimilating**: `conlege`, `transscribe`, `inlege`.
+Real Latin assimilates: `con-` + `leg-` → *collega*; `trans-` + `scrib-` → *transcribe*; `in-` + `leg-` → *illeg-*. **Exsecutor concatenates without assimilating**: `conlege`, `transscribe`, `inlege`.
 
 This is wrong Latin on purpose. Assimilation destroys guessability and greppability, which are the two properties the scheme exists to provide.
 
@@ -179,7 +195,7 @@ lectorium   structura    read instrument
 relege      functio      again read
 ```
 
-**Mechanical glossing.** Each morpheme has a gloss per language, so the whole API renders anywhere by table lookup — `nomc documenta --sermo ja` is not a translation project:
+**Mechanical glossing.** Each morpheme has a gloss per language, so the whole API renders anywhere by table lookup — `exsc documenta --sermo ja` is not a translation project:
 
 ```
 lector       en=reader              es=el que leer          ja=読む器
@@ -203,7 +219,7 @@ Requires per-language frames for **suffixes as well as roots**; root-only glossi
 
 # 4. Capabilities
 
-Prototype: `capcheck/nomos_check.py`, 468 lines, validated against six attacks and two legitimate programs.
+Prototype: `prototypes/capcheck/exsecutor_check.py`, 468 lines, validated against six attacks and two legitimate programs. `[UNREPRODUCED]` — that artifact is absent from the tree. The checker is being rebuilt from this section, which is a re-derivation, not a restoration.
 
 ## 4.1 Rules
 
@@ -213,13 +229,13 @@ Prototype: `capcheck/nomos_check.py`, 468 lines, validated against six attacks a
 4. **A capability becomes available in a scope in exactly three ways — bound by `sub`, received as a parameter, or held in a field of the receiver — and all three are visible in the interface.** `poscit` means *drawn from the enclosing scope*, nothing else.
 5. `publica` functions declare `poscit` explicitly. Private functions infer it from their bodies, transitively.
 6. A function with no `poscit` and no capability parameters is **pure with respect to ambient state**. It may allocate and diverge; it may not observe the host.
-7. **No module-level mutable state.** (`NOM-E0500`; with a capability, `NOM-E0501`.)
+7. **No module-level mutable state.** (`EXS-E0500`; with a capability, `EXS-E0501`.)
 
 ## 4.2 Rows and substitution
 
 A higher-order function requires whatever its function argument requires:
 
-```nomos
+```exsecutor
 publica functio applica(v: f32, f: functio(f32) -> f32) -> f32 poscit alloc, sicut f {
     redde f(construe(v))
 }
@@ -229,11 +245,11 @@ publica functio applica(v: f32, f: functio(f32) -> f32) -> f32 poscit alloc, sic
 
 Without this, unioning the callee's row propagates a name with no referent in the caller (the prototype produced `requires [sicut f]` inside a function having no `f`). Substitution is what makes laundering impossible rather than merely annotated:
 
-```nomos
+```exsecutor
 publica functio nocens(x: f32) -> f32 poscit rete { … }
 
 publica functio exterior(v: f32) -> f32 poscit alloc {
-    redde applica(v, nocens)      // NOM-E0421: requires [rete], undeclared
+    redde applica(v, nocens)      // EXS-E0421: requires [rete], undeclared
 }
 ```
 
@@ -243,19 +259,19 @@ publica functio exterior(v: f32) -> f32 poscit alloc {
 
 A type with a capability-typed field, transitively, is **capability-bearing**, must be declared so, and the mark propagates into the `ego`'s `potestates`.
 
-```nomos
+```exsecutor
 structura ScriptorRetis { sock: rete }      // capability-bearing: [rete]
 ```
 
 ## 4.4 Dynamic dispatch
 
-`dyn Trait poscit P`. Constructing a trait object from an implementation whose mark exceeds `P` is `NOM-E0510`.
+`dyn Trait poscit P`. Constructing a trait object from an implementation whose mark exceeds `P` is `EXS-E0510`.
 
 Trait capability needs otherwise dissolve into the receiver — a file writer's authority *is* the handle in its field — so `poscit` on trait methods should be rare. If you need one, the capability is probably misplaced. But that convenience is exactly what would hide capabilities from the audit, hence the bound.
 
 ## 4.5 Ergonomics
 
-```nomos
+```exsecutor
 potestas Hospes = { alloc, archivum, horologium, ambitus }
 ```
 
@@ -275,29 +291,29 @@ potestas Hospes = { alloc, archivum, horologium, ambitus }
 
 ## 5.1 Text and branded offsets
 
-```nomos
+```exsecutor
 firma t: textus = "café"
 t.octeti().numerus()      // 5   bytes
 t.scalares().numerus()    // 4   scalar values
 t.grapha().numerus()      // 4   grapheme clusters
-t[0]                      // NOM-E0311: textus has no integer index
+t[0]                      // EXS-E0311: textus has no integer index
 ```
 
 UTF-8 storage. Slicing by byte offset, O(1), returns `eventus`, never panics. `octeti`, `scalares`, `grapha` are distinct types, not coercing views. Grapheme segmentation ships in the standard library.
 
 **Branded offsets.** `quaere` returns `positio<'t>`, generatively branded to the buffer it indexed. `sectio` accepts only its own brand:
 
-```nomos
+```exsecutor
 firma abassus = via.plica_unicode()
 firma ubi     = abassus.quaere("/")?      // positio<abassus>
-firma pars    = via.sectio(0..ubi)?       // NOM-E0332: branded to `abassus`
+firma pars    = via.sectio(0..ubi)?       // EXS-E0332: branded to `abassus`
 ```
 
 There is no conversion from `positio<'t>` to bare `mensura` outside `Crudum`. This makes CVE-2026-24895's class unrepresentable rather than discouraged — the highest-value change the CVE research produced.
 
 **Case folding:**
 
-```nomos
+```exsecutor
 "I".plica_unicode()        // "i" — always, no capability, no locale
 "I".plica_sermone(sermo)   // "ı" under tr-TR — requires the capability
 ```
@@ -306,15 +322,15 @@ Collation follows the same shape: `ordina_binarie()` total, `ordina_sermone(serm
 
 ## 5.2 Integers, byte order, `@transitus`
 
-Byte order is in the type. `:nativus` is legal in-process and **illegal in any `@transitus` type** (`NOM-E0321`).
+Byte order is in the type. `:nativus` is legal in-process and **illegal in any `@transitus` type** (`EXS-E0321`).
 
-```nomos
+```exsecutor
 @transitus
 publica structura Capitulum {
     signum:    u32:maior
     versio:    u8
     genus:     u8
-    reserva:   u16:maior      // explicit; implicit padding is NOM-E0322
+    reserva:   u16:maior      // explicit; implicit padding is EXS-E0322
     longitudo: u32:maior
 }
 ```
@@ -325,7 +341,7 @@ publica structura Capitulum {
 
 ## 5.3 FFI
 
-```nomos
+```exsecutor
 externus("C", abi: sysv_amd64) {
     functio strlen(s: *octetus) -> mensura
 }
@@ -333,7 +349,7 @@ externus("C", abi: sysv_amd64) {
 
 Explicit ABI and layout; no "whatever C does." The frontend implements the C ABI itself — unavoidable, and the reason QBE (which implements it in full) is attractive as a backend.
 
-**Non-atomic `refero` may not cross an `externus` boundary** (`NOM-E0520`) — see §6.4.
+**Non-atomic `refero` may not cross an `externus` boundary** (`EXS-E0520`) — see §6.4.
 
 Minimum ABI coverage for v1: SysV AMD64, AArch64 AAPCS, RISC-V lp64d.
 
@@ -351,7 +367,7 @@ Nix pulls two ways: cross-compilation and closure size want a small runtime; sep
 
 ## 6.2 Measured evidence
 
-Xeon 2.10 GHz, gcc 13.3, `-O2`. Sources in `stage0-bench/`. All variants verified **bit-identical** by numpy and confirmed by objdump to compile to identical arithmetic (9 scalar FP ops, no vectorization in any variant).
+Xeon 2.10 GHz, gcc 13.3, `-O2`. Sources in `prototypes/stage0-bench/` — `[UNREPRODUCED]`, the sources are absent from the tree and the figures below are carried forward from v0.2 unverified. All variants verified **bit-identical** by numpy and confirmed by objdump to compile to identical arithmetic (9 scalar FP ops, no vectorization in any variant).
 
 **Raw refcount cost:**
 
@@ -390,7 +406,7 @@ Xeon 2.10 GHz, gcc 13.3, `-O2`. Sources in `stage0-bench/`. All variants verifie
 
 ## 6.4 Reference types and FFI
 
-- `refero<T>` — non-atomic. **Cannot cross `externus`** (`NOM-E0520`). A foreign thread racing a non-atomic refcount is a use-after-free, and the type system cannot see the escape.
+- `refero<T>` — non-atomic. **Cannot cross `externus`** (`EXS-E0520`). A foreign thread racing a non-atomic refcount is a use-after-free, and the type system cannot see the escape.
 - `refero_communis<T>` — atomic. May cross.
 - A module holding both `Crudum` and non-atomic references is flagged loudly in the audit.
 
@@ -448,26 +464,26 @@ Restriction modes work (Rust's `unsafe`, `use strict`, D's `@safe`): the restric
 
 ## 8.1 Source
 
-- **UTF-8 only.** No BOM — a BOM is `NOM-E0101`, not a skipped byte.
-- **LF only.** CRLF is `NOM-E0106`. The formatter converts; the compiler does not.
-- **NFC required.** Non-NFC is `NOM-E0102`.
-- Bidi and invisible controls (U+202A–202E, U+2066–2069, U+200B–200F, U+061C) anywhere in source, **including strings and comments**, are `NOM-E0103`. Escapes are the only way to produce them.
+- **UTF-8 only.** No BOM — a BOM is `EXS-E0101`, not a skipped byte.
+- **LF only.** CRLF is `EXS-E0106`. The formatter converts; the compiler does not.
+- **NFC required.** Non-NFC is `EXS-E0102`.
+- Bidi and invisible controls (U+202A–202E, U+2066–2069, U+200B–200F, U+061C) anywhere in source, **including strings and comments**, are `EXS-E0103`. Escapes are the only way to produce them.
 
 ## 8.2 Identifiers
 
 - UAX #31 `XID_Start`/`XID_Continue` plus `_`.
-- UTS #39 **Moderately Restrictive**. Mixed-script is `NOM-E0104`.
-- **Confusable detection is scoped to the import closure**, not the compilation unit (`NOM-E0105`). Module A exporting Cyrillic `аdd` and module B calling `add` contains no confusable *pair* in either unit. The `ego` files make whole-closure checking cheap.
+- UTS #39 **Moderately Restrictive**. Mixed-script is `EXS-E0104`.
+- **Confusable detection is scoped to the import closure**, not the compilation unit (`EXS-E0105`). Module A exporting Cyrillic `аdd` and module B calling `add` contains no confusable *pair* in either unit. The `ego` files make whole-closure checking cheap.
 - Comparison is byte equality after NFC. Identifiers are case-sensitive, so locale case folding never reaches identifier resolution.
 - **Non-ASCII identifiers are allowed. Non-ASCII keywords are not.** Private names in any script; ~40 keywords learned once. Public names additionally obey §3.
 
 ## 8.3 Diagnostics
 
-- Stable machine-readable codes (`NOM-E0104`). Codes are permanent; text is not. Tools match codes, never English prose.
+- Stable machine-readable codes (`EXS-E0104`). Codes are permanent; text is not. Tools match codes, never English prose.
 - Every diagnostic carries a source span — not retrofittable, which is why the CST is not optional.
 - **All source echoed in a diagnostic is escaped.** A diagnostic rendering raw bidi makes the error message the attack surface.
 - English text is canonical. Translation, if ever, is a lookup keyed on code. Rust's Fluent effort stalled because translation was entangled with 400+ formatting sites and there is now a proposal to remove it; do not repeat that.
-- Capability and lexicon errors ship machine-applicable fixes; `nomc emenda` applies them. Both classes are unusually suited to auto-fix because the required edit is mechanically derivable.
+- Capability and lexicon errors ship machine-applicable fixes; `exsc emenda` applies them. Both classes are unusually suited to auto-fix because the required edit is mechanically derivable.
 
 ---
 
@@ -489,14 +505,14 @@ source → lossless CST → typed AST → SSA IR → backend
 
 **C backend first**, behind a clean SSA boundary. Reaches RISC-V and embedded Linux immediately, bootstraps trivially, pairs with `zig cc`.
 
-Compile speed was measured and is **not** the constraint I previously claimed. gcc `-O0` on backend-style generated C:
+Compile speed was measured and is **not** the constraint I previously claimed. `[UNREPRODUCED]` — the measurement harness is absent from the tree; figures carried forward from v0.2. gcc `-O0` on backend-style generated C:
 
 | shape | kloc/s |
 |---|---|
 | many small functions | 40–66 |
 | 2 × 20,000-statement functions (pathological) | 26 |
 
-Projected full rebuild at 3× source-to-C expansion, single core, no parallelism: **10k Nomos LOC → 0.76 s**. Superlinear degradation on huge functions is real (2.5×) but not the exponential blowup feared; a backend emitting one C function per source function stays in the favourable range.
+Projected full rebuild at 3× source-to-C expansion, single core, no parallelism: **10k Exsecutor LOC → 0.76 s**. Superlinear degradation on huge functions is real (2.5×) but not the exponential blowup feared; a backend emitting one C function per source function stays in the favourable range.
 
 **QBE stays at Stage 5**, not Stage 3. The earlier recommendation to pull it forward is withdrawn — it was based on an assumption the measurement contradicted. The remaining argument for QBE is generated-C debug info, which is a debuggability question judged on its own in Stage 3.
 
@@ -506,7 +522,7 @@ Later options: QBE (~8k LOC, SSA, implements the C ABI in full, targets riscv64)
 
 ## 9.3 Compiler purity contract
 
-`nomc` is a pure function of (source, `ego`, lockfile, flags):
+`exsc` is a pure function of (source, `ego`, lockfile, flags):
 
 - Reads **no** environment variables except an explicit `--env KEY=VALUE` allowlist.
 - Never calls `setlocale`; internal text handling obeys the same rules imposed on user code.
@@ -517,7 +533,7 @@ Later options: QBE (~8k LOC, SSA, implements the C ABI in full, targets riscv64)
 - Deterministic symbol emission, hash iteration, section ordering.
 - Byte-identical output for identical inputs across directories, times, locales, hostnames.
 
-`nomc proba-reproducibilitatem` builds twice under deliberately divergent ambient conditions and diffs. Ships in v1, runs in CI.
+`exsc proba-reproducibilitatem` builds twice under deliberately divergent ambient conditions and diffs. Ships in v1, runs in CI.
 
 **Runtime:** calls `setlocale(LC_ALL, "C")` at startup. The FFI documentation states plainly that the locale guarantee stops at the `externus` boundary — a C library may call `setlocale` itself, which is the mechanism behind CVE-2025-49003.
 
@@ -525,7 +541,7 @@ Later options: QBE (~8k LOC, SSA, implements the C ABI in full, targets riscv64)
 
 There is no `build.rs` equivalent. Arbitrary build-time code destroys purity, breaks cross-compilation, and is the largest source of Nix packaging pain in the Rust and Python ecosystems.
 
-Code generation uses **declared generators**: a manifest entry naming a generator, its inputs, and its outputs. A generator is a sandboxed Nomos package. **Generators may not declare `Crudum`** — otherwise this is arbitrary code with the purity claim intact only on paper.
+Code generation uses **declared generators**: a manifest entry naming a generator, its inputs, and its outputs. A generator is a sandboxed Exsecutor package. **Generators may not declare `Crudum`** — otherwise this is arbitrary code with the purity claim intact only on paper.
 
 `[OPEN]` Validate that the generator model covers bindgen, protobuf, resource embedding, and Faust before committing.
 
@@ -533,7 +549,7 @@ Code generation uses **declared generators**: a manifest entry naming a generato
 
 Nix's trichotomy as language-level concepts: `buildPlatform`, `hostPlatform`, `targetPlatform`. Conditional compilation keys on **`hostPlatform`**, never an ambiguous "current platform."
 
-**`nomc` with no `--hospes` is an error.** No default-to-build-platform. This is not a cross-compilation mode — it falls directly out of "target is a capability, not ambient state," and it is the most Nix-aligned decision in the document. Native compilation is the case where `build == host`, spelled out.
+**`exsc` with no `--hospes` is an error.** No default-to-build-platform. This is not a cross-compilation mode — it falls directly out of "target is a capability, not ambient state," and it is the most Nix-aligned decision in the document. Native compilation is the case where `build == host`, spelled out.
 
 ## 9.6 The two-hash invariant
 
@@ -549,8 +565,8 @@ Keying a build cache on the interface hash lets an attacker change only an imple
 
 ## 10.1 Format
 
-```nomos
-// ego.nom — generated by `nomc ego --emitte`, verified in CI. Never hand-edited.
+```exsecutor
+// ego.xsc — generated by `exsc ego --emitte`, verified in CI. Never hand-edited.
 
 ego norma.textus {
     versio    "0.4.1"
@@ -584,7 +600,7 @@ ego norma.textus {
 
 - **Evaluable without building.** The whole dependency graph, capability closure, and platform compatibility compute from `ego` files alone — no compilation, no network.
 - **Interface identity is separate from implementation identity.** Changing a body without changing a signature leaves the `ego` hash unchanged, so dependents do not rebuild. Combined with dictionary-passing generics (§7.1), this actually works. See §9.6 for the hash that must *not* be reused.
-- **Generated, never written.** `nomc ego --emitte` derives it; CI fails if stale; the LSP shows drift inline. Same discipline as a lockfile — this avoids the OCaml `.mli` sync tax.
+- **Generated, never written.** `exsc ego --emitte` derives it; CI fails if stale; the LSP shows drift inline. Same discipline as a lockfile — this avoids the OCaml `.mli` sync tax.
 - **Parsed, never included.** No preprocessor, at any layer, ever.
 
 ## 10.3 The capability audit
@@ -592,7 +608,7 @@ ego norma.textus {
 Because capabilities are part of interfaces (§4.1 rule 3, §4.3, §4.4), the transitive closure computes from headers:
 
 ```
-$ nomc ego --potestates
+$ exsc ego --potestates
 ffi.codec_vorbis     Crudum (⇒ ALL)
 retis.cliens         rete
 tempus.horarium      horologium
@@ -625,18 +641,18 @@ A dependency that gains `rete` in a new version is a one-line diff in a checked-
 
 Non-negotiable; a language without these is a toy.
 
-- **LSP server** — needs the lossless CST. First-class component, budgeted, not an afterthought.
+- **LSP server** — needs the lossless CST. First-class component, budgeted, not an afterthought. `[OPEN]` **Deferred** under the assembly implementation; see §18.2.
 - **Formatter** — canonical, no options. Normalizes to ASCII where an ASCII spelling exists.
 - **Debugger** — DWARF. The weak point of the C backend.
 - **Package manager** — thin, because `ego` is declarative and resolution is separate from building.
 
-One tool: `nomc aedifica | proba | forma | lsp | ego | emenda | documenta | novum | lexicon | curre`.
+One tool: `exsc aedifica | proba | forma | lsp | ego | emenda | documenta | novum | lexicon | curre`.
 
-`nomc novum` scaffolds a working project with a valid `ego.nom` in one command — first running program under 60 seconds or onboarding has failed.
+`exsc novum` scaffolds a working project with a valid `ego.xsc` in one command — first running program under 60 seconds or onboarding has failed.
 
-Scratch work without ambient authority: `nomc curre --potestates omnes scratch.nom`. Grants typed on the command line — explicit, not ambient, one flag of friction.
+Scratch work without ambient authority: `exsc curre --potestates omnes scratch.xsc`. Grants typed on the command line — explicit, not ambient, one flag of friction.
 
-**The demo:** `nomc aedifica --hospes riscv64-linux` on a Mac, no toolchain setup, static binary, byte-identical to CI. Zig's cross-compilation demo is most of why Zig got noticed; here it falls out of the design rather than being engineered.
+**The demo:** `exsc aedifica --hospes riscv64-linux` on a Mac, no toolchain setup, static binary, byte-identical to CI. Zig's cross-compilation demo is most of why Zig got noticed; here it falls out of the design rather than being engineered. **Dropped** under the assembly implementation (§18.2): the compiler is x86-64 machine code and a Mac is aarch64. The nearest surviving demo is the same command from an `x86_64-linux` host.
 
 ---
 
@@ -644,25 +660,25 @@ Scratch work without ambient authority: `nomc curre --potestates omnes scratch.n
 
 | code | meaning |
 |---|---|
-| `NOM-E0101` | source not UTF-8, or BOM present |
-| `NOM-E0102` | source not NFC |
-| `NOM-E0103` | bidi or invisible control character in source |
-| `NOM-E0104` | mixed-script identifier (UTS #39) |
-| `NOM-E0105` | confusable identifiers in import closure |
-| `NOM-E0106` | CRLF line ending |
-| `NOM-E0311` | integer index applied to `textus` |
-| `NOM-E0321` | `:nativus` in a `@transitus` type |
-| `NOM-E0322` | implicit padding in a `@transitus` type |
-| `NOM-E0332` | branded offset applied to the wrong buffer |
-| `NOM-E0421` | undeclared capability (atom or row) |
-| `NOM-E0500` | module-level mutable state |
-| `NOM-E0501` | capability stored in module-level state |
-| `NOM-E0510` | capability escapes a `dyn` bound |
-| `NOM-E0520` | non-atomic `refero` crossing `externus` |
-| `NOM-E0601` | public name does not decompose into the morpheme table |
-| `NOM-E0602` | suffix contract disagrees with declared type |
-| `NOM-E0603` | prefix signature law violated |
-| `NOM-E0610` | composition depth exceeded (max two affixes) |
+| `EXS-E0101` | source not UTF-8, or BOM present |
+| `EXS-E0102` | source not NFC |
+| `EXS-E0103` | bidi or invisible control character in source |
+| `EXS-E0104` | mixed-script identifier (UTS #39) |
+| `EXS-E0105` | confusable identifiers in import closure |
+| `EXS-E0106` | CRLF line ending |
+| `EXS-E0311` | integer index applied to `textus` |
+| `EXS-E0321` | `:nativus` in a `@transitus` type |
+| `EXS-E0322` | implicit padding in a `@transitus` type |
+| `EXS-E0332` | branded offset applied to the wrong buffer |
+| `EXS-E0421` | undeclared capability (atom or row) |
+| `EXS-E0500` | module-level mutable state |
+| `EXS-E0501` | capability stored in module-level state |
+| `EXS-E0510` | capability escapes a `dyn` bound |
+| `EXS-E0520` | non-atomic `refero` crossing `externus` |
+| `EXS-E0601` | public name does not decompose into the morpheme table |
+| `EXS-E0602` | suffix contract disagrees with declared type |
+| `EXS-E0603` | prefix signature law violated |
+| `EXS-E0610` | composition depth exceeded (max two affixes) |
 
 ---
 
@@ -671,22 +687,22 @@ Scratch work without ambient authority: `nomc curre --potestates omnes scratch.n
 Ships with v1. Each entry must **fail to compile**, or in the last two cases produce identical bytes.
 
 1. Turkish dotless-ı case fold in program logic → `plica_sermone` without `sermo`
-2. Index computed on a folded copy, applied to the original → `NOM-E0332`
-3. Bidi override in a comment → `NOM-E0103`
-4. Cyrillic homoglyph across two modules → `NOM-E0105`
-5. Non-NFC identifier → `NOM-E0102`
-6. `:nativus` in a wire struct → `NOM-E0321`
-7. Implicit padding in a wire struct → `NOM-E0322`
-8. Integer index on `textus` → `NOM-E0311`
-9. HOF calling a function parameter without a row → `NOM-E0421`
-10. Laundering through a correctly polymorphic HOF → `NOM-E0421`
-11. Capability in module-level mutable → `NOM-E0501`
-12. Capability-bearing impl behind a bare `dyn` → `NOM-E0510`
-13. Non-atomic `refero` through `externus` → `NOM-E0520`
-14. `-or` name declared as `functio` → `NOM-E0602`
+2. Index computed on a folded copy, applied to the original → `EXS-E0332`
+3. Bidi override in a comment → `EXS-E0103`
+4. Cyrillic homoglyph across two modules → `EXS-E0105`
+5. Non-NFC identifier → `EXS-E0102`
+6. `:nativus` in a wire struct → `EXS-E0321`
+7. Implicit padding in a wire struct → `EXS-E0322`
+8. Integer index on `textus` → `EXS-E0311`
+9. HOF calling a function parameter without a row → `EXS-E0421`
+10. Laundering through a correctly polymorphic HOF → `EXS-E0421`
+11. Capability in module-level mutable → `EXS-E0501`
+12. Capability-bearing impl behind a bare `dyn` → `EXS-E0510`
+13. Non-atomic `refero` through `externus` → `EXS-E0520`
+14. `-or` name declared as `functio` → `EXS-E0602`
 15. Refcount saturation → runtime abort, not wraparound
 16. Same source, different directory/time/locale/hostname → byte-identical output
-17. `nomc aedifica --hospes riscv64-linux` from x86_64 → byte-identical to native CI build
+17. `exsc aedifica --hospes riscv64-linux` from x86_64 → byte-identical to native CI build
 
 ---
 
@@ -700,7 +716,7 @@ Worst first.
 4. **Root coinage governance** (§3.8). No Latin for hash, socket, mutex. Coinable, but coining needs a process.
 5. **Generics × capability rows × dictionary layout** (§7.1). Unprototyped three-way interaction.
 6. **Generator model coverage** (§9.4). "No build scripts" may not survive real FFI binding generation.
-7. **Generated-C debug info** (§9.2). If stepping through Nomos is unusable, QBE moves earlier.
+7. **Generated-C debug info** (§9.2). If stepping through Exsecutor is unusable, QBE moves earlier.
 8. **Ecosystem bootstrapping.** Unaddressed by anything in this document, and the actual reason languages die.
 
 ---
@@ -720,7 +736,7 @@ Remaining, before Stage 1:
 **Stage 2 — types and capabilities (4–6 months).** Type checker. Capability rows with substitution and inference. Capability-bearing types and `dyn` bounds. Text types and brands. `@transitus` enforcement. Lexicon checking.
 *Kill:* if `sub` resolution needs a search algorithm, redesign.
 
-**Stage 3 — C backend, runtime, Nix (3–4 months).** SSA lowering via Braun. C emission. Cross-compile to RISC-V and embedded Linux. `buildNomosPackage`. `proba-reproducibilitatem` green in CI.
+**Stage 3 — C backend, runtime, Nix (3–4 months).** SSA lowering via Braun. C emission. Cross-compile to RISC-V and embedded Linux. `buildExsecutorPackage`. `proba-reproducibilitatem` green in CI.
 *Kill:* undebuggable generated C → move to QBE.
 
 **Stage 4 — tooling (4–8 months).** LSP, formatter, package manager.
@@ -741,3 +757,28 @@ Remaining, before Stage 1:
 - It never gets users, which is how almost all of them fail.
 
 Design against these. Do not design around them.
+
+---
+
+# 18. Implementation
+
+Recorded so the constraints are not rediscovered later. Nothing here changes a design decision above; it fixes how they get built.
+
+- **Host language: x86-64 assembly**, freestanding — no libc, no dynamic linking, direct syscalls only.
+- **Assembler: fasmg**, for its macro engine and because it is architecture-neutral: the macro dialect, the generated Unicode tables, and the test harness survive the eventual aarch64 and riscv64 ports even though the compiler body does not.
+- **Design probes stay in Python** (`prototypes/`). They are instruments for answering design questions — never shipped, never on the build closure.
+
+## 18.1 What this buys
+
+- **§9.3's purity contract stops being a discipline and becomes a property of the artifact.** A freestanding static binary cannot call `setlocale`, read `$HOME`, or discover a dotfile, because the code to do so is not linked into it. "No network access, ever, at any phase" becomes checkable rather than promised: extract every `syscall` site and its `rax` value from the binary and diff against the declared allowlist. CI enforces this. No other candidate host language offered a guarantee of this shape.
+- **Byte-identical output (§9.3) is close to free.** Insertion-ordered maps, no allocator nondeterminism, explicit symbol and section emission order — all of it under direct control rather than inherited from a runtime.
+- **The build closure is `{fasmg}` plus a vendored macro package.** §1's Nix-native claim applied to the compiler itself rather than only to what it produces. The qualification is load-bearing, and was found by measurement rather than assumed: fasmg is architecture-neutral in the strong sense — the binary knows no machine instructions at all, and `mov eax, 60` on its own is `Error: illegal instruction`. The x86-64 instruction set and the ELF64 executable writer are *macro packages*, ordinary fasmg source, and the nixpkgs derivation ships only `bin/fasmg`. They are vendored at `vendor/fasmg-x86/`, which also retires the last network dependency in the build: upstream publishes to a rolling URL whose bytes have already drifted from the hash nixpkgs pins, so the package builds today only from cache. See `vendor/fasmg-x86/PROVENANCE.md`.
+- **§9.2's C backend emits text, not machine code** — among the easier things to do in assembly. The costly parts of the pipeline are the CST (§9.1) and the Unicode layer (§8), not codegen.
+
+## 18.2 Accepted costs
+
+- **§12's demo is dropped.** `exsc aedifica --hospes riscv64-linux` on a Mac is impossible when the compiler is x86-64 machine code. `buildPlatform` is pinned to `x86_64-linux`. Cross-compilation to RISC-V is unaffected — that is `targetPlatform` — but the demo §12 identified as the adoption hook is gone until an aarch64 host exists, and §17 lists never getting users as the top failure mode.
+- `[OPEN]` **The LSP is deferred.** §12 calls it non-negotiable and that judgement stands unchanged; incremental reparse over a red-green tree in assembly is not Stage 1 work. This is an amendment, not an omission.
+- **aarch64 and riscv64 hosts are full rewrites** of the architecture-specific tree. §5.3's minimum ABI coverage is about what `exsc` can target and is unaffected; this is about where `exsc` can run.
+- **Debugging degrades.** §12 already flags DWARF as the C backend's weak point; hand-written assembly does not improve it. Mitigated by stage dumps at every pipeline boundary rather than by a debugger.
+- **§16's revise-on-measurement loop gets expensive**, in direct tension with this document's method (see the evidence-base note above: prose designs are hypotheses until code runs). The Python probe layer is the mitigation — design questions get answered where iteration is cheap, and only settled answers are written in assembly.
