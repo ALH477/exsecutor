@@ -2,8 +2,10 @@
 
 **Status:** `[OPEN]` — design only. No code exists. Depends on §5.4 (Stage 2/3),
 the type checker (Stage 2), and the backend (Stage 3).
-**Relates to:** spec §5.4, §6.1, §6.3, §10.3, §11, §15 #4;
-[ADR 0007](../decisions/0007-numeric-semantics.md)
+**Relates to:** spec §3.9, §5.4, §5.5, §6.1, §6.3, §10.3, §11, §15 #4;
+[ADR 0007](../decisions/0007-numeric-semantics.md),
+[0008](../decisions/0008-root-coinage-governance.md),
+[0009](../decisions/0009-heterogeneous-cpu-gpu.md)
 
 ---
 
@@ -61,8 +63,8 @@ assumption that ought to be visible. Passing a `ordo_linearum` matrix where a
 ## 4. Tiles are the unit of parallelism, and they are declared
 
 Real parallel hardware is shaped. SIMD is a 1×N lane group; cache blocking wants
-an L1-sized square; a thread partition is a band of rows; a GPU workgroup (out of
-scope, §9) is a 2D tile. One abstraction covers all of them:
+an L1-sized square; a thread partition is a band of rows; a GPU workgroup is a 2D
+tile (section 9). One abstraction covers all of them:
 
 ```exsecutor
 tessella<8, 8>        // a tile shape -- compile-time descriptor, not data
@@ -148,18 +150,54 @@ for *hash*, *socket*, *mutex*. Linear algebra is worse. `matrix`, `tessella`,
 (German-derived), *workgroup*, *stride*, *pivot* are not, and no amount of
 lexicon discipline invents them.
 
-So `norma.algebra` cannot be written until §15 #4 has an answer. That is a
-finding, not an obstacle: it converts an abstract governance gap into a concrete
-list of words a real library needs. Better to discover it here than after §3 has
-been published as settled.
+§3.9 now supplies the process — exhaustion test, five-rung ladder, review,
+permanent registration, loan register. This library is its **first real
+exercise**, and a demanding one: *lane*, *stride*, *pivot*, *eigenvalue* and
+*workgroup* must each descend that ladder, and some will land on rung 5 as
+marked loans. §3.9.5 keeps that count as a running measurement of whether §3
+scales, so the honest outcome of writing this library is a number.
 
-Note also that `norma` is already the standard-library namespace *and* the Latin
-for a vector norm. That collision needs resolving before the module is named.
+§3.9.3's collision check exists because of this library: `norma` is already both
+the standard-library namespace *and* the Latin for a vector norm. That must be
+resolved before the module is named.
 
-## 9. Out of scope
+## 9. GPU is in scope, and the design did not have to change
 
-- **GPU.** `hospites` (§10.1) lists no GPU target. Tiles map naturally onto
-  workgroups, so nothing here precludes it, but it is not designed for.
+The tile abstraction was already the right one. Device hierarchy is a tile nest:
+
+| tile level | CPU | GPU |
+|---|---|---|
+| outer | cache block | grid |
+| middle | thread band | workgroup / block |
+| inner | SIMD lane group | warp / subgroup |
+
+Because the nest is **declared** rather than inferred, the summation order is
+identical on both, so §5.5's claim holds through this library unchanged: the
+same source with the same decomposition produces the same bits on CPU and GPU.
+An autotuner would destroy exactly this property, which is why section 10
+excludes it.
+
+What §5.5 adds that this library must respect:
+
+- **Placement in the type.** `matrix<f32, M, N, ordo> apud machina` is device
+  resident; transfer is explicit. No unified-memory abstraction turning an index
+  into an interconnect round trip.
+- **`poscit machina`** on every operation that dispatches to a device — so
+  §10.3's audit answers "does my numerical stack touch the GPU?" for the whole
+  closure.
+- **`@nucleus`** on the inner kernels: no allocation, no unbounded recursion,
+  nothing observed of the host. The workspace-passed-in discipline of section 7
+  was already this, arrived at for a different reason.
+- **Numerics are checked against the device, not degraded to it.** A GPU that
+  cannot honour `subnormales conservata` fails the build. This is the cost that
+  buys the bit-identity claim, and it is a real cost: some modules will not
+  compile for some devices.
+
+`[UNTESTED]` — the CPU/GPU bit-identity claim is a design consequence and has
+been measured on nothing.
+
+## 10. Out of scope
+
 - **Sparse matrices.** Different shape algebra entirely.
 - **Dynamic shapes.** Runtime-sized matrices need a dependent-ish shape story
   the type system does not have. Static shapes first.
@@ -168,7 +206,7 @@ for a vector norm. That collision needs resolving before the module is named.
   prevent. Tuning belongs in the caller's declared decomposition, where it is
   visible and versioned.
 
-## 10. Status
+## 11. Status
 
 Nothing here is implemented, measured, or validated. §5.4 is `[OPEN]`, the type
 checker is Stage 2, the backend is Stage 3. The determinism claim in section 1 is

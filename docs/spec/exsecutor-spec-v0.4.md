@@ -215,7 +215,104 @@ Requires per-language frames for **suffixes as well as roots**; root-only glossi
 
 - Composition depth: **two affixes maximum**. The Toki Pona failure (`kili jelo` for banana) is opacity through unbounded composition.
 - The morpheme table is a content-addressed, versioned dependency in every `ego`.
-- `[OPEN]` **Root coinage governance.** There is no Latin for hash, socket, or mutex. They are coinable (`dispersio`, `receptaculum`, `exclusor`) but coining requires judgment and judgment requires a process. Unsolved.
+- **Root coinage governance.** There is no Latin for hash, socket, or mutex. They are coinable (`dispersio`, `receptaculum`, `exclusor`) but coining requires judgment and judgment requires a process. §3.9 is that process. `[UNTESTED]` — defined, never exercised.
+
+## 3.9 Root coinage governance
+
+`[UNTESTED]` — the process is defined; no root has been coined through it.
+
+A lexicon that cannot grow is a lexicon that gets abandoned the first time
+someone needs to name a hash table. A lexicon that grows without discipline
+stops being checkable, and §3's entire claim is that names are *mechanically*
+verifiable. This section is the process between those failures.
+
+### 3.9.1 Exhaustion — when a root may be coined
+
+A new root is admissible only after showing the concept cannot be expressed by
+the existing table within §3.8's two-affix ceiling. The proposal records the
+combinations tried and why each fails. Most apparently-new concepts are
+compounds of roots already present, and the exhaustion argument is where that
+gets discovered.
+
+Failing to find a word is not the same as one not existing. The burden is on
+the proposer.
+
+### 3.9.2 The ladder — how a root is coined
+
+Descend only when the rung above genuinely fails.
+
+1. **Attested classical Latin**, however rare. Prefer a real word nobody uses to
+   an invented one everybody must learn.
+2. **Late, medieval, or Neo-Latin scientific vocabulary.** Botany, medicine and
+   taxonomy have been coining disciplined Latin for four centuries; that corpus
+   is large and it is *already* the answer to "Romans had no word for this."
+3. **Greek combining form**, where §3.3 already admits Greek.
+4. **Descriptive compound** from attested roots, accepting a longer name.
+5. **Marked loan** — the foreign word given a Latin declension and a morphology
+   that behaves. Recorded as a loan (§3.9.5), never disguised as native.
+
+A bare English word is never admissible. That is not a coinage, it is a
+surrender, and it defeats §3 entirely.
+
+### 3.9.3 What a proposal must contain
+
+- the concept, and the exhaustion argument (§3.9.1);
+- the candidates considered, and the rung of §3.9.2 each sits on;
+- the chosen root with its **stems** — present and supine for verbal roots,
+  since §3.4's suffix contracts bind to stems, not to citation forms;
+- a collision check against every registered root, every reserved keyword, and
+  **every module namespace** — `norma` is both the standard-library namespace
+  and the Latin for a vector norm, and that class of collision must be caught
+  before registration, not after;
+- at least three derivations the new root is expected to support, demonstrating
+  it composes under §3.4 and §3.5 rather than standing alone.
+
+### 3.9.4 Review and registration
+
+A coinage is reviewed by someone other than its proposer, who verifies the
+exhaustion argument and the collision check rather than re-litigating taste.
+
+Registration amends `lexicon.norma`, whose content hash therefore changes.
+Because the morpheme table is a content-addressed dependency of every `ego`
+(§3.8, §10.1), a coinage is visible to every dependent as a version bump —
+lexicon growth is tracked by the same machinery as any other input, and cannot
+happen silently.
+
+**A registered root is permanent.** It may be *deprecated* — discouraged, still
+valid, still compiling — but never reused for a different meaning. Public names
+are interfaces; silently repointing a root changes what already-published code
+means. This is §8.3's discipline for error codes, applied to morphemes for the
+same reason.
+
+### 3.9.5 The loan register is a measurement
+
+Every rung-5 loan is recorded in a register carried with the table.
+
+The register is not an embarrassment to be minimised out of existence; it is
+**the running measurement of whether §3 scales.** §17 names naming as the
+largest adoption risk in the project. A loan count that stays small is evidence
+the derivational frame is doing real work. A loan count that climbs steadily as
+the standard library grows is evidence it is not — and that is a falsifiable
+signal worth having, given §16's derivation test can no longer supply one
+(ADR 0005).
+
+Report it. Do not bury it.
+
+### 3.9.6 Domain sub-lexicons
+
+`lexicon.norma` holds the core. A specialised domain may carry its own table —
+`lexicon.algebra`, `lexicon.rete` — separately hashed and separately depended
+upon, so that a program which never touches linear algebra does not inherit its
+vocabulary. Sub-lexicons obey this section in full; they are not a relaxation.
+
+### 3.9.7 Tooling
+
+`exsc lexicon` (§12) checks a proposal mechanically: it runs the collision
+check, verifies the stems compose under §3.4 and §3.5, confirms the claimed
+derivations decompose, and reports the loan-register delta. Judgment stays with
+the reviewer; the arithmetic does not.
+
+---
 
 ---
 
@@ -283,7 +380,7 @@ potestas Hospes = { alloc, archivum, horologium, ambitus }
 
 ## 4.6 The capability set
 
-`Mundus` (root), `alloc`, `sermo` (human language), `horologium` (clock), `archivum` (filesystem), `rete` (network), `fortuna` (randomness), `ambitus` (process environment), `Filum` (threads), `Crudum` (raw pointers, unchecked casts, manual lifetimes).
+`Mundus` (root), `alloc`, `sermo` (human language), `horologium` (clock), `archivum` (filesystem), `rete` (network), `fortuna` (randomness), `ambitus` (process environment), `Filum` (threads), `machina` (a separate compute device — §5.5), `Crudum` (raw pointers, unchecked casts, manual lifetimes).
 
 `alloc` appears in roughly 70% of non-kernel `poscit` clauses and therefore carries little signal; the audit view suppresses it by default (§10.3).
 
@@ -432,6 +529,94 @@ performance and never changes the value.
   whether arithmetic traps is ambient state by another name.
 - `@transitus` extends to explicit **bit** offsets. No implicit bit padding, for
   the same reason §5.2 forbids implicit byte padding.
+
+---
+
+## 5.5 Device placement and heterogeneous execution
+
+`[OPEN]` — designed, nothing implemented. Stage 3 at the earliest.
+
+A GPU is not "more cores." It is a separate device with a separate address
+space, a separate ISA, its own floating-point behaviour, and no business being
+reached by accident. Every one of those is ambient state if the language stays
+quiet about it, so §5.5 says three things: where data lives is in the type,
+reaching a device is a capability, and a device that cannot honour the declared
+numerics is a compile error rather than a different answer.
+
+### Placement is in the type
+
+```exsecutor
+acies<f32, 1024>              // host memory
+acies<f32, 1024> apud machina // device memory
+```
+
+`apud` ("at, in the presence of") marks residence. Transfer is explicit and
+visible; there is no unified-memory abstraction that silently turns a pointer
+dereference into a PCIe round trip. This is §5.2's rule — representation
+assumptions belong in the type — applied to locality.
+
+**ARC does not cross the device boundary.** Refcounting across an interconnect
+is the wrong mechanism. Device buffers are region-allocated, owned by the host,
+and released as a block, which is exactly §6.3's arena model and exactly what
+device memory wants anyway.
+
+### Reaching a device is a capability
+
+`machina` (§4.6) gates it. `poscit machina` in a signature means this call
+dispatches to an accelerator, and §10.3's audit answers "does anything in my
+dependency closure quietly use the GPU?" across the whole closure. Nothing
+reaches a device without saying so in its interface.
+
+### `@nucleus` — device-executable functions
+
+`@nucleus` restricts a `functio` for device execution as `@transitus` (§5.2)
+restricts a `structura` for wire safety. Same pattern, same reason: a context
+with fewer guarantees needs a type that admits fewer programs.
+
+A `@nucleus` function may not allocate, may not recurse unboundedly, and may
+observe nothing of the host. §4.1 rule 6 already gives most of this — a function
+with no `poscit` is pure with respect to ambient state — but rule 6 permits
+allocation and divergence, and a kernel permits neither. `@nucleus` is that
+tightening, and the capability system carries the rest without a new annotation.
+
+### The rule that makes CPU and GPU agree
+
+> **If a target cannot honour the module's declared `numeri` (§5.4), compilation
+> fails. It never silently degrades.**
+
+GPUs routinely force denormal flushing and contract aggressively into FMA. Under
+this rule a module declaring `subnormales conservata` will not build for a device
+that cannot deliver it. That is the intended behaviour: the alternative — which
+every existing toolchain chooses — is the same source producing different
+numbers on the accelerator, discovered later by whoever trusted them.
+
+Combined with §5.4's declared reduction shape, this yields the property the
+design is actually for:
+
+> The same source, with the same declared decomposition, produces **the same
+> bits** on CPU and on GPU.
+
+The tile nest maps onto device hierarchy without reinterpretation — grid, block,
+warp, lane are tiles, exactly as cache block and SIMD group are tiles. Because
+the nest is declared rather than inferred, the summation order is identical on
+both, and the accelerator changes only how long the work takes.
+
+`[UNTESTED]`. Nothing about this has been measured, and the claim is strong
+enough that it must be treated as a hypothesis until `proba-reproducibilitatem`
+compares a CPU result against a device result byte for byte.
+
+### Targets
+
+`hospites` (§10.1) lists hosts. Devices are declared separately, because a
+kernel target is not a host target — the host runs the driver:
+
+```exsecutor
+acceleratores [ spirv-vulkan, nvptx64-cuda, amdgcn-rocm ]
+```
+
+An empty `acceleratores` alongside `poscit machina` anywhere in the module is a
+contradiction the `ego` checker rejects (§10.2), the same way `potestates { }`
+with `none-eabi` is a machine-checked claim today.
 
 ---
 
@@ -663,6 +848,7 @@ ego norma.textus {
     }
 
     hospites [ x86_64-linux, aarch64-linux, riscv64-linux, wasm32-wasi, none-eabi ]
+    acceleratores [ ]                       // §5.5 -- no device code in this module
 
     potestates { }                          // observes nothing
 
@@ -804,7 +990,7 @@ Worst first.
 1. **Closure capture in capability rows** (§4.2). The substitution foundation is built and validated against six attacks; a lambda capturing a capability from an enclosing `sub` is untested. Blocks Stage 1.
 2. **Lexicon derivation test** (§16). Cannot be retired by more engineering — needs human subjects. No longer gates whether §3 is load-bearing (ADR 0005); §3 is retained regardless. What remains open is the *size of its cost*, which is unmeasured.
 3. **Reference cycles** (§6.7). No answer. Accepted cost, with a DoS exposure to document.
-4. **Root coinage governance** (§3.8). No Latin for hash, socket, mutex. Coinable, but coining needs a process.
+4. **Root coinage governance** (§3.8). Resolved as design by §3.9 — exhaustion test, a five-rung coinage ladder, review, permanent registration against the content-addressed morpheme table, and a loan register kept as a running measurement of whether §3 scales. `[UNTESTED]`: no root has been coined through it, and `norma.algebra` (which needs *lane*, *stride*, *pivot*, *eigenvalue*) is its first real exercise.
 5. **Generics × capability rows × dictionary layout** (§7.1). Unprototyped three-way interaction.
 6. **Generator model coverage** (§9.4). "No build scripts" may not survive real FFI binding generation.
 7. **Generated-C debug info** (§9.2). If stepping through Exsecutor is unusable, QBE moves earlier.
