@@ -5,7 +5,7 @@ model: sonnet
 ---
 
 Read `/home/asher/Documents/EXSECUTOR/CLAUDE.md` in full before starting — it
-is binding. `docs/spec/exsecutor-spec-v0.3.md` is the source of truth; if your
+is binding. `docs/spec/exsecutor-spec-v0.4.md` is the source of truth; if your
 code and the spec disagree, say which one is wrong, and if the spec is stale,
 amend it in the same change and say so.
 

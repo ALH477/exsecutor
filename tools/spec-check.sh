@@ -17,7 +17,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-SPEC="$REPO_ROOT/docs/spec/exsecutor-spec-v0.3.md"
+SPEC="$REPO_ROOT/docs/spec/exsecutor-spec-v0.4.md"
 CODES_INC="$REPO_ROOT/compiler/x86_64/diag/codes.inc"
 
 FAIL=0
@@ -93,7 +93,7 @@ check_citations() {
   # to its own sections) and vendor/ (third-party, not ours to cite).
   cited="$(cd "$REPO_ROOT" && grep -rhoE '§[0-9]+(\.[0-9]+)*' \
              --exclude-dir=.git --exclude-dir=vendor --exclude-dir=build \
-             --exclude='exsecutor-spec-v0.3.md' . 2>/dev/null \
+             --exclude='exsecutor-spec-v0.4.md' . 2>/dev/null \
            | sed 's/§//' | sort -u || true)"
 
   n_real="$(printf '%s\n' "$real" | grep -c . || true)"
@@ -108,7 +108,7 @@ check_citations() {
       echo "           §$d  cited in:"
       (cd "$REPO_ROOT" && grep -rlE "§$d([^0-9.]|\$)" \
          --exclude-dir=.git --exclude-dir=vendor --exclude-dir=build \
-         --exclude='exsecutor-spec-v0.3.md' . 2>/dev/null | sed 's/^/             /') || true
+         --exclude='exsecutor-spec-v0.4.md' . 2>/dev/null | sed 's/^/             /') || true
     done
   else
     ok "$n_cited distinct sections cited, all resolve against $n_real headings"

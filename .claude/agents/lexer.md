@@ -5,7 +5,7 @@ model: sonnet
 ---
 
 Read `/home/asher/Documents/EXSECUTOR/CLAUDE.md` in full before starting — it
-is binding. `docs/spec/exsecutor-spec-v0.3.md` is the source of truth; if code
+is binding. `docs/spec/exsecutor-spec-v0.4.md` is the source of truth; if code
 and spec disagree, say which one is wrong.
 
 **Exclusive write scope.** You own `compiler/x86_64/lexer/` only. You depend

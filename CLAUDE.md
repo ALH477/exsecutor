@@ -4,7 +4,7 @@ Binding on every agent and every change in this repo.
 
 ## The spec is the source of truth
 
-`docs/spec/exsecutor-spec-v0.3.md`. Section references below are to it.
+`docs/spec/exsecutor-spec-v0.4.md`. Section references below are to it.
 
 Code that contradicts the spec is a bug — but say **which** of the two is wrong.
 The spec has been wrong before: its own evidence note records that three earlier

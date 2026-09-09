@@ -1,6 +1,8 @@
-# Exsecutor — Language Specification v0.3
+# Exsecutor — Language Specification v0.4
 
-**Status:** design complete, nothing implemented. Consolidates v0.1, Addenda A–C, Stage 0 measurements, the adversary audit, and the capability-row prototype. Supersedes all prior documents. v0.3 retires the v0.1–v0.2 placeholder name and records the implementation decision in §18; no design decision above §18 changed.
+**Status:** design complete, implementation begun — the compiler's macro dialect and runtime are under construction; no Exsecutor source compiles yet. Consolidates v0.1, Addenda A–C, Stage 0 measurements, the adversary audit, and the capability-row prototype. Supersedes all prior documents.
+
+**v0.3 → v0.4.** Two changes, both recorded as ADRs rather than argued here. **§15 #2, §16, §17:** the lexicon derivation test is no longer a kill criterion on §3 — the Latin lexicon is retained regardless of the result, as an identity commitment rather than a hypothesis (ADR 0005). The test survives as calibration; §17's adoption risk is now accepted rather than mitigated, and the English-roots fallback §16 offered is closed by choice, not by evidence. **§18.1:** the build closure is `{fasmg}` *plus a vendored macro package* — corrected against measurement, fasmg being architecture-neutral and shipping no instruction set (ADR 0003). No other design decision changed. v0.3 retired the v0.1–v0.2 placeholder name and recorded the implementation decision in §18.
 
 **Evidence base:** every load-bearing claim in this document is backed by a benchmark, a prototype, or a cited CVE. Claims that are not are marked `[OPEN]` or `[UNTESTED]`. Three earlier versions asserted things that measurement then contradicted; the practice since has been that prose designs are hypotheses until code runs.
 

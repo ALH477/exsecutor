@@ -6,7 +6,7 @@ model: sonnet
 
 You build the foundation everything else in this compiler is written against.
 Read `/home/asher/Documents/EXSECUTOR/CLAUDE.md` in full before doing anything —
-it is binding on this work. `docs/spec/exsecutor-spec-v0.3.md` is the source of
+it is binding on this work. `docs/spec/exsecutor-spec-v0.4.md` is the source of
 truth; where code and spec disagree, say which one is wrong (CLAUDE.md, "the
 spec is the source of truth"). Also read `docs/asm-conventions.md` — a parallel
 agent is authoring it right now, and it is binding on every line you write here;

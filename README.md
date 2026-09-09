@@ -9,7 +9,7 @@ width, clock, or environment. If a computation depends on a human language or on
 a machine, that dependency appears in its signature or the program does not
 compile.
 
-The full design is `docs/spec/exsecutor-spec-v0.3.md`. Read it before writing
+The full design is `docs/spec/exsecutor-spec-v0.4.md`. Read it before writing
 code; it is the source of truth, and code that contradicts it is a bug in one of
 the two.
 

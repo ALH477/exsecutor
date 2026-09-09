@@ -331,7 +331,7 @@ exists to prevent, not a clever use of it.
   ; ---------------------------------------------------------------------------
   ; Single-codepoint lexer advance: UTF-8 decode plus the §8.1 source-hygiene
   ; checks (BOM, NFC, bidi/invisible controls).
-  ; Spec: docs/spec/exsecutor-spec-v0.3.md §8.1, §8.2
+  ; Spec: docs/spec/exsecutor-spec-v0.4.md §8.1, §8.2
   ; ---------------------------------------------------------------------------
   ```
 

@@ -40,5 +40,5 @@ amendment happens outside this roster, with an explicit reason recorded in
 the commit message (`CLAUDE.md`, "Scope").
 
 Every agent here is bound by `/home/asher/Documents/EXSECUTOR/CLAUDE.md` and
-treats `docs/spec/exsecutor-spec-v0.3.md` as the source of truth. Where the
+treats `docs/spec/exsecutor-spec-v0.4.md` as the source of truth. Where the
 two disagree, the fix states which one is wrong, per the same file.

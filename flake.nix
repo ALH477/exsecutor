@@ -1,6 +1,6 @@
 # flake.nix -- Exsecutor build and development environment.
 #
-# Binding invariants (see /CLAUDE.md and docs/spec/exsecutor-spec-v0.3.md):
+# Binding invariants (see /CLAUDE.md and docs/spec/exsecutor-spec-v0.4.md):
 #
 #   - spec §18: "The build closure is `{fasmg}`." A *package* build (fasmg-x86,
 #     buildExsecutorPackage, exsc) depends on exactly fasmg plus the vendored
@@ -170,7 +170,7 @@
               echo "exsc: compiler/x86_64/exsc.asm does not exist yet." >&2
               echo "The Exsecutor compiler is not written (spec Stage 1 is not complete)." >&2
               echo "This is a deliberate failure, not a build error: see /CLAUDE.md and" >&2
-              echo "docs/spec/exsecutor-spec-v0.3.md section 18. Nothing here fakes a" >&2
+              echo "docs/spec/exsecutor-spec-v0.4.md section 18. Nothing here fakes a" >&2
               echo "successful compiler build." >&2
               exit 1
             '';
