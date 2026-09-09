@@ -32,6 +32,26 @@ rejected most of the spec's own function names. Corrected in §3.4.
 `[OPEN]` there rather than excused — `exterior` ends in `-or`, which §14 entry
 14 makes an `EXS-E0602` when declared `functio`.
 
+## `saluta.expected` and the publish gate
+
+`saluta.expected` is the 101 bytes `saluta()` must return, extracted from the
+literal and checked against it character for character. No trailing newline —
+the literal ends on the period, and a golden file that quietly added one would
+be testing something else.
+
+`tools/publish-gate.sh` is the condition for making this repository public,
+written as a command rather than a judgement: **the hello world working and
+proven.** Those are two claims, so it checks both. *Working* is that `exsc`
+compiles `saluta.exsc` and the result runs. *Proven* is that it emits exactly
+these bytes, reproducibly across directory, `TZ` and locale (§9.3), with every
+existing check still green.
+
+It exits 1 today and says why: there is no compiler. Running `saluta.exsc`
+needs the frontend (Stage 1), the type checker (Stage 2) **and** the C backend
+(Stage 3) — §16 estimates 10–14 months. The gate is written now so that the day
+it turns green is unambiguous, and so nobody has to decide by feel whether the
+hello world "works."
+
 ## `imprime.exsc`
 
 The companion. `saluta` cannot print; this is what printing looks like when
