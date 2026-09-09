@@ -151,8 +151,8 @@ run_conformance_tests() {
     note "failure, until that changes."
     note "Extend THIS function when it does -- not run_unit_tests above."
     note "Most entries need a rule of the shape 'exsc rejects this source"
-    note "with exactly code EXS-Exxxx'; the last two need byte-identical"
-    note "output across conditions (16) and hosts (17), which is exactly"
+    note "with exactly code EXS-Exxxx'; entries 16 and 17 instead need"
+    note "byte-identical output across conditions and hosts, which is exactly"
     note "what tools/reproduce.sh already knows how to check."
   else
     bad "tests/conformance/ has $n entries but run_conformance_tests() does"
