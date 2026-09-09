@@ -444,6 +444,56 @@ publica structura Capitulum {
 
 `@transitus` types may have **no implicit padding** — explicit `reserva` fields or rejection. This closes the uninitialized-memory disclosure class.
 
+### Bit-width fields
+
+Real wire formats pack sub-byte fields, and the vocabulary above could not
+express one. A field in a `@transitus` type may declare any width `uN` for
+1 ≤ N ≤ 64, under four rules:
+
+1. Sub-byte fields **pack MSB-first in declaration order**. The
+   first-declared field occupies the high bits, which is what wire formats
+   universally do and what a field table reads like.
+2. A field wider than 8 bits **must begin on a byte boundary**. Otherwise
+   byte order has nothing to be an order *of*.
+3. **Byte order is required above 8 bits and is not part of the grammar at or
+   below it.** An unannotated multi-byte field in a `@transitus` type *is*
+   `:nativus` and is therefore already `EXS-E0321`; `u4:maior` does not parse,
+   so it is `EXS-E0201`. Neither needs a new code.
+4. Declared widths **must sum to a whole number of bytes**. A partial trailing
+   byte is implicit padding — `EXS-E0322`, the rule above, applied at bit
+   granularity. This is the load-bearing one: an extension that enforced "no
+   implicit padding" only between bytes would quietly reopen the disclosure
+   class the rule exists to close.
+
+The worked example is not invented. It is the DCF DeModFrame
+(`vendor/hydramesh-wire/`), a 17-byte quantum with eleven independent
+implementations and a finite certificate:
+
+```exsecutor
+@transitus
+publica structura DeModFrame {
+    signum:  u8               // 0xD3, the first validity gate
+    versio:  u4               // packs MSB-first with genus
+    genus:   u4               // frame type
+    numerus: u16:maior
+    fons:    u16:maior
+    meta:    u16:maior
+    onus:    u32:maior
+    tempus:  u24:maior        // 24-bit microsecond offset
+    cursus:  u16:maior        // CRC-16/CCITT-FALSE over bytes 0..14
+}
+```
+
+**Why this example and not another.** §5.2's rules were previously illustrated
+only by `Capitulum` above, which was written for this document — every field a
+whole number of bytes, every width one the language already had. A format
+nobody had to satisfy is weak evidence that an annotation is sufficient.
+DeModFrame was written by people not thinking about Exsecutor, and it did not
+fit: `versio`/`genus` share a byte and `tempus` is 24 bits wide. Both gaps were
+found by running `prototypes/wire/`, which first checks its own reading of the
+format against all 246 certificate vectors, then attempts the declaration. The
+rules above are what closed it, and the same probe checks that they do.
+
 `mensura` (`usize`) is target-dependent. Mixing it with a fixed-width type requires an explicit widening that names the target assumption.
 
 ## 5.3 FFI
@@ -1237,10 +1287,20 @@ Ships with v1. Each entry must **fail to compile**, except entries 16 and 17, wh
 18. Source with a UTF-8 BOM → `EXS-E0101`
 19. Mixed-script identifier, single module → `EXS-E0104`
 20. CRLF line ending → `EXS-E0106`
+21. `@transitus` bit widths not summing to a whole byte → `EXS-E0322`
+22. `u4:maior` — byte order on a sub-byte field → `EXS-E0201`
+23. `DeModFrame` encode/decode → byte-identical to all 246 vectors of `vendor/hydramesh-wire/golden_vectors.json`
 
 Entries 18-20 close a gap: §8.1 defines six source-policy codes and only three
 of them (`E0102`, `E0103`, `E0105`) had an entry, while `E0101`, `E0104` and
-`E0106` are exactly what a Stage 1 lexer implements first. They are appended
+`E0106` are exactly what a Stage 1 lexer implements first.
+
+Entries 21-23 cover §5.2's bit-width rules. **23 is different in kind from
+every other entry here**: the rest are cases this project wrote for itself,
+while 23 is an external certificate this project must satisfy. Under its own
+theorem, matching all 246 vectors is equivalent to agreeing with the reference
+implementation on every one of 2^108 frames — so it is the one conformance
+entry whose passing means something to somebody else. They are appended
 rather than interleaved because existing entries are referenced by number
 elsewhere in the tree, and renumbering a referenced list is the same mistake as
 renumbering a code.

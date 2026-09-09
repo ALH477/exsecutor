@@ -31,6 +31,9 @@ the answer it gives" is the bar — not "good enough to maintain."
 - **`stage0-bench/`** — the Stage 0 measurement harness behind §6.2's ARC
   overhead figures and §9.2's compile-speed figures. The C sources and
   timing scripts are absent from this tree; see `stage0-bench/README.md`.
+- **`wire/`** — probe for §5.2's `@transitus`: can it describe a wire format
+  written by people who had never heard of this language? It could not
+  (ADR 0011); §5.2 gained bit-width fields as a result. See `wire/README.md`.
 - **`lexicon/`** — materials for §3's derivation scheme and the §16
   human-subjects derivation test. Currently empty; see `lexicon/README.md`.
 

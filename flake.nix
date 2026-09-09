@@ -293,6 +293,14 @@
       # is locale-sensitive and its own recipe likely wants `LC_ALL=C` added.
       vendorIntegrityProvenanceDigest = "9e17fab0e357c097d1b48969c50dc629fae5e3a0b2658151546c17b0ae90ea47";
       vendorIntegrityExpectedDigest = "3a21ac587fdb291667977aa3a2ccfb94257c39ccabf075b685086718c3b44b66"; # LC_ALL=C
+
+      # vendor/hydramesh-wire: the DCF DeModFrame spec plus its 246-vector
+      # golden certificate (ADR 0011). Reference DATA, not code -- nothing here
+      # links into exsc, and the files keep their own LGPL-3.0-only identifier.
+      # Same digest discipline as fasmg-x86 above: PROVENANCE.md excluded,
+      # LC_ALL=C pinned, because a digest that moves with the developer's LANG
+      # is not an integrity check.
+      wireVendorDigest = "770382f1f32b672fdee15a0d54d7231ba38729dd01c5494ec75c29f39a62d5e5"; # LC_ALL=C
     in
     {
       packages.${system} = {
@@ -447,6 +455,32 @@
         # the build closure: `packages.exsc` still builds from fasmg plus the
         # vendored macro package and nothing else. A check is verification, not a
         # shipped artifact, which is exactly the line spec §18.1 draws.
+        wire-vendor-integrity = pkgs.stdenvNoCC.mkDerivation {
+          name = "check-vendor-hydramesh-wire-integrity";
+          nativeBuildInputs = [ pkgs.coreutils pkgs.findutils ];
+          dontUnpack = true;
+          buildCommand = ''
+            set -e
+            export LC_ALL=C
+            mkdir -p work/vendor
+            cp -r --no-preserve=mode -- ${./vendor/hydramesh-wire} work/vendor/hydramesh-wire
+            cd work
+            actual="$(find vendor/hydramesh-wire -type f ! -name PROVENANCE.md | sort | xargs sha256sum | sha256sum | cut -d' ' -f1)"
+            echo "expected (LC_ALL=C): ${wireVendorDigest}"
+            echo "actual   (LC_ALL=C): $actual"
+            if [ "$actual" != "${wireVendorDigest}" ]; then
+              echo "" >&2
+              echo "FAIL: vendor/hydramesh-wire content hash does not match." >&2
+              echo "These files are copied verbatim from upstream and are never" >&2
+              echo "edited here. A mismatch means a local edit or a re-vendor;" >&2
+              echo "report it rather than updating this digest to match." >&2
+              exit 1
+            fi
+            mkdir -p "$out"
+            echo "$actual" > "$out"/digest
+          '';
+        };
+
         test = pkgs.stdenvNoCC.mkDerivation {
           name = "check-unit-tests";
           nativeBuildInputs = [
