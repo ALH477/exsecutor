@@ -167,19 +167,31 @@ that case is unaddressed here rather than guessed at.
 
 ---
 
-## 3. The macro dialect — **[UNIMPLEMENTED]**
+## 3. The macro dialect
 
-None of the four files below exist. `compiler/x86_64/macros/` is currently an
-empty directory. Everything in this section is a **proposed surface syntax**,
-written to be exercised and revised, not a working artifact — CLAUDE.md's
-evidence discipline ("prose designs are hypotheses until code runs") applies
-to this section by name. Treat every example as a statement of intent, not as
-verified fasmg source; none of it has been assembled.
+All four files below exist, under `compiler/x86_64/macros/`, and every
+construct in this section is exercised by at least one passing fixture
+under `tests/unit/` (`struct_fields.asm`, `proc_calling_convention.asm`,
+`flow_constructs.asm`, `rassert_trap.asm`, `rassert_release.asm` — see
+`tests/README.md`). CLAUDE.md's evidence discipline ("prose designs are
+hypotheses until code runs") governed how this section was written, not how
+it now reads: two of the four files' original proposed surface syntax
+turned out not to work once actually assembled (the flow-control section,
+just below, records why in full), and were revised before anything outside
+`macros/` could depend on them.
 
-CLAUDE.md freezes the macro dialect once the first module depends on it —
-until `macros/` exists and something outside it uses it, this proposal is open
-to revision without going through ADR-level review. After that point, changing
-it is a whole-tree change.
+**The dialect is now frozen, per CLAUDE.md**: `macros/` is no longer empty,
+and from this point on a change to any file in it is a whole-tree change
+that goes through review, not a local edit. The `macros/proc.inc` section's
+own example, just below, predates that validation pass and is not yet
+reconciled with the real, tested syntax `compiler/x86_64/macros/proc.inc`'s
+own header comment documents (inline `uses` mixed with the argument list,
+and a bare `ret` on the success path, are both narrower than what actually
+shipped) — flagged here rather than silently left to mislead a reader, and
+left as a named follow-up rather than rewritten, since amending that
+section was outside this revision's authorized scope. The struct and
+assert sections were reconciled with their real
+implementations in this same pass and are current.
 
 ### 3.1 `macros/proc.inc` — procedure declaration
 
@@ -227,78 +239,152 @@ endp
 
 ### 3.2 `macros/flow.inc` — structured control flow
 
-Intent: `.if`/`.elseif`/`.else`/`.endif`, `.while`/`.endw`, `.for`/`.endf`,
-`.switch`/`.case`/`.default`/`.endsw`, each expanding to ordinary
-`cmp`/`jcc` sequences with fasmg's `local` facility generating a fresh label
-per expansion so nested or repeated use never collides.
+**Implemented and verified** (asm-rt, wave 1) — but not with the syntax
+originally proposed here. `flow_if`/`flow_elseif`/`flow_else`/`flow_endif`,
+`flow_while`/`flow_endw`, `flow_for`/`flow_endf`,
+`flow_switch`/`flow_case`/`flow_default`/`flow_endsw`, each expanding to
+ordinary `cmp`/`jcc` sequences with fasmg's `local` facility generating a
+fresh label per expansion so nested or repeated use never collides.
+Examples below are lifted verbatim (modulo surrounding setup) from
+`tests/unit/flow_constructs.asm`, which passes:
 
 ```fasmg
-; proposed — not implemented
-.if     rax = 0
-        call    diag_emit_empty
-.elseif rax < 0
-        fail    EXS_E0311
-.else
-        call    lexer_advance
-.endif
+mov	rax, 5
+mov	rbx, 0
+flow_if rax eq 5
+	mov	rbx, 1
+flow_elseif rax eq 6
+	mov	rbx, 2
+flow_else
+	mov	rbx, 3
+flow_endif
 
-.while  ecx > 0
-        call    cst_visit_one
-        dec     ecx
-.endw
+mov	rax, 0
+mov	rcx, 1
+flow_while rcx le 5
+	add	rax, rcx
+	inc	rcx
+flow_endw
 
-.for    ecx, 0, 16                      ; ecx := 0; while ecx < 16; ecx += 1
-        call    hash_mix_byte
-.endf
+mov	rax, 0
+flow_for ecx, 0, 16              ; ecx := 0; while ecx < 16: body; ecx += 1
+	add	eax, ecx
+flow_endf
 
-.switch eax
-.case   EXS_E0101
-        call    diag_render_bom
-.case   EXS_E0102, EXS_E0103
-        call    diag_render_normalization
-.default
-        call    diag_render_generic
-.endsw
+mov	eax, 2
+mov	ebx, 0
+flow_switch eax
+flow_case 1
+	mov	ebx, 100
+flow_case 2
+	mov	ebx, 200
+flow_case 3, 4, 5
+	mov	ebx, 300
+flow_default
+	mov	ebx, 999
+flow_endsw
 ```
+
+Comparison operators are the words `eq ne lt le gt ge`, and comparisons are
+**signed** (`jl`/`jle`/`jg`/`jge`) — an unsigned variant is
+`[UNIMPLEMENTED]`; nothing needed one this wave.
+
+**Two falsifications of the originally proposed syntax, found by assembling
+it, not by inspection — both load-bearing limits on the dialect, recorded
+here so neither gets re-proposed later without rediscovering why it fails:**
+
+- **No leading dot.** A token beginning with `.` inside a real code segment
+  (after `format`/`segment` have run) is claimed by fasmg's core statement
+  parser as a local-label reference before macro lookup is ever consulted —
+  not a style risk, a hard failure ("illegal instruction" at the call
+  site). Confirmed with a minimal pair: a macro named `foo?` invoked bare as
+  `foo` inside `segment readable executable` assembles cleanly; the same
+  macro renamed `.foo?` and invoked as `.foo`, no other change, fails at
+  that exact statement. `?`-suffixing the macro name (the usual
+  safe-redefine convention — see the struct and assert sections, just
+  below) does not help, because the dot is claimed at the *call site*, not
+  the definition site. Bare `if`/`while`/`for` (no dot) were also
+  unavailable, for a different reason: they would shadow fasmg's own native
+  assemble-time directives — the exact collision the assert section, below,
+  explains `rassert` avoids by not reusing `assert`. Hence the
+  `flow_`-prefixed names, applying this document's own global-label-naming
+  rule to a macro name instead of a data label.
+- **Word operators, not symbols.** Any `match` pattern token containing a
+  bare `=` character collides with `match`'s own `=identifier?`
+  literal-match sigil and fails to resolve, or resolves to the wrong
+  branch. `<`, `>` and `<>` survive as literal pattern tokens; `=`, `<=`
+  and `>=` do not. Rather than mix conventions (symbols for three
+  operators, words for the other three), all six became words.
 
 ### 3.3 `macros/struct.inc` — struct definition and field access
 
-Intent: a `struct`/`ends` pair that declares named, typed fields and offset
-constants, so field access reads as a name rather than a hand-tracked
-integer.
+**Implemented and verified** (asm-rt, wave 1) — copy-adapted, not `include`d,
+from the working `struct`/`end struct` pair already present in
+`vendor/fasmg-x86/format/elf64.inc` (built on fasmg's native `struc`/
+`virtual at`/`namespace`; every vendored format file that defines it
+`purge`s it after use, and none of this project's own fixtures reach that
+file — they route through `elfexe.inc` instead — so copy-adapting it here is
+not a duplicate include). A `struct`/`end struct` pair declares named, typed
+fields and offset constants, so field access reads as a name rather than a
+hand-tracked integer:
 
 ```fasmg
-; proposed — not implemented
 struct  Span
         field   start,   dd
-        field   length,  dd
-ends
+        length  dd       ?
+end struct
 
         mov     eax, [rdi + Span.start]
         mov     [rdi + Span.length], ecx
 ```
 
-`Span.start` and `Span.length` are assemble-time constant offsets; the macro
-is expected to catch a misspelled field name at assembly time, not to
-bounds-check the base pointer at runtime — that is what `macros/assert.inc`
-is for.
+Both field syntaxes shown above are accepted, freely mixed in one struct
+body: the `field name, decl` sugar, and the bare native-`struc` form
+(`name decl ?`) that sugar expands to.
+
+Closes with **`end struct`, not `ends`**: zero single-token `ends` exist
+anywhere in the vendored `vendor/fasmg-x86/` tree — every block there closes
+two-token (`end macro`, `end virtual`, `end struc`), and `end struct` is
+what this macro itself expands to underneath.
+
+`Span.start` and `Span.length` are assemble-time constant offsets; a
+misspelled field name is caught at assembly time (undefined symbol), not by
+this macro bounds-checking the base pointer at runtime — that is what
+`macros/rassert`, next, is for.
 
 ### 3.4 `macros/assert.inc` — assertions, compiled out in release
 
-Intent: an `assert` macro that expands to a runtime check plus a trap in a
-debug build, and to nothing at all — not even the condition — when `RELEASE`
-is defined before the include.
+**Implemented and verified** (asm-rt, wave 1). The macro is named
+**`rassert`, not `assert`**: fasmg has its own native, assemble-time
+`assert` directive (confirmed by direct use — `assert 1 = 1` assembles with
+no include beyond fasmg itself — and by downstream use in
+`vendor/fasmg-x86/format/elf64.inc`/`elf32.inc`), with entirely different
+(assemble-time, not runtime) semantics; fasmg lets a macro silently shadow a
+native directive with no warning, so reusing the name would make `assert`'s
+meaning depend on include order rather than staying fixed. `rassert`
+expands to a runtime check plus a trap (`ud2`, emitted as its raw encoding
+`db 0x0F, 0x0B` — vendor/fasmg-x86 has no symbolic mnemonic for it) in a
+debug build, and to nothing at all — not even the condition — when
+`RELEASE` is defined before the include:
 
 ```fasmg
-; proposed — not implemented
-        assert  rax <> 0
-        assert  [Span.length + rdi] > 0
+        rassert rax ne 0
+        rassert [Span.length + rdi] gt 0
 ```
+
+Condition operators are the words `eq ne lt le gt ge` (signed), not the
+symbols an earlier draft of this section showed (`= <> < > <= >=`): tried
+the symbols first, and `=`, `<=` and `>=` do not survive as literal `match`
+pattern tokens in fasmg's macro dialect (they collide with `match`'s own
+`=identifier?` sigil) — see `macros/flow.inc`'s header, which hit the same
+issue and documents it in full; `rassert` duplicates that file's condition
+parser rather than depending on it, so each macro file stays independently
+assemblable.
 
 Because a `RELEASE` build is expected to erase both the check *and* its
 condition expression, a condition must never contain a side effect (a call, an
 increment, a flag a later line depends on) — code that only runs because an
-`assert` evaluated it is exactly the kind of debug/release skew this macro
+`rassert` evaluated it is exactly the kind of debug/release skew this macro
 exists to prevent, not a clever use of it.
 
 ---

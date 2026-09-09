@@ -989,7 +989,7 @@ Worst first.
 
 1. **Closure capture in capability rows** (§4.2). The substitution foundation is built and validated against six attacks; a lambda capturing a capability from an enclosing `sub` is untested. Blocks Stage 1.
 2. **Lexicon derivation test** (§16). Cannot be retired by more engineering — needs human subjects. No longer gates whether §3 is load-bearing (ADR 0005); §3 is retained regardless. What remains open is the *size of its cost*, which is unmeasured.
-3. **Reference cycles** (§6.7). No answer. Accepted cost, with a DoS exposure to document.
+3. **Reference cycles** (§6.7). No answer. Accepted cost, with a DoS exposure to document. **Still open for the full language.** The `certus` safety-critical profile (`docs/design/profile-certus.md`, ADR 0010) dissolves it by forbidding reference counting outright — arena-only, sized at `initium` — so cycles are structurally impossible there. That is a restriction, not a solution, and does not close this item.
 4. **Root coinage governance** (§3.8). Resolved as design by §3.9 — exhaustion test, a five-rung coinage ladder, review, permanent registration against the content-addressed morpheme table, and a loan register kept as a running measurement of whether §3 scales. `[UNTESTED]`: no root has been coined through it, and `norma.algebra` (which needs *lane*, *stride*, *pivot*, *eigenvalue*) is its first real exercise.
 5. **Generics × capability rows × dictionary layout** (§7.1). Unprototyped three-way interaction.
 6. **Generator model coverage** (§9.4). "No build scripts" may not survive real FFI binding generation.
