@@ -562,6 +562,12 @@ set by a compiler flag:
 `-ffast-math` that silently changes results. A module wanting it must say so in
 its interface, where a caller can see it.
 
+**The fasmg backend is the reference for everything in this section** (§9.2).
+`reassociatio`, `contractio` and `subnormales` are not expressible in portable
+C, so a C target that cannot honour a declared `numeri` fails the build rather
+than quietly producing different numbers. Where the two backends disagree, the
+fasmg result is the answer.
+
 **`numeri` is interface-affecting.** Changing it changes callers' results, so it
 feeds the interface hash and dependents rebuild (§9.6). Calling between modules
 with incompatible `numeri` requires an explicit coercion that names the
@@ -1091,7 +1097,41 @@ source → lossless CST → typed AST → SSA IR → backend
 
 ## 9.2 Backend
 
-**C backend first**, behind a clean SSA boundary. Reaches RISC-V and embedded Linux immediately, bootstraps trivially, pairs with `zig cc`.
+**Two backends, with distinct roles.** This replaces "C backend first," which
+was stated without defending an asymmetry it created: the compiler is written
+in fasmg assembly for the purity contract (§18.1), and then emitted C — a
+routing decision nobody priced.
+
+| backend | role |
+|---|---|
+| **fasmg** | **the reference.** Defines the semantics. Keeps the closure `{fasmg}` end to end, including through self-hosting. |
+| **C** | **reach.** Every target a C compiler supports; RISC-V and embedded Linux immediately; pairs with `zig cc`. |
+
+**The fasmg backend is normative.** Where the C backend cannot reproduce its
+result, that is a documented limitation of the C *target*, never a second
+dialect of the language. Both backends compiling the same module must produce
+identical observable results, and a C target that cannot honour the declared
+`numeri` **fails the build** rather than degrading silently — the rule §5.5
+already sets for devices, applied to backends.
+
+This is the third instance of one pattern, not a new idea: `vendor/hydramesh-wire/`
+certifies eleven implementations against one reference, §5.5 requires CPU and
+GPU to agree bit for bit, and `docs/design/amdgpu-backend.md` requires every
+kernel to match a scalar reference. Reference-plus-differential-test is how
+this project checks things.
+
+**Why a reference backend is not optional.** §5.4's guarantees cannot be
+expressed in portable C: `subnormales conservata` is MXCSR runtime state,
+trapping arithmetic is UB, `reassociatio vetita` depends on flags passed to a
+compiler downstream of the artifact — which leaks the guarantee out of `exsc`
+and weakens §9.3. In assembly each is direct: emit the MXCSR setup, emit
+`add`/`jo`, select the instructions yourself. **Through C alone, §5.4 is not
+merely hard to honour — it is untestable**, and a criterion that cannot fail is
+not a criterion. See ADR 0012.
+
+The clean SSA boundary is what makes two backends affordable. Each is written
+against the IR contract (`docs/design/ssa-ir.md`), so each can be built and
+tested against hand-written IR, with no frontend and without the other.
 
 Compile speed was measured and is **not** the constraint I previously claimed. `[UNREPRODUCED]` — the measurement harness is absent from the tree; figures carried forward from v0.2. gcc `-O0` on backend-style generated C:
 
@@ -1107,6 +1147,15 @@ Projected full rebuild at 3× source-to-C expansion, single core, no parallelism
 Later options: QBE (~8k LOC, SSA, implements the C ABI in full, targets riscv64), Cranelift (Rust-native, mature), LLVM (release builds, once there are users).
 
 **Do not write an optimizing backend.** Zig's team took 2020–2025 to make a self-hosted x86-64 backend the debug default.
+
+That warning is about *optimizing* backends and does not forbid the reference
+one. The fasmg backend is deliberately **naive** — every value spilled to a
+stack slot, no register allocation, slow by construction and correct by
+construction. Conflating the naive backend with a good one is the mistake that
+would make this decision expensive. Speed is the C backend's job, and after it,
+QBE's. `[OPEN]` — "naive is cheap" is an estimate, not a measurement, and the
+register allocator that a fast backend needs is real engineering however it is
+scheduled.
 
 ## 9.3 Compiler purity contract
 
@@ -1375,8 +1424,26 @@ Remaining, before Stage 1:
 **Stage 2 — types and capabilities (4–6 months).** Type checker. Capability rows with substitution and inference. Capability-bearing types and `dyn` bounds. Text types and brands. `@transitus` enforcement. Lexicon checking.
 *Kill:* if `sub` resolution needs a search algorithm, redesign.
 
-**Stage 3 — C backend, runtime, Nix (3–4 months).** SSA lowering via Braun. C emission. Cross-compile to RISC-V and embedded Linux. `buildExsecutorPackage`. `proba-reproducibilitatem` green in CI.
+**Stage 3 — backends, runtime, Nix (3–4 months).** SSA lowering via Braun. The **fasmg reference backend** (§9.2), then C emission. Cross-compile to RISC-V and embedded Linux. `buildExsecutorPackage`. `proba-reproducibilitatem` green in CI, and the two backends agreeing on every conformance module.
 *Kill:* undebuggable generated C → move to QBE.
+
+> **The reference backend does not have to wait for Stage 1.** §9.2's clean SSA
+> boundary means it is written against the IR contract
+> (`docs/design/ssa-ir.md`), not against a frontend — so it can be built and
+> tested against hand-written IR while the lexer and CST are still being
+> written, the way LLVM backends are tested against `.ll` files no frontend
+> produced.
+>
+> There is a reason to do exactly that. §9.2's own kill criterion —
+> *undebuggable generated C* — **cannot fire until some C has been generated**,
+> so as written it is a criterion that decides whether QBE moves earlier and is
+> only evaluable after two stages have been built assuming it did not. The same
+> holds for §5.4: its guarantees are untestable through C, so nothing verifies
+> them until a reference backend exists. Both are arguments for pulling the
+> reference backend forward rather than for the ordering above.
+>
+> `[OPEN]` — not rescheduled here. Moving it is a decision about where effort
+> goes, and the estimate that a naive backend is cheap has not been measured.
 
 **Stage 4 — tooling (4–8 months).** LSP, formatter, package manager.
 *Kill:* if any is intractable because of a language decision, the decision is wrong. Change it.
