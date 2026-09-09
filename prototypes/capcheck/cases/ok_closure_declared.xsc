@@ -1,0 +1,18 @@
+// The same closure-capture shape, declared correctly. This must ACCEPT.
+//
+// A fix that rejects bad_closure_capture.xsc but also rejects this file is
+// not a fix -- it is a checker that refuses closures. This case is what
+// separates the two.
+//
+// exterior takes the same `rete`-demanding closure, forwards it the same
+// way, and declares `poscit alloc, rete`. The row its parameter's type
+// carries is now a subset of what it declared, so substitution is
+// satisfied.
+
+publica functio consumidor(x: f32, f: functio(f32) -> f32 poscit {rete}) -> f32 poscit sicut f {
+    redde f(x)
+}
+
+publica functio exterior(v: f32, cerrado: functio(f32) -> f32 poscit {rete}) -> f32 poscit alloc, rete {
+    redde consumidor(v, cerrado)
+}

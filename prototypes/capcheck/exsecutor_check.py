@@ -209,7 +209,51 @@ def check_dyn_escape(text, impls):
 
 # ------------------------------------------------ substitution / rows -----
 
-def row_of_reference(expr, funcs):
+def _depth0_poscit(s):
+    """Index of the LAST `poscit` at paren/brace depth 0, or -1.
+
+    A function's own `poscit` follows its return type, and a return type may
+    itself be a function type carrying a row -- `-> (functio() -> X poscit
+    {rete}) poscit rete`. Searching naively finds the type's row instead of
+    the function's.
+    """
+    depth, last = 0, -1
+    i = 0
+    while i < len(s):
+        ch = s[i]
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        elif depth == 0 and s.startswith("poscit", i) and (
+                i == 0 or not s[i - 1].isalnum()):
+            last = i
+            i += 6
+            continue
+        i += 1
+    return last
+
+
+def type_row(type_str):
+    """The capability row carried BY A TYPE (Sec 4.2, rows travel with values).
+
+    `functio(f32) -> f32 poscit {rete}` -> {'rete'}. This is what lets an
+    escaped closure be checked: the row is in the value's type, so no
+    call-site name lookup is required.
+    """
+    if not type_str:
+        return set()
+    i = _depth0_poscit(type_str)
+    if i < 0:
+        return set()
+    rest = type_str[i + 6:].strip()
+    if rest.startswith("{"):
+        close = matching_delim(rest, 0, "{", "}")
+        rest = rest[1:close]
+    return {a for a in (x.strip() for x in rest.split(",")) if a in CAPABILITY_ATOMS}
+
+
+def row_of_reference(expr, funcs, enclosing=None):
     """'The capability row of the actual argument' (Sec 4.2). Deliberately
     faithful to what positional substitution can name:
       - a NAMED function -> its own declared poscit (the public contract,
@@ -226,13 +270,22 @@ def row_of_reference(expr, funcs):
     """
     expr = expr.strip()
     if expr.startswith("functio(") or expr.startswith("functio ("):
-        return lambda_row(expr, funcs)
-    if re.fullmatch(r"[A-Za-z_]\w*", expr) and expr in funcs:
-        return set(funcs[expr].declared_atoms())
+        return lambda_row(expr, funcs, enclosing)
+    if re.fullmatch(r"[A-Za-z_]\w*", expr):
+        if expr in funcs:
+            return set(funcs[expr].declared_atoms())
+        # ROWS TRAVEL WITH VALUES. A bare identifier that is not a known
+        # function may still be a function-typed parameter, and its type
+        # carries its row. This is the closure-capture fix: an escaped
+        # closure has no name to look up, but its TYPE is right there.
+        if enclosing is not None:
+            for pname, ptype in enclosing.params:
+                if pname == expr:
+                    return type_row(ptype)
     return set()
 
 
-def call_contribution(name, args, funcs):
+def call_contribution(name, args, funcs, enclosing=None):
     """What calling `name(args)` demands of the caller: name's own declared
     atoms and capability-typed-parameter atoms, plus each `sicut P` entry
     substituted positionally with the row of the actual argument at P's
@@ -244,11 +297,11 @@ def call_contribution(name, args, funcs):
     for pname in f.sicut_entries():
         idx = next((i for i, (pn, _) in enumerate(f.params) if pn == pname), None)
         if idx is not None and idx < len(args):
-            result |= row_of_reference(args[idx], funcs)
+            result |= row_of_reference(args[idx], funcs, enclosing)
     return result
 
 
-def lambda_row(expr, funcs):
+def lambda_row(expr, funcs, enclosing=None):
     popen = expr.index("(")
     pclose = matching_delim(expr, popen, "(", ")")
     bopen = expr.index("{", pclose)
@@ -256,15 +309,25 @@ def lambda_row(expr, funcs):
     body = expr[bopen + 1:bclose]
     total = set()
     for name, args in find_calls(body):
-        total |= call_contribution(name, args, funcs)
+        total |= call_contribution(name, args, funcs, enclosing)
     return total
 
 
 def effective_row(f, funcs):
     total = set(sub_atoms_of(f.body_text))
+    # A function-typed PARAMETER contributes its type's row -- UNLESS the
+    # function declares `sicut P` for it. `poscit sicut f` means "whatever f
+    # demands, I demand", which IS a declaration: the row is polymorphic and
+    # the obligation passes to the caller, where substitution meets it. Adding
+    # it here too would reject every correctly row-polymorphic HOF, which is
+    # what ok_closure_declared.xsc exists to catch.
+    polymorphic = set(f.sicut_entries())
+    for pname, ptype in f.params:
+        if pname not in polymorphic:
+            total |= type_row(ptype)
     for name, args in find_calls(f.body_text):
         if name in funcs:
-            total |= call_contribution(name, args, funcs)
+            total |= call_contribution(name, args, funcs, f)
     return total
 
 

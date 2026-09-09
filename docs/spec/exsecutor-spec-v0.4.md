@@ -325,7 +325,7 @@ Prototype: `prototypes/capcheck/exsecutor_check.py`, 468 lines, validated agains
 1. Capability types are **unforgeable**. No literal, no cast, no default.
 2. The only root is the `Mundus` passed to `initium`. All others derive from it, explicitly and fallibly.
 3. Capability sets are part of **`functio` types**, not only declarations.
-4. **A capability becomes available in a scope in exactly three ways — bound by `sub`, received as a parameter, or held in a field of the receiver — and all three are visible in the interface.** `poscit` means *drawn from the enclosing scope*, nothing else.
+4. **A capability becomes available in a scope in exactly four ways — bound by `sub`, received as a parameter, held in a field of the receiver, or **captured by a closure from an enclosing scope** — and all four are visible in the interface.** `poscit` means *drawn from the enclosing scope*, nothing else. Capture was absent from this list in v0.4 and earlier, which is precisely where the closure-capture hole lived: it is visible because a captured row appears in the closure's **type** (§4.2), not because it is bound or passed.
 5. `publica` functions declare `poscit` explicitly. Private functions infer it from their bodies, transitively.
 6. A function with no `poscit` and no capability parameters is **pure with respect to ambient state**. It may allocate and diverge; it may not observe the host.
 7. **No module-level mutable state.** (`EXS-E0500`; with a capability, `EXS-E0501`.)
@@ -340,7 +340,11 @@ publica functio applica(v: f32, f: functio(f32) -> f32) -> f32 poscit alloc, sic
 }
 ```
 
-> **Substitution rule.** A row variable in a callee's `poscit` names one of the **callee's** parameters. At each call site it is substituted **positionally** with the capability row of the actual argument.
+> **Substitution rule.** A capability row is part of a function **type**, not only of a function *declaration*: `functio(A) -> B poscit {R}`. A row variable in a callee's `poscit` names one of the **callee's** parameters; at each call site it is substituted **positionally** with the row carried by the actual argument's **type**.
+
+*Rows travel with values.* The original rule said "the capability row of the actual argument" and resolved it by **name** at the call site — a named function's declared `poscit`, or an inline lambda's body. A closure that has escaped its constructor arrives as a bare value of function type with neither, so there was nothing for a row to attach to, and a genuine violation was accepted. Putting the row in the type removes the lookup: an escaped closure carries its captured authority in its own type, where a caller and the audit can both see it.
+
+`sicut f` is unchanged as surface syntax. Its meaning is now *the row in parameter `f`'s type*, resolved by typing rather than by inspecting the call site.
 
 Without this, unioning the callee's row propagates a name with no referent in the caller (the prototype produced `requires [sicut f]` inside a function having no `f`). Substitution is what makes laundering impossible rather than merely annotated:
 
@@ -352,11 +356,11 @@ publica functio exterior(v: f32) -> f32 poscit alloc {
 }
 ```
 
-`[OPEN]` **Closure capture defeats positional substitution. Measured, not assumed.** The rebuilt probe (`prototypes/capcheck/`) accepts `cases/bad_closure_capture.xsc`, which is a genuine violation: a lambda closes over a `sub`-bound `rete` inside a function that legitimately holds it, escapes as an ordinary function-typed value, and is forwarded by a caller declaring only `alloc`. Every individual function in that file is correct.
+**Closure capture: found by measurement, fixed, and re-measured.** The probe (`prototypes/capcheck/`) first *accepted* `cases/bad_closure_capture.xsc`, a genuine violation in which a lambda closes over a `sub`-bound `rete`, escapes as a function-typed value, and is forwarded by a caller declaring only `alloc`. Every individual function in that file is correct; the rule could not see the composition.
 
-The failure is **structural, not a missing case**. Substitution resolves a row *by name at the call site* — it can look up a named function's declared `poscit`, or read an inline lambda's body. An escaped closure arrives as a bare value of function type and matches neither, so there is nothing for a row to attach to.
+Under the revised rule the same file is rejected as `EXS-E0421`, and `cases/ok_closure_declared.xsc` — the same shape with the row correctly declared — is still accepted. That second case is load-bearing: a checker that rejects the violation *and* the correct version is not a fix, and an earlier attempt at this change did exactly that by double-counting a `sicut`-declared row.
 
-A fix requires capability rows to **travel with function-typed values** rather than being looked up by name — closer to row-polymorphic effect typing than to the positional rule above. That is a design change to this section, not an implementation gap beneath it. Highest-priority remaining work.
+`[UNTESTED]` as a soundness claim. What exists is nine cases passing in a Python probe, not a proof and not a compiler. §15 #5's generics-by-dictionary-passing interaction is made harder by this change, not easier.
 
 ## 4.3 Capability-bearing types
 
@@ -991,11 +995,11 @@ Ships with v1. Each entry must **fail to compile**, or in the last two cases pro
 
 Worst first.
 
-1. **Closure capture in capability rows** (§4.2). No longer untested — **tested, and it fails.** The probe accepts a genuine violation, because substitution resolves rows by name at the call site and an escaped closure has no name. Rows must travel with function-typed values instead. Still blocks Stage 1, but is now a known design defect rather than an unknown. Note also that the six attacks the original prototype was said to be validated against were never enumerated anywhere; the rebuilt probe **chose** six, and says so.
+1. **Closure capture in capability rows** (§4.2). **Found, fixed, re-measured.** The probe accepted a genuine violation; §4.2 was amended so rows travel with function-typed values rather than being resolved by name at a call site; the same file is now rejected as `EXS-E0421` and the correctly-declared variant is still accepted. No longer blocks Stage 1. What remains `[UNTESTED]` is soundness — nine probe cases are not a proof, and none of this is in a compiler. Note also that the six attacks the original prototype was said to be validated against were never enumerated anywhere; the rebuilt probe **chose** six, and says so.
 2. **Lexicon derivation test** (§16). Cannot be retired by more engineering — needs human subjects. No longer gates whether §3 is load-bearing (ADR 0005); §3 is retained regardless. What remains open is the *size of its cost*, which is unmeasured.
 3. **Reference cycles** (§6.7). No answer. Accepted cost, with a DoS exposure to document. **Still open for the full language.** The `certus` safety-critical profile (`docs/design/profile-certus.md`, ADR 0010) dissolves it by forbidding reference counting outright — arena-only, sized at `initium` — so cycles are structurally impossible there. That is a restriction, not a solution, and does not close this item.
 4. **Root coinage governance** (§3.8). Resolved as design by §3.9 — exhaustion test, a five-rung coinage ladder, review, permanent registration against the content-addressed morpheme table, and a loan register kept as a running measurement of whether §3 scales. `[UNTESTED]`: no root has been coined through it, and `norma.algebra` (which needs *lane*, *stride*, *pivot*, *eigenvalue*) is its first real exercise.
-5. **Generics × capability rows × dictionary layout** (§7.1). Unprototyped three-way interaction.
+5. **Generics × capability rows × dictionary layout** (§7.1). Unprototyped three-way interaction, and **harder since §4.2 put rows in function types** — a witness table now carries rows as well as methods.
 6. **Generator model coverage** (§9.4). "No build scripts" may not survive real FFI binding generation.
 7. **Generated-C debug info** (§9.2). If stepping through Exsecutor is unusable, QBE moves earlier.
 8. **Ecosystem bootstrapping.** Unaddressed by anything in this document, and the actual reason languages die.
@@ -1007,7 +1011,7 @@ Worst first.
 **Stage 0 — validation.** Four of five kill criteria retired with evidence: CVE gate passed (§2), ARC measured (§6.2), compile speed measured (§9.2), capability rows prototyped (§4.2).
 
 Remaining, before Stage 1:
-- **Closure capture in the prototype.** Done — the probe exists and the case runs. The *experiment* is closed; the *problem* is not. It returned a negative: §4.2's positional rule cannot see an escaped closure, so the remaining work is a design change to §4.2, no longer an unknown to be measured.
+- **Closure capture in the prototype.** Done, and it did its job: it returned a negative, §4.2 was redesigned so rows travel with values, and the probe now rejects the violation while still accepting the correctly-declared variant. This is what a kill criterion looks like when it fires and the design survives.
 - **The derivation test.** Print the affix table and twenty roots; give twenty derivation tasks; score against recall accuracy on an equivalent English API. Days, no compiler, no engineering. **Cheapest high-value experiment in the project.**
   - **No longer a kill criterion.** v0.3 originally read: *"if derivation accuracy does not clearly beat English recall, §3 is decorative — and everything else in this spec survives unchanged with English roots in the same derivational frame."* That branch has been closed by decision — §3 is retained whatever the number says, because the lexicon is an identity commitment rather than a hypothesis (ADR 0005). The test is still worth running as **calibration**: it measures what §3 costs, which affixes and roots produce errors, and therefore which of `EXS-E0601`–`EXS-E0610` need the best diagnostics and the widest `exsc emenda` coverage. The English control is kept because it makes that cost measurable rather than anecdotal.
 
@@ -1032,7 +1036,7 @@ Remaining, before Stage 1:
 # 17. What would make this fail
 
 - The derivation test comes back negative and §3 costs more than it returns. Since ADR 0005 retains §3 regardless, this failure mode is now **accepted rather than mitigated** — the documented fallback of English roots in the same derivational frame has been closed by choice. The risk below is the same risk, undiluted.
-- Closure capture cannot be checked soundly, and the audit view — the strongest artifact here — becomes theatre. **This is no longer hypothetical.** §4.2's rule as written does not catch it, demonstrated by a running probe. The failure mode is live until rows travel with values.
+- Closure capture cannot be checked soundly, and the audit view — the strongest artifact here — becomes theatre. This fired once: §4.2's original rule missed an escaped closure, demonstrated by a running probe, and the rule was changed so rows travel with values (§4.2). The risk is **reduced, not retired** — nine probe cases are not a soundness argument, and the interaction with dictionary-passing generics (§15 #5) is now harder.
 - Naming constraints prove to be the thing developers will not tolerate. This is the largest adoption risk in the project, larger than ARC or capabilities.
 - The no-build-scripts constraint blocks real FFI work.
 - It never gets users, which is how almost all of them fail.

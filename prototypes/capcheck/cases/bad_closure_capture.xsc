@@ -1,38 +1,29 @@
-// KNOWN-GAP: this file IS a genuine capability-row violation, and this
-// checker's positional substitution does NOT catch it. See Sec 15 open
-// problem #1 and SYNTAX-PROPOSAL.md for why, and for the shape a fix
-// would need. The marker above tells exsecutor_check.py to expect
-// "accept" here without treating that as a checker failure -- the point
-// of this file is to make the gap executable and visible, not to hide it.
+// A genuine capability-row violation via closure capture.
 //
-// fabrica legitimately owns `rete` (poscit rete, sub-bound) and closes
-// over it in a returned lambda -- this function is entirely correct on
-// its own and must NOT be flagged.
+// Under the ORIGINAL Sec 4.2 rule -- substitute positionally with "the
+// capability row of the actual argument", resolved by NAME at the call
+// site -- this file was ACCEPTED. `cerrado` is a bare function-typed
+// parameter: not a named top-level function, not an inline lambda, so
+// there was nothing for a row to attach to. That was the finding.
 //
-// `cerrado` in exterior models the closure after it has escaped: some
-// earlier fabrica(...) call produced it, and it reached exterior through
-// ordinary data flow (a return value stored and forwarded, a struct
-// field, anything) with no remaining syntactic trace of "fabrica" at the
-// point of use -- exterior never writes the name `fabrica` at all. This
-// is deliberate: it is what makes the escape real rather than a
-// still-traceable direct call.
+// Under the REVISED rule -- rows travel with function-typed VALUES, so a
+// function type carries `poscit {...}` -- `cerrado`'s row is written in
+// its own type and needs no lookup. This file must now REJECT.
 //
-// exterior declares only alloc and forwards cerrado into consumidor,
-// which correctly declares `poscit sicut f`. Positional substitution asks
-// "what is the capability row of the actual argument `cerrado`?" -- but
-// `cerrado` is a bare parameter name, not a named top-level function and
-// not an inline lambda literal, so it matches neither case substitution
-// knows how to look up. There is no name for the row to be attached to.
+// fabrica legitimately owns `rete`, captures it in a returned lambda, and
+// says so in its return TYPE. It is correct and must not be flagged.
 
-publica functio fabrica(v: f32, m: Mundus) -> functio(f32) -> f32 poscit rete {
+publica functio fabrica(v: f32, m: Mundus) -> (functio(f32) -> f32 poscit {rete}) poscit rete {
     sub rete = deriva_rete(m);
     redde functio(x: f32) -> f32 { redde envia(rete, x) }
 }
 
-publica functio consumidor(x: f32, f: functio(f32) -> f32) -> f32 poscit sicut f {
+publica functio consumidor(x: f32, f: functio(f32) -> f32 poscit {rete}) -> f32 poscit sicut f {
     redde f(x)
 }
 
-publica functio exterior(v: f32, cerrado: functio(f32) -> f32) -> f32 poscit alloc {
+// exterior declares only `alloc`, but accepts a closure whose type demands
+// `rete` and forwards it. The authority is visible in the signature now.
+publica functio exterior(v: f32, cerrado: functio(f32) -> f32 poscit {rete}) -> f32 poscit alloc {
     redde consumidor(v, cerrado)
 }
