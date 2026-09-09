@@ -8,6 +8,11 @@
 #   2. spec citation validity                          -- every §N resolves
 #   3. marker discipline                               -- [OPEN]/[UNTESTED]/
 #                                                         [UNREPRODUCED]
+#   4. §8.4 keywords <-> compiler/x86_64/lexer/keywords.inc -- keyword sync
+#
+# Checks 1 and 4 are the same arrangement: a spec table is the normative
+# source, the .inc is generated from it, and drift is a build failure rather
+# than something a reader is expected to notice.
 #
 # Read-only. Touches nothing, builds nothing, needs no toolchain.
 #
@@ -19,6 +24,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SPEC="$REPO_ROOT/docs/spec/exsecutor-spec-v0.4.md"
 CODES_INC="$REPO_ROOT/compiler/x86_64/diag/codes.inc"
+KEYWORDS_INC="$REPO_ROOT/compiler/x86_64/lexer/keywords.inc"
 
 FAIL=0
 ok()   { echo "  [ok]   $*"; }
@@ -179,11 +185,85 @@ check_markers() {
 
 echo "spec-check: $(basename "$SPEC")"
 echo
+# ---------------------------------------------------------------------------
+# 4. Keyword table sync
+#
+# §8.4 is the normative keyword source; lexer/keywords.inc is generated from
+# it. Same rule as §13/codes.inc: never invent a keyword, never let the two
+# drift. Reserving a word also spends root-space permanently (§3.9.3 requires
+# every proposed root to be collision-checked against the reserved set), so an
+# entry appearing in code but not in the spec is a real cost taken silently.
+# ---------------------------------------------------------------------------
+spec_keywords() {
+  # The reserved-word table in §8.4: rows between the "1. Reserved words"
+  # marker and the count sentence. Only backticked cells in the second column.
+  awk '/^\*\*1\. Reserved words\*\*/{f=1} /^Thirty words/{exit} f&&/^\| [a-z]/{print}' "$SPEC" \
+    | sed 's/^|[^|]*|//; s/|$//' \
+    | grep -o '`[^`]*`' | tr -d '`' | sort -u
+}
+
+check_keyword_sync() {
+  echo "== 4. keyword table sync (§8.4 <-> lexer/keywords.inc) =="
+
+  local spec_kw n_spec
+  spec_kw="$(spec_keywords)"
+  n_spec="$(printf '%s\n' "$spec_kw" | grep -c . || true)"
+
+  if [[ "$n_spec" -eq 0 ]]; then
+    bad "§8.4's reserved-word table parsed to zero keywords"
+    note "the table shape changed, or this extractor is wrong -- either way"
+    note "this check is not measuring what it claims"
+    return 0
+  fi
+
+  local dupes
+  dupes="$(spec_keywords_raw_dupes)"
+  if [[ -n "$dupes" ]]; then
+    bad "a word appears in more than one §8.4 group:"
+    printf '           %s\n' $dupes
+  fi
+
+  if [[ ! -f "$KEYWORDS_INC" ]]; then
+    note "compiler/x86_64/lexer/keywords.inc does not exist yet."
+    note "The lexer/ module is unwritten, so there is nothing to diff against."
+    note "PASSES VACUOUSLY -- this is not evidence the table is in sync."
+    note "§8.4 currently reserves $n_spec words."
+    return 0
+  fi
+
+  local inc_kw only_spec only_inc
+  inc_kw="$(grep -ohE '^[[:space:]]*kw[[:space:]]+[a-z_]+' "$KEYWORDS_INC" \
+            | awk '{print $2}' | sort -u)"
+  only_spec="$(comm -23 <(printf '%s\n' "$spec_kw") <(printf '%s\n' "$inc_kw"))"
+  only_inc="$(comm -13 <(printf '%s\n' "$spec_kw") <(printf '%s\n' "$inc_kw"))"
+
+  if [[ -n "$only_spec" ]]; then
+    bad "in §8.4 but missing from keywords.inc:"
+    printf '           %s\n' $only_spec
+  fi
+  if [[ -n "$only_inc" ]]; then
+    bad "in keywords.inc but NOT in §8.4 -- an invented keyword:"
+    printf '           %s\n' $only_inc
+  fi
+  [[ -z "$only_spec$only_inc" ]] && ok "$n_spec keywords, both sides identical"
+  return 0
+}
+
+# Words listed under two different §8.4 groups. sort -u hides this, so the
+# duplicate scan reads the unsorted extraction.
+spec_keywords_raw_dupes() {
+  awk '/^\*\*1\. Reserved words\*\*/{f=1} /^Thirty words/{exit} f&&/^\| [a-z]/{print}' "$SPEC" \
+    | sed 's/^|[^|]*|//; s/|$//' \
+    | grep -o '`[^`]*`' | tr -d '`' | sort | uniq -d
+}
+
 check_registry_sync
 echo
 check_citations
 echo
 check_markers
+echo
+check_keyword_sync
 echo
 echo "== summary =="
 if [[ "$FAIL" -eq 0 ]]; then

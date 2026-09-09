@@ -735,7 +735,7 @@ Restriction modes work (Rust's `unsafe`, `use strict`, D's `@safe`): the restric
 
 ---
 
-# 8. Lexical layer and diagnostics
+# 8. Surface syntax and diagnostics
 
 ## 8.1 Source
 
@@ -750,7 +750,7 @@ Restriction modes work (Rust's `unsafe`, `use strict`, D's `@safe`): the restric
 - UTS #39 **Moderately Restrictive**. Mixed-script is `EXS-E0104`.
 - **Confusable detection is scoped to the import closure**, not the compilation unit (`EXS-E0105`). Module A exporting Cyrillic `аdd` and module B calling `add` contains no confusable *pair* in either unit. The `ego` files make whole-closure checking cheap.
 - Comparison is byte equality after NFC. Identifiers are case-sensitive, so locale case folding never reaches identifier resolution.
-- **Non-ASCII identifiers are allowed. Non-ASCII keywords are not.** Private names in any script; ~40 keywords learned once. Public names additionally obey §3.
+- **Non-ASCII identifiers are allowed. Non-ASCII keywords are not.** Private names in any script; the reserved words are enumerated in §8.4 and there are thirty of them, learned once. Public names additionally obey §3.
 
 ## 8.3 Diagnostics
 
@@ -760,6 +760,234 @@ Restriction modes work (Rust's `unsafe`, `use strict`, D's `@safe`): the restric
 - English text is canonical. Translation, if ever, is a lookup keyed on code. Rust's Fluent effort stalled because translation was entangled with 400+ formatting sites and there is now a proposal to remove it; do not repeat that.
 - Capability and lexicon errors ship machine-applicable fixes; `exsc emenda` applies them. Both classes are unusually suited to auto-fix because the required edit is mechanically derivable.
 
+## 8.4 Tokens
+
+The keyword set is **closed** and listed here in full. This section is the
+normative source: `compiler/x86_64/lexer/keywords.inc` is generated from it and
+checked against it mechanically, the same arrangement §13 has with
+`diag/codes.inc`. A keyword that appears in code but not in this table, or the
+reverse, fails the build.
+
+### Keywords are Latin, and §3 is not the reason
+
+§3.1 scopes the lexicon rule to **public names**. §3.2 is explicit that keywords
+are *"the layer that doesn't matter, which is why it was decorative and why
+English keywords could be swapped in with no loss."* That judgement stands and
+is not quietly reversed here.
+
+Keywords are Latin because ADR 0005 made the lexicon an identity commitment, not
+because §3 requires it. The distinction is load-bearing: §3's claim is
+falsifiable and Guo-backed, and blurring it into an aesthetic preference is
+precisely what made v0.1 decorative. **A reader who concludes from this table
+that §3 governs keywords has read it wrong.**
+
+One consequence: `dyn` (§4.4, §7.1) is an English abbreviation sitting among
+Latin words. It stays — it is spec-established, it is a term of art, and
+churning a settled term for consistency costs more than the documented
+exception.
+
+### Reserving a word spends root-space, permanently
+
+§3.9.3 requires every proposed root to be collision-checked against **every
+reserved keyword**. So each entry below is a word the morpheme table can never
+use, for as long as the language exists. That is the reason the reserved set is
+kept small and most of the vocabulary is *contextual* instead.
+
+### Three tiers
+
+**1. Reserved words** — never usable as an identifier, anywhere.
+
+| group | words |
+|---|---|
+| declaration | `publica` `functio` `structura` `typus` `interfacies` `potestas` `externus` |
+| binding | `firma` `mutabilis` |
+| capability | `poscit` `sub` `sicut` `dyn` |
+| value flow | `redde` `apud` `refero` |
+| condition | `si` `sin` `aliter` |
+| iteration | `dum` `per` `quisque` `in` `terminus` |
+| reduction | `contrahe` `forma` |
+| selection | `discerne` `casus` |
+| jump | `rumpe` `perge` |
+
+Thirty words. §8.2 says "~40 keywords learned once"; the real number is under
+that, and it is now a count rather than an estimate.
+
+**2. Contextual keywords** — meaningful only in a specific position, and
+ordinary identifiers everywhere else.
+
+- `ego`-file structure (§10.1): `ego` `versio` `licentia` `fontes` `hospites`
+  `acceleratores` `potestates` `numeri` `exitus`
+- `numeri` keys and values (§5.4): `rotundatio` `reassociatio` `contractio`
+  `subnormales`; `ad_parem` `vetita` `explicita` `conservata`
+- reduction shapes (§5.4): `ordinata` `arborea`
+
+These are contextual on purpose. `versio`, `numeri` and `forma` are good Latin
+words and good variable names; reserving them globally would be hostile in a
+language whose identifiers are Latin, and would spend root-space for nothing.
+
+**3. Capability atoms** (§4.6) — `Mundus` `alloc` `sermo` `horologium`
+`archivum` `rete` `fortuna` `ambitus` `Filum` `machina` `Crudum`. Identifiers in
+the capability namespace, not reserved words.
+
+### Operators and sigils
+
+All already in evidence in this document, recorded here rather than introduced.
+
+| token | meaning | first shown |
+|---|---|---|
+| `&T` | reference | §10.1 |
+| `*T` | raw pointer — requires `Crudum` | §5.3 |
+| `T:maior` | explicit byte order | §5.2 |
+| `A..B` | range | §5.1 |
+| `E?` | error propagation | §5.1 |
+| `<…>` | generic arguments | §5.5 |
+| `@nomen` | annotation — `@transitus`, `@nucleus` | §5.2, §5.5 |
+| `->` | result type | §4.2 |
+| `+` `+%` `+\|` | trapping, wrapping, saturating arithmetic | §5.4 |
+
+### Literals, comments, layout
+
+- Comments are `//` to end of line. §8.1's bidi and invisible-control rule
+  applies **inside them** — that is the Trojan Source class, and a lexer that
+  scans only identifiers is defeated by an override sitting in a comment.
+- String literals are `"…"`. §8.1's rule applies inside these too. Escapes are
+  the only legal way to produce a bidi or invisible control codepoint.
+- A malformed literal is `EXS-E0210`; an unterminated one is `EXS-E0202`.
+- Layout is not significant. Blocks are `{ }`.
+
+`[OPEN]` Numeric literal grammar — bases, separators, and float syntax — is not
+settled and is deliberately not invented here.
+
+## 8.5 Control flow
+
+`[OPEN]` Design only. Nothing here is implemented, and the CST that would parse
+it does not exist. Do not cite it as a property of the language.
+
+### The claim
+
+Three commitments already in this document are all properties of a **loop**:
+
+- §5.4 — reduction *shape* is semantics, never an optimization.
+- §5.5 — the declared tile nest maps onto CPU cache/SIMD and GPU grid/block/lane
+  without reinterpretation.
+- `certus` rule 6 (`docs/design/profile-certus.md`) — every loop carries a bound.
+
+They were arrived at separately, for numerics, for devices, and for
+certification. They converge:
+
+> A loop that declares its shape is **simultaneously** deterministic,
+> parallelizable, bounded, and certifiable.
+
+Each declaration below is a promise the compiler can cash. None is decoration.
+
+### Condition
+
+```exsecutor
+si x lt 0        { … }
+sin x eq 0       { … }
+aliter           { … }
+```
+
+`sin` is attested classical Latin for *"but if"* — Cicero's `si … sin …`
+correlative. Every language in this lineage compounds the idea (`elif`,
+`else if`, `elsif`); Latin supplies it as one morpheme, so Exsecutor takes it
+for free. `aliter` ("otherwise") serves both this construct and `discerne`
+below — one word, one meaning, two places.
+
+### Selection
+
+```exsecutor
+discerne forma {
+    casus arborea  { … }
+    casus ordinata { … }
+    aliter         { … }
+}
+```
+
+**Exhaustive, with no fallthrough.** A missing arm is a diagnostic that *lists
+the missing cases* and ships the edit — mechanically derivable, which is exactly
+the class §8.3 says is suited to `exsc emenda`.
+
+### Iteration
+
+```exsecutor
+dum COND terminus N { … }        // sequential, explicitly bounded
+per i in 0..n { … }              // ordered: iteration k may observe k-1
+quisque i in 0..n { … }          // independent: order unspecified
+```
+
+`per` and `quisque` differ in **one declared claim**: whether iterations observe
+one another. That single bit is what everything downstream consumes.
+
+```exsecutor
+quisque i in 0..n
+    contrahe summa: +
+    forma arborea
+{ … }
+```
+
+`contrahe` ("draw together") names the accumulator and its operator; `forma`
+names the reduction shape. `ordinata` and `arborea` are not coined here — §5.4
+already established them in `summa_ordinata` and `summa_arborea`.
+
+### What each declaration buys
+
+| declaration | what it buys |
+|---|---|
+| `terminus N` | termination, and `certus` rule 6 becomes **syntax** |
+| `quisque` over `per` | licence to vectorize, thread, or dispatch |
+| `contrahe … forma` | §5.4's declared shape → CPU/GPU **bit-identity** (§5.5) |
+
+**`certus` rule 6 stops being an analysis.** The profile currently requires
+"every loop carries a bound" and `profile-certus.md` section 5 lists loop-bound
+syntax as work that does not exist. Under this design a `dum` without `terminus`
+is a parse-level fact. A safety-critical rule that reduces to a missing keyword
+is enormously cheaper than one requiring a call-graph pass.
+
+### Three properties that make this worth the keywords
+
+**1. Declaring independence is not a capability.** `quisque` asserts a property
+of the *body* — iterations do not observe one another — not authority to spawn
+anything. Whether the compiler vectorizes, threads, or does nothing is a
+lowering decision, exactly as §5.4 already says of reduction shape. Dispatching
+to a device still requires `machina` (§5.5). This falls out of existing rules
+rather than needing new ones, and it means `certus` rule 12's ban on `Filum` in
+the control path does not accidentally forbid parallel loops.
+
+**2. A misdeclared `quisque` should be a compile error, not a race.** If the
+body carries a cross-iteration dependency, the declaration is false and the
+compiler says so. `[OPEN]` — this needs dependency analysis, it is the largest
+unproven claim in this section, and it may not be affordable in a hand-written
+assembly frontend. If it is not, `quisque` degrades to a *trusted assertion* —
+still useful, considerably less attractive, and it must be labelled as such
+rather than quietly downgraded.
+
+**3. The compiler says what is being left on the table.** A `per` whose body has
+no cross-iteration dependency earns a diagnostic naming what `quisque` would
+buy, with the edit attached. §8.3 already promises machine-applicable fixes;
+aiming them at the construct developers touch most is the most direct answer
+available to §16's *"diagnostics quality is not retrofittable."*
+
+### Mood, as a convention for new keywords
+
+`poscit` is indicative — *"it requires"* — and describes. `redde` is imperative —
+*"give back!"* — and acts. New keywords follow `redde`: `rumpe` (break),
+`perge` (continue), `contrahe`, `discerne` are all imperatives, because they
+tell the machine to do something.
+
+Stated as an **adopted convention, not a law discovered across the existing
+set**: `publica` and `firma` are ambiguous between imperative and adjective, and
+claiming a clean pattern over them would be reading one in.
+
+### What this section does not do
+
+- It does **not** exercise §3.9. §3.9.3 requires a new root to be collision-
+  checked *against* every reserved keyword, so keywords are a separate namespace
+  from morpheme-table roots. §3.8 and §15 #4 stay `[UNTESTED]`; `norma.algebra`
+  is still the coinage process's first real test.
+- It spends root-space. Fourteen words here can never be roots (§8.4).
+- Numeric literal grammar, expression precedence, and `sub`'s interaction with
+  loop scopes are unsettled and deliberately not invented.
 ---
 
 # 9. Compilation and the build model
@@ -951,6 +1179,11 @@ Scratch work without ambient authority: `exsc curre --potestates omnes scratch.x
 | `EXS-E0104` | mixed-script identifier (UTS #39) |
 | `EXS-E0105` | confusable identifiers in import closure |
 | `EXS-E0106` | CRLF line ending |
+| `EXS-E0201` | unexpected token |
+| `EXS-E0202` | unterminated construct |
+| `EXS-E0203` | unexpected end of input |
+| `EXS-E0210` | malformed literal |
+| `EXS-E0220` | reserved keyword used as identifier |
 | `EXS-E0311` | integer index applied to `textus` |
 | `EXS-E0321` | `:nativus` in a `@transitus` type |
 | `EXS-E0322` | implicit padding in a `@transitus` type |
@@ -965,11 +1198,24 @@ Scratch work without ambient authority: `exsc curre --potestates omnes scratch.x
 | `EXS-E0603` | prefix signature law violated |
 | `EXS-E0610` | composition depth exceeded (max two affixes) |
 
+The `02xx` range is deliberately coarse. Code granularity and message quality
+are independent axes: a consumer branches on *what class of thing broke* — which
+is what an editor needs to decide whether to auto-close a delimiter or stay
+quiet mid-typing — while *which* construct broke belongs in the span and the
+structured fix payload §8.3 already requires. `EXS-E0220` earns a code of its
+own on frequency: §8.4's keywords are Latin words that read like plausible
+identifiers, so reserved-word-as-identifier is the predictable error, and its
+fix is mechanically derivable.
+
+Codes are permanent and never renumbered (§8.3), so under-committing is
+recoverable and over-committing is not. `0204`-`0209`, `0211`-`0219` and
+`0221`-`0299` are free for what parsing actually turns out to need.
+
 ---
 
 # 14. Conformance suite
 
-Ships with v1. Each entry must **fail to compile**, or in the last two cases produce identical bytes.
+Ships with v1. Each entry must **fail to compile**, except entries 16 and 17, which must produce identical bytes.
 
 1. Turkish dotless-ı case fold in program logic → `plica_sermone` without `sermo`
 2. Index computed on a folded copy, applied to the original → `EXS-E0332`
@@ -988,12 +1234,24 @@ Ships with v1. Each entry must **fail to compile**, or in the last two cases pro
 15. Refcount saturation → runtime abort, not wraparound
 16. Same source, different directory/time/locale/hostname → byte-identical output
 17. `exsc aedifica --hospes riscv64-linux` from x86_64 → byte-identical to native CI build
+18. Source with a UTF-8 BOM → `EXS-E0101`
+19. Mixed-script identifier, single module → `EXS-E0104`
+20. CRLF line ending → `EXS-E0106`
+
+Entries 18-20 close a gap: §8.1 defines six source-policy codes and only three
+of them (`E0102`, `E0103`, `E0105`) had an entry, while `E0101`, `E0104` and
+`E0106` are exactly what a Stage 1 lexer implements first. They are appended
+rather than interleaved because existing entries are referenced by number
+elsewhere in the tree, and renumbering a referenced list is the same mistake as
+renumbering a code.
 
 ---
 
 # 15. Open problems
 
-Worst first.
+Worst first, for items 1-8. **New items append rather than insert**, because
+these are cited by number across the ADRs and design documents, and renumbering
+a referenced list is the same mistake as renumbering an error code (§8.3).
 
 1. **Closure capture in capability rows** (§4.2). **Found, fixed, re-measured.** The probe accepted a genuine violation; §4.2 was amended so rows travel with function-typed values rather than being resolved by name at a call site; the same file is now rejected as `EXS-E0421` and the correctly-declared variant is still accepted. No longer blocks Stage 1. What remains `[UNTESTED]` is soundness — nine probe cases are not a proof, and none of this is in a compiler. Note also that the six attacks the original prototype was said to be validated against were never enumerated anywhere; the rebuilt probe **chose** six, and says so.
 2. **Lexicon derivation test** (§16). Cannot be retired by more engineering — needs human subjects. No longer gates whether §3 is load-bearing (ADR 0005); §3 is retained regardless. What remains open is the *size of its cost*, which is unmeasured.
@@ -1003,6 +1261,7 @@ Worst first.
 6. **Generator model coverage** (§9.4). "No build scripts" may not survive real FFI binding generation.
 7. **Generated-C debug info** (§9.2). If stepping through Exsecutor is unusable, QBE moves earlier.
 8. **Ecosystem bootstrapping.** Unaddressed by anything in this document, and the actual reason languages die.
+9. **There is no phrase grammar.** `[OPEN]` §8.4 and §8.5 settle tokens and control flow; nothing settles how declarations, expressions, and patterns compose. The entire syntactic surface of this document is thirteen worked examples, and the only written-down grammar anywhere in the tree is `prototypes/capcheck/SYNTAX-PROPOSAL.md`, which explicitly disclaims design intent. This blocks the second half of Stage 1 — §9.1's lossless CST and typed AST have nothing to parse against — and it is why Stage 1 is being taken in two passes. Severity is high; the position in this list is chronological, per the note above.
 
 ---
 
