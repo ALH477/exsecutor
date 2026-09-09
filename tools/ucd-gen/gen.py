@@ -36,7 +36,7 @@ BLOCK_SHIFT = 7                 # 128-codepoint stage-2 blocks
 BLOCK_SIZE = 1 << BLOCK_SHIFT
 STAGE1_LEN = MAX_CP >> BLOCK_SHIFT
 
-# Hangul (UAX #15 §3.12) is algorithmic and deliberately absent from the
+# Hangul (UAX #15 section 3.12) is algorithmic and deliberately absent from the
 # decomposition tables -- storing 11 172 syllables would be a waste.
 S_BASE, L_BASE, V_BASE, T_BASE = 0xAC00, 0x1100, 0x1161, 0x11A7
 L_COUNT, V_COUNT, T_COUNT = 19, 21, 28

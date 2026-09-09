@@ -33,7 +33,7 @@ function, which §9.3 forbids for anything that can reach output.
   `u32` the composed codepoint. Composition exclusions and singletons are
   already removed, so a hit is unconditionally valid.
 
-Hangul is algorithmic (UAX #15 §3.12) and deliberately absent — storing 11,172
+Hangul is algorithmic (UAX #15 section 3.12) and deliberately absent — storing 11,172
 syllables would be waste.
 
 ## Verified
