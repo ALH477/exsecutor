@@ -39,7 +39,7 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # this -- the test is `found < floor` -- so a floor that drifts below the real
 # count still catches the failure mode that matters: a discovery mechanism
 # silently finding nothing. Drift costs precision, not the guarantee.
-UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-76}"
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-77}"
 
 PASS=0
 FAIL=0
@@ -139,7 +139,7 @@ run_unit_tests() {
 
 run_conformance_tests() {
   # ---------------------------------------------------------------------
-  # spec §14, 23 entries, FIVE rule shapes (tests/README.md, "23 entries,
+  # spec §14, 24 entries, FIVE rule shapes (tests/README.md, "23 entries,
   # five rule shapes" -- a runner that assumes one shape quietly mishandles
   # four):
   #
@@ -398,7 +398,7 @@ run_conformance_tests() {
 
   local missing=() dup=()
   local i
-  for ((i = 1; i <= 23; i++)); do
+  for ((i = 1; i <= 24; i++)); do
     case "${seen_entries[$i]:-0}" in
       0) missing+=("$i") ;;
       1) ;;
@@ -406,7 +406,7 @@ run_conformance_tests() {
     esac
   done
   if [[ ${#missing[@]} -gt 0 ]]; then
-    bad "no fixture claims entry=${missing[*]} -- §14 has 23 entries, all must be represented"
+    bad "no fixture claims entry=${missing[*]} -- §14 has 24 entries, all must be represented"
   fi
   if [[ ${#dup[@]} -gt 0 ]]; then
     bad "more than one fixture claims entry=${dup[*]} -- each §14 entry should have exactly one"

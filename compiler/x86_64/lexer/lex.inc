@@ -736,16 +736,58 @@ endp
 
 ; ---- the whole lexer -------------------------------------------------------
 
-; lex_run(lx) -> CF clear and eax = 0 if the file is admissible §8.1 source
-; and tokenized with no diagnostic; CF set and eax = the numeric part of the
-; FIRST diagnostic otherwise. That is channel 1 of docs/asm-conventions.md's
-; "1.3 Error protocol: CF / eax" -- diagnosable about the source being
-; compiled -- and it is the ONLY routine in this module that speaks it, so a
-; caller writes one `jc` rather than one per phase.
+; lex_run(lx) -> CF clear and eax = the numeric part of the first diagnostic
+; (0 if none) once the file is admissible §8.1 source and has therefore been
+; tokenized -- REGARDLESS of whether that tokenize pass itself recorded any
+; §8.2/§8.4 diagnostic along the way; CF set and eax = the numeric part of
+; the first diagnostic if the file failed the §8.1 GATE and so was never
+; tokenized at all -- no `Tok` exists to hand a parser.
+;
+; THE FIX FOR A BUG FOUND BY RUNNING: an earlier revision set CF (and jumped
+; to the same `fail`) whenever `Lexer.ndiag` was nonzero after EITHER phase,
+; not just after `lex_source_check`. That collapsed two different facts onto
+; one bit. `lex_source_check` failing means what this file's header says --
+; "§8.1 IS A GATE, NOT A PHASE" -- no bytes were tokenized and there is no
+; stream to parse. `lex_tokenize` recording a diagnostic means something
+; smaller: ONE construct was malformed, `lex_tokenize` still ran to EOF (its
+; own header: "Cannot fail in the CF sense... Assumes lexer/source.inc's pass
+; has already run and reported nothing"), and `Lexer.toks` holds a complete,
+; well-formed stream over everything else in the file -- exactly the same
+; "the token stream stays well-formed and the diagnostic is the deliverable"
+; principle §8.2's mixed-script check already relies on, just not previously
+; honoured here for §8.4.
+;
+; `driver/run.inc` calls this once and does `jc .gate_failed` to decide
+; whether to hand the token stream to `cst_parse` at all -- and cst_parse is
+; where a reserved word in a general (non-`@nomen`) identifier position
+; raises `EXS-E0220`, via this file's own `lex_kw_as_ident`. With the old,
+; over-broad CF, a single unrelated `EXS-E0210` (malformed numeric literal)
+; anywhere in a file set CF, `driver/run.inc` treated that as "never
+; tokenized" and skipped `cst_parse` outright -- silently discarding every
+; diagnostic `cst_parse` would otherwise have raised, `EXS-E0220` included,
+; regardless of which mistake came first in the file. Confirmed directly: a
+; standalone `lex_run`/`lex_tokenize` call over a file with both an `@nomen`
+; keyword (§8.4's one lexer-only source of `EXS-E0220`) and a malformed
+; numeric literal already recorded BOTH diagnostics in `Lexer.diags`, in
+; source order -- `lex_tokenize`'s scan loop was never the problem. Only this
+; routine's CF was.
+;
+; A caller that wants to know whether the run was PERFECTLY clean, not just
+; whether a token stream exists, reads `Lexer.ndiag` after a CF-clear return
+; rather than trusting `jc` alone -- `driver/cli.inc`'s `drv_ident_ok` is
+; exactly such a caller (REPORTED to the driver agent: it currently branches
+; on this routine's CF alone to reject a `--env` key with ANY diagnostic,
+; §8.2's mixed-script rule included, and needs updating to check
+; `Lexer.ndiag` explicitly now that CF no longer covers that case).
+;
+; This is channel 1 of docs/asm-conventions.md's "1.3 Error protocol: CF /
+; eax" -- diagnosable about the source being compiled -- narrowed to mean
+; "unreadable", not "imperfect" -- and it is the ONLY routine in this module
+; that speaks it, so a caller writes one `jc` rather than one per phase.
 ;
 ; Every diagnostic, not just the first, is in the `diags` vector, in source
-; order. The count is `Lexer.ndiag`, and `Vec.len` on that vector agrees with
-; it for a single run.
+; order, on EITHER path. The count is `Lexer.ndiag`, and `Vec.len` on that
+; vector agrees with it for a single run.
 ;
 ; Resets `ndiag`/`firstcode` but NOT the vectors: a caller may deliberately
 ; accumulate several files' tokens or diagnostics, and rt/vec.inc gives no
@@ -761,14 +803,16 @@ proc lex_run, lx
 	mov	rdi, rbx
 	call	lex_source_check
 	cmp	dword [rbx + Lexer.ndiag], 0
-	jne	.rejected
+	jne	.rejected		; the §8.1 GATE -- no tokens exist at all
 
 	mov	rdi, rbx
 	call	lex_tokenize
-	cmp	dword [rbx + Lexer.ndiag], 0
-	jne	.rejected
-
-	xor	eax, eax
+	; `lex_tokenize` always runs to EOF and leaves a complete token stream,
+	; whether or not it recorded a §8.2/§8.4 diagnostic along the way -- see
+	; this routine's header. CF reports only the gate outcome above; eax
+	; still carries the first code recorded by EITHER phase, so a caller
+	; that only inspects eax (never `jc`) sees no change at all.
+	mov	eax, [rbx + Lexer.firstcode]
 	return
   .rejected:
 	; `fail` with a REGISTER rather than a literal: the macro expands to

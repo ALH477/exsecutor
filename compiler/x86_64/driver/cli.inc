@@ -375,7 +375,16 @@ proc drv_ident_ok, ptr, len
 
 	mov	rdi, [r15 + DrvCtx.vlx]
 	call	lex_run
-	jc	.no			; any §8.1/§8.2/§8.4 diagnostic at all
+	jc	.no			; §8.1 gate failure: no token stream at all
+	; lex_run's CF is the §8.1 gate only (lex.inc, "§8.1 IS A GATE, NOT A
+	; PHASE"); a §8.2/§8.4 diagnostic -- mixed script, a reserved word --
+	; leaves CF clear and a complete token stream. This routine's promise
+	; is "one identifier and NO diagnostic", so it reads the count as well.
+	; It relied on an over-broad CF until the lexer fixed it, and
+	; tests/unit/driver_env_epoch.asm is what noticed.
+	mov	rdi, [r15 + DrvCtx.vlx]
+	cmp	dword [rdi + Lexer.ndiag], 0
+	jne	.no
 
 	; Exactly two tokens: the identifier, then TOK_EOF. Anything else --
 	; two words, a trailing punctuation, an empty run -- is not "an
