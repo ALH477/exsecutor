@@ -63,7 +63,7 @@
 ; Spec: docs/spec/exsecutor-spec-v0.4.md §8.3, §13
 ; -----------------------------------------------------------------------------
 
-DIAG_CODE_COUNT = 33
+DIAG_CODE_COUNT = 35
 DIAG_CODE_STR_STRIDE = 9	; "EXS-E" + 4 digits, always
 
 ; ---- fixed-stride code-string table (9 bytes each, no separator, no NUL) ---
@@ -83,6 +83,8 @@ diag_code_str:
 	db	'EXS-E0321'
 	db	'EXS-E0322'
 	db	'EXS-E0332'
+	db	'EXS-E0341'
+	db	'EXS-E0342'
 	db	'EXS-E0421'
 	db	'EXS-E0500'
 	db	'EXS-E0501'
@@ -119,6 +121,8 @@ diag_code_numeric:
 	dd	321
 	dd	322
 	dd	332
+	dd	341
+	dd	342
 	dd	421
 	dd	500
 	dd	501
@@ -155,6 +159,8 @@ diag_code_msg_len:
 	dd	29
 	dd	37
 	dd	42
+	dd	46
+	dd	45
 	dd	35
 	dd	26
 	dd	39
@@ -209,6 +215,8 @@ diag_code_msg_ptr:
 	dq	diag_msg30
 	dq	diag_msg31
 	dq	diag_msg32
+	dq	diag_msg33
+	dq	diag_msg34
 
 ; ---- canonical English message text (§8.3: "English text is canonical.
 ;      Translation, if ever, is a lookup keyed on code.") -----------------
@@ -227,21 +235,23 @@ diag_msg11 db	'integer index applied to textus'	; EXS-E0311
 diag_msg12 db	':nativus in a @transitus type'	; EXS-E0321
 diag_msg13 db	'implicit padding in a @transitus type'	; EXS-E0322
 diag_msg14 db	'branded offset applied to the wrong buffer'	; EXS-E0332
-diag_msg15 db	'undeclared capability (atom or row)'	; EXS-E0421
-diag_msg16 db	'module-level mutable state'	; EXS-E0500
-diag_msg17 db	'capability stored in module-level state'	; EXS-E0501
-diag_msg18 db	'capability escapes a dyn bound'	; EXS-E0510
-diag_msg19 db	'non-atomic refero crossing externus'	; EXS-E0520
-diag_msg20 db	'public name does not decompose into the morpheme table'	; EXS-E0601
-diag_msg21 db	'suffix contract disagrees with declared type'	; EXS-E0602
-diag_msg22 db	'prefix signature law violated'	; EXS-E0603
-diag_msg23 db	'composition depth exceeded (max two affixes)'	; EXS-E0610
-diag_msg24 db	'target cannot honour the declared numeri'	; EXS-E0701
-diag_msg25 db	'allocation after initium under profilum certum'	; EXS-E0801
-diag_msg26 db	'recursion detected under profilum certum'	; EXS-E0802
-diag_msg27 db	'loop without a statically known bound under profilum certum'	; EXS-E0811
-diag_msg28 db	'generic does not monomorphize within the closure under profilum certum'	; EXS-E0812
-diag_msg29 db	'capturing closure under profilum certum'	; EXS-E0813
-diag_msg30 db	'capability forbidden by profilum certum'	; EXS-E0821
-diag_msg31 db	'numeri not fully declared under profilum certum'	; EXS-E0831
-diag_msg32 db	'certus module depends on a non-certus module'	; EXS-E0841
+diag_msg15 db	'reduction accumulator read inside its own body'	; EXS-E0341
+diag_msg16 db	'rumpe inside an iteration carrying a contrahe'	; EXS-E0342
+diag_msg17 db	'undeclared capability (atom or row)'	; EXS-E0421
+diag_msg18 db	'module-level mutable state'	; EXS-E0500
+diag_msg19 db	'capability stored in module-level state'	; EXS-E0501
+diag_msg20 db	'capability escapes a dyn bound'	; EXS-E0510
+diag_msg21 db	'non-atomic refero crossing externus'	; EXS-E0520
+diag_msg22 db	'public name does not decompose into the morpheme table'	; EXS-E0601
+diag_msg23 db	'suffix contract disagrees with declared type'	; EXS-E0602
+diag_msg24 db	'prefix signature law violated'	; EXS-E0603
+diag_msg25 db	'composition depth exceeded (max two affixes)'	; EXS-E0610
+diag_msg26 db	'target cannot honour the declared numeri'	; EXS-E0701
+diag_msg27 db	'allocation after initium under profilum certum'	; EXS-E0801
+diag_msg28 db	'recursion detected under profilum certum'	; EXS-E0802
+diag_msg29 db	'loop without a statically known bound under profilum certum'	; EXS-E0811
+diag_msg30 db	'generic does not monomorphize within the closure under profilum certum'	; EXS-E0812
+diag_msg31 db	'capturing closure under profilum certum'	; EXS-E0813
+diag_msg32 db	'capability forbidden by profilum certum'	; EXS-E0821
+diag_msg33 db	'numeri not fully declared under profilum certum'	; EXS-E0831
+diag_msg34 db	'certus module depends on a non-certus module'	; EXS-E0841

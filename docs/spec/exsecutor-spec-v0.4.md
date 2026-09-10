@@ -1323,7 +1323,7 @@ Terminals are §8.4's tokens; `IDENT` `INT` `STRING` are the lexer's classes.
     IfStmt        ::= 'si' ExprNS Block ('sin' ExprNS Block)* ['aliter' Block]
     WhileStmt     ::= 'dum' ExprNS ['terminus' ExprNS] Block
     ForStmt       ::= ('per' | 'quisque') IDENT 'in' ExprNS
-                      ('contrahe' IDENT ':' ArithOp)* ['forma' IDENT] Block
+                      ('contrahe' IDENT ':' ArithOp)* ['forma' IDENT [INT]] Block
     MatchStmt     ::= 'discerne' ExprNS '{' ('casus' Pattern Block)* ['aliter' Block] '}'
     Pattern       ::= Literal | Path                         (* constructors [OPEN] *)
 
@@ -1411,6 +1411,15 @@ the alternative is the misdiagnosis in decision 1. `examples/imprime.exsc`
 parses as written. `interfacies` declaration bodies now hold `Member`, which
 is §5.3's and §10.1's separator-free form, not a `;`-terminated one.
 
+**`forma` takes a width, and the first draft of this grammar did not admit
+one.** §5.4 defines `arborea w` and turns on it — the remainder rule is stated
+in terms of `ceil(n / w)` — and `docs/design/ssa-ir.md` emits
+`redinit f32 fadd arborea 8`. A bare `forma arborea` could not have been
+lowered. The `INT` is **required after `arborea` and forbidden after
+`ordinata`**, which is a semantic rule rather than a grammatical one: both
+spellings parse, and a missing or surplus width is a checker diagnostic.
+Found by `docs/design/typed-ast.md` asking what the tree must reserve.
+
 ### Not settled here
 
 - `[OPEN]` Numeric literal grammar (§8.4) — blocks the `..`/float rule above
@@ -1443,7 +1452,13 @@ source → lossless CST → typed AST → SSA IR → backend
 ```
 
 - **Lossless CST** (red-green tree, Roslyn/rowan). Error-tolerant, preserves trivia. Required for LSP and formatter.
-- **Typed AST**, spans on every node.
+- **Typed AST**, spans on every node. *Typed* means the slots exist, not that
+  they are filled: §16 puts the AST in Stage 1 and the type checker in Stage 2,
+  so the tree is built with empty type slots and Stage 2 fills them **in
+  place**. It is an annotation pass, not a rewrite — the language has no
+  implicit conversions (§5.2's `mensura`, §5.4's promotion, §6.3's boxing are
+  all explicit), so a checked tree has the same shape as an unchecked one. See
+  `docs/design/typed-ast.md`.
 - **SSA IR** built from the AST via Braun et al. (CC 2013) — on-the-fly, no prior analysis, minimal and pruned.
 
 "Straight from IR" means **owning the mid-level SSA IR**, not skipping the AST. Skipping it costs diagnostics, LSP, and macros, and cannot be undone later.
@@ -1713,6 +1728,8 @@ Scratch work without ambient authority: `exsc curre --potestates omnes scratch.e
 | `EXS-E0321` | `:nativus` in a `@transitus` type |
 | `EXS-E0322` | implicit padding in a `@transitus` type |
 | `EXS-E0332` | branded offset applied to the wrong buffer |
+| `EXS-E0341` | reduction accumulator read inside its own body |
+| `EXS-E0342` | `rumpe` inside an iteration carrying a `contrahe` |
 | `EXS-E0421` | undeclared capability (atom or row) |
 | `EXS-E0500` | module-level mutable state |
 | `EXS-E0501` | capability stored in module-level state |
@@ -1740,6 +1757,14 @@ structured fix payload §8.3 already requires. `EXS-E0220` earns a code of its
 own on frequency: §8.4's keywords are Latin words that read like plausible
 identifiers, so reserved-word-as-identifier is the predictable error, and its
 fix is mechanically derivable.
+
+`EXS-E0341` and `EXS-E0342` close a gap §5.4 opened. That section states two
+rules — a running accumulator is not readable inside the reduction body, and
+`rumpe` is forbidden inside an iteration carrying a `contrahe` — and neither
+had a code to be reported with. Both are `03xx` because they are semantic
+rules about a §5.x construct, alongside `EXS-E0311`'s `textus` index and
+`EXS-E0332`'s branded offsets. Neither carries a machine-applicable fix: the
+edit in both cases is a restructure that changes what the program computes.
 
 `08xx` is the `certus` profile (`docs/design/profile-certus.md`, ADR 0010).
 The grouping is the profile's own section structure, not an invention:

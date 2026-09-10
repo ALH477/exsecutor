@@ -323,6 +323,12 @@ segment readable writeable
 	dd	321, 0	; EXS-E0321
 	dd	322, 0	; EXS-E0322
 	dd	332, 0	; EXS-E0332
+	dd	341, 0	; EXS-E0341 -- no fix. §5.4's rule is that a running
+			;   accumulator is not readable in its own body; the edit
+			;   is a restructure, not a derivable one.
+	dd	342, 0	; EXS-E0342 -- no fix, same reason. §5.4 suggests `per`
+			;   with an explicit accumulator, which changes what the
+			;   program computes.
 	dd	421, 1	; EXS-E0421
 	dd	500, 1	; EXS-E0500
 	dd	501, 1	; EXS-E0501
