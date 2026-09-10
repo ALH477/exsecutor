@@ -432,7 +432,7 @@ potestas Hospes = { alloc, archivum, horologium, ambitus }
 publica functio initium(m: Mundus) -> u8 { … }
 ```
 
-Rule 2 names `initium` and says `Mundus` is passed to it; this pins the rest. A program has exactly one `initium`; it is `publica`; its one parameter is the root, which is rule 4's second path — received as a parameter — so it carries no `poscit` and there is nothing to declare: the program's whole authority is that one value, and every other capability is derived from it, explicitly (rule 2). Its result is the process exit status. A module with no `initium` is a library, and `aedifica` on one yields a library artifact; "it runs" is a claim only a program can make.
+Rule 2 names `initium` and says `Mundus` is passed to it; this pins the rest. A program has exactly one `initium`; it is `publica`; its one parameter is the root, which is rule 4's second path — received as a parameter — so it carries no `poscit` and there is nothing to declare: the program's whole authority is that one value, and every other capability is derived from it, explicitly (rule 2). Its result is the process exit status. A module with no `initium` is a library; "it runs" is a claim only a program can make. `[OPEN]` no library artifact exists for the reference backend — `fasmg` has no link step — so until one is designed, `-o` on a module without `initium` asks for a program that cannot be built and is `EXS-E0424` (`docs/design/runtime.md`, finding 2).
 
 Derivation is by method on the root — `m.ambitus()`, `m.archivum()` — and rule 2's *fallibly* is resolved at two different times. Where presence is a property of the host (`ambitus`, `archivum`: a `none-eabi` target has neither), it is decided at compile time by `--hospes` (§9.5) and the `hospites` list (§10.1), and the derivation itself is total. Where presence is a property of the run (`rete`), the derivation returns `eventus`. `[OPEN]` which atoms fall on which side beyond these three; the checker (`docs/design/checker.md`) decides per atom. A second `initium`, one with the wrong signature, or none where a program was asked for, is `EXS-E0424`.
 
@@ -450,7 +450,7 @@ t.grapha().numerus();      // 4   grapheme clusters
 t[0];                      // EXS-E0311: textus has no integer index
 ```
 
-UTF-8 storage. Slicing by byte offset, O(1), returns `eventus`, never panics. `octeti`, `scalares`, `grapha` are distinct types, not coercing views. Grapheme segmentation ships in the standard library.
+UTF-8 storage. **`textus` is a value: a two-word view — pointer and byte length — over storage it does not own**, and may not outlive that storage's arena. O(1) slicing forces a view, and `saluta`'s empty row forces a literal that allocates nothing (`docs/design/runtime.md` §2.3). Slicing by byte offset, O(1), returns `eventus`, never panics. `octeti`, `scalares`, `grapha` are distinct types, not coercing views. Grapheme segmentation ships in the standard library.
 
 **Branded offsets.** `quaere` returns `positio<'t>`, generatively branded to the buffer it indexed. `sectio` accepts only its own brand:
 
@@ -813,11 +813,13 @@ Xeon 2.10 GHz, gcc 13.3, `-O2`. Sources in `prototypes/stage0-bench/` — `[UNRE
 
 ## 6.5 Refcount representation
 
-**64-bit on every target, including ilp32, saturating with hard abort.** A 32-bit refcount overflows at 2³², which is reachable — CVE-2016-0728 (Linux keyring) is exactly this, overflow → UAF → local root. RISC-V ilp32 is in scope; the target's word size does not get to choose.
+**64-bit on every target, including ilp32; the retain that would carry out of 64 bits aborts.** (This sentence said "saturating with hard abort", which names two behaviours; abort-at-the-event is the one meant — a clamped count that continues is exactly the overflow-to-UAF path below.) A 32-bit refcount overflows at 2³², which is reachable — CVE-2016-0728 (Linux keyring) is exactly this, overflow → UAF → local root. RISC-V ilp32 is in scope; the target's word size does not get to choose.
 
 ## 6.6 Destruction
 
 RAII everywhere. Destructor **resurrection** — re-referencing an object under destruction — aborts.
+
+**A runtime abort has one observable shape:** `abortus N` on fd 2, then `SIGILL`, where `N` is a permanent small integer naming the kind (refcount overflow, resurrection, double release, …). The kinds are owned by `docs/design/runtime.md` §2.5 the way §13 owns codes, and they are not `EXS-E` codes: a trap is not a diagnostic. `SIGILL` rather than an exit status because `initium -> u8` makes every status a legitimate result; §14 entry 15's `shape=abort` is checkable against exactly this.
 
 ## 6.7 Accepted costs
 
@@ -1665,7 +1667,7 @@ compiled; a malformed flag is a usage error about the invocation, not about any
 source. `exsc` exits nonzero with a message and no code, and the four failure
 channels in `docs/asm-conventions.md` (§1.3) are unaffected.
 
-**Runtime:** calls `setlocale(LC_ALL, "C")` at startup. The FFI documentation states plainly that the locale guarantee stops at the `externus` boundary — a C library may call `setlocale` itself, which is the mechanism behind CVE-2025-49003.
+**Runtime:** the C target's runtime calls `setlocale(LC_ALL, "C")` at startup; the reference runtime has no libc and nothing to call — the sentence predates §9.2's two backends (`docs/design/runtime.md`, finding 7). The FFI documentation states plainly that the locale guarantee stops at the `externus` boundary — a C library may call `setlocale` itself, which is the mechanism behind CVE-2025-49003.
 
 ## 9.4 No build scripts
 
@@ -1772,6 +1774,7 @@ A dependency that gains `rete` in a new version is a one-line diff in a checked-
 - Human formatting requires `sermo`, always.
 - Paths are an abstract type with `hostPlatform`-dependent semantics, not strings.
 - Time is a capability (`horologium`); time zones are data.
+- **I/O reports failure as `eventus`; a count is never silently short.** A closed descriptor is discovered at the write, which a bare `mensura` cannot report, so `Scriptor.scribe` returns `eventus<mensura>` (`docs/design/runtime.md`, finding 10); `examples/imprime.exsc` and §14 entry 12 write `-> mensura` and are `[OPEN]` until `eventus` has its syntax.
 - Grapheme segmentation ships in the core, not a third-party package. This was Rust's mistake.
 - **The Unicode data version is a content-addressed dependency** of every `ego` transitively using text. `plica_unicode` is stable only against a pinned table.
 
@@ -1811,7 +1814,19 @@ emit text — fasmg source for the reference backend, C for the reach backend �
 and `-o OUT` names that text. Turning it into a binary is the build's step:
 for the reference backend, `fasmg OUT BIN` with `vendor/fasmg-x86/` on the
 include path, the one tool §18.1 puts in the closure. The emitted text is
-self-contained — the runtime prelude is emitted into it, not found on a path.
+self-contained modulo the vendored macro package — the runtime prelude is
+emitted into it, not found on a path, and the only `include` it carries is
+§18.1's `vendor/fasmg-x86/`.
+
+With no `ego.exsc` — the hello world has none — the program's `potestates`
+are the checker's computed capability closure of `initium` and its `numeri`
+are §5.4's defaults; `exsc ego --emitte` derives an ego from exactly those,
+so an ego-less build and the build of the ego it would emit are the same
+build (`docs/design/runtime.md`, finding 8). The prelude's own names
+(`Scriptor`, `Mundus`'s methods) are pre-seeded declarations in a scope
+*outside* the module's, and a module's own declaration shadows them rather
+than colliding — a conformance fixture that declares its own `Scriptor` is
+well-formed.
 `exsc` does not run the assembler and cannot: `execve` is not on the syscall
 allowlist (§9.3, `CLAUDE.md`), and locating an assembler by `PATH` is ambient
 state of exactly the kind the contract forbids. A build that wants one command

@@ -225,7 +225,11 @@ Reduction shape lives on the loop: `ForHead` carries the `contrahe` list and
 the `forma` identifier. `summa_ordinata`/`summa_arborea` are ordinary `Call`
 nodes; that they lower to `redinit`/`contrib`/`redfin` is the lowering's
 recognition of the resolved `Decl`, and whether they are library functions or
-intrinsics is `[OPEN]` — spec §5.4 writes them with no declaration site. The
+intrinsics was `[OPEN]` until `docs/design/runtime.md` §2.2 gave the rule — a
+name is an intrinsic iff its lowering has no `call` form — under which
+`summa_*` are the only intrinsics and `m.ambitus()` is a call (spec §5.4
+writes them with no declaration site; the prelude's pre-seeded `Decl`
+table is that site). The
 accumulator `Decl` gets type `red.F`, which admits no read (IR 2.6), so "not
 readable in the body" and "`rumpe` forbidden with `contrahe`" are checker
 rules on this tree; both need a §13 code the sections read do not supply —

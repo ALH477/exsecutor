@@ -755,10 +755,23 @@ send elsewhere:
 | `openat` | 257 | opening source and output files |
 | `exit_group` | 231 | process termination |
 
-- **Every syscall site funnels through `rt/sys.inc`.** That is a source-level
-  convention — a single place to read, review, and extend the allowlist —
-  distinct from but complementary to the binary-level check below. Do not
-  emit a raw `syscall` instruction from any other file.
+- **Every syscall site in `exsc` funnels through `rt/sys.inc`.** That is a
+  source-level convention — a single place to read, review, and extend the
+  allowlist — distinct from but complementary to the binary-level check
+  below. Do not emit a raw `syscall` instruction from any other file of the
+  compiler.
+- **There is a second closed set, and it is not this one.** A *compiled
+  program* carries the runtime prelude (`docs/design/runtime.md`), which
+  cannot include `rt/` and issues its own syscalls — `write`, `exit_group`,
+  `mmap`, and per capability atom the rest — under `if EXS_POTESTAS_…` so
+  that the binary holds only what the program's capability closure admits.
+  That set is `compiler/x86_64/prelude/`'s, tabulated in runtime.md section 2.6,
+  audited by `tools/syscall-audit.sh` on the *program's* binary with the
+  program's atoms, and it is what makes spec §10.3's audit a property of
+  the artifact. The two sets are reviewed separately; the compiler's never
+  grows because a program needs a syscall. **No socket-family syscall,
+  ever** still binds the compiler absolutely; a program has one iff its
+  closure contains `rete`, and the audit proves the iff.
 - **Adding a syscall to the allowlist is a reviewed change with a stated
   reason** (CLAUDE.md). This document does not pre-authorize any addition.
 - **No socket-family syscall, ever.** CLAUDE.md's operationalization of §9.3's
