@@ -636,7 +636,7 @@ is the one thing this section exists to prevent. `summa_arborea(v, 8)` on a
 (`contrahe`, §8.5). If the body could observe the partial total, the summation
 order would be observable, and no tree shape but strictly-left-to-right would
 be a valid implementation — the declaration would become a lie the moment
-anything used it. The accumulator is write-only until the reduction completes. **Writing to it is the contribution:** inside the body, `acc = e;` contributes `e` under the operator `contrahe` declared, and is the only statement that may name `acc`; any other read is `EXS-E0341`. After the loop `acc` is an ordinary binding. §8.5 gave the declaration and §8.6 its grammar and neither had said how a value gets in (`docs/design/checker.md`, finding 9).
+anything used it. The accumulator is write-only until the reduction completes. **Writing to it is the contribution:** inside the body, `acc = e;` contributes `e` under the operator `contrahe` declared, and is the only statement that may name `acc`; any other read is `EXS-E0341`. After the loop `acc` is an ordinary binding. **The operator must be associative:** `+`, `+%`, `+|`, `*` — §8.6's `ArithOp` also admits `-`, `-%` and `-|`, and subtraction under `arborea` has no meaning this section defines; a `contrahe` declared with one is `EXS-E0343` (`docs/design/lowering.md`, finding 4). §8.5 gave the declaration and §8.6 its grammar and neither had said how a value gets in (`docs/design/checker.md`, finding 9).
 
 **`rumpe` is forbidden inside an iteration carrying a `contrahe`.** An early
 exit makes the result depend on which iterations ran, and under `quisque` that
@@ -817,7 +817,7 @@ Xeon 2.10 GHz, gcc 13.3, `-O2`. Sources in `prototypes/stage0-bench/` — `[UNRE
 
 ## 6.6 Destruction
 
-RAII everywhere. Destructor **resurrection** — re-referencing an object under destruction — aborts.
+RAII everywhere. Destructor **resurrection** — re-referencing an object under destruction — aborts. **Destruction at scope exit runs in reverse initialisation order**, at every exit — fall-through, `redde`, `rumpe`, `perge` (`docs/design/lowering.md` §2.6; `typed-ast.md` had chosen reverse declaration order, which coincides except for declarations never initialised).
 
 **A runtime abort has one observable shape:** `abortus N` on fd 2, then `SIGILL`, where `N` is a permanent small integer naming the kind (refcount overflow, resurrection, double release, …). The kinds are owned by `docs/design/runtime.md` §2.5 the way §13 owns codes, and they are not `EXS-E` codes: a trap is not a diagnostic. `SIGILL` rather than an exit status because `initium -> u8` makes every status a legitimate result; §14 entry 15's `shape=abort` is checkable against exactly this.
 
@@ -874,7 +874,7 @@ Restriction modes work (Rust's `unsafe`, `use strict`, D's `@safe`): the restric
 - **UTF-8 only.** No BOM — a BOM is `EXS-E0101`, not a skipped byte.
 - **LF only.** CRLF is `EXS-E0106`. The formatter converts; the compiler does not.
 - **NFC required.** Non-NFC is `EXS-E0102`.
-- Bidi and invisible controls (U+202A–202E, U+2066–2069, U+200B–200F, U+061C, U+FEFF) anywhere in source, **including strings and comments**, are `EXS-E0103`. Escapes are the only way to produce them.
+- Bidi and invisible controls (U+202A–202E, U+2066–2069, U+200B–200F, U+061C, U+FEFF) anywhere in source, **including strings and comments**, are `EXS-E0103`. Escapes are the only way to produce them — and the escape grammar is `[OPEN]` alongside §8.4's literal grammar: until it lands, a literal's bytes are taken verbatim, backslash included, and no such codepoint can be produced at all (`docs/design/lowering.md`, finding 14).
 - **U+FEFF is `EXS-E0101` at offset 0 and `EXS-E0103` anywhere else.** At the
   start it is a byte-order mark and the first bullet governs. Elsewhere it is a
   zero-width no-break space — invisible, and not covered by U+200B–200F, which
@@ -1124,6 +1124,8 @@ already established them in `summa_ordinata` and `summa_arborea`.
 | `quisque` over `per` | licence to vectorize, thread, or dispatch |
 | `contrahe … forma` | §5.4's declared shape → CPU/GPU **bit-identity** (§5.5) |
 
+**What `terminus N` does when reached.** The bound is evaluated once, before the first iteration. Each time the condition is found true the count advances; the entry that would be the N+1th does not happen — it is a runtime abort (§6.6's shape). The abort is the point: a loop that outruns its declared bound has made a false declaration, and `certus` rule 6 is syntax only because the syntax is enforced. This paragraph was missing — the table above named the construct and nothing said what happens at the bound (`docs/design/lowering.md`, finding 1).
+
 **`certus` rule 6 stops being an analysis.** The profile currently requires
 "every loop carries a bound" and `profile-certus.md` section 5 lists loop-bound
 syntax as work that does not exist. Under this design a `dum` without `terminus`
@@ -1146,7 +1148,10 @@ compiler says so. `[OPEN]` — this needs dependency analysis, it is the largest
 unproven claim in this section, and it may not be affordable in a hand-written
 assembly frontend. If it is not, `quisque` degrades to a *trusted assertion* —
 still useful, considerably less attractive, and it must be labelled as such
-rather than quietly downgraded.
+rather than quietly downgraded. **This is that label:** no dependency analysis
+exists — the checker performs none (`docs/design/checker.md`) and the lowering
+emits `per`'s control flow plus a flag the naive backend ignores
+(`docs/design/lowering.md` §2.5) — so today `quisque` *is* a trusted assertion.
 
 **3. The compiler says what is being left on the table.** A `per` whose body has
 no cross-iteration dependency earns a diagnostic naming what `quisque` would
@@ -1285,8 +1290,12 @@ Precedence climbing over a fixed table, one-token peek per step.
 | 5 additive | `+` `+%` `+\|` `-` `-%` `-\|` | left |
 | 6 range | `..` | none |
 | 7 comparison | `lt` `le` `gt` `ge` `eq` `ne` | none |
-| 8 conjunction | `et` | left |
-| 9 disjunction | `vel` | left |
+| 8 conjunction | `et` | left, short-circuit |
+| 9 disjunction | `vel` | left, short-circuit |
+
+`et` and `vel` **short-circuit**: the right operand is evaluated only when the
+left has not decided the result. A call on the right makes the difference
+observable, which is why it is stated (`docs/design/lowering.md`, finding 13).
 
 `&` and `*` are prefix in operand position and binary or type sigils
 elsewhere; the position decides, never the token. Logical negation is
@@ -1963,7 +1972,10 @@ general typing, beside the `031x`–`034x` sub-ranges §5 already owned;
 program's root can be; `E0511` is the interface-conformance failure that
 `E0510` (a *capability* escaping a bound) never covered. The checker design
 proposed these numbers and this section ratifies them; nothing in `diag/`
-or `checker/` chose one.
+or `checker/` chose one. `EXS-E0307` also covers **definite assignment** — a
+binding declared without an initializer and read on some path before any
+assignment is a control-flow fact, not a type one, and the lowering would
+otherwise meet Braun's *undef* (`docs/design/lowering.md`, finding 7).
 
 Codes are permanent and never renumbered (§8.3), so under-committing is
 recoverable and over-committing is not. `0204`-`0209`, `0211`-`0219` and
