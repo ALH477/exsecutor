@@ -98,6 +98,7 @@ is that type unless shown. Text form: `%n = op T operands`.
 | fused | `fma` | one rounding; the only contraction that can exist (`contractio explicita`) |
 | float misc | `fcmp.* → u1`, `fext ftrunc itof ftoi`, `bitcast` | `fcmp` ordered; unordered forms, `ftoi` on NaN/range `[OPEN]` |
 | reduction | `redinit F op shape w → red.F`, `contrib %h %v`, `redfin F %h → F` | section 2.6 |
+| leaves | `faddr @f → ptr` | the code address of a declared function — the only instruction that yields one, and what section 2.9's "a function value is a `ptr` to a closure whose first word is the code address" needs to exist (lowering.md finding 12; proposed by the backend in 612b0c9, added here, **not yet in `ir.inc`/`emit.inc`** `[UNIMPLEMENTED]`) |
 | memory | `slot n align → ptr`, `load T %p off bo`, `store T %p off bo %v`, `loadbits T %p byte bit`, `storebits T %p byte bit %v`, `copy n %d %s`, `addr %p off`, `index %p %i stride`, `gaddr N`, `chk %i %n` | section 2.7; `chk` traps on `%i ≥ %n` |
 | ARC | `retain %r`, `release %r` | section 2.8; atomicity from `ref`/`refc` |
 | calls | `call T @f args…`, `callind T %fp args…`, `ret [%v]` | section 2.9 |
@@ -245,7 +246,13 @@ later in the same function.
 
     File     ::= (Global | Function)*
     Global   ::= 'data' '$' INT INT INT HEXBYTES                 ; id size align bytes
-    Function ::= 'functio' '@' NAME '(' Type* ')' '->' (Type | 'void') Attr* '{' Block+ '}'
+    Function ::= 'functio' '@' NAME '(' Type* ')' '->' (Type | 'void') Attr* ( '{' Block+ '}' | ';' )
+                                            ; ';' — a declaration: the body is elsewhere (an `externus`
+                                            ; function, or a prelude routine, runtime.md 2.2); nothing
+                                            ; is emitted for it. Added after the hello world needed
+                                            ; `call @exsrt_scriptor_scribe` to resolve (612b0c9, finding
+                                            ; 2); `parse.inc` still requires a placeholder body
+                                            ; `[UNIMPLEMENTED]`.
     Attr     ::= 'numeri' IDENT IDENT IDENT IDENT | 'nucleus' | 'externus' IDENT
     Block    ::= 'b' INT ':' ['quisque'] Line*
     Line     ::= ['%' INT '='] OP Tok*      ; arity by table on OP; phi/call/callind read to end of line
@@ -277,6 +284,16 @@ later in the same function.
       ret %13
     }
 
+**Predecessor order is not in the text either.** A top-to-bottom parse emits
+terminators in block order, so a parsed function's edge order (section 2.4)
+always equals its block order; a *constructed* function whose edges were
+pushed in a different order — `tests/unit/bfa_ir_builders.asm`'s `@iungo`,
+predecessors `(b3, b1)` — prints to text that re-parses into a function that
+fails verifier rule 3. Text round-trip is exact for the instructions and not
+for the edge order, and cannot be until this format gains a way to spell it
+(a `preds` annotation on a phi's block, `[OPEN]`). Measured, not argued
+(612b0c9, finding 3).
+
 Spans are not in the text: a hand-written function gets the span of its line,
 which is all a backend test needs. Round-trip is checked by re-parsing the
 printer's output and comparing structures, spans excluded.
@@ -292,7 +309,12 @@ Cooper–Harvey–Kennedy over reverse postorder, successors in terminator-opera
 order, computed only here; each `contrib` dominated by its `redinit` and each
 `redfin` post-dominating every `contrib` of its handle (`rumpe` out of a
 reduction loop `[OPEN]`); `retain`/`release` only on `ref`/`refc`; `red.F`
-only in its three ops; `numeri` equal across every direct `call`; no `nop`.
+only in its three ops; `numeri` equal across every direct `call`; no `nop`;
+and — added once a real `call` path existed (612b0c9, finding 6) — a `call`'s
+argument count and types match the callee's signature and its result type the
+callee's return type `[UNIMPLEMENTED]`: Tier 2 emits arguments straight from
+`extra`, so a lowering that emitted the wrong arity would produce a wrong call
+nothing rejects.
 
 ## 4. Determinism audit
 
