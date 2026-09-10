@@ -1300,7 +1300,7 @@ Terminals are §8.4's tokens; `IDENT` `INT` `STRING` are the lexer's classes.
 
     Module        ::= Item* EOF
     Item          ::= Annotation* ['publica'] ItemBody
-    Annotation    ::= '@' IDENT                              (* arguments [OPEN] *)
+    Annotation    ::= ANNOT                                  (* one token: §8.4's `@nomen`; arguments [OPEN] *)
     ItemBody      ::= FunctionDecl | StructDecl | TypeDecl | InterfaceDecl
                     | PotestasDecl | ExternusBlock | BindingStmt
     FunctionDecl  ::= Signature Block
@@ -1320,7 +1320,7 @@ Terminals are §8.4's tokens; `IDENT` `INT` `STRING` are the lexer's classes.
                       | 'in' Type [DeclRow] '{' FunctionDecl* '}' )
     Member        ::= Signature [Block]
     PotestasDecl  ::= 'potestas' IDENT '=' '{' [Path (',' Path)*] '}'
-    ExternusBlock ::= 'externus' '(' STRING ',' 'abi' ':' IDENT ')' '{' (['publica'] Signature)* '}'
+    ExternusBlock ::= 'externus' '(' STRING ',' IDENT ':' IDENT ')' '{' (['publica'] Signature)* '}'
     BindingStmt   ::= ('firma' | 'mutabilis') IDENT [':' Type] ['=' Expr] ';'
 
     Block         ::= '{' Stmt* '}'
@@ -1331,8 +1331,10 @@ Terminals are §8.4's tokens; `IDENT` `INT` `STRING` are the lexer's classes.
     IfStmt        ::= 'si' ExprNS Block ('sin' ExprNS Block)* ['aliter' Block]
     WhileStmt     ::= 'dum' ExprNS ['terminus' ExprNS] Block
     ForStmt       ::= ('per' | 'quisque') IDENT 'in' ExprNS
-                      ('contrahe' IDENT ':' ArithOp)* ['forma' IDENT [INT]] Block
-    MatchStmt     ::= 'discerne' ExprNS '{' ('casus' Pattern Block)* ['aliter' Block] '}'
+                      Contrahe* ['forma' IDENT [INT]] Block
+    Contrahe      ::= 'contrahe' IDENT ':' ArithOp
+    MatchStmt     ::= 'discerne' ExprNS '{' MatchArm* ['aliter' Block] '}'
+    MatchArm      ::= 'casus' Pattern Block
     Pattern       ::= Literal | Path                         (* constructors [OPEN] *)
 
     Expr          ::= Or           (* ExprNS: identical, level-1 '{' suffix disabled *)
@@ -1384,7 +1386,7 @@ Every place the parser looks past the current token, and how it resolves.
 
 | where | peek | resolution |
 |---|---|---|
-| statement start `functio` | `functio IDENT` | a nested named function: `EXS-E0201`, fix `firma nomen = functio(…) … ;`; otherwise a lambda expression statement |
+| statement start `functio` | `functio IDENT` | a nested named function: `EXS-E0201`, **no fix payload**; otherwise a lambda expression statement |
 | after a function or `dyn` type | `poscit {` | braced `TypeRow` belongs to the type; bare `poscit` belongs to the enclosing declaration |
 | struct / `interfacies` / `externus` body recovery | `IDENT :` or `}` | next member, or end of body |
 | `TypeArg` | `INT` | value argument (`acies<f32, 1024>`); anything else is a `Type`; a named constant parses as `Path` and is resolved semantically |
@@ -1403,8 +1405,13 @@ item-leading keywords. Lists: `,` and the closing bracket. Bodies: the
 `IDENT :` peek above. **No production consumes a `}` it did not open.** A
 required token that is absent becomes a zero-width `MISSING` node; skipped
 tokens go into an `ERROR` node; whitespace and comments are leading trivia of
-the following token; codepoints §8.1 rejects are emitted as error tokens so
-the tree stays lossless. Codes: `EXS-E0201` for any token where another was
+the following token; and bytes the lexer consumed without tokenizing — an
+`EXS-E0210` run, an `EXS-E0202` unterminated literal — reach the tree as
+trivia, or the round trip is not byte-exact. **§8.1's rejected codepoints
+never reach here at all**: §8.1 is a gate, so a file failing it is not
+tokenized, and there is nothing to parse. An earlier draft of this paragraph
+said they arrive as error tokens; that describes a lexer this project does
+not have. Codes: `EXS-E0201` for any token where another was
 required; `EXS-E0202` for a bracket, block, or `<…>` still open at end of
 input; `EXS-E0203` for end of input inside any other construct; `EXS-E0220`
 for a reserved word in identifier position; `EXS-E0210` is the lexer's. §13's
@@ -1427,6 +1434,33 @@ lowered. The `INT` is **required after `arborea` and forbidden after
 `ordinata`**, which is a semantic rule rather than a grammatical one: both
 spellings parse, and a missing or surplus width is a checker diagnostic.
 Found by `docs/design/typed-ast.md` asking what the tree must reserve.
+
+### What building the parser corrected
+
+`compiler/x86_64/cst/` implemented this section and reported ten findings.
+Five were errors here and are fixed above: `Annotation` is **one** token
+(§8.4's `@nomen`), not `'@' IDENT`; `abi` is a tier-2 contextual word, not a
+terminal, and this notation did not distinguish the two kinds; `MatchArm` and
+`Contrahe` needed names, because a CST cannot hold an unnamed repetition
+group; the `functio IDENT` fix was specified as `firma nomen = functio(…) … ;`,
+which is **three insertions at three places** where `diag/fix.inc` carries one
+span and one text, so that diagnostic now carries no fix payload rather than a
+partial one that would not compile; and recovery described error tokens that
+§8.1's gate makes impossible.
+
+Two were implementation latitude this section does not constrain and should
+not. **A node per precedence level is not required where the level matched no
+operator** — read literally, ten levels would make every atom ten nodes deep;
+the parser emits a level's node only when that level consumed an operator.
+And **`ExprNS` is today exactly `Expr`**, because struct literals are `[OPEN]`
+and they are the only thing it excludes; it stays a separate entry point
+because it is called from seven positions that will differ once they exist.
+
+**What held is the part worth recording.** The parser needed *no two-token
+peek this section does not list*. `-> functio(u32) -> u8 poscit {rete} poscit
+alloc {` parses with zero diagnostics, as does `acies<acies<f32, 4>, 4>`, and
+`a < b` is diagnosed at the `<` with a replace-fix to `lt`. Decision 6 —
+refusing symbolic comparisons — is what makes that last one possible.
 
 ### Not settled here
 

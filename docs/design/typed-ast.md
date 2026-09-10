@@ -224,10 +224,13 @@ readable in the body" and "`rumpe` forbidden with `contrahe`" are checker
 rules on this tree; both need a §13 code the sections read do not supply —
 **not chosen here; the checker cannot raise them until one exists.**
 
-**Contradiction found.** Spec §8.6 has `'forma' IDENT` with no width, but
-spec §5.4 defines `arborea w` and IR 2.6 lowers `redinit … arborea 8`. The
-tree reserves nothing because the grammar admits nothing; the grammar is the
-stale one `[OPEN]` (section 7).
+**Contradiction found, and since fixed.** Spec §8.6 had `'forma' IDENT` with
+no width, while spec §5.4 defines `arborea w` and IR 2.6 lowers
+`redinit … arborea 8` — so a bare `forma arborea` could never have been
+lowered. §8.6 now reads `['forma' IDENT [INT]]`, amended in response to this
+document. **`ForHead.d` therefore holds the width**, where an earlier draft of
+this paragraph said the tree reserves nothing. The width is required after
+`arborea` and forbidden after `ordinata`, which is a checker rule: both parse.
 
 ### 2.8 `@transitus` and layout: resolved here, in Stage 2
 
@@ -363,10 +366,12 @@ downstream of spec §8.6's own open list.
 
 ## 7. Spec amendments this design implies (owner's job, not done here)
 
-1. Spec §8.6: `ForStmt` needs a width operand on `forma` (`'forma' IDENT
-   [INT]` or similar) or spec §5.4's `arborea w` has no surface syntax.
-2. Spec §13: two codes are needed — reading a `contrahe` accumulator, and
-   `rumpe` inside an iteration carrying one (spec §5.4). None proposed here.
+1. ~~Spec §8.6: `ForStmt` needs a width operand on `forma`.~~ **Done** —
+   §8.6 reads `['forma' IDENT [INT]]`.
+2. ~~Spec §13: two codes are needed — reading a `contrahe` accumulator, and
+   `rumpe` inside an iteration carrying one (spec §5.4).~~ **Done** —
+   `EXS-E0341` and `EXS-E0342`, in `03xx` alongside the other §5.x semantic
+   rules. Neither carries a fix; both edits are restructures.
 3. Spec §9.1: "Typed AST" should say the type slots exist at Stage 1 and are
    filled at Stage 2, and point here as it points to `ssa-ir.md`.
 4. Spec §6.6: state the destruction order at scope exit.
