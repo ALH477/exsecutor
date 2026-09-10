@@ -156,10 +156,18 @@ self-describing and `ast_dump`/`ast_load` carry them (finding 2, done).
 
 **Pass 1** resolves what needs no type: a module table (`rt/map.inc`, name
 id → decl, filled from `Module.a` in item order, so forward references
-between items resolve) and, inside a function, a scan of each open frame's
-decl range from the most recent *seen* decl backwards, innermost frame
-first. Bindings are visible only after their declaration (`seen` advances
-as the walk passes each declaring node); duplicates in one block are an
+between items resolve) and, inside a function, **an explicit bind stack
+with a mark per frame** — `ChkCtx.binds`, pushed as the walk passes each
+declaring node, popped to the frame's mark when the frame closes, searched
+from the top down. This document first said "a scan of each open frame's
+decl range from the most recent *seen* decl backwards", which is wrong:
+block decl ranges **nest** rather than partition (`ast_verify`'s
+`__ast_v_nest` enforces exactly that — an outer block `[3,8)` contains its
+inner block's `[7,8)`), so a backwards range scan makes an inner block's
+names visible in the enclosing block after it closes. The resolve agent
+measured it on a real tree and declined it; `Block.c`/`Block.aux` are not
+read by this pass at all. Bindings are visible only after their declaration
+(the push happens at the declaring node); duplicates in one block are an
 error; an inner block shadowing an ordinary name is allowed (names resolve
 by name, so nearest-wins is unambiguous — only capabilities resolve by type
 and only they forbid shadowing). `Member.d` is *not* resolved here: a
@@ -283,9 +291,11 @@ computed and the ego emitter reads it. A module-level binding, `firma` or
 exist and is not Stage 2's; `E0701` is the backend's; `08xx` is the `certus`
 profile checker, a separate pass this document does not design.
 
-**Rules the spec states, or implies, that have no code.** Each is designed
-above and **cannot be raised** until §13 is amended; the class column is
-the proposal's grouping.
+**Rules the spec states, or implies, that had no code when this was
+written.** §13 was amended in 4edb704 with exactly the codes proposed
+below — `E0301`–`E0309`, `E0343`, `E0422`–`E0424`, `E0511` — so every class
+here can now be raised; the table stays as the derivation record. The
+class column is the proposal's grouping.
 
 | rule | where stated | class |
 |---|---|---|
@@ -614,7 +624,15 @@ Numbered; each names the section and the sentence. Not edited here.
     example is wrong; section 2.2 pass 4 implements packed.
 14. **Spec §5.1's methods have no declaration site** (`octeti` `quaere`
     `sectio` `plica_unicode`) and no import exists; §14 entries 2 and 8's
-    fixtures call them undeclared. Entry 8 still reaches `E0311`.
+    fixtures call them undeclared. Entry 8 still reaches `E0311`. **Nor do
+    its type names**: `i32`, `f32`, `textus`, `mensura`, `octeti`,
+    `scalares`, `grapha` all parse as `TyPath → Path → Seg` and nothing in
+    the repository declares them — not the module, not
+    `prelude/interface.inc`. Raising `E0301` in type position would report
+    every `i32` in every program, so pass 1 leaves a type-position miss
+    silent and pass 2 owns the primitive table (its `int`/`float`/`textus`
+    kinds are that table); `chk_verify` gates its "`Seg.d` ≠ 0" clause on
+    the types pass having run. (Found by the resolve agent.)
 15. **IR 2.9 "one `ptr` per row item in written order"** — an interned row
     has no written order; section 2.8 uses row (sorted) order.
 16. **Spec §3 fails its own examples.** `applica` (§4.2) carries `ap-`, an
