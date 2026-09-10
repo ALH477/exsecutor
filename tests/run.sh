@@ -6,11 +6,13 @@
 #      fasmg, and checks the expectations declared in its `; TEST:`
 #      directive comment (run=yes|no, expect-exit=<N>, audit=pass|fail|skip).
 #      This is the only phase that can do anything today -- there is no
-#      compiler yet, so the only thing under test is the toolchain itself
-#      and tools/syscall-audit.sh.
-#   2. run_conformance_tests: tests/conformance/ (spec §14, 23 entries) is
-#      a deliberate no-op until compiler/x86_64/exsc.asm exists to drive
-#      it. Kept as a separate function/phase precisely so wiring it up
+#      compiler's own modules and the toolchain; exsc exists and the
+#      driver_* fixtures drive it.
+#   2. run_conformance_tests: tests/conformance/ (spec §14, 24 entries),
+#      driven by build/exsc; entries the built stages can decide are
+#      status=run, the rest DEFERRED and never counted as passing. This
+#      comment once said "a deliberate no-op until exsc.asm exists"; it
+#      was kept as a separate phase precisely so wiring it up
 #      later does not require touching run_unit_tests.
 #
 # See tests/README.md for the directive format and how to add a fixture.
@@ -139,7 +141,7 @@ run_unit_tests() {
 
 run_conformance_tests() {
   # ---------------------------------------------------------------------
-  # spec §14, 24 entries, FIVE rule shapes (tests/README.md, "23 entries,
+  # spec §14, 24 entries, FIVE rule shapes (tests/README.md, "24 entries,
   # five rule shapes" -- a runner that assumes one shape quietly mishandles
   # four):
   #
@@ -270,7 +272,7 @@ run_conformance_tests() {
   local exsc_bin="$workdir/exsc"
   local exsc_ok=0
   if [[ ! -f "$exsc_src" ]]; then
-    note "compiler/x86_64/exsc.asm does not exist yet -- every shape=code"
+    note "compiler/x86_64/exsc.asm is absent from this tree -- every shape=code"
     note "fixture is checked against its fixture's own status= instead;"
     note "none can be status=run without it"
   elif ! command -v "$FASMG" >/dev/null 2>&1; then

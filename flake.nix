@@ -22,10 +22,11 @@
 #     compiler itself. One system, enumerated by hand: no flake-utils, no
 #     eachDefaultSystem. Fewer inputs is the point.
 #
-# `compiler/x86_64/exsc.asm` does not exist yet -- the Exsecutor compiler is
-# unwritten (spec Stage 1 is not complete). `packages.exsc` and
-# `lib.buildExsecutorPackage` are guarded / scaffolded accordingly; see the
-# [UNIMPLEMENTED] notes below. Nothing here fakes a successful compiler
+# `compiler/x86_64/exsc.asm` exists and builds (Stage 1 closed 2026-09-10);
+# the `compilerExists` guards below were written when it did not and stay
+# because they cost nothing and keep the placeholder branch honest if the
+# file is ever absent. `lib.buildExsecutorPackage` is still scaffolded: no
+# .exsc compiles to an artifact yet (Stage 3). Nothing here fakes a successful compiler
 # build.
 
 {

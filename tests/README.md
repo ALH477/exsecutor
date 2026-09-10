@@ -9,7 +9,7 @@ calls):
    toolchain itself (`fasmg` + `vendor/fasmg-x86`) and `tools/syscall-audit.sh`,
    so that is what these fixtures exercise.
 2. **`tests/conformance/`** — spec §14's 24-entry suite. **All 24 cases
-   are written; 5 run.** `exsc` now exists, so the entries the lexer can
+   are written; 6 run.** `exsc` now exists, so the entries the lexer can
    decide are checked against a real diagnostic: 3 (bidi in a comment,
    `EXS-E0103`), 5 (non-NFC, `E0102`), 18 (BOM, `E0101`), 19 (mixed-script,
    `E0104`), 20 (CRLF, `E0106`). The other 19 report **`DEFERRED`** with
@@ -77,8 +77,11 @@ detection, not runtime behavior — see `socket_syscall.asm`); `audit=pass`
 or `audit=fail` runs `tools/syscall-audit.sh` on the assembled binary and
 asserts its verdict.
 
-Current fixtures: **46**, covering the macro dialect, every `rt/` module,
-the Unicode consumers, `diag/`, the lexer and the driver. The four below are
+Current fixtures: see `UNIT_FIXTURE_FLOOR` in `tests/run.sh` (124 as of
+b9c0abc; this sentence said 46 for a long time), covering the macro dialect,
+every `rt/` module, the Unicode consumers, `diag/`, the lexer, the CST, the
+AST, the driver, the backend and its verifier, the prelude, and the
+checker. The four below are
 the originals and are listed because each one proves something about the
 *harness* rather than about a compiler module — including two negative cases
 that prove the audit catches what it claims to.
@@ -126,16 +129,10 @@ expected diagnostic code (or, for entries 16–17, the expected
 byte-identical-output property) — that function is currently a stub
 specifically waiting for this.
 
-## Known limitation
+## A limitation that no longer holds
 
-`make test` (and `make reproduce`) currently cannot run to completion via
-`make` at all: both targets depend on `$(OUT)` (`build/exsc`), and
-`build/exsc`'s own rule depends on `compiler/x86_64/exsc.asm`, which does
-not exist yet — `make` fails at that dependency before ever invoking
-`tests/run.sh` or `tools/reproduce.sh`. Both scripts are written to
-degrade honestly and do useful work without `exsc` (see their own
-`--help`-equivalent header comments), but that only happens when they are
-invoked directly, e.g. `tests/run.sh` or `tools/reproduce.sh`, bypassing
-`make`. This is a `Makefile` prerequisite question, not something this
-directory owns — noted here so it isn't mistaken for a bug in these
-scripts.
+This section said `make test` and `make reproduce` could not run because
+`compiler/x86_64/exsc.asm` did not exist. It exists; both targets run (`make
+reproduce` was itself broken from the day exsc.asm gained an include until
+528fe7d, which is the kind of thing this file is for). Kept as a heading so a
+reader who remembers the limitation finds its retraction rather than silence.

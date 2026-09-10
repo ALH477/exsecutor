@@ -1,6 +1,11 @@
 # Runtime prelude — design plan (Stage 3)
 
-Status: `[OPEN]`. Design only; no prelude exists, nothing below has run, and
+Status: **built** (decc0f0): `compiler/x86_64/prelude/` runs under nine fixtures,
+its `scribe` binary prints `examples/saluta.expected` with `write` and
+`exit_group` only, and 612b0c9's `program.inc` wrapped it into a program that
+ran. Section 2.4's code block held its count in r11 across the syscall and was
+corrected against the build. This line said "no prelude exists" until
+2026-09-10; the rest of the sentence was also true then:
 no file under `compiler/` is touched by this document. `spec §N` cites
 `docs/spec/exsecutor-spec-v0.4.md`; `IR n.m` cites `docs/design/ssa-ir.md`;
 `AST n.m` cites `docs/design/typed-ast.md`; `CHK n.m` cites

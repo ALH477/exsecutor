@@ -1,6 +1,10 @@
 # Checker — design plan (Stage 2)
 
-Status: `[OPEN]`. Design only; no checker exists and nothing below has run.
+Status: **partly built.** `compiler/x86_64/checker/` holds passes 0, 1, 3 and 4
+(b9c0abc), under nine fixtures; pass 2 (types) and pass 5 (lexicon, built and
+not enabled per spec §3.3) are in progress. Section 2.2's range scan was
+corrected against the code (d8cd939). This line said "no checker exists"
+until 2026-09-10.
 `spec §N` cites `docs/spec/exsecutor-spec-v0.4.md`; `AST n.m` cites
 `docs/design/typed-ast.md`; `IR n.m` cites `docs/design/ssa-ir.md`; a file
 under `compiler/x86_64/ast/` is cited by name where it and AST n.m disagree —

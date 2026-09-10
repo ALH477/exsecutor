@@ -1,6 +1,8 @@
 # Lowering — design plan (Stage 3, AST → SSA)
 
-Status: **design only; nothing implemented.** No lowering exists, and no IR
+Status: **design only; nothing implemented** — still true: no lowering exists
+(the builders it asked of `ir.inc` landed in 612b0c9, with `bfa_edge_push`'s
+argument order corrected here to match). No IR
 in the tree was produced by one: `backend_fasmg/` has run only on
 hand-written text. Every sentence below that describes emitted IR is what
 this design *obliges*, `[UNTESTED]` until `compiler/x86_64/lower/` runs.
