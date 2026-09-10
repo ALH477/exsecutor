@@ -67,6 +67,15 @@ if [[ -x "$EXSC" ]] && "$EXSC" aedifica --hospes "$HOSPES" "${SRCS[@]}" -o "$WOR
     yes "fasmg assembles the emitted text"
     if "$WORK/saluta" >"$WORK/out" 2>/dev/null; then yes "the result runs"
     else no "the result does not run"; fi
+    # spec §10.3, made a property of the binary: the program's syscall surface
+    # against the atoms its closure admits -- the hello world's are exactly
+    # `Mundus` (the root) and `ambitus` (the standard streams, §4.6). Anything
+    # else in the binary, and in particular any socket-family syscall, fails.
+    if tools/syscall-audit.sh --potestates Mundus,ambitus "$WORK/saluta" >"$WORK/auditlog" 2>&1; then
+      yes "the result's syscall surface is within {Mundus, ambitus} (§10.3)"
+    else
+      no "the result's syscall surface exceeds {Mundus, ambitus}"; sed 's/^/            /' "$WORK/auditlog" | grep -E "FAIL|not admitted" | head -5
+    fi
   else
     no "fasmg cannot assemble the emitted text"; sed 's/^/            /' "$WORK/asmlog" 2>/dev/null | head -5
   fi
