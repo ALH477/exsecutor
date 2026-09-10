@@ -319,6 +319,15 @@ segment readable writeable
 	dd	203, 0	; EXS-E0203
 	dd	210, 0	; EXS-E0210
 	dd	220, 0	; EXS-E0220
+	dd	301, 0	; EXS-E0301 -- typing; no derivable edit (Stage 2 amendment)
+	dd	302, 0	; EXS-E0302 -- typing; no derivable edit (Stage 2 amendment)
+	dd	303, 0	; EXS-E0303 -- typing; no derivable edit (Stage 2 amendment)
+	dd	304, 0	; EXS-E0304 -- typing; no derivable edit (Stage 2 amendment)
+	dd	305, 0	; EXS-E0305 -- typing; no derivable edit (Stage 2 amendment)
+	dd	306, 0	; EXS-E0306 -- typing; no derivable edit (Stage 2 amendment)
+	dd	307, 0	; EXS-E0307 -- typing; no derivable edit (Stage 2 amendment)
+	dd	308, 0	; EXS-E0308 -- typing; no derivable edit (Stage 2 amendment)
+	dd	309, 0	; EXS-E0309 -- typing; no derivable edit (Stage 2 amendment)
 	dd	311, 0	; EXS-E0311
 	dd	321, 0	; EXS-E0321
 	dd	322, 0	; EXS-E0322
@@ -329,10 +338,15 @@ segment readable writeable
 	dd	342, 0	; EXS-E0342 -- no fix, same reason. §5.4 suggests `per`
 			;   with an explicit accumulator, which changes what the
 			;   program computes.
+	dd	343, 0	; EXS-E0343 -- no fix: a reduction shape is a restructure.
 	dd	421, 1	; EXS-E0421
+	dd	422, 1	; EXS-E0422 -- delete the shadowing binding: derivable.
+	dd	423, 1	; EXS-E0423 -- delete the malformed row item: derivable.
+	dd	424, 0	; EXS-E0424 -- which function is the entry point is not.
 	dd	500, 1	; EXS-E0500
 	dd	501, 1	; EXS-E0501
 	dd	510, 1	; EXS-E0510
+	dd	511, 0	; EXS-E0511 -- an interface mismatch is a signature change.
 	dd	520, 0	; EXS-E0520
 	dd	601, 1	; EXS-E0601
 	dd	602, 1	; EXS-E0602

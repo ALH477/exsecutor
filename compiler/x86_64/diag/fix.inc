@@ -249,6 +249,12 @@ endp
 ; a fix-it must never do quietly.
 diag_fixreq_codes:
 	dd	421			; EXS-E0421  undeclared capability
+	dd	422			; EXS-E0422  capability bound twice -- delete the second binding
+	dd	423			; EXS-E0423  row item malformed -- delete the item
+					; EXS-E0424 (entry point malformed) is absent on purpose: which
+					;   function should be `initium` is not derivable. Neither are
+					;   030x (typing), 0343 (shape) or 0511 (interface mismatch):
+					;   every one of those edits changes what the program computes.
 	dd	500			; EXS-E0500  module-level mutable state
 	dd	501			; EXS-E0501  capability in module-level state
 	dd	510			; EXS-E0510  capability escapes a dyn bound

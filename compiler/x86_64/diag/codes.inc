@@ -63,7 +63,7 @@
 ; Spec: docs/spec/exsecutor-spec-v0.4.md §8.3, §13
 ; -----------------------------------------------------------------------------
 
-DIAG_CODE_COUNT = 35
+DIAG_CODE_COUNT = 49
 DIAG_CODE_STR_STRIDE = 9	; "EXS-E" + 4 digits, always
 
 ; ---- fixed-stride code-string table (9 bytes each, no separator, no NUL) ---
@@ -79,16 +79,30 @@ diag_code_str:
 	db	'EXS-E0203'
 	db	'EXS-E0210'
 	db	'EXS-E0220'
+	db	'EXS-E0301'
+	db	'EXS-E0302'
+	db	'EXS-E0303'
+	db	'EXS-E0304'
+	db	'EXS-E0305'
+	db	'EXS-E0306'
+	db	'EXS-E0307'
+	db	'EXS-E0308'
+	db	'EXS-E0309'
 	db	'EXS-E0311'
 	db	'EXS-E0321'
 	db	'EXS-E0322'
 	db	'EXS-E0332'
 	db	'EXS-E0341'
 	db	'EXS-E0342'
+	db	'EXS-E0343'
 	db	'EXS-E0421'
+	db	'EXS-E0422'
+	db	'EXS-E0423'
+	db	'EXS-E0424'
 	db	'EXS-E0500'
 	db	'EXS-E0501'
 	db	'EXS-E0510'
+	db	'EXS-E0511'
 	db	'EXS-E0520'
 	db	'EXS-E0601'
 	db	'EXS-E0602'
@@ -117,16 +131,30 @@ diag_code_numeric:
 	dd	203
 	dd	210
 	dd	220
+	dd	301
+	dd	302
+	dd	303
+	dd	304
+	dd	305
+	dd	306
+	dd	307
+	dd	308
+	dd	309
 	dd	311
 	dd	321
 	dd	322
 	dd	332
 	dd	341
 	dd	342
+	dd	343
 	dd	421
+	dd	422
+	dd	423
+	dd	424
 	dd	500
 	dd	501
 	dd	510
+	dd	511
 	dd	520
 	dd	601
 	dd	602
@@ -155,16 +183,30 @@ diag_code_msg_len:
 	dd	23
 	dd	17
 	dd	35
+	dd	21
+	dd	34
+	dd	13
+	dd	25
+	dd	33
+	dd	47
+	dd	19
+	dd	49
+	dd	44
 	dd	31
 	dd	29
 	dd	37
 	dd	42
 	dd	46
 	dd	45
+	dd	25
 	dd	35
+	dd	35
+	dd	29
+	dd	21
 	dd	26
 	dd	39
-	dd	30
+	dd	58
+	dd	43
 	dd	35
 	dd	54
 	dd	44
@@ -217,6 +259,20 @@ diag_code_msg_ptr:
 	dq	diag_msg32
 	dq	diag_msg33
 	dq	diag_msg34
+	dq	diag_msg35
+	dq	diag_msg36
+	dq	diag_msg37
+	dq	diag_msg38
+	dq	diag_msg39
+	dq	diag_msg40
+	dq	diag_msg41
+	dq	diag_msg42
+	dq	diag_msg43
+	dq	diag_msg44
+	dq	diag_msg45
+	dq	diag_msg46
+	dq	diag_msg47
+	dq	diag_msg48
 
 ; ---- canonical English message text (§8.3: "English text is canonical.
 ;      Translation, if ever, is a lookup keyed on code.") -----------------
@@ -231,27 +287,41 @@ diag_msg7 db	'unterminated construct'	; EXS-E0202
 diag_msg8 db	'unexpected end of input'	; EXS-E0203
 diag_msg9 db	'malformed literal'	; EXS-E0210
 diag_msg10 db	'reserved keyword used as identifier'	; EXS-E0220
-diag_msg11 db	'integer index applied to textus'	; EXS-E0311
-diag_msg12 db	':nativus in a @transitus type'	; EXS-E0321
-diag_msg13 db	'implicit padding in a @transitus type'	; EXS-E0322
-diag_msg14 db	'branded offset applied to the wrong buffer'	; EXS-E0332
-diag_msg15 db	'reduction accumulator read inside its own body'	; EXS-E0341
-diag_msg16 db	'rumpe inside an iteration carrying a contrahe'	; EXS-E0342
-diag_msg17 db	'undeclared capability (atom or row)'	; EXS-E0421
-diag_msg18 db	'module-level mutable state'	; EXS-E0500
-diag_msg19 db	'capability stored in module-level state'	; EXS-E0501
-diag_msg20 db	'capability escapes a dyn bound'	; EXS-E0510
-diag_msg21 db	'non-atomic refero crossing externus'	; EXS-E0520
-diag_msg22 db	'public name does not decompose into the morpheme table'	; EXS-E0601
-diag_msg23 db	'suffix contract disagrees with declared type'	; EXS-E0602
-diag_msg24 db	'prefix signature law violated'	; EXS-E0603
-diag_msg25 db	'composition depth exceeded (max two affixes)'	; EXS-E0610
-diag_msg26 db	'target cannot honour the declared numeri'	; EXS-E0701
-diag_msg27 db	'allocation after initium under profilum certum'	; EXS-E0801
-diag_msg28 db	'recursion detected under profilum certum'	; EXS-E0802
-diag_msg29 db	'loop without a statically known bound under profilum certum'	; EXS-E0811
-diag_msg30 db	'generic does not monomorphize within the closure under profilum certum'	; EXS-E0812
-diag_msg31 db	'capturing closure under profilum certum'	; EXS-E0813
-diag_msg32 db	'capability forbidden by profilum certum'	; EXS-E0821
-diag_msg33 db	'numeri not fully declared under profilum certum'	; EXS-E0831
-diag_msg34 db	'certus module depends on a non-certus module'	; EXS-E0841
+diag_msg11 db	'name does not resolve'	; EXS-E0301
+diag_msg12 db	'duplicate declaration in one scope'	; EXS-E0302
+diag_msg13 db	'type mismatch'	; EXS-E0303
+diag_msg14 db	'wrong number of arguments'	; EXS-E0304
+diag_msg15 db	'operation not defined on the type'	; EXS-E0305
+diag_msg16 db	'assignment to an immutable or non-lvalue target'	; EXS-E0306
+diag_msg17 db	'control flow misuse'	; EXS-E0307
+diag_msg18 db	'literal cannot be typed or does not fit its width'	; EXS-E0308
+diag_msg19 db	'type expression or annotation not applicable'	; EXS-E0309
+diag_msg20 db	'integer index applied to textus'	; EXS-E0311
+diag_msg21 db	':nativus in a @transitus type'	; EXS-E0321
+diag_msg22 db	'implicit padding in a @transitus type'	; EXS-E0322
+diag_msg23 db	'branded offset applied to the wrong buffer'	; EXS-E0332
+diag_msg24 db	'reduction accumulator read inside its own body'	; EXS-E0341
+diag_msg25 db	'rumpe inside an iteration carrying a contrahe'	; EXS-E0342
+diag_msg26 db	'reduction shape malformed'	; EXS-E0343
+diag_msg27 db	'undeclared capability (atom or row)'	; EXS-E0421
+diag_msg28 db	'capability bound twice in one scope'	; EXS-E0422
+diag_msg29 db	'capability row item malformed'	; EXS-E0423
+diag_msg30 db	'entry point malformed'	; EXS-E0424
+diag_msg31 db	'module-level mutable state'	; EXS-E0500
+diag_msg32 db	'capability stored in module-level state'	; EXS-E0501
+diag_msg33 db	'capability escapes a declared bound (trait ceiling or dyn)'	; EXS-E0510
+diag_msg34 db	'implementation does not match its interface'	; EXS-E0511
+diag_msg35 db	'non-atomic refero crossing externus'	; EXS-E0520
+diag_msg36 db	'public name does not decompose into the morpheme table'	; EXS-E0601
+diag_msg37 db	'suffix contract disagrees with declared type'	; EXS-E0602
+diag_msg38 db	'prefix signature law violated'	; EXS-E0603
+diag_msg39 db	'composition depth exceeded (max two affixes)'	; EXS-E0610
+diag_msg40 db	'target cannot honour the declared numeri'	; EXS-E0701
+diag_msg41 db	'allocation after initium under profilum certum'	; EXS-E0801
+diag_msg42 db	'recursion detected under profilum certum'	; EXS-E0802
+diag_msg43 db	'loop without a statically known bound under profilum certum'	; EXS-E0811
+diag_msg44 db	'generic does not monomorphize within the closure under profilum certum'	; EXS-E0812
+diag_msg45 db	'capturing closure under profilum certum'	; EXS-E0813
+diag_msg46 db	'capability forbidden by profilum certum'	; EXS-E0821
+diag_msg47 db	'numeri not fully declared under profilum certum'	; EXS-E0831
+diag_msg48 db	'certus module depends on a non-certus module'	; EXS-E0841

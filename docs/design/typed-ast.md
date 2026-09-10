@@ -117,13 +117,13 @@ expression are all `[OPEN]` there and add kinds only by amending this table.
 | `Contrahe` | name id | — | — | accumulator decl | op |
 | `Discerne` | scrutinee | `Casus` list | count | `aliter` `B` or 0 | — |
 | `Casus` | pattern (`Lit` or `Path`) | `B` | — | — | — |
-| `Lit` | text id (INT) / decoded bytes id (STRING) | — | — | — | class |
+| `Lit` | raw interned text id (INT and STRING alike; quotes included, escapes undecoded while §8.4's literal grammar is `[OPEN]`) | — | — | — | class |
 | `Path` | segments (`Seg`) | count | — | resolved decl | — |
 | `Seg` | name id | `GenericArgs` or 0 | — | resolved decl | — |
 | `Unary` `Binary` | `E` | `E` | — | — | operator |
 | `Cast` `Index` `Try` | `E` | `T` / index `E` / — | — | — | — |
 | `Call` | callee `E` | args | count | — | — |
-| `Member` | `E` | name id | — | resolved field or method decl | — |
+| `Member` | `E` | name id | `GenericArgs` or 0 | resolved field or method decl | — |
 | `Lambda` | `Sig` | `B` | — | decl | — |
 | `TyPath` `TyDyn` | `Path` | `Row` or 0 (`dyn`) | — | — | — |
 | `TyBit` `TyPtr` | — / inner `T` | — | — | — | width / `&` or `*` |
@@ -292,7 +292,10 @@ Dropped: whitespace, comments, punctuation and keyword tokens, parentheses,
 the `ExprNS` distinction, literal spelling beyond the interned text. Safe
 because the formatter and LSP read the CST (spec §9.1), diagnostics need only
 spans, and nothing semantic lives in trivia. **Kept:** parse failure. An
-`ERROR` or `MISSING` CST node becomes an `Error` node with its span, so a
+`ERROR` CST node becomes an `Error` node with its span (a `MISSING` node is
+never visited — the walks iterate interior children — so a missing `;` leaves
+`Redde.a` the intact expression, as `ast/` documents and
+`tests/unit/ast_from_cst_missing.asm` proves), so a
 malformed file still yields a tree and Stage 2 still types the rest —
 spec §16's Stage 1 kill criterion is diagnostics, and a checker that stops at
 the first parse error cannot report a second. The `ego` file has its own CST

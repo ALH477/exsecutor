@@ -210,7 +210,7 @@ Release-to-zero dispatches the destructor through the object header `[OPEN]`
 Argument order in `extra`: (1) `ptr` to caller-owned return storage when the
 declared return is an aggregate; (2) dictionaries, one `ptr` per generic
 parameter in declaration order (spec §7.1); (3) capability carriers, one
-`ptr` per row item in written order (section 2.10); (4) declared parameters
+`ptr` per row item in row order — ascending atom id; an interned row has no written order (`checker.md` section 2.8) — (section 2.10); (4) declared parameters
 in order. Scalars, `ptr`, `ref` by value; aggregates by `ptr` to caller-owned
 storage the callee reads and never writes. References: parameters borrowed
 (spec §6.3, decision 3 — the callee retains only what it stores); returned

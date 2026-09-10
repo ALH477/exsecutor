@@ -121,6 +121,8 @@ Rejecting bidi at the lexer is correct and cheap. **It is not a differentiator.*
 
 Locals, private functions, and struct fields are free-form. Same principle as capabilities: explicit at boundaries, free inside.
 
+A public name may carry **one qualifier after `_`** — `plica_unicode`, `plica_sermone`, `imprime_gutenbergio` — and only the part before the `_` is decomposed. The qualifier is a single word: a Latin ablative (*by means of*, `sermone`, `Gutenbergio`) or a proper noun (`unicode`), and it is not checked. This document had written such names since §5.1 without saying what the rule was; the checker design (`docs/design/checker.md`, finding 16) found that §3.1 as stated could not accept them.
+
 ## 3.2 Why this layer
 
 Guo (CHI 2018, 840 respondents, 86 countries, 74 native languages) found the code-reading barrier concentrated in **identifiers and API names**, not the ~40 reserved words. v0.1 put Latin in the keywords — the layer that doesn't matter, which is why it was decorative and why English keywords could be swapped in with no loss.
@@ -147,6 +149,8 @@ Latin verbs carry **two stems**, present and supine. Affixes attach to one or th
 | `solv-` | `solut-` | loosen |
 
 Greek roots cover what Latin lacks: `crypt-`, `graph-`, `metr-`, `morph-`, `chron-`, `top-`, plus the combining forms `poly-`, `mono-`, `iso-`, `auto-`.
+
+**This table is illustrative, and it is not the morpheme table.** Fourteen roots cannot be a language's lexicon; `saluta`, `construe`, `imprime`, `textus` and `grapha` are all correct Latin and none decomposes over them. The morpheme table is `lexicon.norma` — §3.8 already makes it a content-addressed dependency of every `ego`, §10.1 lists it — and it does not yet exist. Until it does, `EXS-E0601`–`EXS-E0603` and `EXS-E0610` are `[OPEN]`: the checker's lexicon pass is built and tested against §3.7's derivation table and §14 entry 14, and not enabled. Two things the real table must carry that this one does not: **each root's imperative form** (§3.4 makes `-e` a category realised by conjugation — `lege`, `plica`, `tene` — so a checker needs the form, not a rule), and **the base form a prefix law binds to** (§3.5 presupposes one and does not say where it is declared). A root whose classical form is already assimilated — `applic-` (§4.2's `applica`) — enters the table as a root, not as `ad-` + `plic-`, which §3.6 would spell `adplica`.
 
 ## 3.4 Suffixes carry type contracts
 
@@ -349,7 +353,7 @@ Prototype: `prototypes/capcheck/exsecutor_check.py`, 468 lines, validated agains
 3. Capability sets are part of **`functio` types**, not only declarations.
 4. **A capability becomes available in a scope in exactly four ways — bound by `sub`, received as a parameter, held in a field of the receiver, or **captured by a closure from an enclosing scope** — and all four are visible in the interface.** `poscit` means *drawn from the enclosing scope*, nothing else. Capture was absent from this list in v0.4 and earlier, which is precisely where the closure-capture hole lived: it is visible because a captured row appears in the closure's **type** (§4.2), not because it is bound or passed.
 5. `publica` functions declare `poscit` explicitly. Private functions infer it from their bodies, transitively.
-6. A function with no `poscit` and no capability parameters is **pure with respect to ambient state**. It may allocate and diverge; it may not observe the host.
+6. A function whose **declared** row is empty — `publica` with no `poscit`, or any function written `poscit {}` — and which takes no capability parameter is **pure with respect to ambient state**. It may allocate and diverge; it may not observe the host. A private function with no `poscit` has no declared row and is governed by rule 5, not this one; the two rules read together had said opposite things about it (`docs/design/checker.md`, finding 10).
 7. **No module-level mutable state.** (`EXS-E0500`; with a capability, `EXS-E0501`.)
 
 ## 4.2 Rows and substitution
@@ -386,7 +390,7 @@ Under the revised rule the same file is rejected as `EXS-E0421`, and `cases/ok_c
 
 ## 4.3 Capability-bearing types
 
-A type with a capability-typed field, transitively, is **capability-bearing**, must be declared so, and the mark propagates into the `ego`'s `potestates`.
+A type with a capability-typed field, transitively, is **capability-bearing**; the checker computes the mark (§8.6 has no syntax for declaring it, and a declaration that could disagree with the fields would be one more thing to keep in sync) and it propagates into the `ego`'s `potestates`.
 
 ```exsecutor
 structura ScriptorRetis { sock: rete }      // capability-bearing: [rete]
@@ -430,7 +434,7 @@ publica functio initium(m: Mundus) -> u8 { … }
 
 Rule 2 names `initium` and says `Mundus` is passed to it; this pins the rest. A program has exactly one `initium`; it is `publica`; its one parameter is the root, which is rule 4's second path — received as a parameter — so it carries no `poscit` and there is nothing to declare: the program's whole authority is that one value, and every other capability is derived from it, explicitly (rule 2). Its result is the process exit status. A module with no `initium` is a library, and `aedifica` on one yields a library artifact; "it runs" is a claim only a program can make.
 
-Derivation is by method on the root — `m.ambitus()`, `m.archivum()` — and rule 2's *fallibly* is resolved at two different times. Where presence is a property of the host (`ambitus`, `archivum`: a `none-eabi` target has neither), it is decided at compile time by `--hospes` (§9.5) and the `hospites` list (§10.1), and the derivation itself is total. Where presence is a property of the run (`rete`), the derivation returns `eventus`. `[OPEN]` which atoms fall on which side beyond these three; the checker (`docs/design/checker.md`) decides per atom. `[OPEN]` a second `initium`, or one with the wrong signature, has no §13 code; it belongs to the Stage 2 amendment.
+Derivation is by method on the root — `m.ambitus()`, `m.archivum()` — and rule 2's *fallibly* is resolved at two different times. Where presence is a property of the host (`ambitus`, `archivum`: a `none-eabi` target has neither), it is decided at compile time by `--hospes` (§9.5) and the `hospites` list (§10.1), and the derivation itself is total. Where presence is a property of the run (`rete`), the derivation returns `eventus`. `[OPEN]` which atoms fall on which side beyond these three; the checker (`docs/design/checker.md`) decides per atom. A second `initium`, one with the wrong signature, or none where a program was asked for, is `EXS-E0424`.
 
 ---
 
@@ -477,12 +481,14 @@ publica structura Capitulum {
     signum:    u32:maior
     versio:    u8
     genus:     u8
-    reserva:   u16:maior      // explicit; implicit padding is EXS-E0322
+    reserva:   u16:maior      // the wire has these two bytes; nothing is ever inserted for alignment
     longitudo: u32:maior
 }
 ```
 
 `@transitus` types may have **no implicit padding** — explicit `reserva` fields or rejection. This closes the uninitialized-memory disclosure class.
+
+**Fields are packed: alignment 1, always, offset = sum of the preceding widths.** The certified example below is only readable that way — `cursus: u16:maior` sits at byte 15 directly after a `u24` at 12 — and a rule that inserted alignment padding would contradict a 246-vector certificate. So `EXS-E0322` fires on exactly two things, the bit-width rules 2 and 4 below, never on a gap between whole-byte fields, because there are none. `Capitulum`'s `reserva` comment had implied natural alignment; the checker design (finding 13) showed the two examples could not both be right, and the certified one is.
 
 ### Bit-width fields
 
@@ -553,7 +559,7 @@ Explicit ABI and layout; no "whatever C does." The frontend implements the C ABI
 
 **Non-atomic `refero` may not cross an `externus` boundary** (`EXS-E0520`) — see §6.4.
 
-Minimum ABI coverage for v1: SysV AMD64, AArch64 AAPCS, RISC-V lp64d.
+Minimum ABI coverage for v1: SysV AMD64, AArch64 AAPCS, RISC-V lp64d. Their spellings in `externus(…, abi: X)` are **`sysv_amd64`**, **`aapcs64`** and **`lp64d`**, and the set is closed: the AST stores the ABI as a small enumeration, not an interned name, so an unknown one is `EXS-E0309` at the `externus` head rather than a value that overflows a 16-bit slot (`tests/unit/ast_from_cst_abi_overflow.asm` is the trap that stood in for this sentence).
 
 ## 5.4 Numeric semantics
 
@@ -630,7 +636,7 @@ is the one thing this section exists to prevent. `summa_arborea(v, 8)` on a
 (`contrahe`, §8.5). If the body could observe the partial total, the summation
 order would be observable, and no tree shape but strictly-left-to-right would
 be a valid implementation — the declaration would become a lie the moment
-anything used it. The accumulator is write-only until the reduction completes.
+anything used it. The accumulator is write-only until the reduction completes. **Writing to it is the contribution:** inside the body, `acc = e;` contributes `e` under the operator `contrahe` declared, and is the only statement that may name `acc`; any other read is `EXS-E0341`. After the loop `acc` is an ordinary binding. §8.5 gave the declaration and §8.6 its grammar and neither had said how a value gets in (`docs/design/checker.md`, finding 9).
 
 **`rumpe` is forbidden inside an iteration carrying a `contrahe`.** An early
 exit makes the result depend on which iterations ran, and under `quisque` that
@@ -1245,6 +1251,25 @@ section.
    > else. What a grammar can normatively require is the code, the span and
    > the edit. It cannot require a sentence.
 
+7. **A braced row holds atoms only.** `TypeRow` takes `Path`, never
+   `sicut IDENT`: a function type has no parameter names, so there is
+   nothing a `sicut` could name (`docs/design/checker.md`, finding 5). The
+   parser accepted it and the checker would have had to reject it under
+   `EXS-E0423`; it is now `EXS-E0201`, which is earlier and cheaper.
+
+8. **The receiver is the first parameter, and `x.m(a)` is `m(x, a)`.** There
+   is no `self`, no `Self`, no receiver syntax: a member of an interface or
+   of an `interfacies X in T` block is an ordinary `Signature` whose first
+   parameter is the receiver — typed as `T` in an implementation, and as the
+   interface's own name in the interface, which there means *the
+   implementing type* exactly as `dyn X` names *some* implementing type. A
+   call `x.m(a…)` resolves `m` in `x`'s type, then in the interfaces that
+   type implements, and passes `x` first. This is what `examples/imprime.exsc`
+   already writes (`s.scribe(t)`, with `scribe(s: Scriptor, t: textus)`),
+   and what §14 entry 12's fixture did not (`scribe(t: textus)`, arity 1
+   against a call of arity 2 — finding 6). No new keyword, and §3.9's
+   root-space is not spent on one.
+
 ### Expressions
 
 Precedence climbing over a fixed table, one-token peek per step.
@@ -1336,7 +1361,7 @@ Terminals are §8.4's tokens; `IDENT` `INT` `STRING` are the lexer's classes.
     GenericParams ::= '<' GenericParam (',' GenericParam)* '>'
     GenericParam  ::= IDENT [':' Type]
     DeclRow       ::= 'poscit' RowItem (',' RowItem)*
-    TypeRow       ::= 'poscit' '{' [RowItem (',' RowItem)*] '}'
+    TypeRow       ::= 'poscit' '{' [Path (',' Path)*] '}'
     RowItem       ::= Path | 'sicut' IDENT
     StructDecl    ::= 'structura' IDENT [GenericParams] '{' Field* '}'
     Field         ::= IDENT ':' Type
@@ -1526,7 +1551,8 @@ source → lossless CST → typed AST → SSA IR → backend
   place**. It is an annotation pass, not a rewrite — the language has no
   implicit conversions (§5.2's `mensura`, §5.4's promotion, §6.3's boxing are
   all explicit), so a checked tree has the same shape as an unchecked one. See
-  `docs/design/typed-ast.md`.
+  `docs/design/typed-ast.md`; the checker that fills them is
+  `docs/design/checker.md`.
 - **SSA IR** built from the AST via Braun et al. (CC 2013) — on-the-fly, no prior analysis, minimal and pruned.
 
 "Straight from IR" means **owning the mid-level SSA IR**, not skipping the AST. Skipping it costs diagnostics, LSP, and macros, and cannot be undone later.
@@ -1815,16 +1841,30 @@ Scratch work without ambient authority: `exsc curre --potestates omnes scratch.e
 | `EXS-E0203` | unexpected end of input |
 | `EXS-E0210` | malformed literal |
 | `EXS-E0220` | reserved keyword used as identifier |
+| `EXS-E0301` | name does not resolve |
+| `EXS-E0302` | duplicate declaration in one scope |
+| `EXS-E0303` | type mismatch |
+| `EXS-E0304` | wrong number of arguments |
+| `EXS-E0305` | operation not defined on the type |
+| `EXS-E0306` | assignment to an immutable or non-lvalue target |
+| `EXS-E0307` | control flow misuse |
+| `EXS-E0308` | literal cannot be typed or does not fit its width |
+| `EXS-E0309` | type expression or annotation not applicable |
 | `EXS-E0311` | integer index applied to `textus` |
 | `EXS-E0321` | `:nativus` in a `@transitus` type |
 | `EXS-E0322` | implicit padding in a `@transitus` type |
 | `EXS-E0332` | branded offset applied to the wrong buffer |
 | `EXS-E0341` | reduction accumulator read inside its own body |
 | `EXS-E0342` | `rumpe` inside an iteration carrying a `contrahe` |
+| `EXS-E0343` | reduction shape malformed |
 | `EXS-E0421` | undeclared capability (atom or row) |
+| `EXS-E0422` | capability bound twice in one scope |
+| `EXS-E0423` | capability row item malformed |
+| `EXS-E0424` | entry point malformed |
 | `EXS-E0500` | module-level mutable state |
 | `EXS-E0501` | capability stored in module-level state |
 | `EXS-E0510` | capability escapes a declared bound (trait ceiling or `dyn`) |
+| `EXS-E0511` | implementation does not match its interface |
 | `EXS-E0520` | non-atomic `refero` crossing `externus` |
 | `EXS-E0601` | public name does not decompose into the morpheme table |
 | `EXS-E0602` | suffix contract disagrees with declared type |
@@ -1896,6 +1936,20 @@ Found by writing ADR 0012 against the amended §9.2, which is the first time
 anything tried to use it. CLAUDE.md is explicit that a new code needs a §13
 amendment *first*; this one was owed.
 
+`030x`, `E0343`, `042x` and `E0511` are the Stage 2 amendment, owed the
+moment `docs/design/checker.md` tabulated every rule §4, §5 and §8 state
+that had no code to be reported with — fourteen classes, from "name does
+not resolve" to "entry point malformed". Each is one *class* with a stable
+meaning, never one per message, because §8.3 makes text non-permanent and a
+checker that needs a new sentence must not need a new code. `030x` is
+general typing, beside the `031x`–`034x` sub-ranges §5 already owned;
+`E0343` sits with its two siblings on reduction shape; `042x` extends
+`E0421` with the two ways a row itself can be wrong and the one way a
+program's root can be; `E0511` is the interface-conformance failure that
+`E0510` (a *capability* escaping a bound) never covered. The checker design
+proposed these numbers and this section ratifies them; nothing in `diag/`
+or `checker/` chose one.
+
 Codes are permanent and never renumbered (§8.3), so under-committing is
 recoverable and over-committing is not. `0204`-`0209`, `0211`-`0219` and
 `0221`-`0299` are free for what parsing actually turns out to need.
@@ -1912,9 +1966,9 @@ Ships with v1. Each entry must **fail to compile**, except entries 16 and 17, wh
 4. Cyrillic homoglyph across two modules → `EXS-E0105`
 5. Non-NFC identifier → `EXS-E0102`
 6. `:nativus` in a wire struct → `EXS-E0321`
-7. Implicit padding in a wire struct → `EXS-E0322`
+7. A wire struct whose declared bit widths leave a partial trailing byte → `EXS-E0322` (was "implicit padding" — under §5.2's packed layout the only padding a field can imply is the bit-granularity kind, rules 2 and 4)
 8. Integer index on `textus` → `EXS-E0311`
-9. HOF calling a function parameter without a row → `EXS-E0421`
+9. HOF passing a row-carrying function where a bare function type is expected → `EXS-E0303` (was `EXS-E0421` with the bare type read as an *open* row; §8.6 makes the bare row *empty* and function types compare by id, rows included, so the attack fails earlier, as a type mismatch at the call site — `docs/design/checker.md` section 2.1, rule 3)
 10. Laundering through a correctly polymorphic HOF → `EXS-E0421`
 11. Capability in module-level mutable → `EXS-E0501`
 12. Capability-bearing impl behind a bare `dyn` → `EXS-E0510`
