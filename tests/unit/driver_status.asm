@@ -218,7 +218,8 @@ segment readable executable
 	mov	edi, 99
 	jmp	ds_die
 
-include '../../compiler/x86_64/lexer/lexer.inc'
+include '../../compiler/x86_64/cst/cst.inc'
+include '../../compiler/x86_64/ast/ast.inc'
 include '../../compiler/x86_64/driver/driver.inc'
 
 segment readable

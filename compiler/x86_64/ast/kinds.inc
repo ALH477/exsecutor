@@ -296,7 +296,13 @@ AST_NUM_SUBNORMALES	= 3
 ;      typed-ast.md section 3's Stage 2 check, which needs the enclosing
 ;      `Sig` and is not a per-node fact.
 ;
-; And one place it is WIDER: `ForHead.d` carries the `forma` WIDTH. See
+; And TWO places it is WIDER. `ForHead.d` carries the `forma` WIDTH, and
+; `Member.c` carries GENERIC ARGUMENTS. Spec §8.6 admits `Suffix ::=
+; GenericArgs` after any path segment, and a segment reached through `.` in
+; expression position is an `AST_MEMBER`, whose row in that table has no slot
+; for them at all -- `Seg.b` covers only the segments of a written `Path`. The
+; alternative to adding the slot was dropping the arguments of a program the
+; grammar admits. See
 ; ast/ast.inc's header -- spec §8.6 now reads `['forma' IDENT [INT]]` and
 ; typed-ast.md section 2.7 ("the tree reserves nothing because the grammar
 ; admits nothing") is stale.
@@ -341,7 +347,7 @@ ast_roles:
 	db AST_R_NODEQ, AST_R_NODEQ, AST_R_NONE,  AST_R_NONE	; 38 Index
 	db AST_R_NODEQ, AST_R_NONE,  AST_R_NONE,  AST_R_NONE	; 39 Try
 	db AST_R_NODEQ, AST_R_LIST,  AST_R_COUNT, AST_R_NONE	; 40 Call
-	db AST_R_NODEQ, AST_R_NAME,  AST_R_NONE,  AST_R_DECL	; 41 Member
+	db AST_R_NODEQ, AST_R_NAME,  AST_R_NODE,  AST_R_DECL	; 41 Member
 	db AST_R_NODEQ, AST_R_NODEQ, AST_R_NONE,  AST_R_DECL	; 42 Lambda
 	db AST_R_NODEQ, AST_R_NONE,  AST_R_NONE,  AST_R_NONE	; 43 TyPath
 	db AST_R_NODEQ, AST_R_NODE,  AST_R_NONE,  AST_R_NONE	; 44 TyDyn

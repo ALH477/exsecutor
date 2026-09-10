@@ -26,11 +26,13 @@
 ; spec §18.1's "build closure is exactly one tool").
 ;
 ; WHAT IT CAN DO TODAY, so that nobody has to run it to find out: it reads a
-; source file, applies §8.1, tokenizes it under §8.4, and reports diagnostics
-; in either a human format or JSON. There is no parser, no type checker and
-; no backend (§16 Stages 1-3), so `exsc aedifica ... -o OUT` finds out
-; whether OUT *could* be built and then says it cannot build it. Nine of the
-; ten subcommands §12 names are refusals that name themselves.
+; source file, applies §8.1, tokenizes it under §8.4, PARSES it under §8.6
+; into the lossless CST of §9.1, builds the typed AST of §9.1 Stage 1 from
+; that CST, and reports every diagnostic either half raised, in a human format
+; or JSON. That is the whole of §16 Stage 1. There is no type checker and no
+; backend (Stages 2 and 3), so `exsc aedifica ... -o OUT` finds out whether
+; OUT *could* be built and then says it cannot build it. Nine of the ten
+; subcommands §12 names are refusals that name themselves.
 ;
 ;	exsc aedifica --hospes TRIPLE SOURCE [-o OUT]
 ;	              [--env KEY=VALUE]... [--epoch N]
@@ -65,9 +67,13 @@
 ;      segment, `anchored at entry point 0x4000e8 [alignment reliable]`.
 ;      Measured both ways; the messages above are copied from the two runs.
 ;
-;   3. lexer/lexer.inc BEFORE driver/driver.inc. driver/ uses lexer/, diag/
-;      and rt/ and includes none of them; lexer/lexer.inc is the one path
-;      that brings all three. See driver/driver.inc's header.
+;   3. cst/cst.inc, then ast/ast.inc, then driver/driver.inc -- and
+;      lexer/lexer.inc is NOT included here at all. cst/cst.inc includes it
+;      itself (see that file's header), and fasmg has one flat namespace, so
+;      including both would process every lexer `proc` twice and fail on the
+;      second. The include graph is a strict CHAIN: cst/ brings lexer/, diag/
+;      and rt/; ast/ and driver/ include none of those and rely on cst/ having
+;      run first.
 ;   4. compiler/shared/unicode/tables/tables.inc EXACTLY ONCE, in a data
 ;      segment of this file's choosing. lexer/lexer.inc's header is explicit
 ;      that it does not include it: it emits ~120 KB of `file` data and
@@ -135,6 +141,18 @@ segment readable executable
 	mov	[r15 + DrvCtx.toks], rax
 	lea	rax, [drv_diags]
 	mov	[r15 + DrvCtx.diags], rax
+	lea	rax, [drv_green]
+	mov	[r15 + DrvCtx.green], rax
+	lea	rax, [drv_work]
+	mov	[r15 + DrvCtx.work], rax
+	lea	rax, [drv_cmap]
+	mov	[r15 + DrvCtx.cmap], rax
+	lea	rax, [drv_ctree]
+	mov	[r15 + DrvCtx.ctree], rax
+	lea	rax, [drv_parser]
+	mov	[r15 + DrvCtx.parser], rax
+	lea	rax, [drv_ast]
+	mov	[r15 + DrvCtx.ast], rax
 
 	; ---- argc, argv ------------------------------------------------------
 	; rsp is 16-byte aligned at process entry and neither instruction below
@@ -154,7 +172,8 @@ segment readable executable
 	; uses, since vendor/fasmg-x86 has no symbolic mnemonic for it.
 	db	0x0F, 0x0B
 
-include 'lexer/lexer.inc'
+include 'cst/cst.inc'
+include 'ast/ast.inc'
 include 'driver/driver.inc'
 
 segment readable
@@ -178,3 +197,9 @@ segment readable writeable
   drv_lx	rb sizeof.Lexer	; }
   drv_toks	rb sizeof.Vec	; } the compilation
   drv_diags	rb sizeof.Vec	; }
+  drv_green	rb sizeof.Vec		; }
+  drv_work	rb sizeof.Vec		; } the §9.1 CST -- cst/green.inc
+  drv_cmap	rb sizeof.Map		; } owns none of its own storage
+  drv_ctree	rb sizeof.CstTree	; }
+  drv_parser	rb sizeof.CstParser	; the §8.6 parse
+  drv_ast	rb sizeof.Ast		; the §9.1 Stage 1 typed tree

@@ -153,8 +153,14 @@ segment readable executable
 	mov	rdi, 15
 	call	sys_exit_group
 
-include '../../compiler/x86_64/diag/diag.inc'
+include '../../compiler/x86_64/cst/cst.inc'
 include '../../compiler/x86_64/ast/ast.inc'
+
+segment readable
+  ; ast/ast.inc now reaches cst/, which reaches the lexer, which
+  ; references the UCD blobs -- emitted exactly once, in a segment
+  ; the consumer chooses (lexer/lexer.inc's header).
+  include '../../compiler/shared/unicode/tables/tables.inc'
 
 segment readable writeable
   ; Typed by hand against ast/dump.inc's grammar. Sections in the order that

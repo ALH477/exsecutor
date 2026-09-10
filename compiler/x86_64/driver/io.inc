@@ -59,10 +59,30 @@
 ;     possible run of diagnostics is one `EXS-E0103` per three-byte
 ;     dangerous codepoint -- 32 bytes of Diag per source byte, doubled the
 ;     same way. 64x.
-; 96 covers the worst of those plus the source and the ~20 KiB of NFC
-; scratch `lex_init` takes. It is an over-estimate on purpose: the region is
+; 96 covered the worst of those plus the source and the ~20 KiB of NFC
+; scratch `lex_init` takes.
+;
+; 96 IS NO LONGER ENOUGH, and the number below is a MEASUREMENT, not a
+; second guess. The parser and the AST walker allocate from this same arena
+; -- the green node array and its child arrays and identity-map entries
+; (cst/green.inc), then the node, declaration and `extra` vectors of the
+; typed tree (ast/build.inc) -- all with the same doubling growth that
+; abandons the old block. Measured, by reading `Arena.cur - Arena.base` after
+; a full lex + parse + `ast_from_cst` on two generated files:
+;
+;   279 KB of ordinary declarations and expressions ->  16.9 MB,  61x
+;   197 KB of token-dense `a.b.b.b...` chains       ->  23.0 MB, 117x
+;
+; The second shape is the adversarial one: nearly every source byte is its
+; own token, so the token vector, the green tree, the identity map and the
+; AST all hit their worst per-byte ratio at once. On top of THAT sits the
+; diagnostic case above (64x), whose densest input is a different file but
+; whose cost adds if a file manages both. 256 is the next power of two above
+; 117 + 64 + 1, and it is an over-estimate on purpose: the region is
 ; anonymous `mmap`, so an unused reservation costs address space and no
-; pages. DRV_SRC_MAX bounds the reservation itself at a bit over 1.5 GiB.
+; pages, and a reservation the kernel refuses comes back through
+; `arena_init`'s CF as a clean host error, not as a trap. DRV_SRC_MAX bounds
+; the reservation itself at 4 GiB.
 ;
 ; `[UNIMPLEMENTED]`, stated rather than buried: a source file whose
 ; diagnostics somehow exceed that bound still traps through `arena_alloc`'s
@@ -91,7 +111,7 @@ DRV_S_IFREG     = 0x8000
 
 DRV_SRC_MAX      = 16 * 1024 * 1024
 DRV_ARENA_FLOOR  = 4 * 1024 * 1024
-DRV_ARENA_FACTOR = 96
+DRV_ARENA_FACTOR = 256
 
 drv_m_open   db 'cannot open: ',0
 drv_m_stat   db 'cannot stat: ',0

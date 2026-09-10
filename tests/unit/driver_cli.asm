@@ -323,7 +323,8 @@ segment readable executable
 	pop	rbx
 	ret
 
-include '../../compiler/x86_64/lexer/lexer.inc'
+include '../../compiler/x86_64/cst/cst.inc'
+include '../../compiler/x86_64/ast/ast.inc'
 include '../../compiler/x86_64/driver/driver.inc'
 
 segment readable

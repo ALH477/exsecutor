@@ -298,6 +298,23 @@ proc ast_node_ty, tree, id, ty
 	return
 endp
 
+; OR bits into a node's `aux` after the fact. `ast_node` takes `aux` as an
+; operand, but two facts about a declaration arrive from OUTSIDE the node that
+; carries them -- `publica` and an annotation are children of `CST_ITEM`, not
+; of the `FunctionDecl` under it (spec §8.6: `Item ::= Annotation* ['publica']
+; ItemBody`). The walker builds the body first and folds them in here rather
+; than threading two flags through every item constructor.
+proc ast_node_aux_or, tree, id, bits
+	locals
+	endl
+	mov	rdi, [tree]
+	mov	rsi, [id]
+	call	ast_node_at
+	mov	rcx, [bits]
+	or	word [rax + AstNode.aux], cx
+	return
+endp
+
 proc ast_set_root, tree, id
 	locals
 	endl

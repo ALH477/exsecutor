@@ -38,4 +38,4 @@ publica structura Malum2 {
     campus: u4:maior
 }
 
-// TEST: entry=22 shape=code expect-code=EXS-E0201 status=deferred needs=parser
+// TEST: entry=22 shape=code expect-code=EXS-E0201 status=run

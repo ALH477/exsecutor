@@ -2463,11 +2463,15 @@ endp
 
 ; __cst_is_addop(p) -> eax = 1 at an additive operator.
 ;
-; `+` `+%` `+|` `-` and NOT `-%` `-|`: §8.4's table attests all six and
-; lexer/token.inc implements four, so the other two cannot reach this file as
-; tokens at all. See this file's header, finding 2 -- the gap is the lexer's,
-; and a parser that "accepted" `-%` would be accepting a token that does not
-; exist.
+; All six of §8.4's additive operators: `+` `+%` `+|` `-` `-%` `-|`.
+;
+; This checked only four until c6645f3. The comment here used to say the gap
+; was the lexer's -- correctly, at the time: lexer/token.inc had PUN_MINUS
+; alone, so `-%` could not reach this file as a token and a parser accepting
+; it would have been accepting something that did not exist. The lexer gained
+; PUN_MINUSPCT and PUN_MINUSBAR in that commit and this set was not widened
+; with it, so `-%` stayed an EXS-E0201 for a second reason after the first was
+; gone. Found by ast/from_cst.inc exercising all six through the real driver.
 proc __cst_is_addop, p
 	uses	rbx
 	locals
@@ -2490,6 +2494,16 @@ proc __cst_is_addop, p
 	jnz	.yes
 	mov	rdi, rbx
 	mov	esi, PUN_MINUS
+	call	__cst_pun
+	test	eax, eax
+	jnz	.yes
+	mov	rdi, rbx
+	mov	esi, PUN_MINUSPCT
+	call	__cst_pun
+	test	eax, eax
+	jnz	.yes
+	mov	rdi, rbx
+	mov	esi, PUN_MINUSBAR
 	call	__cst_pun
 	return
   .yes:

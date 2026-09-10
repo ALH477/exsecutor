@@ -449,7 +449,7 @@ segment readable executable
 	mov	rdi, 18
 	call	sys_exit_group
 
-include '../../compiler/x86_64/diag/diag.inc'
+include '../../compiler/x86_64/cst/cst.inc'
 include '../../compiler/x86_64/ast/ast.inc'
 
 ; ---- fixture helpers -------------------------------------------------------
@@ -509,6 +509,12 @@ proc fx_list1, v
 	call	ast_list_emit
 	return
 endp
+
+segment readable
+  ; ast/ast.inc now reaches cst/, which reaches the lexer, which
+  ; references the UCD blobs -- emitted exactly once, in a segment
+  ; the consumer chooses (lexer/lexer.inc's header).
+  include '../../compiler/shared/unicode/tables/tables.inc'
 
 segment readable writeable
   fx_t_dot:	db 'dot'

@@ -82,17 +82,27 @@ DRV_SCRATCH_CAP = 1024 * 1024
 DRV_INTERN_BUCKETS = 256	; power of two -- map_init rassert's it
 DRV_ENVMAP_BUCKETS = 64
 
+; The §9.1 CST's three caller-owned structures (cst/green.inc: "this file
+; allocates no storage of its own beyond what it takes from `arena`"). The two
+; vectors grow by doubling out of the compilation arena, so these are starting
+; points and not limits; the bucket count is NOT -- rt/map.inc fixes it for the
+; map's lifetime, so a bigger file gets longer chains rather than a rehash.
+; 8192 buckets is 64 KiB out of an arena sized at 256x the source (io.inc).
+DRV_GREEN_CAP0  = 256
+DRV_WORK_CAP0   = 256
+DRV_CST_BUCKETS = 8192		; power of two -- map_init rassert's it
+
 drv_s_empty  db 0
 drv_m_hint   db "run `exsc` with no arguments for usage",0
 drv_m_todo   db ': not implemented in this build',0
-drv_m_todo2  db 'only `aedifica` does anything today: it reads a source file, applies spec 8.1 and lexes it, and reports diagnostics. Spec 16 Stage 1.',0
+drv_m_todo2  db 'only `aedifica` does anything today: it reads a source file, applies spec 8.1, lexes it under spec 8.4, parses it under spec 8.6 into the spec 9.1 CST, builds the spec 9.1 typed AST, and reports diagnostics. That is spec 16 Stage 1.',0
 drv_m_todolsp db '`lsp` is marked [OPEN] Deferred in spec 18.2 -- it needs the lossless CST, which does not exist.',0
 drv_m_nohospes db 'aedifica: --hospes TRIPLE is required. Spec 9.5: exsc with no --hospes is an error, and there is no default-to-build-platform.',0
 drv_m_emptyhospes db 'aedifica: --hospes: TRIPLE must not be empty',0
 drv_m_nosrc  db 'aedifica: no SOURCE given',0
 drv_m_trunc  db 'a diagnostic did not fit its buffer and was truncated; the output above is incomplete. That is a limit of this compiler, not of the source.',0
 drv_m_okpfx  db 'aedifica: ',0
-drv_m_okbare db ': the front end accepts this source. No object was requested, so none was written.',0
+drv_m_okbare db ': the front end accepts this source -- it lexes, parses, and builds a typed AST. No object was requested, so none was written.',0
 drv_m_okout  db ': the front end accepts this source, but code generation is not implemented, so no object was written. Spec 16 Stage 3.',0
 
 ; drv_emit_diag(dg, mode) -> eax = 1 if the rendering was truncated, else 0.
@@ -251,7 +261,73 @@ proc drv_aedifica, argc, argv
 	call	lex_set_source
 	mov	rdi, [r15 + DrvCtx.lx]
 	call	lex_run			; CF/eax: the FIRST code, if any
+	jc	.report			; §8.1 IS A GATE. A file that failed it
+					; was never tokenized (lexer/source.inc),
+					; so there is no token stream to parse
+					; and nothing a parse could add but a
+					; cascade of diagnostics about bytes
+					; the source policy already rejected.
 
+	; ---- §8.6: the parse, into §9.1's lossless CST -----------------------
+	; cst/ owns no storage: the green array, the builder's work stack and
+	; the node-identity map are all the caller's, so that a caller wanting
+	; several trees over one arena can decide what is shared. Here there is
+	; exactly one tree and it shares the compilation arena with everything
+	; else the front end allocates.
+	mov	rdi, [r15 + DrvCtx.green]
+	mov	rsi, [r15 + DrvCtx.arena]
+	mov	rdx, sizeof.CstGreen
+	mov	rcx, DRV_GREEN_CAP0
+	call	vec_init
+	mov	rdi, [r15 + DrvCtx.work]
+	mov	rsi, [r15 + DrvCtx.arena]
+	mov	rdx, 4
+	mov	rcx, DRV_WORK_CAP0
+	call	vec_init
+	mov	rdi, [r15 + DrvCtx.cmap]
+	mov	rsi, [r15 + DrvCtx.arena]
+	mov	rdx, DRV_CST_BUCKETS
+	call	map_init
+	mov	rdi, [r15 + DrvCtx.ctree]
+	mov	rsi, [r15 + DrvCtx.arena]
+	mov	rdx, [r15 + DrvCtx.interner]
+	mov	rcx, [r15 + DrvCtx.green]
+	mov	r8,  [r15 + DrvCtx.work]
+	mov	r9,  [r15 + DrvCtx.cmap]
+	call	cst_tree_init
+	mov	rdi, [r15 + DrvCtx.parser]
+	mov	rsi, [r15 + DrvCtx.lx]
+	mov	rdx, [r15 + DrvCtx.ctree]
+	call	cst_parse
+	; `cst_parse`'s CF is deliberately NOT branched on. §9.1's CST is
+	; error-tolerant: a root exists on both paths, and every diagnostic the
+	; parser raised is already in DrvCtx.diags, because cst/parse.inc
+	; reports through the lexer's own `lex_diag` rather than carrying a
+	; second list. The loop below picks them up with no change. Branching
+	; here would build a SECOND diagnostic path for the same facts.
+
+	; ---- §9.1 Stage 1: the typed AST -------------------------------------
+	; Built on the error path too, and for the same reason: §16's Stage 1
+	; kill criterion is diagnostics, and a checker that stopped at the
+	; first parse error could not report a second. `ERROR` and `MISSING`
+	; CST nodes become `Error` AST nodes with spans (ast/from_cst.inc).
+	mov	rdi, [r15 + DrvCtx.ast]
+	mov	rsi, [r15 + DrvCtx.arena]
+	mov	rdx, [r15 + DrvCtx.interner]
+	call	ast_init
+	mov	rcx, [r15 + DrvCtx.lx]
+	mov	edx, [rcx + Lexer.file_id]	; an INTERN id of the path, not a
+						; descriptor (lexer/source.inc)
+	mov	rdi, [r15 + DrvCtx.ast]
+	mov	rsi, [r15 + DrvCtx.ctree]
+	call	ast_from_cst
+	; A malformed tree is a compiler bug, not a fact about the source, so
+	; this traps rather than diagnosing -- and it is compiled out entirely
+	; in a RELEASE build (macros/assert.inc).
+	mov	rdi, [r15 + DrvCtx.ast]
+	call	ast_verify_stage1
+
+  .report:
 	; ---- report ----------------------------------------------------------
 	; Every diagnostic, in source order, not just `lex_run`'s first: the
 	; vector is what the lexer promises is complete and ordered, and eax is

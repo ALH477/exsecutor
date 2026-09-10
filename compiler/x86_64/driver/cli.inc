@@ -106,6 +106,12 @@ struct DrvCtx
 	field lx,        dq	; -> Lexer  }
 	field toks,      dq	; -> Vec    } the compilation
 	field diags,     dq	; -> Vec    }
+	field green,     dq	; -> Vec of CstGreen }
+	field work,      dq	; -> Vec of dd        } the §9.1 CST; cst/
+	field cmap,      dq	; -> Map              } allocates nothing of
+	field ctree,     dq	; -> CstTree          } its own
+	field parser,    dq	; -> CstParser, the §8.6 parse
+	field ast,       dq	; -> Ast, the §9.1 Stage 1 typed tree
 end struct
 
 ; ---- the subcommand set, exactly §12's list --------------------------------

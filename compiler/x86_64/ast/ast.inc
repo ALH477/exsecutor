@@ -55,22 +55,25 @@
 ; goes after it.
 ;
 ; ---------------------------------------------------------------------------
-; NOT WRITTEN THIS PASS, deliberately: `ast_from_cst`.
+; THE SEAM IS CLOSED. `ast_from_cst(tree, t, file_id)` (ast/from_cst.inc)
+; walks cst/parse.inc's §9.1 tree in postorder and produces this one.
+; `compiler/x86_64/exsc.asm` includes cst/cst.inc, then this file, then
+; driver/driver.inc; driver/run.inc parses after a clean `lex_run` and builds
+; the AST from the result on both the clean and the diagnosed path. Both
+; programs in `examples/` lex, parse and build a tree `ast_verify_stage1`
+; accepts.
 ;
-; The CST -> AST walker (typed-ast.md section 2.11) is absent, and its absence
-; is a decision, not an omission. compiler/x86_64/cst/ is being written
-; concurrently; building a walker against a parser whose API is still moving
-; would be building against a moving target, which is what typed-ast.md was
-; written to prevent. Everything the walker will need exists and is tested:
-; the records, the constructors, the type table, the verifier, and a textual
-; form that can build and check a tree with no parser in the repository at
-; all. When cst/ settles, `ast_from_cst(tree, green_root, file_id)` is a
-; postorder walk of red nodes calling `ast_node` / `ast_decl` /
-; `ast_list_*` -- one `AstNode` per meaning-bearing nonterminal, with
-; `Span{file_id, red.text_offset, green.text_len}` minus trivia, and an
-; `AST_ERROR` node with its span for every `ERROR` or `MISSING` CST node so
-; that a malformed file still yields a tree.
+; WHAT THE WALKER DOES NOT DO, stated rather than left to be discovered:
+;   - It resolves nothing. `Node.ty` is 0 everywhere, `Node.d` is filled only
+;     on DECLARING nodes, and `Seg.d` / `Member.d` / `RowItem.d` stay 0 until
+;     Stage 2 (typed-ast.md section 2.2).
+;   - It interns no types. `Ast.types` holds exactly the error type at id 1
+;     after a walk; type EXPRESSIONS are `Ty*` nodes, and turning them into
+;     `AstType`s is the checker's first act (section 2.5).
+;   - It fills no side table and no row table. `ast_side_alloc` and
+;     `Ast.rows` are Stage 2's (sections 2.2, 2.6).
 ;
+; ---------------------------------------------------------------------------
 ; ---------------------------------------------------------------------------
 ; WHAT THIS MODULE FOUND IN typed-ast.md. Each of these is a place the design
 ; did not survive contact; each is recorded at the file that hit it, and
@@ -105,8 +108,32 @@
 ;     diagnostics are the driver's list, not a field of the tree. See
 ;     ast/verify.inc.
 ;
+; And four more, found by writing the walker and running it on real source:
+;
+;  7. section 2.3 has NO SLOT for generic arguments in expression position.
+;     `Seg.b` holds them for the segments of a written `Path`, but spec §8.6's
+;     `Suffix ::= GenericArgs` attaches them after ANY path segment, and a
+;     segment reached through `.` is an `AST_MEMBER`. `Member.c` is that slot
+;     now; see ast/kinds.inc.
+;  8. section 2.3 says a STRING `Lit` holds the "decoded bytes id". Nothing in
+;     this compiler decodes a string escape -- spec §8.4's literal grammar is
+;     `[OPEN]` and the lexer interns the token's bytes as written -- so `a` is
+;     the RAW interned id, for a string exactly as for a number. Decoding is
+;     whoever closes §8.4's grammar, not this walker.
+;  9. section 2.11's "an `ERROR` or `MISSING` CST node becomes an `Error`
+;     node" holds for `ERROR` and is only sometimes right for `MISSING`. A
+;     missing `;` is a zero-width leaf carrying nothing an `Error` operand
+;     could stand in for, and putting one in `Redde.a` would replace a good
+;     expression with a hole. ast/from_cst.inc's header states the real rule.
+; 10. section 2.3 puts an `externus` block's ABI id in `Externus.aux`, which
+;     is SIXTEEN BITS, while an ABI id is an interner id. A module that has
+;     interned more than 65535 distinct strings before its `externus` block
+;     cannot store it; ast/from_cst.inc traps rather than truncating. The
+;     honest fix is an ABI enumeration, which needs spec §5.3 to name more
+;     than one ABI first.
+;
 ; Spec: docs/spec/exsecutor-spec-v0.4.md §9.1 (Stage 1 builds it, Stage 2
 ; types it), §8.6, §5.1-§5.5, §4.1-§4.6, §6, §7.1.
 ; -----------------------------------------------------------------------------
 
-include 'load.inc'
+include 'from_cst.inc'
