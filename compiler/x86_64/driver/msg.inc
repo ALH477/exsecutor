@@ -81,6 +81,8 @@ DRV_EXIT_TODO  = 4
 
 DRV_FD_ERR = 2			; diagnostics and messages, never stdout --
 				; stdout stays free for an artifact
+DRV_FD_OUT = 1			; driver/dump.inc's `--emitte` dump, and
+				; nothing else -- see drv_say_out, below
 DRV_MSG_CAP = 8192		; one message, escaped; DiagOut truncates
 				; rather than overruns if a path is longer
 
@@ -132,6 +134,36 @@ proc drv_say, ptr, len
 	test	r12, r12
 	jz	.done
 	mov	rdi, DRV_FD_ERR
+	mov	rsi, rbx
+	mov	rdx, r12
+	call	sys_write
+	jc	.done
+	test	rax, rax
+	jz	.done
+	add	rbx, rax
+	sub	r12, rax
+	jmp	.loop
+  .done:
+	return
+endp
+
+; drv_say_out(ptr, len) -- the same as `drv_say`, above, but to STDOUT
+; (`DRV_FD_OUT`, fd 1) rather than stderr. `driver/dump.inc`'s `--emitte`
+; dump is the only caller and the only thing this driver ever writes to fd 1:
+; every diagnostic and every other message stays on fd 2 through `drv_say`,
+; so a dump and the diagnostics that came with it are separable by
+; redirection alone. Same short-write loop, same swallow-on-failure
+; reasoning as `drv_say`. Cannot fail; leaves CF clear.
+proc drv_say_out, ptr, len
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [ptr]
+	mov	r12, [len]
+  .loop:
+	test	r12, r12
+	jz	.done
+	mov	rdi, DRV_FD_OUT
 	mov	rsi, rbx
 	mov	rdx, r12
 	call	sys_write
@@ -279,6 +311,10 @@ drv_s_usage:
 	db '  --diagnostica FORMA  textus (default) or json. json emits one JSON object', 10
 	db '                       per line on stderr; match on its "code" member, never', 10
 	db '                       on its English text (spec 8.3).', 10
+	db '  --emitte GRADUS      dump a pipeline stage to stdout and nothing else on', 10
+	db '                       stdout (spec 18.2): tokens, cst, or ast. Diagnostics', 10
+	db '                       still go to stderr, so `exsc ... --emitte ast SRC', 10
+	db '                       >tree.txt` puts only the tree in tree.txt.', 10
 	db 10
 	db 'exit status:', 10
 	db '  0  the requested work completed and there was nothing to report', 10

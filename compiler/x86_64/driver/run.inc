@@ -66,7 +66,7 @@
 ; Spec: docs/spec/exsecutor-spec-v0.4.md §8.1, §8.3, §9.3, §9.5, §12, §16.
 ; -----------------------------------------------------------------------------
 
-include 'io.inc'
+include 'dump.inc'
 
 ; One rendered diagnostic. Large because diag_render_text echoes the whole
 ; offending source line escaped, and escape.inc can spend up to nine bytes
@@ -104,6 +104,7 @@ drv_m_trunc  db 'a diagnostic did not fit its buffer and was truncated; the outp
 drv_m_okpfx  db 'aedifica: ',0
 drv_m_okbare db ': the front end accepts this source -- it lexes, parses, and builds a typed AST. No object was requested, so none was written.',0
 drv_m_okout  db ': the front end accepts this source, but code generation is not implemented, so no object was written. Spec 16 Stage 3.',0
+drv_m_emitgate db ': --emitte was given, but this source failed the spec 8.1 source-hygiene gate, so it was never tokenized -- there is no token stream, no CST and no typed AST to dump. Nothing was written to stdout. See the diagnostic below.',0
 
 ; drv_emit_diag(dg, mode) -> eax = 1 if the rendering was truncated, else 0.
 ; Renders one `Diag` and writes it to stderr. Cannot fail; leaves CF clear --
@@ -261,7 +262,7 @@ proc drv_aedifica, argc, argv
 	call	lex_set_source
 	mov	rdi, [r15 + DrvCtx.lx]
 	call	lex_run			; CF/eax: the FIRST code, if any
-	jc	.report			; §8.1 IS A GATE. A file that failed it
+	jc	.gate_failed		; §8.1 IS A GATE. A file that failed it
 					; was never tokenized (lexer/source.inc),
 					; so there is no token stream to parse
 					; and nothing a parse could add but a
@@ -326,6 +327,32 @@ proc drv_aedifica, argc, argv
 	; in a RELEASE build (macros/assert.inc).
 	mov	rdi, [r15 + DrvCtx.ast]
 	call	ast_verify_stage1
+
+	; ---- --emitte: spec 18.2's stage-dump mitigation, if requested --------
+	; Runs whether or not the parse or the AST build raised a diagnostic:
+	; §9.1's CST and the Stage 1 AST are both built on the error path too
+	; (the comments above), so the tree to dump exists either way, and
+	; `.report` below still reports every diagnostic afterward regardless.
+	cmp	dword [r15 + DrvCtx.emitte], DRV_EMIT_NONE
+	je	.report
+	call	drv_emit_dump
+	jmp	.report
+
+  .gate_failed:
+	; --emitte was asked for a stage that never came into existence: §8.1
+	; is a gate, so a rejected file has no tokens, no CST and no AST to
+	; dump. Say so on stderr -- see driver/dump.inc's header for why an
+	; empty dump here would be a second, silent claim rather than an
+	; honest one -- then fall into the same diagnostic report every other
+	; refusal goes through.
+	cmp	dword [r15 + DrvCtx.emitte], DRV_EMIT_NONE
+	je	.report
+	lea	rdi, [drv_m_okpfx]
+	mov	rsi, [r15 + DrvCtx.srcpath]
+	mov	rdx, [r15 + DrvCtx.srcpathn]
+	lea	rcx, [drv_m_emitgate]
+	call	drv_msg
+	jmp	.report
 
   .report:
 	; ---- report ----------------------------------------------------------

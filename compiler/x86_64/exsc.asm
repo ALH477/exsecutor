@@ -37,10 +37,19 @@
 ;	exsc aedifica --hospes TRIPLE SOURCE [-o OUT]
 ;	              [--env KEY=VALUE]... [--epoch N]
 ;	              [--diagnostica textus|json]
+;	              [--emitte tokens|cst|ast]
 ;
 ; Exit: 0 clean, 1 diagnostics, 2 usage, 3 host/internal, 4 unimplemented.
 ; 132 is `rassert`'s SIGILL trap and means a compiler bug. driver/msg.inc
 ; carries the full table; `exsc` with no arguments prints it.
+;
+; `--emitte tokens|cst|ast` IS §18.2's NAMED, PREVIOUSLY-UNDELIVERED
+; MITIGATION: *"Debugging degrades ... Mitigated by stage dumps at every
+; pipeline boundary rather than by a debugger."* `cst_dump` (cst/red.inc) and
+; `ast_dump` (ast/dump.inc) already existed and were unreachable from a
+; command line; driver/dump.inc is the wiring, plus a token dumper that did
+; not exist anywhere. The dump goes to stdout; every diagnostic stays on
+; stderr, separable by redirection alone.
 ;
 ; THE ORDER OF THE SECTIONS BELOW IS LOAD-BEARING, and each one is a
 ; rule someone else's header already paid for:

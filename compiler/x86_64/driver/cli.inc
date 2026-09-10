@@ -88,6 +88,8 @@ struct DrvCtx
 	field epochset,  dd	; 1 once --epoch has been given
 	field nenv,      dd	; --env bindings accepted so far
 	field pad0,      dd
+	field emitte,    dd	; DRV_EMIT_* -- spec 18.2's stage-dump mitigation
+	field emitteset, dd	; 1 once --emitte has been given
 	field epoch,     dq	; §9.3: decimal seconds, default 0
 	field hospes,    dq	; borrowed argv bytes, never copied
 	field hospesn,   dq
@@ -147,14 +149,32 @@ drv_cmd_tab_end:
 DRV_CMD_COUNT = (drv_cmd_tab_end - drv_cmd_tab) / 8
 assert DRV_CMD_COUNT = 10
 
+; ---- pipeline dump stages, spec §18.2's mitigation --------------------------
+; "Debugging degrades ... Mitigated by stage dumps at every pipeline
+; boundary rather than by a debugger." Three boundaries exist to dump today
+; (lex, parse, Stage 1 typed AST); §16 Stages 2/3 (type checker, SSA, a
+; backend) do not exist yet, so there is nothing past `ast` to add a value
+; for. DRV_EMIT_NONE is the "nothing requested" default and is deliberately
+; NOT 0 -- 0 is `DRV_EMIT_TOKENS`, and a zeroed `DrvCtx` (real BSS, or a
+; fixture that forgets to call `drv_ctx_reset`) must not silently behave as
+; if `--emitte tokens` had been given.
+DRV_EMIT_NONE   = -1
+DRV_EMIT_TOKENS = 0
+DRV_EMIT_CST    = 1
+DRV_EMIT_AST    = 2
+
 ; ---- option spellings ------------------------------------------------------
 drv_o_hospes db '--hospes',0
 drv_o_out    db '-o',0
 drv_o_env    db '--env',0
 drv_o_epoch  db '--epoch',0
 drv_o_diagn  db '--diagnostica',0
+drv_o_emitte db '--emitte',0
 drv_v_textus db 'textus',0
 drv_v_json   db 'json',0
+drv_v_tokens db 'tokens',0
+drv_v_cst    db 'cst',0
+drv_v_ast    db 'ast',0
 
 ; The pseudo-path a `--env` key is lexed under. It reaches nothing but the
 ; interner and a discarded diagnostic vector; it exists because
@@ -175,6 +195,7 @@ drv_m_envkey   db '--env: KEY does not spell an identifier (spec 8.2): ',0
 drv_m_envdup   db '--env: a repeated KEY is an error, not a last-wins (spec 9.3): ',0
 drv_m_epoch    db '--epoch: expected decimal seconds since the Unix epoch, got: ',0
 drv_m_diagn    db '--diagnostica: expected textus or json, got: ',0
+drv_m_emitte   db '--emitte: expected tokens, cst or ast, got: ',0
 
 ; ---- small predicates ------------------------------------------------------
 
@@ -501,6 +522,8 @@ proc drv_ctx_reset
 	mov	dword [r15 + DrvCtx.dmset],    0
 	mov	dword [r15 + DrvCtx.epochset], 0
 	mov	dword [r15 + DrvCtx.nenv],     0
+	mov	dword [r15 + DrvCtx.emitte],    DRV_EMIT_NONE
+	mov	dword [r15 + DrvCtx.emitteset], 0
 	mov	qword [r15 + DrvCtx.epoch],    0
 	mov	qword [r15 + DrvCtx.hospes],   0
 	mov	qword [r15 + DrvCtx.hospesn],  0
@@ -633,7 +656,7 @@ proc drv_parse, argc, argv
 	lea	rdx, [drv_o_diagn]
 	call	drv_arg_is
 	test	eax, eax
-	jz	.unknown
+	jz	.not_diagn
 	call	.take_value
 	test	eax, eax
 	jnz	.leave
@@ -658,6 +681,50 @@ proc drv_parse, argc, argv
 	mov	dword [r15 + DrvCtx.diagmode], DIAG_MODE_JSON
 	mov	dword [r15 + DrvCtx.dmset], 1
 	jmp	.next
+  .not_diagn:
+
+	; ---- --emitte tokens|cst|ast -- spec 18.2's stage-dump mitigation ---
+	mov	rdi, r14
+	mov	rsi, [an]
+	lea	rdx, [drv_o_emitte]
+	call	drv_arg_is
+	test	eax, eax
+	jz	.unknown
+	call	.take_value
+	test	eax, eax
+	jnz	.leave
+	cmp	dword [r15 + DrvCtx.emitteset], 0
+	jne	.repeated
+	mov	rdi, [vp]
+	mov	rsi, [vn]
+	lea	rdx, [drv_v_tokens]
+	call	drv_arg_is
+	test	eax, eax
+	jz	.try_cst
+	mov	dword [r15 + DrvCtx.emitte], DRV_EMIT_TOKENS
+	mov	dword [r15 + DrvCtx.emitteset], 1
+	jmp	.next
+  .try_cst:
+	mov	rdi, [vp]
+	mov	rsi, [vn]
+	lea	rdx, [drv_v_cst]
+	call	drv_arg_is
+	test	eax, eax
+	jz	.try_ast
+	mov	dword [r15 + DrvCtx.emitte], DRV_EMIT_CST
+	mov	dword [r15 + DrvCtx.emitteset], 1
+	jmp	.next
+  .try_ast:
+	mov	rdi, [vp]
+	mov	rsi, [vn]
+	lea	rdx, [drv_v_ast]
+	call	drv_arg_is
+	test	eax, eax
+	jz	.bad_emitte
+	mov	dword [r15 + DrvCtx.emitte], DRV_EMIT_AST
+	mov	dword [r15 + DrvCtx.emitteset], 1
+	jmp	.next
+
 
   .positional:
 	cmp	qword [r15 + DrvCtx.srcpath], 0
@@ -708,6 +775,14 @@ proc drv_parse, argc, argv
 	return
   .bad_diagn:
 	lea	rdi, [drv_m_diagn]
+	mov	rsi, [vp]
+	mov	rdx, [vn]
+	xor	rcx, rcx
+	call	drv_msg
+	mov	eax, DRV_EXIT_USAGE
+	return
+  .bad_emitte:
+	lea	rdi, [drv_m_emitte]
 	mov	rsi, [vp]
 	mov	rdx, [vn]
 	xor	rcx, rcx

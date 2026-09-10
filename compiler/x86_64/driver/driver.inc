@@ -32,8 +32,9 @@
 ;   msg.inc      exit statuses, escaping, the usage text
 ;     <- cli.inc      DrvCtx, the subcommand table, the flag parser
 ;        <- io.inc       reading one source file
-;           <- run.inc      the subcommands, and drv_main
-;              <- driver.inc  (this file)
+;           <- dump.inc     `--emitte tokens|cst|ast` (spec 18.2)
+;              <- run.inc      the subcommands, and drv_main
+;                 <- driver.inc  (this file)
 ;
 ; ORDERING OBLIGATION ON THE CONSUMER, stated because it cannot be enforced
 ; from inside this chain. driver/ USES lexer/, diag/ and rt/ and INCLUDES
@@ -60,8 +61,14 @@
 ;                             without going through a process boundary
 ;   drv_slurp              -- one source file into the compilation arena
 ;   drv_emit_diag          -- one Diag onto stderr, text or JSON Lines
-;   drv_msg / drv_msgu / drv_say / drv_usage
+;   drv_msg / drv_msgu / drv_say / drv_say_out / drv_usage
 ;                          -- the driver's prose, all of it escaped
+;   drv_emit_dump / drv_dump_tokens
+;                          -- `--emitte tokens|cst|ast` to stdout (spec
+;                             18.2's stage-dump mitigation); `cst`/`ast`
+;                             themselves dump through cst_dump/ast_dump,
+;                             which already existed and were unreachable
+;                             from a command line before this file's dump.inc
 ;
 ; WHAT IT DOES NOT GIVE, deliberately: anything that writes an object file.
 ; There is no backend (§9.2, §16 Stage 3); `aedifica` says so and exits 4
@@ -69,11 +76,14 @@
 ;
 ; SYSCALLS: openat, fstat, read, close, write -- five of the nine on the
 ; closed allowlist, every one of them through rt/sys.inc's wrappers, and
-; `exit_group` from exsc.asm itself. No socket-family syscall appears
-; anywhere under driver/ (§9.3), and `make audit` checks the assembled
-; binary rather than taking this sentence's word for it.
+; `exit_group` from exsc.asm itself. `--emitte`'s dump adds no syscall of its
+; own: `drv_say_out` is the same `write(1)` already on the allowlist, called
+; with a different fd literal than `drv_say`'s. No socket-family syscall
+; appears anywhere under driver/ (§9.3), and `make audit` checks the
+; assembled binary rather than taking this sentence's word for it.
 ;
-; Spec: docs/spec/exsecutor-spec-v0.4.md §8.1, §8.3, §9.3, §9.5, §12.
+; Spec: docs/spec/exsecutor-spec-v0.4.md §8.1, §8.3, §9.1, §9.3, §9.5, §12,
+; §18.2.
 ; -----------------------------------------------------------------------------
 
 include 'run.inc'
