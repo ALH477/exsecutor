@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you refer to this work, please cite it using the metadata in this file."
+type: software
+title: "Exsecutor"
+abstract: "A systems language in which locale and target are capabilities, never ambient state, with a checked Latin morphological lexicon for public names; and its compiler, exsc, written in freestanding x86-64 assembly with a closed syscall allowlist so the compiler's purity contract is a property of the artifact."
+version: "0.4"
+authors:
+  - name: "ALH477"
+license: GPL-3.0-or-later
+repository-code: "https://github.com/ALH477/exsecutor"
+keywords:
+  - programming-language
+  - compiler
+  - capabilities
+  - reproducible-builds
+  - x86-64
+  - assembly
+  - nix

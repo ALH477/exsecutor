@@ -1,0 +1,51 @@
+# The same checks tools/publish-gate.sh requires, in the same order, failing on
+# the first. One job, one platform: the compiler is x86_64-linux assembly
+# (spec §18.2), so there is nothing to put in a matrix.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      # .gitattributes marks tests/conformance/** and vendor/fasmg-x86/** as
+      # -text, which is what actually protects their bytes. This is belt and
+      # braces: a runner with core.autocrlf=true set globally would still be
+      # overridden by -text, but there is no reason to leave it on.
+      - name: Disable line-ending conversion
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+
+      # entry20_crlf.exsc tests nothing unless it still contains its CR. Fail
+      # here, loudly, rather than let the conformance suite pass for the wrong
+      # reason on a normalised checkout.
+      - name: The CRLF conformance fixture kept its CR
+        run: |
+          test "$(grep -c $'\r' tests/conformance/entry20_crlf.exsc)" = 1
+
+      - uses: cachix/install-nix-action@v31
+
+      - name: nix flake check
+        run: nix flake check
+
+      - name: make all
+        run: nix develop --command make all
+
+      - name: make audit
+        run: nix develop --command make audit
+
+      - name: make reproduce
+        run: nix develop --command make reproduce
+
+      - name: tests/run.sh
+        run: nix develop --command tests/run.sh
+
+      - name: tools/spec-check.sh
+        run: nix develop --command tools/spec-check.sh
+
+      - name: tools/syscall-audit.sh --self-test
+        run: nix develop --command tools/syscall-audit.sh --self-test

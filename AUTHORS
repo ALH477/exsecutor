@@ -1,0 +1,11 @@
+Exsecutor authors
+
+ALH477 (repository owner) -- author, and the copyright holder named in the
+per-file headers as "The Exsecutor authors".
+
+A substantial part of this tree was written by Claude (Anthropic) working
+under the author's direction, as recorded by the Co-Authored-By trailers in
+git log.
+
+vendor/ is third-party and is not authored by this project; each directory
+there carries its own copyright notice and licence.
