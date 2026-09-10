@@ -8,15 +8,24 @@ calls):
    the only thing that can actually be tested in this repo is the
    toolchain itself (`fasmg` + `vendor/fasmg-x86`) and `tools/syscall-audit.sh`,
    so that is what these fixtures exercise.
-2. **`tests/conformance/`** — spec §14's 23-entry suite. **Empty on
-   purpose.** Every entry needs `exsc` to compile something and check a
-   diagnostic code, or (entries 16–17) check byte-identical output; there
-   is no compiler yet (`compiler/x86_64/exsc.asm` is unwritten — see
-   `CLAUDE.md`). `tests/run.sh` reports this phase as 0 entries, not as a
-   failure, via a dedicated `run_conformance_tests` function kept separate
-   from the unit-test runner for exactly this reason: wiring up real
-   entries later should mean writing fixtures and filling in that one
-   function, not restructuring the harness.
+2. **`tests/conformance/`** — spec §14's 24-entry suite. **All 24 cases
+   are written; 5 run.** `exsc` now exists, so the entries the lexer can
+   decide are checked against a real diagnostic: 3 (bidi in a comment,
+   `EXS-E0103`), 5 (non-NFC, `E0102`), 18 (BOM, `E0101`), 19 (mixed-script,
+   `E0104`), 20 (CRLF, `E0106`). The other 19 report **`DEFERRED`** with
+   what they wait on — `type_checker`, `capability_checker`, `parser`,
+   `backend` — and are **never counted as passing**. A suite reporting
+   24/24 while running 5 would be worse than no suite.
+
+   Five rule shapes, and a runner assuming one will quietly mishandle four:
+   reject-with-exact-code (most), byte-identical output (16, 17), external
+   certificate (23), runtime abort (15), capability absence with no code
+   assigned (1).
+
+   `run_conformance_tests` carries its own floor, mirroring
+   `UNIT_FIXTURE_FLOOR`. It earned that immediately: with `exsc.asm`
+   untracked the Nix sandbox could not build it, 0 entries ran, and
+   `nix flake check` FAILED loudly instead of printing a green subset.
 
 ## What is deliberately absent
 
@@ -68,7 +77,11 @@ detection, not runtime behavior — see `socket_syscall.asm`); `audit=pass`
 or `audit=fail` runs `tools/syscall-audit.sh` on the assembled binary and
 asserts its verdict.
 
-Current fixtures:
+Current fixtures: **46**, covering the macro dialect, every `rt/` module,
+the Unicode consumers, `diag/`, the lexer and the driver. The four below are
+the originals and are listed because each one proves something about the
+*harness* rather than about a compiler module — including two negative cases
+that prove the audit catches what it claims to.
 
 | file | proves | run | audit |
 |---|---|---|---|

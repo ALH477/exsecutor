@@ -581,45 +581,110 @@ site with `variable term used where not expected`, mentioning neither
 was always in "Source file conventions" above; this list is why it is not
 optional.
 
-Burned as of this revision — every `proc` name, argument and `slot` under
-`compiler/`:
+Burned as of this revision — every `proc` name, argument and `slot`
+under `compiler/`. **668 names**, up from 206 when this section was
+written: `lexer/`, `diag/`, `driver/`, `cst/`, `ast/` and
+`backend_fasmg/` all landed since. Regenerate rather than trusting the
+count — the command below is the source of truth, and it is why this
+list is a snapshot rather than a promise.
 
 ```
-a a_len a_n a_ptr acc accn
-addr anyset arena arena_alloc arena_destroy arena_init
-arena_reset atoff aux b b_len b_n
-b_ptr base before buf callback cap
-capacity cmp_fn code code_num col consumed
-count cp cpv dcount dest diag_attach_source
-diag_emit diag_escape diag_escape_json diag_fix_clear diag_fix_delete diag_fix_insert
-diag_fix_kind_str diag_fix_ptr diag_fix_replace diag_fix_required diag_fmt_u32 diag_init
-diag_is_dangerous_cp diag_line_bounds diag_line_col diag_lookup diag_out_bytes diag_out_esc
-diag_out_fill diag_out_init diag_out_jstr diag_out_u32 diag_render_json diag_render_text
-diagrec diags digits dirfd dst dst_n
-dstcap emit_len endoff fd file_id fillbyte
-flags fx hexbuf i id idx
-index initial_cap intern_bytes intern_id intern_init interner
-j jsonbuf k key_len key_ptr kind
-kw_lookup kw_text_of kwid lastcc lastst len
-lend lex_diag lex_init lex_kw_as_ident lex_run lex_script_ok
-lex_set_source lex_source_check lex_tokenize lin lstart lx
-map map_get map_hash map_init map_insert map_iterate
-mid mode n nbuckets nbytes nfc_ccc
-nfc_compose_pair nfc_decomp_of nfc_decomp_rec nfc_decompose nfc_is_nfc nfc_normalize
-nfc_quick_check nstart numbuf numeric o o_ptr
-off offset offv one onen out_cap
-out_ptr pad pad0 pad1 pair path
-pathname plen pre prevcp prevdec prot
-ptr remaining rend s0 s1 scratch
-scratchcap script_of script_resolve set_n set_ptr size
-slen sort_stable span span_contains span_end span_make
-span_union src src_len src_ptr srclen statbuf
-str_copy str_eq str_slice str_to_cstr stride sublen
-sys_close sys_exit_group sys_fstat sys_lseek sys_mmap sys_munmap
-sys_openat sys_read sys_write tlen toks truncated
-tstart txt value vec vec_get vec_init
-vec_push wcount whence width wr xid_continue
-xid_flags xid_start
+a acc accn addr al a_len a_n
+an anyset a_ptr arena arena_alloc arena_destroy arena_init
+arena_reset argc argn argp argv ascending atoff
+aux auxv av b base before bf
+__bfa_blk_ref __bfa_blockhdr_n bfa_block_link_body bfa_block_link_phi bfa_block_new bfa_block_ptr __bfa_check_width64
+__bfa_die __bfa_emit_addsub __bfa_emit_br __bfa_emit_cmp __bfa_emit_die __bfa_emit_function __bfa_emit_iconst
+__bfa_emit_inst __bfa_emit_jmp __bfa_emit_load_rax bfa_emit_module __bfa_emit_mul __bfa_emit_nl __bfa_emit_operand_text
+__bfa_emit_param __bfa_emit_ret __bfa_emit_setcc bfa_extra_get bfa_extra_push bfa_extra_set __bfa_fmt_udec
+bfa_func_new __bfa_hexnib bfa_inst_ptr bfa_inst_push bfa_inst_set_span __bfa_is_alldigit __bfa_make_label_prefix
+bfa_module_init __bfa_next_blk __bfa_next_imm __bfa_next_type __bfa_next_udec __bfa_next_val __bfa_next_val_or_imm
+__bfa_op_is_void __bfa_op_shape __bfa_optab_init __bfa_optab_lookup __bfa_out_byte __bfa_out_bytes __bfa_out_hexbyte
+__bfa_out_hexnibble __bfa_out_i64 __bfa_out_lit __bfa_out_movq_rax_slot __bfa_out_movq_slot_rax __bfa_out_sp __bfa_out_u64
+__bfa_parse_attrs __bfa_parse_function __bfa_parse_global __bfa_parse_imm64 __bfa_parse_line bfa_parse_module __bfa_parse_order
+__bfa_parse_params __bfa_parse_type __bfa_parse_udec __bfa_p_next_nonblank __bfa_p_read_line __bfa_prescan_blocks __bfa_print_attrs
+__bfa_print_blk __bfa_print_body __bfa_print_function __bfa_print_global bfa_print_module __bfa_print_one_inst __bfa_print_operands
+__bfa_print_opname __bfa_print_order __bfa_print_params __bfa_print_pass1 __bfa_print_predname __bfa_print_rshape __bfa_print_type
+__bfa_print_val __bfa_print_valorimm __bfa_ps_addr __bfa_ps_bin __bfa_ps_br __bfa_ps_call __bfa_ps_callind
+__bfa_ps_chk __bfa_ps_cmp __bfa_ps_contrib __bfa_ps_copy __bfa_ps_fconst __bfa_ps_finish __bfa_ps_fma
+__bfa_ps_gaddr __bfa_ps_iconst __bfa_ps_index __bfa_ps_jmp __bfa_ps_load __bfa_ps_loadbits __bfa_ps_param
+__bfa_ps_phi __bfa_ps_redfin __bfa_ps_redinit __bfa_ps_ret __bfa_ps_retain __bfa_ps_slot __bfa_ps_store
+__bfa_ps_storebits __bfa_ps_trap __bfa_ps_un __bfa_p_tokenize __bfa_realpass_body __bfa_slot __bfa_streq
+__bfa_tok_at __bfa_tok_expect __bfa_tok_is_blockhdr __bfa_tok_next __bfa_tok_peek __bfa_tok_remaining __bfa_ty_is_signed
+bfa_type_intern bfa_type_ptr bfa_ty_ptr bfa_ty_u1 __bfa_valmap_push __bfa_val_maybe __bfa_val_now
+__bfa_val_or_imm bfa_value_type __bfa_write_stderr bi bio bisimm b_len
+blkid blockid b_n bnctr bpid b_ptr bt
+btgt buf bufend bv byo c callback
+cap capacity clen closer closes cmd cmp_fn
+cn cnt code code_num coff col consumed
+count cp cpath cpv __cst_add __cst_and __cst_arith_op
+__cst_at_type_row __cst_binding_stmt __cst_bitwidth __cst_block __cst_bump __cst_call_args cst_cancel
+__cst_cast cst_close __cst_cmp __cst_core_type __cst_decl_row __cst_diag cst_dump
+__cst_dump_rec __cst_eat_eof cst_emit_token __cst_eofcode __cst_err __cst_error_skip __cst_expr
+__cst_expr_ns __cst_expr_starts __cst_expr_stmt __cst_externus_block cst_finish __cst_fix_insert __cst_for_stmt
+__cst_function_decl __cst_generic_args __cst_generic_params cst_green_kid __cst_green_len cst_green_ptr __cst_if_stmt
+__cst_insync __cst_interface_decl __cst_intern_green __cst_is __cst_is_addop __cst_is_cmpop __cst_item
+__cst_item_starts __cst_jump_stmt __cst_kindn cst_kind_name __cst_kw __cst_kw_leads __cst_lambda
+__cst_leaf __cst_match_stmt __cst_member __cst_missing __cst_module __cst_mul __cst_note
+cst_open __cst_param __cst_param_list cst_parse __cst_path __cst_pattern __cst_postfix
+__cst_potestas_decl __cst_primary __cst_pun __cst_pun_text __cst_range __cst_record cst_red_child
+cst_red_kind cst_red_len cst_red_nkid cst_red_root cst_red_span cst_root __cst_row_item
+__cst_signature __cst_stmt __cst_struct_decl __cst_sub_stmt cst_text __cst_tokp cst_tree_init
+__cst_trivia __cst_type __cst_type_arg __cst_type_decl __cst_type_row __cst_type_starts __cst_unary
+__cst_vel __cst_while_stmt __cst_width_ok __cst_word2 __cst_work_push __cst_xident __cst_xkw
+__cst_xpun __cst_xtok ctx cur cv dcount dd
+decbuf depth dest dg __diag_append diag_attach_source __diag_build_u4
+__diag_build_x2 diag_emit diag_escape __diag_escape_core diag_escape_json diag_fix_clear diag_fix_delete
+diag_fix_insert diag_fix_kind_str diag_fix_ptr diag_fix_replace diag_fix_required diag_fmt_u32 diag_init
+diag_is_dangerous_cp diag_line_bounds diag_line_col diag_lookup diag_out_bytes diag_out_esc __diag_out_esc_mode
+diag_out_fill diag_out_init diag_out_jstr diag_out_u32 diagrec diag_render_json diag_render_text
+diags __diag_utf8_decode digits dirfd dlen doff dq
+drv_aedifica drv_arg_is drvbuf drv_cmd_lookup drv_cstr_dup drv_cstrlen drv_ctx_reset
+drvdbuf DRV_DIAG_CAP drv_emit_diag drv_env_add drv_ident_ok drv_main __drv_msg
+drv_msg DRV_MSG_CAP drv_msgu drv_parse drv_say drv_slurp DRV_STAT_SIZE
+drv_stub drv_u64_parse drv_usage dst dstcap dst_n eidx
+emit_len endoff erno expectn fd fidx file_id
+fillbyte first fixcnt fixi fixn fixval flags
+flg fnidx fpid framesz fsize fty func
+funcptr fx got gptr green hexbuf hi
+hib hn hp i id idv idx
+imap index initial_cap instid instptr internal_id intern_bytes
+interner intern_id intern_init ir_arena isimm issigned issub
+isvoid iv j jsonbuf k key key_len
+keylen key_ptr kid kidv kind kn2 kptr
+kwid kw_lookup kw_text_of lastcc lastst lbllen lblptr
+len lend __lex_covered_by lex_diag lex_init __lex_is_wildcard lex_kw_as_ident
+__lex_nfc_check __lex_nfc_flush __lex_nfc_push __lex_nfc_split __lex_push lex_run __lex_safe_boundary
+__lex_scan_continue lex_script_ok LEX_SCRIPT_SET_SLOT __lex_set_keep __lex_set_meets lex_set_source __lex_single_script
+lex_source_check lex_tokenize lin lit lit1 lit2 lo
+lstart ltlen ltoff lx mag map __map_bytes_equal
+map_get map_hash map_init map_insert map_iterate mdl mid
+mode module mrk msg_len msg_ptr n nameid
+nblocks nbuckets nbytes newid nfc_ccc nfc_compose_pair nfc_decomp_of
+nfc_decompose nfc_decomp_rec nfc_is_nfc nfc_normalize nfc_quick_check nib ninsts
+nkid nstart nsuf num numbuf numeric o
+off offset offv one onen op opid
+o_ptr opv ord ordv out_cap out_ptr p
+pad pad0 pad1 pair path pathname pcount
+pf plen pre pred prevcp prevdec prot
+pstart pstart0 ptr raw rec red redty
+ref remaining rend rend2 resolved rt2 rty
+s0 s1 savedline savedpos sbase scratch scratch_arena
+scratchcap script_of script_resolve setid set_n set_ptr shp
+shpenum sigidx sign sigptr size slen soff
+sort_stable span span_contains span_end span_make span_union src
+srcbuf src_len srclen src_ptr st statbuf str_copy
+str_eq stride str_slice str_to_cstr sub2 sublen sys_close
+sys_exit_group sys_fstat sys_lseek sys_mmap sys_munmap sys_openat sys_read
+sys_write sz t tctx text textlen textn
+tid tk tl2 tlen tmp toks tokstart
+tp tp2 tr trap tref trunc truncated
+tstart twidth txt ty type_id tyv upto
+va val valnctr value valueid vb vc
+vd vec vec_get vec_init vec_push vh vi
+vn voidflag vp vr vs vv vvid
+w wantnum wcount whence width work wr
+xid_continue xid_flags xid_start
 ```
 
 Also burned: every `KW_* TOK_* PUN_* LEX_* UNI_* MAP_* DIAG_*` constant, the
@@ -637,8 +702,10 @@ file's false positives for the bug it exists to catch.
 Regenerate this list with:
 
 ```sh
-grep -rhE '^\s*(proc|slot)\s' compiler/ | sed -E 's/^\s*(proc|slot)\s+//' \
-  | tr ',' '\n' | sed 's/^ *//; s/ *$//' | grep -v '^$' | sort -u
+grep -rhE '^[[:space:]]*(proc|slot)[[:space:]]' compiler/ \
+  | sed -E 's/^[[:space:]]*(proc|slot)[[:space:]]+//' | tr ',' '\n' \
+  | sed -E 's/[[:space:]]*(;.*)?$//; s/^[[:space:]]*//' \
+  | grep -xE '[A-Za-z_][A-Za-z_0-9]*' | sort -u
 ```
 
 ## 5. The include idiom

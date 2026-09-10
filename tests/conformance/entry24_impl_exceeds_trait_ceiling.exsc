@@ -1,0 +1,35 @@
+// §14 entry 24 -- an implementation whose mark exceeds the trait's declared
+// ceiling, reached ONLY through a generic, never boxed -> EXS-E0510.
+//
+// This entry exists because the rule it tests did not. §4.4 stated its
+// exceeds-check only for `dyn` construction, so an implementation reached
+// solely through a generic `<T: Trait>` was checked against nothing.
+// prototypes/gendict/ demonstrated the hole by running code; §4.4 now makes a
+// trait's declared rows a ceiling on EVERY implementation, boxed or not.
+//
+// The violation is NOT that Right is internally inconsistent -- it declares
+// the `rete` its body uses. It is that Right's mark exceeds what
+// Summable.combine declares, which is the only fact `total` had to trust when
+// it declared `poscit alloc`.
+//
+// Nothing here ever writes `dyn`. That is the point.
+
+// TEST: entry=24 shape=code expect-code=EXS-E0510 status=deferred needs=capability_checker
+
+interfacies Summable {
+    functio combine(self, other: f32) -> f32 poscit alloc
+}
+
+functio usa_rete(x: f32) -> f32 poscit rete {
+    redde x;
+}
+
+interfacies Summable in Right poscit alloc, rete {
+    functio combine(self, other: f32) -> f32 {
+        redde usa_rete(other);
+    }
+}
+
+publica functio total<T: Summable>(a: T, b: f32) -> f32 poscit alloc {
+    redde a.combine(b);
+}

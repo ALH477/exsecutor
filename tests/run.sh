@@ -168,7 +168,7 @@ run_conformance_tests() {
   # anywhere in the fixture, `//`-commented, space-separated key=value
   # tokens, mirroring directive_of's own format one section up:
   #
-  #   // TEST: entry=<1-23> shape=<code|bytes|cert|abort|nocap>
+  #   // TEST: entry=<1-24> shape=<code|bytes|cert|abort|nocap>
   #            [expect-code=EXS-E0XXX] status=<run|deferred> [needs=<token>]
   #
   #   entry=N       the §14 entry number this fixture exercises.
@@ -227,7 +227,7 @@ run_conformance_tests() {
   # (this project has produced four green checks that saw nothing; a
   # conformance suite silently running zero entries -- or silently losing
   # fixtures -- would be the fifth):
-  #   fixture_floor -- §14 has exactly 23 entries; fewer *.exsc files than
+  #   fixture_floor -- §14 has exactly 24 entries; fewer *.exsc files than
   #                    that means fixtures went missing, not that §14 shrank.
   #   run_floor     -- entries 3, 5, 18, 19, 20 are lexically checkable
   #                    today and verified passing (see this suite's own
@@ -235,7 +235,7 @@ run_conformance_tests() {
   #                    below that, something silently stopped working.
   echo "== conformance suite (tests/conformance/, spec §14) =="
   local dir="$REPO_ROOT/tests/conformance"
-  local fixture_floor=23
+  local fixture_floor=24
   local run_floor=5
 
   if [[ ! -d "$dir" ]]; then
@@ -317,8 +317,8 @@ run_conformance_tests() {
       bad "$name: directive missing entry=/shape=/status= (got: '$directive')"
       continue
     fi
-    if [[ ! "$entry" =~ ^[0-9]+$ || "$entry" -lt 1 || "$entry" -gt 23 ]]; then
-      bad "$name: entry='$entry' is not a §14 entry number (1-23)"
+    if [[ ! "$entry" =~ ^[0-9]+$ || "$entry" -lt 1 || "$entry" -gt 24 ]]; then
+      bad "$name: entry='$entry' is not a §14 entry number (1-24)"
       continue
     fi
     seen_entries[$entry]=$(( ${seen_entries[$entry]:-0} + 1 ))

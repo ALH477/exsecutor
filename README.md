@@ -15,8 +15,10 @@ the two.
 
 ## Status
 
-**Stage 0 → Stage 1.** Nothing compiles yet. The specification is complete; the
-compiler is being built.
+**Stage 1, roughly half.** `exsc` builds and runs: it lexes a file, enforces
+§8.1's source policy, and reports diagnostics with exact codes and spans. It
+does not parse — the CST and typed AST are being written now — so nothing
+compiles to an artifact yet.
 
 | | |
 |---|---|
@@ -101,18 +103,34 @@ Two artifacts the spec cites do not exist in this tree and are marked
 
 What is verified working, today, on this tree:
 
-- the toolchain — `fasmg` + the vendored macro package assembles a freestanding
-  static ELF64 with no dynamic section and no interpreter
-- `tests/run.sh` — 10 checks over 4 fixtures, including a negative case proving
-  the syscall audit rejects a socket call
-- `tools/reproduce.sh` — byte-identical output across divergent working
-  directory, `TZ`, locale, `SOURCE_DATE_EPOCH`, umask, and hostname
-- `nix flake check` — 3 hermetic checks green
+| tree | lines | what |
+|---|---|---|
+| `macros/` | 1,086 | the fasmg dialect — `proc`, `flow_*`, `struct`, `rassert`. Frozen. |
+| `rt/` | 1,743 | syscalls, arena, vec, map, intern, str, span, sort |
+| `shared/unicode/` | 1,117 | NFC, XID, script — over generated UCD 17.0.0 tables |
+| `lexer/` | 2,549 | §8.1 source policy, §8.2 identifiers, tokens with spans |
+| `diag/` | 2,399 | escaping, rendering, `--diagnostica json`, fix payloads |
+| `driver/` + `exsc.asm` | 2,116 | the CLI. `make all` → `build/exsc`, 195,783 bytes |
 
-What does not exist yet: **the compiler**. `compiler/x86_64/` is a set of empty
-directories. `make audit` therefore reports that there is nothing to audit, and
-the conformance suite holds 0 of §14's 17 entries. Both say so plainly rather
-than passing vacuously.
+- **141 checks pass, 0 fail** — 46 unit fixtures plus 23 conformance entries.
+- **5 of 23 conformance entries actually run** against a real `exsc` diagnostic.
+  The other 18 report `DEFERRED` with what they wait on and are **never counted
+  as passing**.
+- `make audit` audits **the real compiler**, not fixtures: nine syscalls, all
+  from `rt/sys.inc`, exactly the allowlist, extracted by disassembly. §9.3's
+  "no network access, ever, at any phase" is a property of the artifact.
+- `nix flake check` — 6 hermetic checks green, and the logs say what they
+  covered rather than leaving it inferred.
+- NFC is verified against all **100,170** `NormalizationTest.txt` assertions,
+  driven through the shipping assembly rather than through Python.
+- `tools/reproduce.sh` — byte-identical output across divergent working
+  directory, `TZ`, locale, `SOURCE_DATE_EPOCH`, umask, and hostname.
+
+**What does not exist: a parser, a type checker, and a backend.** `exsc`
+therefore exits 4 on a well-formed program — "the front end accepts this source,
+but code generation is not implemented" — and `tools/publish-gate.sh` fails at
+step 3 and says so. Nothing here passes vacuously; that has been tested by
+breaking it.
 
 ## License
 
