@@ -184,6 +184,28 @@ CST_W_ET = 'e' + ('t' shl 8)
 ; path, the file id, the token vector, the arena, the interner AND the
 ; diagnostic vector, so a parser that carried its own copies would be a second
 ; place for them to disagree.
+; THE OPEN-DELIMITER STACK is `depth` with its history kept. `depth` alone
+; answers `EXS-E0202`-or-`EXS-E0203`; it cannot answer WHERE the still-open
+; delimiter was written, and `docs/design/diagnostics-review.md` D6 is exactly
+; that question -- "`EXS-E0202` never names the construct it thinks is
+; unterminated ... the parser knows the opener, since it is what the recovery
+; rule *no production consumes a `}` it did not open* is written around". So
+; `__cst_bump` now records the span and the `PUN_*` of every delimiter it
+; opens, in the same statement that increments `depth`, and pops in the same
+; statement that decrements it. The two can therefore not drift: there is
+; still exactly one notion of "open" in this file.
+;
+; BOUNDED, AND HONEST ABOUT IT. Past `CST_OPEN_MAX` the entries are not
+; recorded and `__cst_open_top` answers "unknown" rather than a stale entry --
+; a diagnostic with no related span is what the record looked like yesterday,
+; and a related span pointing at the wrong `{` is worse than none. `depth`
+; itself keeps counting, so nothing about the E0202/E0203 decision is capped.
+; 64 is chosen against §8.6's own nesting: the deepest construct in the
+; corpus is 6, and 64 levels of live brackets is already a file no reader
+; will follow.
+CST_OPEN_MAX    = 64
+CST_OPEN_STRIDE = 16		; (start, len, pun, pad) x dd
+
 struct CstParser
 	field lx,        dq	; -> Lexer
 	field tree,      dq	; -> CstTree
@@ -193,6 +215,7 @@ struct CstParser
 	field lasterr,   dd	; token index the last error was reported at
 	field ndiag,     dd	; diagnostics THIS parse recorded
 	field firstcode, dd	; numeric part of the first one; 0 = none
+	ostk dd CST_OPEN_MAX*4 dup (?)	; the open delimiters, innermost last
 end struct
 
 ; ---- punctuation spelling --------------------------------------------------
@@ -584,13 +607,149 @@ proc __cst_bump, p
 	je	.close
   .done:
 	return
+	; Push and increment in one place, pop and decrement in another, so
+	; `depth` and the stack cannot disagree about what is open. Past
+	; CST_OPEN_MAX the entry is dropped and only the counter moves --
+	; `__cst_open_top` reads the same bound and answers "unknown" there.
   .open:
+	mov	eax, [rbx + CstParser.depth]
+	cmp	eax, CST_OPEN_MAX
+	jae	.open_count
+	lea	rdx, [rbx + CstParser.ostk]
+	shl	eax, 4
+	add	rdx, rax
+	mov	eax, [r12 + Tok.span.start]
+	mov	[rdx], eax
+	mov	eax, [r12 + Tok.span.len]
+	mov	[rdx + 4], eax
+	mov	eax, [r12 + Tok.aux]
+	mov	[rdx + 8], eax
+	mov	dword [rdx + 12], 0
+  .open_count:
 	inc	dword [rbx + CstParser.depth]
 	return
   .close:
 	cmp	dword [rbx + CstParser.depth], 0
 	je	.done
 	dec	dword [rbx + CstParser.depth]
+	return
+endp
+
+; __cst_open_top(p) -> rax = the innermost open delimiter's stack entry
+; (start, len, pun), or 0 if nothing is open -- or if more is open than
+; CST_OPEN_MAX recorded, in which case the innermost one is genuinely not
+; known and saying so is the only honest answer.
+proc __cst_open_top, p
+	locals
+	endl
+	mov	rcx, [p]
+	mov	eax, [rcx + CstParser.depth]
+	test	eax, eax
+	jz	.none
+	cmp	eax, CST_OPEN_MAX
+	ja	.none
+	dec	eax
+	shl	eax, 4
+	lea	rcx, [rcx + CstParser.ostk]
+	add	rcx, rax
+	mov	rax, rcx
+	return
+  .none:
+	xor	eax, eax
+	return
+endp
+
+; __cst_open_has(p, closer) -> eax = 1 if some delimiter currently open would
+; be closed by `closer`. §8.6's "No production consumes a `}` it did not open"
+; generalised to all four bracket kinds: a production may stand a MISMATCHED
+; closer in for the one it wanted only when no enclosing production is still
+; waiting for that closer.
+;
+; ANSWERS 1 -- "yes, leave it alone" -- for anything it cannot decide: a token
+; that is not a closer at all, and a depth past CST_OPEN_MAX where the stack
+; no longer knows what is open. Every caller uses a 0 here to CONSUME a token,
+; so the unsafe direction is the one that must never be guessed.
+proc __cst_open_has, p, closer
+	uses	rbx
+	locals
+	endl
+	mov	rbx, [p]
+	mov	ecx, [closer]
+	mov	eax, PUN_LPAREN
+	cmp	ecx, PUN_RPAREN
+	je	.have
+	mov	eax, PUN_LBRACKET
+	cmp	ecx, PUN_RBRACKET
+	je	.have
+	mov	eax, PUN_LBRACE
+	cmp	ecx, PUN_RBRACE
+	je	.have
+	mov	eax, PUN_LT
+	cmp	ecx, PUN_GT
+	je	.have
+	mov	eax, 1
+	return
+  .have:
+	mov	edx, eax
+	mov	eax, [rbx + CstParser.depth]
+	cmp	eax, CST_OPEN_MAX
+	ja	.yes
+	test	eax, eax
+	jz	.no
+	lea	rcx, [rbx + CstParser.ostk]
+  .scan:
+	cmp	[rcx + 8], edx
+	je	.yes
+	add	rcx, CST_OPEN_STRIDE
+	dec	eax
+	jnz	.scan
+  .no:
+	xor	eax, eax
+	return
+  .yes:
+	mov	eax, 1
+	return
+endp
+
+; __cst_stray_closer(p) -> eax = the `PUN_*` of a closing bracket at the
+; cursor that closes nothing currently open, or 0.
+;
+; `}` IS DELIBERATELY NOT A CANDIDATE. §8.6 writes one recovery rule about one
+; delimiter -- "no production consumes a `}` it did not open" -- and a
+; bracket production swallowing a `}` as a stand-in for its own `)` is the
+; letter of that sentence broken to save a cascade diagnostic. The three
+; bracket closers §8.6 says nothing specific about are enough for the case
+; this exists for (`a[0)`), and leaving `}` out costs nothing measured.
+proc __cst_stray_closer, p
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [p]
+	mov	rdi, rbx
+	xor	esi, esi
+	call	__cst_tokp
+	mov	r12, rax
+	cmp	dword [r12 + Tok.kind], TOK_PUNCT
+	jne	.no
+	mov	eax, [r12 + Tok.aux]
+	cmp	eax, PUN_RPAREN
+	je	.cand
+	cmp	eax, PUN_RBRACKET
+	je	.cand
+	cmp	eax, PUN_GT
+	je	.cand
+	xor	eax, eax
+	return
+  .cand:
+	mov	rdi, rbx
+	mov	esi, eax
+	call	__cst_open_has
+	test	eax, eax
+	jnz	.no
+	mov	eax, [r12 + Tok.aux]
+	return
+  .no:
+	xor	eax, eax
 	return
 endp
 
@@ -733,9 +892,90 @@ proc __cst_err, p, code
 	mov	edx, [r12 + Tok.span.start]
 	mov	ecx, [r12 + Tok.span.len]
 	call	__cst_diag
+	; `EXS-E0202` is by definition "something is still open" -- it IS
+	; `__cst_eofcode`'s only reason for choosing 202 over 203 -- so the
+	; opener span is available exactly when this code is the one raised.
+	; `EXS-E0203` gets none: `depth` is 0 there, and a related span
+	; pointing at nothing is what `__cst_open_top` refuses to invent.
+	cmp	r13d, 202
+	jne	.ret
+	mov	r13, rax
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	__cst_relate
+	mov	rax, r13
+  .ret:
 	return
   .suppress:
 	xor	eax, eax
+	return
+endp
+
+; __cst_note_at(dg, nid, apt, aln) -- attach one of diag/notes.inc's
+; `DIAG_NOTE_*` to a diagnostic, tolerating the 0 that `__cst_err` returns
+; when this token already carries one.
+;
+; WHEN THE PARSER SHOULD SAY SOMETHING AND WHEN IT SHOULD NOT. `__diag_advise`
+; (diag/render.inc) derives a note from the code, the span's own bytes and the
+; attached edit, and an explicit note set here OVERRIDES that derivation
+; entirely. That makes a blanket "the parser always knows best" wrong, and
+; measurement says so: on `if a > 10 { return a; }` the parser's own knowledge
+; is "a `;` was expected" and the derivation's is "`if` is not an Exsecutor
+; keyword; §8.4 spells this `si`" -- the second is the sentence the author
+; needs, and setting the first here would delete it. So a note is set at a
+; construction site only where the parser knows something no reading of the
+; bytes can recover, and the "expected `;`" family is deliberately left to the
+; derivation. `docs/design/diagnostics-review.md` c14 is that measurement.
+proc __cst_note_at, dg, nid, apt, aln
+	uses	rbx
+	locals
+	endl
+	mov	rbx, [dg]
+	test	rbx, rbx
+	jz	.none
+	mov	rdi, rbx
+	mov	esi, [nid]
+	mov	rdx, [apt]
+	mov	rcx, [aln]
+	call	diag_note_set
+  .none:
+	return
+endp
+
+; __cst_relate(p, dg) -- point the diagnostic at the innermost delimiter that
+; is still open, so the renderer prints a second gutter block reading "opened
+; here" (diag/render.inc, `DIAG_F_REL`).
+;
+; This is the half of `docs/design/diagnostics-review.md` D6 that the diag
+; tree could not do: `diag_rel_set` has existed since the record grew the
+; field, and nothing called it, because the opener's position is knowledge
+; only a parser holds. c02, c13 and c17 are the three cases the review names.
+;
+; WHAT IT NAMES IS THE STILL-OPEN DELIMITER, NOT THE ONE A HUMAN WOULD GUESS.
+; On the review's c02 -- a file whose only `}` is consumed by the inner `si`
+; block -- rustc points at the inner `{` on the strength of an INDENTATION
+; heuristic. This points at the outer `{`, which is the one the parser is
+; genuinely still inside at end of input. Both are useful; only one of them is
+; something this file knows rather than guesses.
+proc __cst_relate, p, dg
+	uses	rbx, r12
+	locals
+	endl
+	mov	r12, [dg]
+	test	r12, r12
+	jz	.none
+	mov	rbx, [p]
+	mov	rdi, rbx
+	call	__cst_open_top
+	test	rax, rax
+	jz	.none
+	mov	rcx, [rbx + CstParser.lx]
+	mov	esi, [rcx + Lexer.file_id]
+	mov	edx, [rax]
+	mov	ecx, [rax + 4]
+	mov	rdi, r12
+	call	diag_rel_set
+  .none:
 	return
 endp
 
@@ -774,8 +1014,22 @@ endp
 ; carries on parsing rather than unwinding.
 
 ; __cst_xpun(p, id)
+;
+; A MISSING CLOSER IS NOT AN ORDINARY MISSING TOKEN, and this is where the two
+; part company. When `id` is `)`, `]`, `}` or `>` the parser holds two facts
+; the record could not previously carry: WHICH delimiter is unclosed (the
+; note) and WHERE it was opened (the related span). Both are attached here,
+; from `__cst_bump`'s open-delimiter stack.
+;
+; `DIAG_NOTE_UNCLOSED` is set EXPLICITLY even though `__diag_advise` derives
+; the same id from the insertion's own byte -- because the derivation gets
+; there only after an English-keyword lookup, a comparison-word check and a
+; near-miss keyword scan have all declined, and any of those can win on the
+; token that happens to sit where the bracket should be. A bracket left open
+; is not improved by a guess about the token that revealed it. This is the
+; one place `__cst_note_at`'s header argues FOR overriding the derivation.
 proc __cst_xpun, p, id
-	uses	rbx, r12, r13
+	uses	rbx, r12, r13, r14
 	locals
 	endl
 	mov	rbx, [p]
@@ -795,14 +1049,86 @@ proc __cst_xpun, p, id
 	mov	r12, rax
 	mov	edi, [id]
 	call	__cst_pun_text
+	mov	r14, rax
 	mov	r13, rdx
 	mov	rdi, rbx
 	mov	rsi, r12
-	mov	rdx, rax
+	mov	rdx, r14
 	mov	rcx, r13
 	call	__cst_fix_insert
+
+	mov	eax, [id]
+	cmp	eax, PUN_RPAREN
+	je	.closer
+	cmp	eax, PUN_RBRACKET
+	je	.closer
+	cmp	eax, PUN_RBRACE
+	je	.closer
+	cmp	eax, PUN_GT
+	jne	.plain
+	; AT END OF INPUT, SAY SO INSTEAD. `__diag_advise` answers
+	; `DIAG_NOTE_EOF_OPEN` -- "the file ends inside a construct opened
+	; earlier; it wants }" -- which is strictly more specific than
+	; "a delimiter opened earlier is still open", and overriding it here
+	; would have thrown that away on exactly the two cases (c02, c13) the
+	; related span exists for. The related span is attached either way:
+	; it is the half no derivation can reach.
+  .closer:
+	mov	rdi, rbx
+	xor	esi, esi
+	call	__cst_kindn
+	cmp	eax, TOK_EOF
+	je	.rel_only
+	mov	rdi, r12
+	mov	esi, DIAG_NOTE_UNCLOSED
+	mov	rdx, r14
+	mov	rcx, r13
+	call	__cst_note_at
+  .rel_only:
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__cst_relate
+  .plain:
 	mov	rdi, rbx
 	call	__cst_missing
+
+	; A MISMATCHED CLOSER STANDS IN FOR THE ONE THAT IS MISSING. `a[0)`
+	; reported "expected `]`" and then left the `)` for the enclosing
+	; statement to report a second time
+	; (`docs/design/diagnostics-review.md` c09: "2 diagnostics for 1
+	; typo"). The `)` closes nothing that is open, so nothing else wants
+	; it; taking it here is what clang does and costs one diagnostic
+	; instead of two. It goes into a `CST_ERROR` node rather than passing
+	; as the closer it is not -- §8.6, "skipped tokens go into an ERROR
+	; node" -- so the tree still round-trips and no consumer above can
+	; mistake a `)` for a `]`.
+	;
+	; Only a bracket production may do this, and only for a bracket:
+	; `__cst_stray_closer` never offers `}`, and a block expecting `}`
+	; never absorbs, so §8.6's rule about `}` is untouched in both
+	; directions.
+	mov	eax, [id]
+	cmp	eax, PUN_RPAREN
+	je	.absorb_try
+	cmp	eax, PUN_RBRACKET
+	je	.absorb_try
+	cmp	eax, PUN_GT
+	jne	.gone
+  .absorb_try:
+	mov	rdi, rbx
+	call	__cst_stray_closer
+	test	eax, eax
+	jz	.gone
+	mov	rdi, [rbx + CstParser.tree]
+	call	cst_open
+	mov	r12, rax
+	mov	rdi, rbx
+	call	__cst_bump
+	mov	rdi, [rbx + CstParser.tree]
+	mov	esi, CST_ERROR
+	mov	rdx, r12
+	call	cst_close
+  .gone:
 	xor	eax, eax
 	return
 endp
@@ -2158,10 +2484,25 @@ proc __cst_primary, p
 	call	cst_close
 	mov	eax, 1
 	return
+	; A statement- or item-leading reserved word, in expression position.
+	; The token is given back so the enclosing block can parse the
+	; statement it leads -- but the record said nothing at all about why
+	; (`docs/design/diagnostics-review.md`'s corpus: `EXS-E0201` at `per`
+	; with a null note). What the parser knows and the bytes cannot say is
+	; that this token is one of §8.4's thirty, in a position that wanted a
+	; name: `__diag_advise` reaches its did-you-mean scan here and an EXACT
+	; keyword match silences that scan by design, so the derivation is
+	; structurally unable to produce this sentence.
   .kw_give_back:
 	mov	rdi, rbx
 	xor	esi, esi
 	call	__cst_err
+	mov	r12, rax
+	mov	rdi, r12
+	mov	esi, DIAG_NOTE_RESERVED
+	xor	edx, edx
+	xor	ecx, ecx
+	call	__cst_note_at
 	mov	rdi, rbx
 	call	__cst_missing
 	xor	eax, eax
@@ -2893,8 +3234,24 @@ endp
 ; ---- statements (§8.6, "Grammar") ------------------------------------------
 
 ; __cst_block(p) -- `Block ::= '{' Stmt* '}'`.
+;
+; A BLOCK WHOSE `{` WAS NEVER THERE DOES NOT CLOSE ON A `}`. §8.6's recovery
+; rule is "No production consumes a `}` it did not open", and until this was
+; measured, this routine broke it: a block synthesised during recovery -- a
+; `per` statement invented out of a reserved word used as a name, say -- ran
+; its statement loop to the file's real closing brace and ATE it, after which
+; the function body that actually opened that brace reached end of input and
+; reported `EXS-E0203` in a file whose braces balance.
+; `docs/design/diagnostics-review.md` c05 calls that diagnostic "bogus" and it
+; is: it is this file consuming a `}` it did not open, one production removed.
+;
+; So the opening `__cst_xpun`'s answer is kept, and when it is 0 the block
+; ends with a zero-width `CST_MISSING` and NO diagnostic. Silence is the point
+; -- the absent `{` was already reported (or already suppressed as the same
+; token), and a second "expected `}`" for a brace the author never opened is
+; the cascade this rule exists to prevent.
 proc __cst_block, p
-	uses	rbx, r12
+	uses	rbx, r12, r13
 	locals
 	endl
 	mov	rbx, [p]
@@ -2904,6 +3261,7 @@ proc __cst_block, p
 	mov	rdi, rbx
 	mov	esi, PUN_LBRACE
 	call	__cst_xpun
+	mov	r13d, eax
   .stmt:
 	mov	rdi, rbx
 	mov	esi, PUN_RBRACE
@@ -2919,9 +3277,16 @@ proc __cst_block, p
 	call	__cst_stmt
 	jmp	.stmt
   .close:
+	test	r13d, r13d
+	jz	.synth
 	mov	rdi, rbx
 	mov	esi, PUN_RBRACE
 	call	__cst_xpun
+	jmp	.fin
+  .synth:
+	mov	rdi, rbx
+	call	__cst_missing
+  .fin:
 	mov	rdi, [rbx + CstParser.tree]
 	mov	esi, CST_BLOCK
 	mov	rdx, r12

@@ -1,4 +1,4 @@
-; compiler/x86_64/rt/span.inc
+; tests/unit/cst_green_interning.asm
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ; Copyright (C) 2026 The Exsecutor authors.
 ;
