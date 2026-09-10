@@ -119,7 +119,7 @@ if [[ "$fail" -ne 0 ]]; then echo "RESULT: GATE NOT MET -- do not publish"; exit
 echo "RESULT: GATE MET"
 echo
 echo "Publishing is still a human decision, not this script's. Before it:"
-echo "  - CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md, AUTHORS, CITATION.cff"
+echo "  - CONTRIBUTING.md, SECURITY.md, AUTHORS, CITATION.cff (no code of conduct -- the owner's decision)"
 echo "  - .github/workflows CI running these same checks"
 echo "  - a README written for a stranger, not for the author"
 echo "  - confirm LICENSE.EXCEPTION does NOT apply to vendor/ (it keeps its own)"
