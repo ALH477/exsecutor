@@ -11,6 +11,9 @@ reading source.
 
 ## Verdict
 
+> **Re-evaluated 2026-09-10 after the fixes: see the final section.** The
+> verdict below is the original, kept as written.
+
 **Conditional fail. Do not start Stage 2 until D1 and D2 below are fixed.**
 The half of spec §8.3 that genuinely cannot be retrofitted — spans, escaping,
 the code-keyed machine format, error recovery — is built well and measured
@@ -235,3 +238,48 @@ is written around.
 2. Stop attaching fix payloads to cascade `EXS-E0201`s, or make `emenda`
    single-step-and-re-run. **(D3.)**
 3. Count characters, not bytes, when padding and sizing the caret. **(D4.)**
+
+## Re-evaluation, 2026-09-10
+
+The corpus is now checked in (`tests/diagnostics/`, `tools/diag-measure.sh`)
+and every number here was re-measured on it, at the named commit, in a clean
+worktree — not carried forward from this document's first draft, whose 46/37
+figure covered 34 programs of which only 22 were described well enough to
+reconstruct.
+
+| | before (e5f283d) | after (this commit) |
+|---|---|---|
+| diagnostics | 37 | 39 |
+| most common message | `unexpected token` 28 (75.7%) | `unexpected token` 28 (71.8%) |
+| records carrying a note | **0** | **28 (71.8%)** |
+| records carrying a related span | **0** | **6 (15.4%)** |
+| machine `fix` payloads | 24 | 0 |
+| advisory `suggestion` payloads | — | 25 |
+| header col vs caret (c23) | 39 vs 36 | 36 vs 36 |
+
+The message text is unchanged and will stay so: codes and their canonical
+text are what tools match (§8.3). What changed is that the record can carry
+a second sentence, and 28 of 39 now do. The two extra diagnostics are true
+positives — c32 had an extra `}` and a real `<` the old recovery masked —
+and the lexer fix that stopped one malformed literal from discarding every
+parser diagnostic (2897663) surfaced one each in c07 and c26.
+
+| defect | status |
+|---|---|
+| D1 record cannot carry detail | fixed, 5551478 — `note_id` + one appended token, `rel Span`; an id, not a string |
+| D2 §8.6 promises a message | fixed, abdfd89 — a grammar can require code, span and edit, not a sentence |
+| D3 fixes make files worse | fixed, 5551478 — parser guesses are `suggestion`, never `fix`; `emenda` applies `fix` only |
+| D4 caret in bytes | fixed, 5551478 and 3a763dd — caret and header both count characters; combining marks, East Asian width `[UNTESTED]` |
+| D5 no did-you-mean | fixed, 5551478 — Levenshtein against §8.4's thirty, English-habits table; `si` no longer suggests `sin` |
+| D6 no opener span | fixed, 5551478 and the cst commit — six related spans; c07's span already starts at the quote |
+| D7 minor | span/fix asymmetry re-characterised as trailing trivia, not a bug; JSON snippet and errno text still open |
+
+**Verdict: the kill criterion no longer fires.** The structural failure —
+one field short of being able to say anything — is gone, and the corpus
+that measures it is a command. What remains is named, not hidden: note ids
+for nested `functio`, stray `}`, expected expression and expected
+identifier do not exist yet (the parser wanted them and invented nothing);
+diagnostics are appended by phase rather than sorted by span, so a lexical
+record can print after a parser record at an earlier byte; and the corpus
+is 22 of the review's 34 programs. None of those is a reason to stop
+Stage 2. Bad here was stopped and fixed, which is what §16 asked.
