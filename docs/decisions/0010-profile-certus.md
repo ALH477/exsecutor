@@ -82,6 +82,9 @@ third-party library's conformance means reading it.
   MISRA has suffered exactly it.
 - Eight classes of profile violation need diagnostics, and CLAUDE.md forbids
   inventing codes. **A §13 amendment is a prerequisite**, not a follow-up.
+  **Met**: §13's `08xx` range, grouped to the profile's own sections. The
+  checker remains unwritten, but it is now buildable without inventing a code
+  — which was the whole point of calling this a prerequisite.
 - MC/DC coverage instrumentation is compiler support that is very painful to
   retrofit and must be designed alongside the CST and backend.
 - **Tool qualification (DO-330) remains the dominant cost and this decision does

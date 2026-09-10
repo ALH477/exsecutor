@@ -63,7 +63,7 @@
 ; Spec: docs/spec/exsecutor-spec-v0.4.md §8.3, §13
 ; -----------------------------------------------------------------------------
 
-DIAG_CODE_COUNT = 25
+DIAG_CODE_COUNT = 33
 DIAG_CODE_STR_STRIDE = 9	; "EXS-E" + 4 digits, always
 
 ; ---- fixed-stride code-string table (9 bytes each, no separator, no NUL) ---
@@ -93,6 +93,14 @@ diag_code_str:
 	db	'EXS-E0603'
 	db	'EXS-E0610'
 	db	'EXS-E0701'
+	db	'EXS-E0801'
+	db	'EXS-E0802'
+	db	'EXS-E0811'
+	db	'EXS-E0812'
+	db	'EXS-E0813'
+	db	'EXS-E0821'
+	db	'EXS-E0831'
+	db	'EXS-E0841'
 
 ; ---- parallel numeric-part table (dd each; the CF/eax protocol's value) ----
 diag_code_numeric:
@@ -121,6 +129,14 @@ diag_code_numeric:
 	dd	603
 	dd	610
 	dd	701
+	dd	801
+	dd	802
+	dd	811
+	dd	812
+	dd	813
+	dd	821
+	dd	831
+	dd	841
 
 ; ---- parallel canonical-message length table (dd each, bytes) --------------
 diag_code_msg_len:
@@ -149,6 +165,14 @@ diag_code_msg_len:
 	dd	29
 	dd	44
 	dd	40
+	dd	46
+	dd	40
+	dd	59
+	dd	70
+	dd	39
+	dd	39
+	dd	47
+	dd	44
 
 ; ---- parallel canonical-message pointer table (dq each, forward refs) ------
 diag_code_msg_ptr:
@@ -177,6 +201,14 @@ diag_code_msg_ptr:
 	dq	diag_msg22
 	dq	diag_msg23
 	dq	diag_msg24
+	dq	diag_msg25
+	dq	diag_msg26
+	dq	diag_msg27
+	dq	diag_msg28
+	dq	diag_msg29
+	dq	diag_msg30
+	dq	diag_msg31
+	dq	diag_msg32
 
 ; ---- canonical English message text (§8.3: "English text is canonical.
 ;      Translation, if ever, is a lookup keyed on code.") -----------------
@@ -205,3 +237,11 @@ diag_msg21 db	'suffix contract disagrees with declared type'	; EXS-E0602
 diag_msg22 db	'prefix signature law violated'	; EXS-E0603
 diag_msg23 db	'composition depth exceeded (max two affixes)'	; EXS-E0610
 diag_msg24 db	'target cannot honour the declared numeri'	; EXS-E0701
+diag_msg25 db	'allocation after initium under profilum certum'	; EXS-E0801
+diag_msg26 db	'recursion detected under profilum certum'	; EXS-E0802
+diag_msg27 db	'loop without a statically known bound under profilum certum'	; EXS-E0811
+diag_msg28 db	'generic does not monomorphize within the closure under profilum certum'	; EXS-E0812
+diag_msg29 db	'capturing closure under profilum certum'	; EXS-E0813
+diag_msg30 db	'capability forbidden by profilum certum'	; EXS-E0821
+diag_msg31 db	'numeri not fully declared under profilum certum'	; EXS-E0831
+diag_msg32 db	'certus module depends on a non-certus module'	; EXS-E0841

@@ -339,6 +339,17 @@ segment readable writeable
 			;   not a source edit, and "relax numeri" changes what
 			;   the program computes -- the one thing a fix-it must
 			;   never do quietly.
+	dd	801, 0	; EXS-E0801 -- certus. Seven of the eight profile
+	dd	802, 0	;   codes carry NO fix: moving an allocation,
+	dd	811, 0	;   unwinding recursion, bounding a loop or dropping
+	dd	812, 0	;   a capability all change what the program DOES,
+	dd	813, 0	;   and §8.3 scopes fixes to edits that are
+	dd	821, 0	;   mechanically derivable.
+	dd	831, 1	; EXS-E0831 -- the exception. §5.4 defines the numeri
+			;   defaults and certus rule 14 requires only that
+			;   they be written down, so the fix is exactly those
+			;   four lines.
+	dd	841, 0	; EXS-E0841
   REQ_COUNT = ($ - req_tab) / 8
   ; This fixture's expectation table must cover the GENERATED one exactly --
   ; a §13 amendment that adds a code and a regeneration that picks it up must

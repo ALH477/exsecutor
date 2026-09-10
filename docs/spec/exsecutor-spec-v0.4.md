@@ -1723,6 +1723,14 @@ Scratch work without ambient authority: `exsc curre --potestates omnes scratch.e
 | `EXS-E0603` | prefix signature law violated |
 | `EXS-E0610` | composition depth exceeded (max two affixes) |
 | `EXS-E0701` | target cannot honour the declared `numeri` |
+| `EXS-E0801` | allocation after `initium` under `profilum certum` |
+| `EXS-E0802` | recursion detected under `profilum certum` |
+| `EXS-E0811` | loop without a statically known bound under `profilum certum` |
+| `EXS-E0812` | generic does not monomorphize within the closure under `profilum certum` |
+| `EXS-E0813` | capturing closure under `profilum certum` |
+| `EXS-E0821` | capability forbidden by `profilum certum` |
+| `EXS-E0831` | `numeri` not fully declared under `profilum certum` |
+| `EXS-E0841` | `certus` module depends on a non-`certus` module |
 
 The `02xx` range is deliberately coarse. Code granularity and message quality
 are independent axes: a consumer branches on *what class of thing broke* — which
@@ -1732,6 +1740,32 @@ structured fix payload §8.3 already requires. `EXS-E0220` earns a code of its
 own on frequency: §8.4's keywords are Latin words that read like plausible
 identifiers, so reserved-word-as-identifier is the predictable error, and its
 fix is mechanically derivable.
+
+`08xx` is the `certus` profile (`docs/design/profile-certus.md`, ADR 0010).
+The grouping is the profile's own section structure, not an invention:
+`080x` memory (its rules 3–4), `081x` control flow (6, 7, 9), `082x`
+capabilities (10–13), `083x` arithmetic (14), `084x` interface closure (19).
+Every one of these is *only* a diagnostic under `profilum certum` — the same
+program outside the profile is well-formed, which is why they are a range of
+their own rather than additions to `04xx` or `05xx`.
+
+ADR 0010 called this amendment "a prerequisite, not a follow-up" and it went
+unwritten for some time; the profile checker could not have been built without
+it, because CLAUDE.md forbids inventing a code and §13 is the only source.
+
+`EXS-E0811` is narrower than it looks now that §8.5 exists. A `dum` with no
+`terminus` is a *parse-level* fact, so the common case is caught before this
+code is reached; `EXS-E0811` is for a `terminus` whose bound is not statically
+known. A safety rule that reduces to a missing keyword is much cheaper than one
+requiring analysis, which is the point §9.2 makes about `certus` rule 6.
+
+**Only `EXS-E0831` carries a machine-applicable fix.** §8.3 scopes fixes to
+cases where "the required edit is mechanically derivable," and for seven of
+these eight it is not — moving an allocation, unwinding recursion, or dropping
+a capability all change what the program does. Undeclared `numeri` is the
+exception: §5.4 defines the defaults (`ad_parem`, `vetita`, `explicita`,
+`conservata`) and rule 14 requires only that they be written down, so the fix
+is exactly those four lines.
 
 `EXS-E0701` opens a `07xx` range for **target** failures — the compilation is
 well-formed and the *target* cannot deliver it. §5.5 has required "a target

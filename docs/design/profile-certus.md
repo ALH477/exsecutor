@@ -133,12 +133,25 @@ by reading it.
 
 Stated as required work, not as though it were designed.
 
-- **Diagnostics.** Violations need their own `EXS-E` range. CLAUDE.md forbids
-  inventing codes, and §13 is the only source, so this requires a §13 amendment
-  *first*. The classes needing codes: allocation after init, unbounded loop,
-  recursion detected, forbidden capability in profile, non-monomorphizable
-  generic, capturing closure, undeclared `numeri`, non-`certus` dependency.
-  **Eight classes; numbering is the amendment's business, not this document's.**
+- ~~**Diagnostics.**~~ **Done.** §13 gained an `08xx` range for the profile,
+  grouped to match this document's own section structure: `EXS-E0801`
+  allocation after `initium` and `EXS-E0802` recursion (rules 3–4);
+  `EXS-E0811` loop without a statically known bound, `EXS-E0812`
+  non-monomorphizable generic and `EXS-E0813` capturing closure (rules 6, 7,
+  9); `EXS-E0821` forbidden capability (rules 10–13); `EXS-E0831` undeclared
+  `numeri` (rule 14); `EXS-E0841` non-`certus` dependency (rule 19).
+
+  Two things fell out of writing it. **`EXS-E0811` is narrower than rule 6
+  suggests** — §8.5 now makes `terminus` part of the loop syntax, so a `dum`
+  without one is a parse-level fact and never reaches this code; `EXS-E0811`
+  is for a bound that is present but not statically known. And **only
+  `EXS-E0831` carries a machine-applicable fix**: §8.3 scopes those to edits
+  that are mechanically derivable, and moving an allocation, unwinding
+  recursion or dropping a capability all change what the program computes.
+  Undeclared `numeri` is the exception because §5.4 already defines the
+  defaults, so the fix is writing four lines that were implicit.
+
+  The checker that emits them does not exist. `[UNIMPLEMENTED]`
 - **MC/DC coverage instrumentation.** DAL A requires modified
   condition/decision coverage. This is compiler support and is very painful to
   retrofit — it should be designed while the CST and backend are being built,

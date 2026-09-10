@@ -238,6 +238,15 @@ endp
 ; Numeric parts (the CF/eax values), in §13's own table order. A plain array
 ; rather than a compare chain so the membership is readable as data and so
 ; adding a class member after a §13 amendment is a one-line edit.
+;
+; EXS-E0831 is the one `certus` profile code with a fix, and the reason is
+; worth keeping: §5.4 already DEFINES the numeri defaults (ad_parem, vetita,
+; explicita, conservata) and the profile's rule 14 requires only that they be
+; written down rather than inherited. So the edit is exactly those four lines,
+; and §8.3's "mechanically derivable" test is met. The other seven 08xx codes
+; are absent on purpose -- moving an allocation, unwinding recursion, bounding
+; a loop or dropping a capability each change what the program computes, which
+; a fix-it must never do quietly.
 diag_fixreq_codes:
 	dd	421			; EXS-E0421  undeclared capability
 	dd	500			; EXS-E0500  module-level mutable state
@@ -247,6 +256,7 @@ diag_fixreq_codes:
 	dd	602			; EXS-E0602  suffix contract disagrees
 	dd	603			; EXS-E0603  prefix signature law violated
 	dd	610			; EXS-E0610  composition depth exceeded
+	dd	831			; EXS-E0831  numeri not fully declared (certus)
 DIAG_FIXREQ_COUNT = ($ - diag_fixreq_codes) / 4
 
 ; diag_fix_required(code_num) -> eax = 1 if §8.3 promises this code ships a
