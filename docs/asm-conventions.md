@@ -564,6 +564,83 @@ exists to prevent, not a clever use of it.
 
 ---
 
+### 4.1 Reserved global names — check here before naming anything
+
+fasmg has **one flat namespace**, and `proc` argument names, `slot` names and
+`proc` names are all plain unmangled globals ("The macro dialect," above). A
+collision does not error where you wrote it — it errors later, somewhere else,
+naming neither your label nor the module that took the name.
+
+This has now cost four separate agents real time. The last case:
+`rt/sys.inc` declares `proc sys_openat, dirfd, pathname, flags, mode`, so a
+data label named `pathname` silently became `rbp-16` and failed at its *use*
+site with `variable term used where not expected`, mentioning neither
+`pathname` nor `sys.inc`.
+
+**Prefix every label with its module** (`lex_srclen`, not `srclen`). The rule
+was always in "Source file conventions" above; this list is why it is not
+optional.
+
+Burned as of this revision — every `proc` name, argument and `slot` under
+`compiler/`:
+
+```
+a a_len a_n a_ptr acc accn
+addr anyset arena arena_alloc arena_destroy arena_init
+arena_reset atoff aux b b_len b_n
+b_ptr base before buf callback cap
+capacity cmp_fn code code_num col consumed
+count cp cpv dcount dest diag_attach_source
+diag_emit diag_escape diag_escape_json diag_fix_clear diag_fix_delete diag_fix_insert
+diag_fix_kind_str diag_fix_ptr diag_fix_replace diag_fix_required diag_fmt_u32 diag_init
+diag_is_dangerous_cp diag_line_bounds diag_line_col diag_lookup diag_out_bytes diag_out_esc
+diag_out_fill diag_out_init diag_out_jstr diag_out_u32 diag_render_json diag_render_text
+diagrec diags digits dirfd dst dst_n
+dstcap emit_len endoff fd file_id fillbyte
+flags fx hexbuf i id idx
+index initial_cap intern_bytes intern_id intern_init interner
+j jsonbuf k key_len key_ptr kind
+kw_lookup kw_text_of kwid lastcc lastst len
+lend lex_diag lex_init lex_kw_as_ident lex_run lex_script_ok
+lex_set_source lex_source_check lex_tokenize lin lstart lx
+map map_get map_hash map_init map_insert map_iterate
+mid mode n nbuckets nbytes nfc_ccc
+nfc_compose_pair nfc_decomp_of nfc_decomp_rec nfc_decompose nfc_is_nfc nfc_normalize
+nfc_quick_check nstart numbuf numeric o o_ptr
+off offset offv one onen out_cap
+out_ptr pad pad0 pad1 pair path
+pathname plen pre prevcp prevdec prot
+ptr remaining rend s0 s1 scratch
+scratchcap script_of script_resolve set_n set_ptr size
+slen sort_stable span span_contains span_end span_make
+span_union src src_len src_ptr srclen statbuf
+str_copy str_eq str_slice str_to_cstr stride sublen
+sys_close sys_exit_group sys_fstat sys_lseek sys_mmap sys_munmap
+sys_openat sys_read sys_write tlen toks truncated
+tstart txt value vec vec_get vec_init
+vec_push wcount whence width wr xid_continue
+xid_flags xid_start
+```
+
+Also burned: every `KW_* TOK_* PUN_* LEX_* UNI_* MAP_* DIAG_*` constant, the
+structs `Arena Vec Map Interner Slice Span Tok Lexer Diag DiagFix DiagOut`,
+the macros `proc uses locals slot endl fail return endp rassert struct field
+kw` and the whole `flow_*` family, and every `__proc_* __flow_* __map_*
+__diag_* __lex_*` internal.
+
+**Bare instruction mnemonics collide case-insensitively.** An argument named
+`cmp` assembles as the real `CMP`; a struct named `Str` collides with `STR`
+and had to become `Slice`. `proc.inc` hard-rejects only `start` and `main`,
+because those two were found the hard way and a speculative list trades this
+file's false positives for the bug it exists to catch.
+
+Regenerate this list with:
+
+```sh
+grep -rhE '^\s*(proc|slot)\s' compiler/ | sed -E 's/^\s*(proc|slot)\s+//' \
+  | tr ',' '\n' | sed 's/^ *//; s/ *$//' | grep -v '^$' | sort -u
+```
+
 ## 5. The include idiom
 
 Two different kinds of `include`, resolved two different ways:

@@ -844,7 +844,18 @@ Restriction modes work (Rust's `unsafe`, `use strict`, D's `@safe`): the restric
 - **UTF-8 only.** No BOM — a BOM is `EXS-E0101`, not a skipped byte.
 - **LF only.** CRLF is `EXS-E0106`. The formatter converts; the compiler does not.
 - **NFC required.** Non-NFC is `EXS-E0102`.
-- Bidi and invisible controls (U+202A–202E, U+2066–2069, U+200B–200F, U+061C) anywhere in source, **including strings and comments**, are `EXS-E0103`. Escapes are the only way to produce them.
+- Bidi and invisible controls (U+202A–202E, U+2066–2069, U+200B–200F, U+061C, U+FEFF) anywhere in source, **including strings and comments**, are `EXS-E0103`. Escapes are the only way to produce them.
+- **U+FEFF is `EXS-E0101` at offset 0 and `EXS-E0103` anywhere else.** At the
+  start it is a byte-order mark and the first bullet governs. Elsewhere it is a
+  zero-width no-break space — invisible, and not covered by U+200B–200F, which
+  stops at U+200F. It was missing from this list, which meant a file could
+  carry an invisible character past the gate as long as it was not the first
+  thing in the file. Found by the lexer implementing the rule.
+- `[OPEN]` This class is enumerated, not derived. Unicode's
+  `Default_Ignorable_Code_Point` property would cover it by construction —
+  U+2060, U+180E and the variation selectors are all invisible and none is
+  listed here. Deriving the set needs a generated table; enumerating it needs
+  someone to keep remembering. Neither has happened.
 
 ## 8.2 Identifiers
 
@@ -946,6 +957,25 @@ All already in evidence in this document, recorded here rather than introduced.
 | `@nomen` | annotation — `@transitus`, `@nucleus` | §5.2, §5.5 |
 | `->` | result type | §4.2 |
 | `+` `+%` `+\|` | trapping, wrapping, saturating arithmetic | §5.4 |
+| `( )` | parameter lists, argument lists, grouping | §4.2 |
+| `[ ]` | indexing | §5.1 |
+| `{ }` | blocks, capability rows, `ego` sections | §4.2, §10.1 |
+| `,` | separator | §4.2 |
+| `;` | statement terminator | §4.5 |
+| `.` | field and method access | §5.1 |
+| `=` | binding and assignment | §4.5 |
+| `-` `-%` `-\|` | negation and subtraction, three overflow modes | §5.4 |
+| `:` | type annotation | §4.2 |
+
+The second half of that table was **missing** from the first draft, which
+claimed everything was "already in evidence" and then omitted the punctuation
+this document's own examples lean on hardest — `functio applica(v: f32, ...)`
+uses four of them in one line. Found by the lexer, which had to tokenize `(`
+and discovered §8.4 did not admit it. A closed token set that omits its own
+examples' tokens is not closed; it is merely short.
+
+`/` and the comparison words (`lt le gt ge eq ne`) are `[OPEN]`, along with
+the numeric literal grammar — see §8.5 and the note below.
 
 ### Literals, comments, layout
 
