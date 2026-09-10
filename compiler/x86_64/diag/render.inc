@@ -39,6 +39,44 @@
 ; to entangle a translation with. §8.3 cites Rust's Fluent effort stalling on
 ; 400+ such sites as the thing not to repeat.
 ;
+; THREE FIELDS THAT SENTENCE DID NOT USED TO ALLOW, and a correction to how
+; strongly it was read. `docs/design/diagnostics-review.md` measured Stage 1
+; against §16's kill criterion and found 37 of 46 diagnostics were the
+; identical sentence `unexpected token`, because `struct Diag` was
+; `code_num`, `Span`, `src_*`, `path_*`, `DiagFix` and had no field that
+; could hold anything else. The reasoning above was right about format sites
+; and too strong about what follows from it: what §8.3 forbids is a TOOL
+; matching on English, and what Fluent stalled on was 400+ FORMATTING sites.
+; A record can carry more than its code's one sentence without either.
+;
+;   - `note_id` + `arg_ptr`/`arg_len` -- a NOTE. The id is permanent and
+;     machine-matchable exactly as a code is; the English is a table lookup
+;     on it (notes.inc); the argument is a bounded compiler-owned token
+;     APPENDED after the sentence, never interpolated into it. Translation
+;     stays a lookup, now keyed on (code, note_id).
+;   - `rel` + `flags` -- a RELATED SPAN, so `EXS-E0202` can point at the `{`
+;     that was left open instead of only at the end of the file (review D6).
+;     Rendered as a second gutter block in text and a second member in JSON.
+;
+; A FIX IS NOT A SUGGESTION, and this file is where the difference is
+; enforced. §8.3 promises machine-applicable fixes for "capability and
+; lexicon errors" -- `diag_fix_required` enumerates exactly those, with each
+; membership cited (fix.inc). The review measured what shipping an edit
+; OUTSIDE that set costs: applying the compiler's own payloads made the file
+; worse in 2 of 8 multi-fix cases, and one single-error file became
+; `redde; per;` plus a surplus brace. Each of those edits is individually
+; well formed; the corruption comes from applying a BATCH of advisory edits
+; derived from one broken parse.
+;
+; So the renderers split them. A payload on a code `diag_fix_required`
+; names is a `fix` -- mechanically derivable, safe for `exsc emenda` to
+; apply in a batch. A payload on any other code renders as a `suggestion`:
+; the same structure, the same span, shown to a human, and NEVER offered as
+; a batch-applicable edit. Both members are always present in JSON, one of
+; them `null`, so a consumer's schema does not change shape. The rule is a
+; property of the CODE, so it needs no batch state and no ordering, and it
+; renders the same whether a record is rendered once or a hundred times.
+;
 ; EVERY BYTE THAT CAME FROM OUTSIDE THIS COMPILER IS ESCAPED, in both modes,
 ; through escape.inc and nothing else. That includes the three places it is
 ; tempting to skip:
@@ -102,23 +140,54 @@ struct DiagOut
 end struct
 
 ; ---- the diagnostic record -------------------------------------------------
-; 96 bytes. The `Span` is rt/span.inc's, embedded by value, not a re-spelling
+; 128 bytes. The `Span` is rt/span.inc's, embedded by value, not a re-spelling
 ; of it: §8.3 makes the span non-optional ("not retrofittable, which is why
 ; the CST is not optional"), and the CST will hand these out as `Span`s.
 ; `src_ptr`/`src_len` are the file's text, needed to turn a byte offset into
 ; a line, a column and an echoed line; `path_ptr`/`path_len` are its name.
 ; Both may be zero -- a diagnostic with no source attached still renders its
 ; header, its code and its fix, just without a snippet.
+;
+; It was 96 bytes and five fields until the Stage 1 review; see this file's
+; header for what the three additions are and why they are not the thing §8.3
+; warns about. `note_id` and `flags` take over the two explicit pad dwords, so
+; the growth is the 32 bytes of `rel` + `arg_*` and nothing else. Everything
+; that sizes a buffer from this struct does it symbolically (`sizeof.Diag`),
+; which was checked before growing it: driver/cli.inc's `vec_init` stride and
+; driver/run.inc's are the only two, and both read the symbol.
+;
+; `arg_ptr` is compiler-owned text -- notes.inc's tables, never source -- and
+; is escaped at the render site anyway, for fix.inc's reason about
+; `text_ptr`. `rel` is meaningful only when `flags` has DIAG_F_REL set;
+; `diag_init` clears both, so a record nobody called `diag_rel_set` on
+; renders `"related":null` and no second gutter block.
+DIAG_F_REL = 1			; bit 0 of `flags`: `rel` carries a real span
+
 struct Diag
 	field code_num, dd
-	field pad0,     dd
+	field note_id,  dd
 	span Span
-	field pad1,     dd
+	field flags,    dd
 	field src_ptr,  dq
 	field src_len,  dq
 	field path_ptr, dq
 	field path_len, dq
+	rel Span
+	field pad2,     dd
+	field arg_ptr,  dq
+	field arg_len,  dq
 	fix DiagFix
+end struct
+
+; What `__diag_advise` resolves a record's note down to, so neither renderer
+; has to duplicate the derivation and neither has to MUTATE the record it was
+; handed. Rendering the same `Diag` twice gives the same bytes twice, which is
+; what §9.3 asks of everything else in this compiler.
+struct DiagAdvice
+	field note_id, dd
+	field pad0,    dd
+	field arg_ptr, dq
+	field arg_len, dq
 end struct
 
 ; ---- literal fragments -----------------------------------------------------
@@ -138,8 +207,6 @@ diag_lit_bar     db ' | '
 DIAG_LIT_BAR_LEN     = $ - diag_lit_bar
 diag_lit_eq      db ' = '
 DIAG_LIT_EQ_LEN      = $ - diag_lit_eq
-diag_lit_fixopen db 'fix ('
-DIAG_LIT_FIXOPEN_LEN = $ - diag_lit_fixopen
 diag_lit_fixmid  db '): bytes '
 DIAG_LIT_FIXMID_LEN  = $ - diag_lit_fixmid
 diag_lit_dotdot  db '..'
@@ -148,6 +215,19 @@ diag_lit_arrow   db ' -> "'
 DIAG_LIT_ARROW_LEN   = $ - diag_lit_arrow
 diag_lit_dquote  db '"'
 DIAG_LIT_DQUOTE_LEN  = $ - diag_lit_dquote
+diag_lit_note    db 'note: '
+DIAG_LIT_NOTE_LEN    = $ - diag_lit_note
+diag_lit_space   db ' '
+DIAG_LIT_SPACE_LEN   = $ - diag_lit_space
+; The two payload labels. `fix` means §8.3 promised it and `exsc emenda` may
+; batch it; `suggestion` means a human should read it and no tool should
+; apply it unattended. See this file's header.
+diag_lit_fixword db 'fix'
+DIAG_LIT_FIXWORD_LEN = $ - diag_lit_fixword
+diag_lit_sugword db 'suggestion'
+DIAG_LIT_SUGWORD_LEN = $ - diag_lit_sugword
+diag_lit_paren   db ' ('
+DIAG_LIT_PAREN_LEN   = $ - diag_lit_paren
 
 diag_j_open      db '{"code":"'
 DIAG_J_OPEN_LEN      = $ - diag_j_open
@@ -169,16 +249,34 @@ diag_j_msg       db '},"message":"'
 DIAG_J_MSG_LEN       = $ - diag_j_msg
 diag_j_snip      db '","snippet":"'
 DIAG_J_SNIP_LEN      = $ - diag_j_snip
-diag_j_fixnull   db '","fix":null}'
-DIAG_J_FIXNULL_LEN   = $ - diag_j_fixnull
-diag_j_fixopen   db '","fix":{"kind":"'
-DIAG_J_FIXOPEN_LEN   = $ - diag_j_fixopen
 diag_j_fixfid    db '","file_id":'
 DIAG_J_FIXFID_LEN    = $ - diag_j_fixfid
 diag_j_fixtext   db ',"text":"'
 DIAG_J_FIXTEXT_LEN   = $ - diag_j_fixtext
-diag_j_close     db '"}}'
-DIAG_J_CLOSE_LEN     = $ - diag_j_close
+diag_j_note      db '","note":'
+DIAG_J_NOTE_LEN      = $ - diag_j_note
+diag_j_noteid    db ',"note_id":'
+DIAG_J_NOTEID_LEN    = $ - diag_j_noteid
+diag_j_related   db ',"related":'
+DIAG_J_RELATED_LEN   = $ - diag_j_related
+diag_j_snip2     db ',"snippet":"'
+DIAG_J_SNIP2_LEN     = $ - diag_j_snip2
+diag_j_fixmemb   db '","fix":'
+DIAG_J_FIXMEMB_LEN   = $ - diag_j_fixmemb
+diag_j_suggmemb  db ',"suggestion":'
+DIAG_J_SUGGMEMB_LEN  = $ - diag_j_suggmemb
+diag_j_null      db 'null'
+DIAG_J_NULL_LEN      = $ - diag_j_null
+diag_j_kindopen  db '{"kind":"'
+DIAG_J_KINDOPEN_LEN  = $ - diag_j_kindopen
+diag_j_fidopen   db '{"file_id":'
+DIAG_J_FIDOPEN_LEN   = $ - diag_j_fidopen
+diag_j_quote     db '"'
+DIAG_J_QUOTE_LEN     = $ - diag_j_quote
+diag_j_objend    db '}'
+DIAG_J_OBJEND_LEN    = $ - diag_j_objend
+diag_j_textend   db '"}'
+DIAG_J_TEXTEND_LEN   = $ - diag_j_textend
 
 ; ---- output cursor operations ----------------------------------------------
 
@@ -226,10 +324,17 @@ proc diag_out_bytes, wr, src, n
 	return
 endp
 
-; __diag_out_esc_mode(wr, src, n, mode) -> rax = bytes actually appended.
+; __diag_out_esc_mode(wr, src, n, mode) -> rax = bytes actually appended,
+; rdx = the TERMINAL COLUMNS those bytes occupy.
 ; The single point at which this file reaches escape.inc; both public
 ; wrappers below go through it, so there is exactly one place where a call
 ; could have forgotten to escape, and it is this one.
+;
+; The column count is escape.inc's `rcx`, forwarded because the caret line
+; below has to be padded in columns and the source line above it is printed
+; in characters. Using the byte count for both is `docs/design/
+; diagnostics-review.md` D4: a caret one column too far right for every
+; multibyte character before it.
 ;
 ; Unlike diag_out_bytes this is NOT all-or-nothing: diag_escape fills what it
 ; can and reports truncation, and a partially-escaped tail is fine for the
@@ -248,16 +353,19 @@ proc __diag_out_esc_mode, wr, src, n, mode
 	mov	rcx, [rbx + DiagOut.cap]
 	sub	rcx, [rbx + DiagOut.len]
 	mov	r8, [mode]
-	call	__diag_escape_core	; rax = written, rdx = truncated
+	call	__diag_escape_core	; rax = written, rdx = trunc, rcx = columns
 	add	[rbx + DiagOut.len], rax
 	test	edx, edx
 	jz	.ok
 	mov	dword [rbx + DiagOut.trunc], 1
   .ok:
+	mov	rdx, rcx
 	return
 endp
 
-; diag_out_esc(wr, src, n) -> rax = bytes appended. Human-readable escaping.
+; diag_out_esc(wr, src, n) -> rax = bytes appended, rdx = columns occupied.
+; Human-readable escaping. Callers that only place text want `rax`; the one
+; caller that has to align something under it wants `rdx`.
 proc diag_out_esc, wr, src, n
 	locals
 	endl
@@ -269,8 +377,9 @@ proc diag_out_esc, wr, src, n
 	return
 endp
 
-; diag_out_jstr(wr, src, n) -> rax = bytes appended. JSON string BODY; the
-; caller owns the surrounding quotes.
+; diag_out_jstr(wr, src, n) -> rax = bytes appended (rdx is a column count
+; that means nothing in this mode -- a JSON member is not a terminal). JSON
+; string BODY; the caller owns the surrounding quotes.
 proc diag_out_jstr, wr, src, n
 	locals
 	endl
@@ -341,20 +450,74 @@ proc diag_init, diagrec, code_num, file_id, off, len
 	mov	rbx, [diagrec]
 	mov	eax, [code_num]
 	mov	[rbx + Diag.code_num], eax
-	mov	dword [rbx + Diag.pad0], 0
+	mov	dword [rbx + Diag.note_id], DIAG_NOTE_NONE
 	mov	eax, [file_id]
 	mov	[rbx + Diag.span.file_id], eax
 	mov	eax, [off]
 	mov	[rbx + Diag.span.start], eax
 	mov	eax, [len]
 	mov	[rbx + Diag.span.len], eax
-	mov	dword [rbx + Diag.pad1], 0
+	mov	dword [rbx + Diag.flags], 0
 	mov	qword [rbx + Diag.src_ptr], 0
 	mov	qword [rbx + Diag.src_len], 0
 	mov	qword [rbx + Diag.path_ptr], 0
 	mov	qword [rbx + Diag.path_len], 0
+	mov	dword [rbx + Diag.rel.file_id], 0
+	mov	dword [rbx + Diag.rel.start], 0
+	mov	dword [rbx + Diag.rel.len], 0
+	mov	dword [rbx + Diag.pad2], 0
+	mov	qword [rbx + Diag.arg_ptr], 0
+	mov	qword [rbx + Diag.arg_len], 0
 	lea	rdi, [rbx + Diag.fix]
 	call	diag_fix_clear
+	return
+endp
+
+; diag_note_set(diagrec, note_id, arg_ptr, arg_len) -- attach a note. `note_id`
+; is one of notes.inc's `DIAG_NOTE_*`; `arg_ptr`/`arg_len` may be zero for a
+; note that takes no argument.
+;
+; THIS IS THE HOOK FOR THE PASSES, and it is deliberately more capable than
+; anything currently calls it. A pass knows things the renderer cannot
+; recover from a span -- which token was expected, which rule was being
+; parsed -- and `docs/design/diagnostics-review.md`'s own remedy is to
+; populate this at the construction sites. Until those sites call it,
+; `__diag_advise` derives what it can from the span's own bytes; a note set
+; here always wins, because a pass that says something specific is never
+; improved on by a guess.
+proc diag_note_set, diagrec, note_id, arg_ptr, arg_len
+	uses	rbx
+	locals
+	endl
+	mov	rbx, [diagrec]
+	mov	eax, [note_id]
+	mov	[rbx + Diag.note_id], eax
+	mov	rax, [arg_ptr]
+	mov	[rbx + Diag.arg_ptr], rax
+	mov	rax, [arg_len]
+	mov	[rbx + Diag.arg_len], rax
+	return
+endp
+
+; diag_rel_set(diagrec, file_id, off, len) -- attach the RELATED span: the
+; place a reader has to look at to understand the one the diagnostic is
+; reported at. `EXS-E0202` at end of file and the `{` three lines up are the
+; case this exists for (review D6); rustc and clang both do this and it is
+; the single thing they do that this renderer could not express.
+;
+; Sets DIAG_F_REL. There is no unset -- clearing the record is `diag_init`.
+proc diag_rel_set, diagrec, file_id, off, len
+	uses	rbx
+	locals
+	endl
+	mov	rbx, [diagrec]
+	mov	eax, [file_id]
+	mov	[rbx + Diag.rel.file_id], eax
+	mov	eax, [off]
+	mov	[rbx + Diag.rel.start], eax
+	mov	eax, [len]
+	mov	[rbx + Diag.rel.len], eax
+	or	dword [rbx + Diag.flags], DIAG_F_REL
 	return
 endp
 
@@ -389,9 +552,439 @@ proc diag_fix_ptr, diagrec
 	return
 endp
 
+; ---- shared rendering helpers ----------------------------------------------
+
+; __diag_dec_width(value) -> rax = the number of decimal digits `value` prints
+; as. Measured by formatting it into a throwaway frame buffer rather than by a
+; compare chain, so there is exactly one decimal formatter in this module and
+; the gutter can never disagree with the number printed in it.
+proc __diag_dec_width, value
+	locals
+		slot dwbuf, 12		; 2^32-1 is 10 digits
+	endl
+	mov	edi, [value]
+	lea	rsi, [dwbuf]
+	mov	rdx, 12
+	call	diag_fmt_u32
+	return
+endp
+
+; __diag_echo_line(wr, esrc, eslen, eoff, espan, egut) -- one gutter block:
+; the source line containing `eoff`, escaped, and under it a caret run under
+; the `espan` bytes starting at `eoff`. `egut` is the gutter width in decimal
+; digits, passed in rather than computed here so a primary and a related
+; block line up with each other.
+;
+; THE CARET RUN AND ITS PADDING ARE IN COLUMNS, NOT BYTES. `diag_out_esc`
+; returns both counts; this routine keeps `rdx` (columns) and discards `rax`
+; (bytes). Getting that backwards is `docs/design/diagnostics-review.md` D4:
+; the escaped-codepoint case was already right (an escape sequence is ASCII,
+; so its two counts coincide) and the pass-through multibyte case was never
+; considered, which put the caret one column right per non-ASCII character
+; before it -- on ordinary Latin identifiers, in a language whose §8.1 policy
+; exists to admit them.
+;
+; Both endpoints are clamped into the line: a caret run must fit on one line
+; even when the span does not.
+proc __diag_echo_line, wr, esrc, eslen, eoff, espan, egut
+	uses	rbx
+	locals
+		slot elin,    dq
+		slot elstart, dq
+		slot elend,   dq
+		slot es0,     dq
+		slot es1,     dq
+		slot epre,    dq
+		slot emid,    dq
+		slot elw,     dq
+	endl
+	mov	rdi, [esrc]
+	mov	rsi, [eslen]
+	mov	rdx, [eoff]
+	call	diag_line_col		; rax = line (rdx = col, unused here)
+	mov	[elin], rax
+
+	mov	rdi, [esrc]
+	mov	rsi, [eslen]
+	mov	rdx, [eoff]
+	call	diag_line_bounds	; rax = line start, rdx = line end
+	mov	[elstart], rax
+	mov	[elend], rdx
+
+	; s0 = clamp(eoff, lstart, lend)
+	mov	rax, [eoff]
+	cmp	rax, [elstart]
+	jae	.s0_lo
+	mov	rax, [elstart]
+  .s0_lo:
+	cmp	rax, [elend]
+	jbe	.s0_hi
+	mov	rax, [elend]
+  .s0_hi:
+	mov	[es0], rax
+
+	; s1 = clamp(eoff + espan, s0, lend)
+	mov	rax, [eoff]
+	add	rax, [espan]
+	cmp	rax, [es0]
+	jae	.s1_lo
+	mov	rax, [es0]
+  .s1_lo:
+	cmp	rax, [elend]
+	jbe	.s1_hi
+	mov	rax, [elend]
+  .s1_hi:
+	mov	[es1], rax
+
+	; ---- ` LINE | ` ----
+	mov	rdi, [elin]
+	call	__diag_dec_width
+	mov	[elw], rax
+	mov	rdx, [egut]
+	inc	rdx
+	cmp	rdx, [elw]
+	jae	.padok
+	mov	rdx, [elw]		; defensive: never fill a negative count
+  .padok:
+	sub	rdx, [elw]
+	mov	rdi, [wr]
+	mov	esi, ' '
+	call	diag_out_fill
+	mov	rdi, [wr]
+	mov	esi, dword [elin]
+	call	diag_out_u32
+	mov	rdi, [wr]
+	lea	rsi, [diag_lit_bar]
+	mov	rdx, DIAG_LIT_BAR_LEN
+	call	diag_out_bytes
+
+	; ---- the line, escaped in three pieces so the two widths fall out ----
+	mov	rdi, [wr]
+	mov	rsi, [esrc]
+	add	rsi, [elstart]
+	mov	rdx, [es0]
+	sub	rdx, [elstart]
+	call	diag_out_esc
+	mov	[epre], rdx		; COLUMNS
+
+	mov	rdi, [wr]
+	mov	rsi, [esrc]
+	add	rsi, [es0]
+	mov	rdx, [es1]
+	sub	rdx, [es0]
+	call	diag_out_esc
+	mov	[emid], rdx		; COLUMNS
+
+	mov	rdi, [wr]
+	mov	rsi, [esrc]
+	add	rsi, [es1]
+	mov	rdx, [elend]
+	sub	rdx, [es1]
+	call	diag_out_esc
+
+	mov	rdi, [wr]
+	lea	rsi, [diag_lit_nl]
+	mov	rdx, DIAG_LIT_NL_LEN
+	call	diag_out_bytes
+
+	; ---- the caret line ----
+	mov	rdi, [wr]
+	mov	esi, ' '
+	mov	rdx, [egut]
+	inc	rdx
+	call	diag_out_fill
+	mov	rdi, [wr]
+	lea	rsi, [diag_lit_bar]
+	mov	rdx, DIAG_LIT_BAR_LEN
+	call	diag_out_bytes
+	mov	rdi, [wr]
+	mov	esi, ' '
+	mov	rdx, [epre]
+	call	diag_out_fill
+	mov	rdx, [emid]
+	test	rdx, rdx
+	jnz	.carets
+	mov	rdx, 1			; a zero-length span still points somewhere
+  .carets:
+	mov	rdi, [wr]
+	mov	esi, '^'
+	call	diag_out_fill
+	mov	rdi, [wr]
+	lea	rsi, [diag_lit_nl]
+	mov	rdx, DIAG_LIT_NL_LEN
+	call	diag_out_bytes
+	return
+endp
+
+; __diag_advise(diagrec, advout) -- fill a `DiagAdvice` with the note this
+; diagnostic should print. A note the record already carries is copied
+; through unchanged; otherwise one is DERIVED from the code and the span's
+; own bytes.
+;
+; WHY DERIVE AT ALL, when `diag_note_set` exists. Because the passes that
+; construct these records live in other trees, and `docs/design/
+; diagnostics-review.md`'s measurement is about what a user sees TODAY: 80%
+; of diagnostics were one sentence. Everything below is recoverable from the
+; record alone -- the code, the bytes the span covers, and the edit already
+; attached -- so it needs no cooperation from the parser and cannot be out of
+; date with respect to it. A pass that later calls `diag_note_set` overrides
+; all of it, which is the right precedence: a parser knows what it EXPECTED,
+; and nothing here can.
+;
+; PURE. It writes only into `advout`, never into the record, so rendering a
+; `Diag` twice yields the same bytes twice and the two renderers cannot
+; disagree about what the note was.
+;
+; DETERMINISTIC. Every branch below is a function of bytes -- no pointer, no
+; hash, no iteration order (CLAUDE.md).
+;
+; ORDER MATTERS AND IS DELIBERATE. An English keyword is checked before the
+; near-miss scan, because `if` is one edit from the reserved word `in` and
+; two from `si`: a Levenshtein-first order would answer "did you mean `in`"
+; to the single most common first-day mistake in the language. The symbolic
+; comparison check precedes the fix-derived ones for the same reason -- `a >
+; 10` carries an insert-`;` edit, and "spec 8.6 decision 6" is a better
+; sentence than "statements end with a semicolon" when the token is `>`.
+proc __diag_advise, diagrec, advout
+	uses	rbx, r12, r13
+	locals
+		slot spptr,  dq
+		slot splen,  dq
+		slot fxtp,   dq
+		slot fxtl,   dq
+		slot engrow, dd
+		slot advpad, dd
+	endl
+	mov	rbx, [diagrec]
+	mov	r12, [advout]
+	mov	dword [r12 + DiagAdvice.note_id], DIAG_NOTE_NONE
+	mov	dword [r12 + DiagAdvice.pad0], 0
+	mov	qword [r12 + DiagAdvice.arg_ptr], 0
+	mov	qword [r12 + DiagAdvice.arg_len], 0
+
+	mov	eax, [rbx + Diag.note_id]
+	test	eax, eax
+	jz	.derive
+	mov	[r12 + DiagAdvice.note_id], eax
+	mov	rax, [rbx + Diag.arg_ptr]
+	mov	[r12 + DiagAdvice.arg_ptr], rax
+	mov	rax, [rbx + Diag.arg_len]
+	mov	[r12 + DiagAdvice.arg_len], rax
+	return
+
+  .derive:
+	; the span's own bytes, clamped into whatever source is attached
+	mov	qword [spptr], 0
+	mov	qword [splen], 0
+	cmp	qword [rbx + Diag.src_len], 0
+	je	.nospan
+	mov	eax, [rbx + Diag.span.start]
+	cmp	rax, [rbx + Diag.src_len]
+	jbe	.c0
+	mov	rax, [rbx + Diag.src_len]
+  .c0:
+	mov	r13, rax
+	mov	eax, [rbx + Diag.span.start]
+	mov	ecx, [rbx + Diag.span.len]
+	add	rax, rcx
+	cmp	rax, [rbx + Diag.src_len]
+	jbe	.c1
+	mov	rax, [rbx + Diag.src_len]
+  .c1:
+	cmp	rax, r13
+	jae	.c2
+	mov	rax, r13
+  .c2:
+	sub	rax, r13
+	mov	[splen], rax
+	mov	rax, [rbx + Diag.src_ptr]
+	add	rax, r13
+	mov	[spptr], rax
+  .nospan:
+
+	; the attached edit's replacement text, if there is one
+	mov	qword [fxtp], 0
+	mov	qword [fxtl], 0
+	mov	eax, [rbx + Diag.fix.kind]
+	cmp	eax, DIAG_FIX_NONE
+	je	.nofix
+	mov	rax, [rbx + Diag.fix.text_ptr]
+	mov	[fxtp], rax
+	mov	rax, [rbx + Diag.fix.text_len]
+	mov	[fxtl], rax
+  .nofix:
+
+	mov	eax, [rbx + Diag.code_num]
+	cmp	eax, 201
+	je	.k201
+	cmp	eax, 202
+	je	.keof
+	cmp	eax, 203
+	je	.keof
+	cmp	eax, 210
+	je	.k210
+	cmp	eax, 220
+	je	.k220
+	return
+
+	; ---- EXS-E0201 unexpected token ----
+  .k201:
+	cmp	qword [splen], 0
+	je	.k201_prev
+
+	mov	rdi, [spptr]
+	mov	rsi, [splen]
+	call	diag_eng_lookup
+	cmp	eax, -1
+	je	.k201_cmp
+	mov	[engrow], eax
+	mov	edi, eax
+	call	diag_eng_note_id
+	mov	[r12 + DiagAdvice.note_id], eax
+	mov	edi, [engrow]
+	call	diag_eng_kw_word	; rax = ptr, rdx = len (0 if none)
+	mov	[r12 + DiagAdvice.arg_ptr], rax
+	mov	[r12 + DiagAdvice.arg_len], rdx
+	return
+
+  .k201_cmp:
+	mov	rdi, [spptr]
+	mov	rsi, [splen]
+	call	diag_cmp_word		; rax = ptr, rdx = len (0 if none)
+	test	rdx, rdx
+	jz	.k201_near
+	mov	dword [r12 + DiagAdvice.note_id], DIAG_NOTE_CMP_WORD
+	mov	[r12 + DiagAdvice.arg_ptr], rax
+	mov	[r12 + DiagAdvice.arg_len], rdx
+	return
+
+  .k201_near:
+	mov	rdi, [spptr]
+	mov	rsi, [splen]
+	call	diag_span_is_word
+	test	eax, eax
+	jz	.k201_prev
+	mov	rdi, [spptr]
+	mov	rsi, [splen]
+	call	diag_kw_nearest
+	cmp	eax, -1
+	je	.k201_prev
+	mov	edi, eax
+	call	diag_kw_word
+	mov	dword [r12 + DiagAdvice.note_id], DIAG_NOTE_DID_YOU_MEAN
+	mov	[r12 + DiagAdvice.arg_ptr], rax
+	mov	[r12 + DiagAdvice.arg_len], rdx
+	return
+
+	; Nothing in the span itself said anything. Look at the word BEFORE the
+	; place the parser wants a token inserted: `if a > 10` reports at `a`,
+	; because `if` is a legal identifier and only the token after it is
+	; unexpected, so the span can never name the mistake and the word
+	; before the insertion point always does. diag_prev_word's header
+	; carries the bound and the named false positive.
+  .k201_prev:
+	cmp	qword [rbx + Diag.src_len], 0
+	je	.k201_edit
+	mov	rdi, [rbx + Diag.src_ptr]
+	mov	rsi, [rbx + Diag.src_len]
+	cmp	dword [rbx + Diag.fix.kind], DIAG_FIX_INSERT
+	jne	.k201_prev_span
+	mov	edx, [rbx + Diag.fix.edit.start]
+	jmp	.k201_prev_go
+  .k201_prev_span:
+	mov	edx, [rbx + Diag.span.start]
+  .k201_prev_go:
+	call	diag_prev_word		; rax = ptr, rdx = len
+	test	rdx, rdx
+	jz	.k201_edit
+	mov	rdi, rax
+	mov	rsi, rdx
+	call	diag_eng_lookup
+	cmp	eax, -1
+	je	.k201_edit
+	mov	[engrow], eax
+	mov	edi, eax
+	call	diag_eng_note_id
+	mov	[r12 + DiagAdvice.note_id], eax
+	mov	edi, [engrow]
+	call	diag_eng_kw_word
+	mov	[r12 + DiagAdvice.arg_ptr], rax
+	mov	[r12 + DiagAdvice.arg_len], rdx
+	return
+
+	; Last resort: say what the attached edit says the parser wanted. This
+	; is the case that covers a forgotten `;` -- the most common single
+	; mistake in the review's corpus and, before this, the one that said
+	; nothing at all beyond `unexpected token`.
+  .k201_edit:
+	cmp	dword [rbx + Diag.fix.kind], DIAG_FIX_INSERT
+	jne	.knone
+	cmp	qword [fxtl], 1
+	jne	.knone
+	mov	rcx, [fxtp]
+	movzx	eax, byte [rcx]
+	cmp	eax, ';'
+	je	.k201_semi
+	cmp	eax, '}'
+	je	.k201_close
+	cmp	eax, ')'
+	je	.k201_close
+	cmp	eax, ']'
+	je	.k201_close
+	cmp	eax, '>'
+	je	.k201_close
+	return
+  .k201_semi:
+	mov	dword [r12 + DiagAdvice.note_id], DIAG_NOTE_STMT_SEMI
+	return
+  .k201_close:
+	mov	dword [r12 + DiagAdvice.note_id], DIAG_NOTE_UNCLOSED
+	mov	rax, [fxtp]
+	mov	[r12 + DiagAdvice.arg_ptr], rax
+	mov	rax, [fxtl]
+	mov	[r12 + DiagAdvice.arg_len], rax
+	return
+
+	; ---- EXS-E0202 / EXS-E0203, both at or past end of input ----
+	; Naming the CONSTRUCT is what this can do from the record alone;
+	; naming WHERE it was opened needs `diag_rel_set`, which only the
+	; parser can call. Review D6 wanted both; this is the half that does
+	; not require the other tree.
+  .keof:
+	cmp	qword [fxtl], 0
+	je	.keof_bare
+	mov	dword [r12 + DiagAdvice.note_id], DIAG_NOTE_EOF_OPEN
+	mov	rax, [fxtp]
+	mov	[r12 + DiagAdvice.arg_ptr], rax
+	mov	rax, [fxtl]
+	mov	[r12 + DiagAdvice.arg_len], rax
+	return
+  .keof_bare:
+	mov	dword [r12 + DiagAdvice.note_id], DIAG_NOTE_EOF_NOCLOSE
+	return
+
+	; ---- EXS-E0210 malformed literal ----
+  .k210:
+	mov	rdi, [spptr]
+	mov	rsi, [splen]
+	call	diag_span_is_numsuffix
+	test	eax, eax
+	jz	.knone
+	mov	dword [r12 + DiagAdvice.note_id], DIAG_NOTE_LIT_SUFFIX
+	return
+
+	; ---- EXS-E0220 reserved keyword used as identifier ----
+  .k220:
+	mov	dword [r12 + DiagAdvice.note_id], DIAG_NOTE_RESERVED
+	return
+
+  .knone:
+	return
+endp
+
 ; ---- human-readable rendering ----------------------------------------------
 ; Format, by example (a `|` gutter, rustc-shaped, because it is the shape
-; people already read). This is REAL output, copied from a run of
+; people already read). This is REAL output, from a run of
 ; tests/unit/diag_render_text.asm's case A, which pins it byte for byte --
 ; not a sketch:
 ;
@@ -400,12 +993,26 @@ endp
 ;      |         ^^^^^^^^^^^^^^^^^^^^
 ;      = fix (replace): bytes 30..40 -> "archivum"
 ;
-; The caret run is computed from the ESCAPED widths, not the source widths --
-; `pre` and `mid` below are what diag_escape actually wrote, so a span
-; preceded by a bidi override still gets its carets under the right thing.
-; Above, the span is 10 SOURCE bytes and 20 RENDERED ones, and the carets are
-; 20 wide. Taking the width from the raw byte offsets instead is the obvious
-; mistake and misaligns by six characters per escaped codepoint.
+; and, with everything the record can carry, from a real run of `exsc` on the
+; review's case c02:
+;
+;   c02.exsc:7:1: error[EXS-E0202]: unterminated construct
+;    7 |
+;      | ^
+;      = note: the file ends inside a construct opened earlier; it wants }
+;      = opened here
+;    3 |     si a gt 3 {
+;      |               ^
+;      = suggestion (insert): bytes 108..108 -> "}"
+;
+; FOUR OPTIONAL BLOCKS, ALWAYS IN THIS ORDER: the source echo, the note, the
+; related span, the payload. The order is fixed here in source rather than
+; driven by any table, for the reason this file's DETERMINISM paragraph
+; gives.
+;
+; `fix` versus `suggestion` is decided by `diag_fix_required(code_num)` and
+; nothing else -- see this file's header for why an advisory edit must never
+; be labelled the way a §8.3 fix is.
 ;
 ; diag_render_text(diagrec, buf, cap) -> rax = bytes written, rdx = 1 if the
 ; output was truncated.
@@ -413,17 +1020,12 @@ proc diag_render_text, diagrec, buf, cap
 	uses	rbx
 	locals
 		slot wr,     32
-		slot numbuf, 12
-		slot idx,    dd
+		slot adv,    24
 		slot lin,    dq
 		slot col,    dq
-		slot lstart, dq
-		slot lend,   dq
-		slot s0,     dq
-		slot s1,     dq
-		slot pre,    dq
-		slot mid,    dq
 		slot digits, dq
+		slot idx,    dd
+		slot rpad,   dd
 	endl
 	mov	rbx, [diagrec]
 
@@ -493,119 +1095,118 @@ proc diag_render_text, diagrec, buf, cap
 	mov	rdx, DIAG_LIT_NL_LEN
 	call	diag_out_bytes
 
-	; gutter width is the line number's decimal width; measure it once
-	mov	edi, dword [lin]
-	lea	rsi, [numbuf]
-	mov	rdx, 12
-	call	diag_fmt_u32
+	; ---- gutter width: the widest line number this record will print ----
+	; A related span three lines above a primary one at line 100 must share
+	; a gutter, or the two blocks do not read as one diagnostic.
+	mov	rdi, [lin]
+	call	__diag_dec_width
 	mov	[digits], rax
-
-	; ---- source line and carets (skipped when no source is attached) ----
+	test	dword [rbx + Diag.flags], DIAG_F_REL
+	jz	.gutter_done
 	cmp	qword [rbx + Diag.src_len], 0
-	je	.fixblock
-
+	je	.gutter_done
 	mov	rdi, [rbx + Diag.src_ptr]
 	mov	rsi, [rbx + Diag.src_len]
-	mov	edx, [rbx + Diag.span.start]
-	call	diag_line_bounds
-	mov	[lstart], rax
-	mov	[lend], rdx
+	mov	edx, [rbx + Diag.rel.start]
+	call	diag_line_col
+	mov	rdi, rax
+	call	__diag_dec_width
+	cmp	rax, [digits]
+	jbe	.gutter_done
+	mov	[digits], rax
+  .gutter_done:
 
-	; s0 = clamp(span.start, lstart, lend)
-	mov	eax, [rbx + Diag.span.start]
-	cmp	rax, [lstart]
-	jae	.s0_lo
-	mov	rax, [lstart]
-  .s0_lo:
-	cmp	rax, [lend]
-	jbe	.s0_hi
-	mov	rax, [lend]
-  .s0_hi:
-	mov	[s0], rax
-
-	; s1 = clamp(span.start + span.len, s0, lend)
-	mov	eax, [rbx + Diag.span.start]
-	mov	ecx, [rbx + Diag.span.len]
-	add	rax, rcx
-	cmp	rax, [s0]
-	jae	.s1_lo
-	mov	rax, [s0]
-  .s1_lo:
-	cmp	rax, [lend]
-	jbe	.s1_hi
-	mov	rax, [lend]
-  .s1_hi:
-	mov	[s1], rax
-
-	lea	rdi, [wr]
-	mov	esi, ' '
-	mov	rdx, 1
-	call	diag_out_fill
-	lea	rdi, [wr]
-	mov	esi, dword [lin]
-	call	diag_out_u32
-	lea	rdi, [wr]
-	lea	rsi, [diag_lit_bar]
-	mov	rdx, DIAG_LIT_BAR_LEN
-	call	diag_out_bytes
-
-	; the line, escaped in three pieces so the two boundary widths fall out
+	; ---- the source echo (skipped when no source is attached) ----
+	cmp	qword [rbx + Diag.src_len], 0
+	je	.noteblock
 	lea	rdi, [wr]
 	mov	rsi, [rbx + Diag.src_ptr]
-	add	rsi, [lstart]
-	mov	rdx, [s0]
-	sub	rdx, [lstart]
-	call	diag_out_esc
-	mov	[pre], rax
+	mov	rdx, [rbx + Diag.src_len]
+	mov	ecx, [rbx + Diag.span.start]
+	mov	r8d, [rbx + Diag.span.len]
+	mov	r9, [digits]
+	call	__diag_echo_line
 
-	lea	rdi, [wr]
-	mov	rsi, [rbx + Diag.src_ptr]
-	add	rsi, [s0]
-	mov	rdx, [s1]
-	sub	rdx, [s0]
-	call	diag_out_esc
-	mov	[mid], rax
+	; ---- the note ----
+  .noteblock:
+	mov	rdi, rbx
+	lea	rsi, [adv]
+	call	__diag_advise
+	mov	eax, [adv + DiagAdvice.note_id]
+	test	eax, eax
+	jz	.relblock
 
-	lea	rdi, [wr]
-	mov	rsi, [rbx + Diag.src_ptr]
-	add	rsi, [s1]
-	mov	rdx, [lend]
-	sub	rdx, [s1]
-	call	diag_out_esc
-
-	lea	rdi, [wr]
-	lea	rsi, [diag_lit_nl]
-	mov	rdx, DIAG_LIT_NL_LEN
-	call	diag_out_bytes
-
-	; caret line
 	lea	rdi, [wr]
 	mov	esi, ' '
 	mov	rdx, [digits]
 	inc	rdx
 	call	diag_out_fill
 	lea	rdi, [wr]
-	lea	rsi, [diag_lit_bar]
-	mov	rdx, DIAG_LIT_BAR_LEN
+	lea	rsi, [diag_lit_eq]
+	mov	rdx, DIAG_LIT_EQ_LEN
 	call	diag_out_bytes
 	lea	rdi, [wr]
-	mov	esi, ' '
-	mov	rdx, [pre]
-	call	diag_out_fill
-	mov	rdx, [mid]
-	test	rdx, rdx
-	jnz	.carets
-	mov	rdx, 1			; a zero-length span still points somewhere
-  .carets:
+	lea	rsi, [diag_lit_note]
+	mov	rdx, DIAG_LIT_NOTE_LEN
+	call	diag_out_bytes
+
+	mov	edi, [adv + DiagAdvice.note_id]
+	call	diag_note_text		; rax = ptr, rdx = len
+	mov	rsi, rax
 	lea	rdi, [wr]
-	mov	esi, '^'
-	call	diag_out_fill
+	call	diag_out_esc
+
+	cmp	qword [adv + DiagAdvice.arg_len], 0
+	je	.note_nl
+	lea	rdi, [wr]
+	lea	rsi, [diag_lit_space]
+	mov	rdx, DIAG_LIT_SPACE_LEN
+	call	diag_out_bytes
+	lea	rdi, [wr]
+	mov	rsi, [adv + DiagAdvice.arg_ptr]
+	mov	rdx, [adv + DiagAdvice.arg_len]
+	call	diag_out_esc
+  .note_nl:
 	lea	rdi, [wr]
 	lea	rsi, [diag_lit_nl]
 	mov	rdx, DIAG_LIT_NL_LEN
 	call	diag_out_bytes
 
-	; ---- fix line ----
+	; ---- the related span ----
+  .relblock:
+	test	dword [rbx + Diag.flags], DIAG_F_REL
+	jz	.fixblock
+	cmp	qword [rbx + Diag.src_len], 0
+	je	.fixblock
+
+	lea	rdi, [wr]
+	mov	esi, ' '
+	mov	rdx, [digits]
+	inc	rdx
+	call	diag_out_fill
+	lea	rdi, [wr]
+	lea	rsi, [diag_lit_eq]
+	mov	rdx, DIAG_LIT_EQ_LEN
+	call	diag_out_bytes
+	mov	edi, DIAG_NOTE_OPENED_AT
+	call	diag_note_text
+	mov	rsi, rax
+	lea	rdi, [wr]
+	call	diag_out_esc
+	lea	rdi, [wr]
+	lea	rsi, [diag_lit_nl]
+	mov	rdx, DIAG_LIT_NL_LEN
+	call	diag_out_bytes
+
+	lea	rdi, [wr]
+	mov	rsi, [rbx + Diag.src_ptr]
+	mov	rdx, [rbx + Diag.src_len]
+	mov	ecx, [rbx + Diag.rel.start]
+	mov	r8d, [rbx + Diag.rel.len]
+	mov	r9, [digits]
+	call	__diag_echo_line
+
+	; ---- the payload: a §8.3 fix, or an advisory suggestion ----
   .fixblock:
 	mov	eax, [rbx + Diag.fix.kind]
 	cmp	eax, DIAG_FIX_NONE
@@ -620,9 +1221,23 @@ proc diag_render_text, diagrec, buf, cap
 	lea	rsi, [diag_lit_eq]
 	mov	rdx, DIAG_LIT_EQ_LEN
 	call	diag_out_bytes
+
+	mov	edi, [rbx + Diag.code_num]
+	call	diag_fix_required
+	test	eax, eax
+	jz	.label_sugg
+	lea	rsi, [diag_lit_fixword]
+	mov	rdx, DIAG_LIT_FIXWORD_LEN
+	jmp	.label_out
+  .label_sugg:
+	lea	rsi, [diag_lit_sugword]
+	mov	rdx, DIAG_LIT_SUGWORD_LEN
+  .label_out:
 	lea	rdi, [wr]
-	lea	rsi, [diag_lit_fixopen]
-	mov	rdx, DIAG_LIT_FIXOPEN_LEN
+	call	diag_out_bytes
+	lea	rdi, [wr]
+	lea	rsi, [diag_lit_paren]
+	mov	rdx, DIAG_LIT_PAREN_LEN
 	call	diag_out_bytes
 
 	mov	edi, [rbx + Diag.fix.kind]
@@ -682,16 +1297,34 @@ endp
 ;
 ;   {"code":"EXS-E0421","code_num":421,"file":"...","line":2,"col":9,
 ;    "span":{"file_id":3,"start":30,"len":10},"message":"...",
-;    "snippet":"...","fix":null}
+;    "note":null,"note_id":0,"related":null,"snippet":"...",
+;    "fix":null,"suggestion":null}
 ;
-; and with a fix, the last member instead reads
+; and each optional member, when present:
 ;
+;   "note":"did you mean the reserved word functio","note_id":3
+;   "related":{"file_id":3,"start":41,"len":1}
 ;   "fix":{"kind":"replace","file_id":3,"start":30,"len":10,"text":"..."}
+;   "suggestion":{"kind":"insert","file_id":3,"start":76,"len":0,"text":";"}
 ;
-; `fix` is ALWAYS present -- `null` when there is none -- so a consumer's
-; schema does not change shape between diagnostics. `snippet` is the span's
-; own bytes, escaped; the surrounding line is not repeated, because a
-; consumer that wants it has `file`, `start` and `len` and can take it.
+; EVERY MEMBER IS ALWAYS PRESENT -- `null` when there is nothing -- so a
+; consumer's schema never changes shape between diagnostics. That was already
+; true of `fix` and the four members added here keep the rule.
+;
+; `note_id` IS THE MACHINE HALF OF `note`, and it is what a tool matches on.
+; `note` itself is English and, exactly like `message`, may change; §8.3's
+; "codes are permanent; text is not" now covers a second permanent integer.
+;
+; `fix` AND `suggestion` ARE NOT THE SAME MEMBER UNDER TWO NAMES. `fix` is
+; §8.3's promise -- capability and lexicon errors, where the edit is
+; mechanically derivable -- and is what `exsc emenda` may batch. `suggestion`
+; is an edit this compiler offers on any other code; it is shown to a human
+; and must not be applied unattended. See this file's header for the
+; measurement that forced the split. At most one of the two is ever non-null.
+;
+; `snippet` is the span's own bytes, escaped; the surrounding line is not
+; repeated, because a consumer that wants it has `file`, `start` and `len`
+; and can take it.
 ;
 ; Every string member's body goes through diag_out_jstr, which is
 ; escape.inc's JSON mode: the value a parser hands back is exactly the
@@ -706,8 +1339,10 @@ endp
 proc diag_render_json, diagrec, buf, cap
 	uses	rbx
 	locals
-		slot wr, 32
+		slot wr,  32
+		slot adv, 24
 		slot idx, dd
+		slot jpad, dd
 		slot s0,  dq
 		slot s1,  dq
 	endl
@@ -806,7 +1441,98 @@ proc diag_render_json, diagrec, buf, cap
 	mov	edx, [diag_code_msg_len + rax*4]
 	call	diag_out_jstr
 
-	; snippet = the span's own bytes, clamped into the attached source
+	; ---- note / note_id ----
+	mov	rdi, rbx
+	lea	rsi, [adv]
+	call	__diag_advise
+
+	lea	rdi, [wr]
+	lea	rsi, [diag_j_note]
+	mov	rdx, DIAG_J_NOTE_LEN
+	call	diag_out_bytes
+	mov	eax, [adv + DiagAdvice.note_id]
+	test	eax, eax
+	jnz	.has_note
+	lea	rdi, [wr]
+	lea	rsi, [diag_j_null]
+	mov	rdx, DIAG_J_NULL_LEN
+	call	diag_out_bytes
+	jmp	.note_done
+  .has_note:
+	lea	rdi, [wr]
+	lea	rsi, [diag_j_quote]
+	mov	rdx, DIAG_J_QUOTE_LEN
+	call	diag_out_bytes
+	mov	edi, [adv + DiagAdvice.note_id]
+	call	diag_note_text
+	mov	rsi, rax
+	lea	rdi, [wr]
+	call	diag_out_jstr
+	cmp	qword [adv + DiagAdvice.arg_len], 0
+	je	.note_close
+	lea	rdi, [wr]
+	lea	rsi, [diag_lit_space]
+	mov	rdx, DIAG_LIT_SPACE_LEN
+	call	diag_out_bytes
+	lea	rdi, [wr]
+	mov	rsi, [adv + DiagAdvice.arg_ptr]
+	mov	rdx, [adv + DiagAdvice.arg_len]
+	call	diag_out_jstr
+  .note_close:
+	lea	rdi, [wr]
+	lea	rsi, [diag_j_quote]
+	mov	rdx, DIAG_J_QUOTE_LEN
+	call	diag_out_bytes
+  .note_done:
+	lea	rdi, [wr]
+	lea	rsi, [diag_j_noteid]
+	mov	rdx, DIAG_J_NOTEID_LEN
+	call	diag_out_bytes
+	lea	rdi, [wr]
+	mov	esi, [adv + DiagAdvice.note_id]
+	call	diag_out_u32
+
+	; ---- related ----
+	lea	rdi, [wr]
+	lea	rsi, [diag_j_related]
+	mov	rdx, DIAG_J_RELATED_LEN
+	call	diag_out_bytes
+	test	dword [rbx + Diag.flags], DIAG_F_REL
+	jnz	.has_rel
+	lea	rdi, [wr]
+	lea	rsi, [diag_j_null]
+	mov	rdx, DIAG_J_NULL_LEN
+	call	diag_out_bytes
+	jmp	.rel_done
+  .has_rel:
+	lea	rdi, [wr]
+	lea	rsi, [diag_j_fidopen]
+	mov	rdx, DIAG_J_FIDOPEN_LEN
+	call	diag_out_bytes
+	lea	rdi, [wr]
+	mov	esi, [rbx + Diag.rel.file_id]
+	call	diag_out_u32
+	lea	rdi, [wr]
+	lea	rsi, [diag_j_start]
+	mov	rdx, DIAG_J_START_LEN
+	call	diag_out_bytes
+	lea	rdi, [wr]
+	mov	esi, [rbx + Diag.rel.start]
+	call	diag_out_u32
+	lea	rdi, [wr]
+	lea	rsi, [diag_j_len]
+	mov	rdx, DIAG_J_LEN_LEN
+	call	diag_out_bytes
+	lea	rdi, [wr]
+	mov	esi, [rbx + Diag.rel.len]
+	call	diag_out_u32
+	lea	rdi, [wr]
+	lea	rsi, [diag_j_objend]
+	mov	rdx, DIAG_J_OBJEND_LEN
+	call	diag_out_bytes
+  .rel_done:
+
+	; ---- snippet: the span's own bytes, clamped into the attached source --
 	mov	eax, [rbx + Diag.span.start]
 	cmp	rax, [rbx + Diag.src_len]
 	jbe	.sn0
@@ -827,8 +1553,8 @@ proc diag_render_json, diagrec, buf, cap
 	mov	[s1], rax
 
 	lea	rdi, [wr]
-	lea	rsi, [diag_j_snip]
-	mov	rdx, DIAG_J_SNIP_LEN
+	lea	rsi, [diag_j_snip2]
+	mov	rdx, DIAG_J_SNIP2_LEN
 	call	diag_out_bytes
 	lea	rdi, [wr]
 	mov	rsi, [rbx + Diag.src_ptr]
@@ -837,65 +1563,119 @@ proc diag_render_json, diagrec, buf, cap
 	sub	rdx, [s0]
 	call	diag_out_jstr
 
-	; fix
+	; ---- fix and suggestion: at most one of them is non-null ----
+	lea	rdi, [wr]
+	lea	rsi, [diag_j_fixmemb]
+	mov	rdx, DIAG_J_FIXMEMB_LEN
+	call	diag_out_bytes
 	mov	eax, [rbx + Diag.fix.kind]
 	cmp	eax, DIAG_FIX_NONE
-	jne	.has_fix
+	je	.fix_null
+	mov	edi, [rbx + Diag.code_num]
+	call	diag_fix_required
+	test	eax, eax
+	jz	.fix_null
+	mov	rdi, rbx
+	lea	rsi, [wr]
+	call	__diag_json_edit
+	jmp	.fix_done
+  .fix_null:
 	lea	rdi, [wr]
-	lea	rsi, [diag_j_fixnull]
-	mov	rdx, DIAG_J_FIXNULL_LEN
+	lea	rsi, [diag_j_null]
+	mov	rdx, DIAG_J_NULL_LEN
 	call	diag_out_bytes
-	jmp	.done
+  .fix_done:
 
-  .has_fix:
 	lea	rdi, [wr]
-	lea	rsi, [diag_j_fixopen]
-	mov	rdx, DIAG_J_FIXOPEN_LEN
+	lea	rsi, [diag_j_suggmemb]
+	mov	rdx, DIAG_J_SUGGMEMB_LEN
+	call	diag_out_bytes
+	mov	eax, [rbx + Diag.fix.kind]
+	cmp	eax, DIAG_FIX_NONE
+	je	.sugg_null
+	mov	edi, [rbx + Diag.code_num]
+	call	diag_fix_required
+	test	eax, eax
+	jnz	.sugg_null
+	mov	rdi, rbx
+	lea	rsi, [wr]
+	call	__diag_json_edit
+	jmp	.sugg_done
+  .sugg_null:
+	lea	rdi, [wr]
+	lea	rsi, [diag_j_null]
+	mov	rdx, DIAG_J_NULL_LEN
+	call	diag_out_bytes
+  .sugg_done:
+
+	lea	rdi, [wr]
+	lea	rsi, [diag_j_objend]
+	mov	rdx, DIAG_J_OBJEND_LEN
+	call	diag_out_bytes
+
+	mov	rax, [wr + DiagOut.len]
+	mov	edx, [wr + DiagOut.trunc]
+	return
+endp
+
+; __diag_json_edit(diagrec, wr) -- the edit payload as one JSON object:
+; `{"kind":"replace","file_id":3,"start":30,"len":10,"text":"..."}`.
+;
+; ONE emitter for both the `fix` and the `suggestion` member, deliberately:
+; the two differ in what a consumer is allowed to DO with the edit, never in
+; what the edit is, and a second emitter is how the two shapes would
+; eventually stop matching.
+proc __diag_json_edit, diagrec, wr
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [diagrec]
+	mov	r12, [wr]
+
+	mov	rdi, r12
+	lea	rsi, [diag_j_kindopen]
+	mov	rdx, DIAG_J_KINDOPEN_LEN
 	call	diag_out_bytes
 	mov	edi, [rbx + Diag.fix.kind]
 	call	diag_fix_kind_str	; rax = ptr, rdx = len
 	mov	rsi, rax
-	lea	rdi, [wr]
+	mov	rdi, r12
 	call	diag_out_bytes
 
-	lea	rdi, [wr]
+	mov	rdi, r12
 	lea	rsi, [diag_j_fixfid]
 	mov	rdx, DIAG_J_FIXFID_LEN
 	call	diag_out_bytes
-	lea	rdi, [wr]
+	mov	rdi, r12
 	mov	esi, [rbx + Diag.fix.edit.file_id]
 	call	diag_out_u32
-	lea	rdi, [wr]
+	mov	rdi, r12
 	lea	rsi, [diag_j_start]
 	mov	rdx, DIAG_J_START_LEN
 	call	diag_out_bytes
-	lea	rdi, [wr]
+	mov	rdi, r12
 	mov	esi, [rbx + Diag.fix.edit.start]
 	call	diag_out_u32
-	lea	rdi, [wr]
+	mov	rdi, r12
 	lea	rsi, [diag_j_len]
 	mov	rdx, DIAG_J_LEN_LEN
 	call	diag_out_bytes
-	lea	rdi, [wr]
+	mov	rdi, r12
 	mov	esi, [rbx + Diag.fix.edit.len]
 	call	diag_out_u32
 
-	lea	rdi, [wr]
+	mov	rdi, r12
 	lea	rsi, [diag_j_fixtext]
 	mov	rdx, DIAG_J_FIXTEXT_LEN
 	call	diag_out_bytes
-	lea	rdi, [wr]
+	mov	rdi, r12
 	mov	rsi, [rbx + Diag.fix.text_ptr]
 	mov	rdx, [rbx + Diag.fix.text_len]
 	call	diag_out_jstr
-	lea	rdi, [wr]
-	lea	rsi, [diag_j_close]
-	mov	rdx, DIAG_J_CLOSE_LEN
+	mov	rdi, r12
+	lea	rsi, [diag_j_textend]
+	mov	rdx, DIAG_J_TEXTEND_LEN
 	call	diag_out_bytes
-
-  .done:
-	mov	rax, [wr + DiagOut.len]
-	mov	edx, [wr + DiagOut.trunc]
 	return
 endp
 

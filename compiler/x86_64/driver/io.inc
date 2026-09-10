@@ -55,10 +55,10 @@
 ;     rt/vec.inc's doubling growth "abandons the old backing block rather
 ;     than resizing it in place", so a vector that reached N bytes has
 ;     consumed about 2N of arena. 32x.
-;   - the diagnostic vector: `sizeof.Diag` is 96 bytes and the densest
+;   - the diagnostic vector: `sizeof.Diag` is 128 bytes (96 until the Stage 1 review added note, related span and argument) and the densest
 ;     possible run of diagnostics is one `EXS-E0103` per three-byte
 ;     dangerous codepoint -- 32 bytes of Diag per source byte, doubled the
-;     same way. 64x.
+;     same way. ~85x (64x at 96 bytes).
 ; 96 covered the worst of those plus the source and the ~20 KiB of NFC
 ; scratch `lex_init` takes.
 ;

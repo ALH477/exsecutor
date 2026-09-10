@@ -401,8 +401,29 @@ DIAG_ESC_JSON = 1
 ; __diag_escape_core(src_ptr, src_len, out_ptr, out_cap, mode) -> rax = bytes
 ; written to out_ptr, rdx = 1 if truncated (out_cap was insufficient for the
 ; full escaped result -- see this file's header for why truncation, not a
-; trap), 0 if the entire input was consumed. `mode` is DIAG_ESC_TEXT or
-; DIAG_ESC_JSON.
+; trap), 0 if the entire input was consumed, rcx = the number of TERMINAL
+; COLUMNS those bytes occupy. `mode` is DIAG_ESC_TEXT or DIAG_ESC_JSON.
+;
+; RCX IS WHY THE CARET LANDS ON THE RIGHT CHARACTER. `rax` counts bytes and
+; `rcx` counts columns, and they differ for exactly one class of input: a
+; passthrough codepoint outside ASCII, which is 2-4 bytes and 1 column. Every
+; escape SEQUENCE is ASCII, so for those two the counts coincide -- which is
+; why the original code, which used the byte count for both, was correct on
+; `\u{202e}` and wrong on `pira\u{00f1}a`. `docs/design/diagnostics-review.md`
+; D4 measured the wrong half: a caret one column right per multibyte
+; character before it, on ordinary Latin identifiers, in a language whose §8.1
+; policy exists to admit them.
+;
+; In JSON mode `rcx` is computed the same way and means nothing, because a
+; JSON member is not a terminal; the caller that wants it is the text
+; renderer, and the caller that does not simply ignores the register.
+;
+; WHAT IT STILL DOES NOT COUNT: East Asian width (a wide character is two
+; terminal columns and is counted here as one) and combining marks (zero
+; columns, counted as one). Both are `[UNTESTED]` and both are named as open
+; in the review's own "what I could not evaluate" list. §8.4's keywords and
+; §3's lexicon are Latin, so neither shape occurs in a keyword or a fix; they
+; occur only in a user's own identifiers and string literals.
 ;
 ; The mode is applied at exactly ONE point (`.emit_seq`, below) and only to
 ; escape SEQUENCES, never to passthrough bytes: every branch builds its
@@ -421,11 +442,14 @@ proc __diag_escape_core, src_ptr, src_len, out_ptr, out_cap, mode
 		slot cp,        dd
 		slot consumed,  dd
 		slot truncated, dd
+		slot cols,      dq
+		slot colinc,    dd
 	endl
 	mov	rbx, [src_ptr]
 	mov	r12, [src_len]
 	xor	r13, r13		; i = 0
 	mov	qword [o], 0
+	mov	qword [cols], 0
 
   .loop:
 	cmp	r13, r12
@@ -476,6 +500,8 @@ proc __diag_escape_core, src_ptr, src_len, out_ptr, out_cap, mode
 	lea	r14, [rbx + r13]
 	mov	eax, [consumed]
 	mov	[emit_len], eax
+	mov	dword [colinc], 1	; ONE codepoint, ONE column -- see the
+					; `cols` note in this file's header
 	jmp	.do_append
 
   .emit_quote:
@@ -531,6 +557,11 @@ proc __diag_escape_core, src_ptr, src_len, out_ptr, out_cap, mode
 	; leading-backslash shortcut that got `\\` and `\"` wrong (this file's
 	; header records that in full).
   .emit_seq:
+	; The column width of an escape sequence is the width of its TEXT-mode
+	; form, taken here before the JSON expansion below rewrites `emit_len`.
+	; Every byte of that form is ASCII, so bytes and columns coincide.
+	mov	eax, [emit_len]
+	mov	[colinc], eax
 	cmp	qword [mode], DIAG_ESC_TEXT
 	jne	.emit_seq_json
 	lea	r14, [hexbuf]
@@ -574,6 +605,8 @@ proc __diag_escape_core, src_ptr, src_len, out_ptr, out_cap, mode
 	call	__diag_append
 	test	eax, eax
 	jz	.overflow
+	mov	eax, [colinc]
+	add	[cols], rax
 	mov	eax, [consumed]
 	add	r13, rax
 	jmp	.loop
@@ -588,11 +621,12 @@ proc __diag_escape_core, src_ptr, src_len, out_ptr, out_cap, mode
   .finish:
 	mov	rax, [o]
 	mov	edx, [truncated]
+	mov	rcx, [cols]
 	return
 endp
 
 ; diag_escape(src_ptr, src_len, out_ptr, out_cap) -> rax = bytes written,
-; rdx = 1 if truncated. THE escaping entry point for human-readable
+; rdx = 1 if truncated, rcx = TERMINAL COLUMNS written. THE escaping entry point for human-readable
 ; rendering. See this file's header: every code path that quotes user
 ; source into a rendered diagnostic goes through this or its JSON sibling,
 ; with no exception for a "trusted" call site.
@@ -609,7 +643,8 @@ proc diag_escape, src_ptr, src_len, out_ptr, out_cap
 endp
 
 ; diag_escape_json(src_ptr, src_len, out_ptr, out_cap) -> rax = bytes
-; written, rdx = 1 if truncated. Identical classification to `diag_escape`;
+; written, rdx = 1 if truncated, rcx = columns (meaningless in this mode; see
+; `__diag_escape_core`). Identical classification to `diag_escape`;
 ; the result is a JSON string BODY (the bytes that go between the quotes),
 ; so `JSON.parse` of it yields exactly what `diag_escape` would have
 ; produced. Emits no surrounding quotes -- the caller owns those.

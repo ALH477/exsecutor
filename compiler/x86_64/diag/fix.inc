@@ -81,7 +81,7 @@
 ; the two class memberships above.
 ; -----------------------------------------------------------------------------
 
-include 'escape.inc'
+include 'notes.inc'
 include '../rt/span.inc'
 
 DIAG_FIX_NONE    = 0
