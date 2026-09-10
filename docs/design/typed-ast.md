@@ -102,7 +102,7 @@ expression are all `[OPEN]` there and add kinds only by amending this table.
 | `Impl` | `ImplHead` | fns | count | decl | — |
 | `ImplHead` | interface `Path` | target `T` | `Row` or 0 | — | — |
 | `Typus` | `T` | — | `Generics` or 0 | decl | — |
-| `Externus` | fns (`Fn`, body 0) | count | library id | decl | abi id |
+| `Externus` | fns (`Fn`, body 0) | count | library id | decl | abi enum: 0 unrecognised, 1 `sysv_amd64`, 2 `aapcs64`, 3 `lp64d` (spec §5.3); dumped by name |
 | `Binding` | `T` or 0 | init `E` or 0 | — | decl | `mutabilis` |
 | `Row` | items (`RowItem`) | count | — | — | — |
 | `RowItem` | `Path` or param id | — | — | resolved: capability decl or param ordinal | `sicut` |

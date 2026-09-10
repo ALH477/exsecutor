@@ -176,6 +176,31 @@ AST_PTR_RAW	= 1	; `TyPtr` -- `*T`
 AST_SFX_ORDER	= 0	; `TySuffix` -- `: IDENT` (byte order, spec §5.2)
 AST_SFX_APUD	= 1	; `TySuffix` -- `apud IDENT` (placement, spec §5.5)
 
+; ---- `Externus.aux`: the ABI, as a CLOSED enumeration (spec §5.3) ---------
+; §5.3: *"their spellings in `externus(..., abi: X)` are `sysv_amd64`,
+; `aapcs64` and `lp64d`, and the set is closed: the AST stores the ABI as a
+; small enumeration, not an interned name, so an unknown one is `EXS-E0309` at
+; the `externus` head rather than a value that overflows a 16-bit slot."*
+;
+; THIS REPLACES AN INTERNER ID. `Externus.aux` used to hold the ABI
+; identifier's intern id, which is unbounded while `aux` is sixteen bits, so
+; `__ast_w_externus` `rassert`ed rather than truncating and
+; tests/unit/ast_from_cst_abi_overflow.asm existed to prove the trap fired.
+; The spec closed the set instead; the trap and its fixture are retired
+; (tests/unit/ast_from_cst_abi.asm replaces it) and the slot can no longer
+; overflow, because three is not near 65535.
+;
+; 0 MEANS "A SPELLING THIS TABLE DOES NOT HAVE", not "absent". The walker has
+; no diagnostic sink (ast/from_cst.inc's `AstWalk`) and resolves nothing, so
+; it records the 0 and says nothing; `EXS-E0309` is raised in Stage 2 against
+; the `Externus` node's span, and since diag/render.inc quotes the source line
+; the offending spelling does not have to be kept anywhere in the tree.
+AST_ABI_UNKNOWN		= 0
+AST_ABI_SYSV_AMD64	= 1
+AST_ABI_AAPCS64		= 2
+AST_ABI_LP64D		= 3
+AST_ABI_COUNT		= 3
+
 ; ---- operators -------------------------------------------------------------
 ; `Binary.aux`, in spec §8.6's precedence-table order (level 9 down to level
 ; 4), then `Unary.aux`. `Contrahe.aux` is an `ArithOp`, which spec §8.6
@@ -542,3 +567,26 @@ ast_cap_names:
 	db 7,'machina'
 	db 6,'Crudum'
 AST_CAP_NAMES_LEN = $ - ast_cap_names
+
+; ---- ABI spellings ---------------------------------------------------------
+; Spec §5.3's three, in §5.3's order, with ONE ENTRY AHEAD OF THEM so that
+; the pool index is `AST_ABI_* + 1`. That off-by-one is deliberate and does
+; two jobs at once:
+;
+;   - ast/dump.inc prints `Externus.aux` through this pool instead of as a
+;     bare integer, so `ignotus` and `sysv_amd64` are what a reader of a dump
+;     sees -- the same argument the kind pools make ("THE DUMP PRINTS NAMES,
+;     NOT NUMBERS", above), and it applies here and not to the other `aux`
+;     enumerations because these three spellings are the SPEC's, written in
+;     source text, while `Binary.aux`'s operator numbering is internal and no
+;     program names it;
+;   - ast/from_cst.inc recognises the spelling with `ast_name_id` over this
+;     pool, whose miss answer is 0 and whose hit answer is the 1-based index.
+;     `abi: ignotus` therefore lands on entry 1 and `abi: quidlibet` misses,
+;     and BOTH give `aux` 0, which is the right answer for each.
+ast_abi_names:
+	db 7,'ignotus'		; AST_ABI_UNKNOWN -- see the note above
+	db 10,'sysv_amd64'
+	db 7,'aapcs64'
+	db 5,'lp64d'
+AST_ABI_NAMES_LEN = $ - ast_abi_names

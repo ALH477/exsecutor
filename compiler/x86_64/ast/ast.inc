@@ -132,6 +132,19 @@
 ;     honest fix is an ABI enumeration, which needs spec §5.3 to name more
 ;     than one ABI first.
 ;
+;     CLOSED. Spec §5.3 now names three -- `sysv_amd64`, `aapcs64`, `lp64d`
+;     -- and says the set is closed and the AST stores the enumeration rather
+;     than an interned name. Done: `AST_ABI_*` and `ast_abi_names`
+;     (ast/kinds.inc), the mapping in `__ast_w_externus` (ast/from_cst.inc),
+;     the name in the dump and the load (ast/dump.inc, ast/load.inc), and the
+;     0..3 bound in ast/verify.inc. An unrecognised spelling is
+;     AST_ABI_UNKNOWN and NO diagnostic here -- this walker has no sink;
+;     `EXS-E0309` is Stage 2's, at the `Externus` node's span.
+;     tests/unit/ast_from_cst_abi_overflow.asm, which proved the interim
+;     trap, is retired and replaced by tests/unit/ast_from_cst_abi.asm.
+;     typed-ast.md section 2.3's `Externus` row ("abi id") is now stale in
+;     the same way its `Member` row is -- reported, not edited here.
+;
 ; ---------------------------------------------------------------------------
 ; WHAT STAGE 2's DESIGN ASKED FOR, AND WHAT THIS MODULE DID. `docs/design/
 ; checker.md` section 9 raised four findings against this tree; three needed

@@ -36,6 +36,10 @@
 ;	d I KIND FLAGS AUX NAME NODE TY PARENT FILE START LEN
 ;	n I KIND AUX TY A B C D FILE START LEN
 ;
+; with one exception in the `n` line: `Externus`'s AUX is spec §5.3's ABI
+; NAME (`sysv_amd64`, `aapcs64`, `lp64d`, or `ignotus` for a spelling the
+; spec's closed set does not have), for the same reason KIND is a name.
+;
 ; Every number is unsigned decimal. `KIND` is a NAME from ast/kinds.inc's
 ; pools, never an integer: renumbering that file must not silently
 ; reinterpret a dump someone wrote by hand (the same reason ssa-ir.md 2.11
@@ -320,9 +324,29 @@ proc ast_dump, tree, wr
 	lea	rsi, [ast_kind_names]
 	movzx	edx, word [r13 + AstNode.kind]
 	call	__ast_d_name
+	; `aux` is a number for every kind but one. `Externus.aux` is spec
+	; §5.3's CLOSED ABI enumeration, whose three spellings are written in
+	; source text and fixed by the spec, so it prints through
+	; `ast_abi_names` for the same reason kinds print through
+	; `ast_kind_names` -- and ast/load.inc reads it back the same way. The
+	; other `aux` enumerations (operators, literal classes, `TyBit` widths)
+	; stay numeric: those numberings are this compiler's own, no program
+	; names them, and a pool for each would be four more tables to keep in
+	; step with no reader that wants them.
+	movzx	ecx, word [r13 + AstNode.kind]
+	cmp	ecx, AST_EXTERNUS
+	je	.abi
 	mov	rdi, r14
 	movzx	esi, word [r13 + AstNode.aux]
 	call	__ast_d_num
+	jmp	.aux_done
+  .abi:
+	mov	rdi, r14
+	lea	rsi, [ast_abi_names]
+	movzx	edx, word [r13 + AstNode.aux]
+	inc	rdx			; pool index is AST_ABI_* + 1
+	call	__ast_d_name
+  .aux_done:
 	mov	rdi, r14
 	mov	esi, [r13 + AstNode.ty]
 	call	__ast_d_num

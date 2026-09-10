@@ -3590,11 +3590,22 @@ proc __ast_w_iface, w, red
 endp
 
 ; `ExternusBlock ::= 'externus' '(' STRING ',' 'abi' ':' IDENT ')' '{' ... '}'`
-; (spec §5.3). `c` is the library string's interner id and `aux` the ABI
-; identifier's, which is typed-ast.md section 2.3's assignment -- and `aux` is
-; SIXTEEN BITS, so a module that has interned more than 65535 distinct strings
-; before reaching its `externus` block cannot store the id. It traps rather
-; than truncating; see ast/ast.inc's findings.
+; (spec §5.3). `c` is the library string's interner id; `aux` is the ABI as a
+; CLOSED ENUMERATION (`AST_ABI_*`, ast/kinds.inc), which is what §5.3 now
+; requires and NOT what typed-ast.md section 2.3 says ("abi id", meaning the
+; identifier's interner id).
+;
+; THE OLD ASSIGNMENT COULD NOT FIT. An interner id is unbounded and `aux` is
+; sixteen bits, so this routine used to `rassert` on an id past 65535 rather
+; than truncate -- recorded as finding 10 in ast/ast.inc and proved by
+; tests/unit/ast_from_cst_abi_overflow.asm, which is retired with this change.
+; §5.3 closed the ABI set, so the value is now 1, 2, 3 or 0.
+;
+; AN UNRECOGNISED SPELLING IS NOT AN ERROR HERE. This walker has no
+; diagnostic sink (`AstWalk`, above) and resolves nothing: it writes
+; AST_ABI_UNKNOWN and continues, and `EXS-E0309` is Stage 2's, raised at this
+; node's span. Nothing keeps the offending spelling -- diag/render.inc quotes
+; the source line, which is the spelling.
 proc __ast_w_externus, w, red
 	uses	rbx, r12, r13, r14
 	locals
@@ -3633,10 +3644,27 @@ proc __ast_w_externus, w, red
 	mov	rdi, rbx
 	lea	rsi, [wex_head]
 	call	__ast_w_lastname	; `abi: IDENT` -- the last identifier
+	test	rax, rax
+	jz	.no_head		; no head, no identifier: leave it 0
+	; The spelling, not its id: `ast_name_id` over `ast_abi_names` answers
+	; the 1-based pool index (whose entry 1 is `ignotus`) or 0 on a miss,
+	; and `index - 1` is the AST_ABI_* value in both cases.
+	mov	rdi, [rbx + AstWalk.names]
+	mov	rsi, rax
+	call	intern_bytes		; rax = bytes, rdx = length
+	mov	rcx, rdx
+	lea	rdi, [ast_abi_names]
+	mov	rsi, AST_ABI_NAMES_LEN
+	mov	rdx, rax
+	call	ast_name_id
+	test	rax, rax
+	jz	.abi_done		; unrecognised -- AST_ABI_UNKNOWN
+	dec	rax
+  .abi_done:
 	mov	[wex_abi], rax
   .no_head:
 	mov	rax, [wex_abi]
-	mov	rcx, 65535
+	mov	rcx, AST_ABI_COUNT
 	rassert	rax le rcx
 	mov	rdi, rbx
 	mov	rsi, r12

@@ -48,6 +48,8 @@
 ;     a parent nor a flag (`__ast_v_caps`);
 ;   - every interned `cap` type names one of those declarations and carries
 ;     no other field (`__ast_v_types`);
+;   - every `Externus.aux` is one of spec §5.3's closed ABI enumeration
+;     values (0..3, `AST_ABI_*`);
 ;   - the root, if set, is a `Module`.
 ;
 ; WHAT IT DOES NOT CHECK, AND WHY -- both are typed-ast.md section 3 clauses
@@ -547,6 +549,17 @@ proc ast_verify, tree
 	mov	rdi, rbx
 	mov	rsi, r12
 	call	ast_node_at
+	movzx	ecx, word [rax + AstNode.kind]
+	cmp	ecx, AST_EXTERNUS
+	jne	.not_externus
+	; Spec §5.3's ABI enumeration is CLOSED, so `Externus.aux` is 0..3 and
+	; nothing else. This is the check that used to be impossible: while the
+	; slot held an interner id, no bound existed short of 65535, which is
+	; why ast/from_cst.inc had to `rassert` at the one site that wrote it.
+	movzx	ecx, word [rax + AstNode.aux]
+	mov	rdx, AST_ABI_COUNT
+	rassert	rcx le rdx
+  .not_externus:
 	movzx	ecx, word [rax + AstNode.kind]
 	cmp	ecx, AST_BLOCK
 	jne	.next

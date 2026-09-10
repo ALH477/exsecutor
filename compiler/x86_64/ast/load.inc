@@ -443,8 +443,23 @@ proc ast_load, tree, src, len
 	mov	rdx, AST_KIND_NAMES_LEN
 	call	__ast_s_word
 	mov	[lo_kind], rax
+	; The one kind-dependent field in the whole format: `Externus.aux` is
+	; an ABI NAME, not a number (ast/dump.inc's header says why). The kind
+	; is already read, so the branch costs one compare and the section
+	; stays a single pass.
+	mov	rax, [lo_kind]
+	cmp	rax, AST_EXTERNUS
+	je	.abi
 	lea	rdi, [lo_sc]
 	call	__ast_s_num
+	jmp	.aux_done
+  .abi:
+	lea	rdi, [lo_sc]
+	lea	rsi, [ast_abi_names]
+	mov	rdx, AST_ABI_NAMES_LEN
+	call	__ast_s_word
+	dec	rax			; pool index is AST_ABI_* + 1
+  .aux_done:
 	mov	[lo_aux], rax
 	lea	rdi, [lo_sc]
 	call	__ast_s_num
