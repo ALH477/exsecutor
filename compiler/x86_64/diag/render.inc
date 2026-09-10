@@ -391,6 +391,46 @@ proc diag_out_jstr, wr, src, n
 	return
 endp
 
+; __diag_col_of(wr, src, n) -> rax = the TERMINAL COLUMNS `src[0..n)` would
+; occupy if escaped into `wr` right now -- WITHOUT actually appending
+; anything: `wr`'s `len`/`trunc` are read but never written. This is
+; `__diag_out_esc_mode`'s own addressing (scratch space between the
+; buffer's current `len` and its `cap`), minus the commit, so the text
+; header below can ask "how many columns does this span's line-prefix cost"
+; using the SAME classifier the caret run is padded with
+; (`__diag_escape_core`, via escape.inc) -- one classifier, no second
+; implementation of "what counts as a column" (see util.inc's header, and
+; `docs/design/diagnostics-review.md` D4).
+;
+; Reusing the live output buffer as scratch is safe: nothing has been
+; committed past `len` yet, so writing bytes there clobbers nothing a caller
+; can observe, and everything written here is overwritten byte-for-byte by
+; the real appends that follow. If `n` does not fit in the buffer's
+; remaining capacity, `__diag_escape_core` truncates and the column count it
+; returns is a partial one -- exactly the same degraded-but-not-crashing
+; outcome the rest of this file already accepts under truncation (this
+; file's header, "TRUNCATION, NEVER OVERRUN"), and the remaining capacity
+; here is never smaller than what the later, larger echo of the same line
+; will need, so this only under-counts in a diagnostic that was already
+; going to render truncated.
+proc __diag_col_of, wr, src, n
+	uses	rbx
+	locals
+	endl
+	mov	rbx, [wr]
+	mov	rdi, [src]
+	mov	rsi, [n]
+	mov	rdx, [rbx + DiagOut.ptr]
+	add	rdx, [rbx + DiagOut.len]
+	mov	rcx, [rbx + DiagOut.cap]
+	sub	rcx, [rbx + DiagOut.len]
+	mov	r8, DIAG_ESC_TEXT
+	call	__diag_escape_core	; rax = written (discarded), rdx = trunc
+					; (discarded), rcx = columns
+	mov	rax, rcx
+	return
+endp
+
 ; diag_out_u32(wr, value) -- append `value` as decimal ASCII.
 proc diag_out_u32, wr, value
 	uses	rbx
@@ -1019,13 +1059,14 @@ endp
 proc diag_render_text, diagrec, buf, cap
 	uses	rbx
 	locals
-		slot wr,     32
-		slot adv,    24
-		slot lin,    dq
-		slot col,    dq
-		slot digits, dq
-		slot idx,    dd
-		slot rpad,   dd
+		slot wr,          32
+		slot adv,         24
+		slot lin,         dq
+		slot col,         dq
+		slot hcol_lstart, dq
+		slot digits,      dq
+		slot idx,         dd
+		slot rpad,        dd
 	endl
 	mov	rbx, [diagrec]
 
@@ -1047,9 +1088,40 @@ proc diag_render_text, diagrec, buf, cap
 	mov	rdi, [rbx + Diag.src_ptr]
 	mov	rsi, [rbx + Diag.src_len]
 	mov	edx, [rbx + Diag.span.start]
-	call	diag_line_col
+	call	diag_line_col		; rax = line. rdx (BYTE column) is NOT what
+					; the header prints -- see below and
+					; util.inc's header.
 	mov	[lin], rax
-	mov	[col], rdx
+
+	; ---- header `col` is a 1-based CHARACTER column, the same count the
+	; caret run is padded with (D4; util.inc's header, this file's
+	; `__diag_col_of`) -- not `diag_line_col`'s byte column above, which
+	; `diag_render_json` still reports unchanged. Columns run from this
+	; line's own start, so: find that start, then count the terminal
+	; columns of the bytes between it and the (clamped) span start with
+	; the SAME classifier the caret uses, then +1 for 1-based.
+	mov	rdi, [rbx + Diag.src_ptr]
+	mov	rsi, [rbx + Diag.src_len]
+	mov	edx, [rbx + Diag.span.start]
+	call	diag_line_bounds	; rax = this line's start byte offset
+	mov	[hcol_lstart], rax
+
+	mov	eax, [rbx + Diag.span.start]	; 32-bit load zero-extends rax --
+						; `Diag.span.start` is a `dd`
+	cmp	rax, [rbx + Diag.src_len]
+	jbe	.hcol_clamped
+	mov	rax, [rbx + Diag.src_len]
+  .hcol_clamped:
+	sub	rax, [hcol_lstart]	; byte length of the line-prefix before
+					; the span
+
+	lea	rdi, [wr]
+	mov	rsi, [rbx + Diag.src_ptr]
+	add	rsi, [hcol_lstart]
+	mov	rdx, rax
+	call	__diag_col_of		; rax = columns before the span
+	inc	rax			; 1-based
+	mov	[col], rax
 
 	lea	rdi, [wr]
 	lea	rsi, [diag_lit_colon]

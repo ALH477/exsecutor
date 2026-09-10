@@ -24,8 +24,30 @@
 ;
 ;   diag_lookup(numeric)                       -> index into codes.inc's tables
 ;   diag_fmt_u32(value, out_ptr, out_cap)      -> decimal ASCII
-;   diag_line_col(src_ptr, src_len, offset)    -> 1-based (line, column)
+;   diag_line_col(src_ptr, src_len, offset)    -> 1-based line, 1-based BYTE column
 ;   diag_line_bounds(src_ptr, src_len, offset) -> that line's [start, end)
+;
+; A NOTE ON `col`, SINCE ONE RENDERER USED TO CONFLATE THIS WITH IT. The
+; column `diag_line_col` returns is, and has always been, a 1-based BYTE
+; offset within the line -- see the proc's own comment below. That is
+; unchanged, and `diag_render_json` (render.inc) still reports exactly this
+; value in its `"col"` member: JSON is the machine contract, `span.start`/
+; `span.len` are byte offsets, and silently changing what a machine-readable
+; field means is worse than a byte column a consumer has to decode.
+;
+; `diag_render_text`'s HEADER (`file:line:col`) is different as of the D4
+; fix (`docs/design/diagnostics-review.md`): the caret run under the echoed
+; source line is padded in terminal COLUMNS (escape.inc's
+; `__diag_escape_core`, whose `rcx` already counts them for exactly this
+; reason), and a header that still printed the byte column disagreed with
+; its own caret -- `2:39` over a caret sitting at character 36. The text
+; header's `col` is now a 1-based CHARACTER column, computed with the same
+; classifier the caret uses (render.inc's `__diag_col_of`, a thin,
+; non-committing wrapper over `__diag_escape_core` -- one classifier, no
+; second implementation), not this proc's byte count. `diag_line_col` itself
+; is unaffected and is still what the text renderer calls first, for the
+; line number and for `diag_line_bounds`'s line start; it is simply no
+; longer, on its own, "the" column a human reads in `file:line:col`.
 ;
 ; DIAG_LOOKUP'S NOT-FOUND PATH IS AN UNCONDITIONAL TRAP, NOT AN `rassert`,
 ; AND NOT COMPILED OUT UNDER RELEASE -- a deliberate departure from this
@@ -134,9 +156,12 @@ endp
 ; diag_line_col(src_ptr, src_len, offset) -> rax = 1-based line,
 ; rdx = 1-based column (a BYTE offset within the line -- see this file's
 ; header; consistent with rt/str.inc's "byte-oriented, not codepoint-aware"
-; convention throughout this wave). `offset` past `src_len` is clamped, not
-; rejected -- a one-past-the-end span endpoint (e.g. from `span_end`) is a
-; legitimate, expected input, not a caller bug.
+; convention throughout this wave). This is exactly what `diag_render_json`
+; reports as `"col"` (the machine contract; see this file's header); the
+; text renderer's header column is a CHARACTER count computed separately
+; (render.inc's `__diag_col_of`), not this `rdx`. `offset` past `src_len` is
+; clamped, not rejected -- a one-past-the-end span endpoint (e.g. from
+; `span_end`) is a legitimate, expected input, not a caller bug.
 ;
 ; O(offset): a full linear scan from byte 0 on every call. This is exactly
 ; the approach rt/span.inc's own header anticipated as acceptable for this

@@ -898,7 +898,7 @@ Restriction modes work (Rust's `unsafe`, `use strict`, D's `@safe`): the restric
 ## 8.3 Diagnostics
 
 - Stable machine-readable codes (`EXS-E0104`). Codes are permanent; text is not. Tools match codes, never English prose.
-- Every diagnostic carries a source span — not retrofittable, which is why the CST is not optional.
+- Every diagnostic carries a source span — not retrofittable, which is why the CST is not optional. Spans are byte offsets, and the machine-readable rendering reports bytes; the human rendering's `line:col` header counts **characters**, the same count its caret is padded in, so the two never disagree (they did, by one column per non-ASCII byte, until the Stage 1 review).
 - **All source echoed in a diagnostic is escaped.** A diagnostic rendering raw bidi makes the error message the attack surface.
 - English text is canonical. Translation, if ever, is a lookup keyed on code. Rust's Fluent effort stalled because translation was entangled with 400+ formatting sites and there is now a proposal to remove it; do not repeat that.
 - Capability and lexicon errors ship machine-applicable fixes; `exsc emenda` applies them. Both classes are unusually suited to auto-fix because the required edit is mechanically derivable.
