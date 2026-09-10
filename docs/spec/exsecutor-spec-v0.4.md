@@ -358,7 +358,7 @@ A higher-order function requires whatever its function argument requires:
 
 ```exsecutor
 publica functio applica(v: f32, f: functio(f32) -> f32) -> f32 poscit alloc, sicut f {
-    redde f(construe(v))
+    redde f(construe(v));
 }
 ```
 
@@ -394,7 +394,9 @@ structura ScriptorRetis { sock: rete }      // capability-bearing: [rete]
 
 ## 4.4 Dynamic dispatch
 
-`dyn Trait poscit P`. Constructing a trait object from an implementation whose mark exceeds `P` is `EXS-E0510`.
+`dyn Trait poscit {P}`. Constructing a trait object from an implementation whose mark exceeds `P` is `EXS-E0510`.
+
+The row is **braced** in type position. Written bare it is ambiguous inside a comma-separated parameter list, where the next `,` could belong to either the row or the list — §8.6 resolves this by taking a row on the two-token peek `poscit {`. This section previously wrote `poscit P` schematically, which is not a form that parses.
 
 Trait capability needs otherwise dissolve into the receiver — a file writer's authority *is* the handle in its field — so `poscit` on trait methods should be rare. If you need one, the capability is probably misplaced. But that convenience is exactly what would hide capabilities from the audit, hence the bound.
 
@@ -421,11 +423,11 @@ potestas Hospes = { alloc, archivum, horologium, ambitus }
 ## 5.1 Text and branded offsets
 
 ```exsecutor
-firma t: textus = "café"
-t.octeti().numerus()      // 5   bytes
-t.scalares().numerus()    // 4   scalar values
-t.grapha().numerus()      // 4   grapheme clusters
-t[0]                      // EXS-E0311: textus has no integer index
+firma t: textus = "café";
+t.octeti().numerus();      // 5   bytes
+t.scalares().numerus();    // 4   scalar values
+t.grapha().numerus();      // 4   grapheme clusters
+t[0];                      // EXS-E0311: textus has no integer index
 ```
 
 UTF-8 storage. Slicing by byte offset, O(1), returns `eventus`, never panics. `octeti`, `scalares`, `grapha` are distinct types, not coercing views. Grapheme segmentation ships in the standard library.
@@ -433,9 +435,9 @@ UTF-8 storage. Slicing by byte offset, O(1), returns `eventus`, never panics. `o
 **Branded offsets.** `quaere` returns `positio<'t>`, generatively branded to the buffer it indexed. `sectio` accepts only its own brand:
 
 ```exsecutor
-firma abassus = via.plica_unicode()
-firma ubi     = abassus.quaere("/")?      // positio<abassus>
-firma pars    = via.sectio(0..ubi)?       // EXS-E0332: branded to `abassus`
+firma abassus = via.plica_unicode();
+firma ubi     = abassus.quaere("/")?;     // positio<abassus>
+firma pars    = via.sectio(0..ubi)?;      // EXS-E0332: branded to `abassus`
 ```
 
 There is no conversion from `positio<'t>` to bare `mensura` outside `Crudum`. This makes CVE-2026-24895's class unrepresentable rather than discouraged — the highest-value change the CVE research produced.
@@ -933,6 +935,11 @@ ordinary identifiers everywhere else.
 - `numeri` keys and values (§5.4): `rotundatio` `reassociatio` `contractio`
   `subnormales`; `ad_parem` `vetita` `explicita` `conservata`
 - reduction shapes (§5.4): `ordinata` `arborea`
+- comparison and connectives (§8.5, §8.6): `lt` `le` `gt` `ge` `eq` `ne`
+  `et` `vel` — contextual because operator position is never operand
+  position (§8.6), which is what lets `<` mean generic arguments and
+  nothing else
+- byte order (§5.2): `maior` `minor` `nativus`; FFI (§5.3): `abi`
 
 These are contextual on purpose. `versio`, `numeri` and `forma` are good Latin
 words and good variable names; reserving them globally would be hostile in a
@@ -974,8 +981,11 @@ uses four of them in one line. Found by the lexer, which had to tokenize `(`
 and discovered §8.4 did not admit it. A closed token set that omits its own
 examples' tokens is not closed; it is merely short.
 
-`/` and the comparison words (`lt le gt ge eq ne`) are `[OPEN]`, along with
-the numeric literal grammar — see §8.5 and the note below.
+The comparison words (`lt le gt ge eq ne`) and the connectives (`et vel`) are
+**contextual** — §8.6 settles their precedence and shows why they can stay
+contextual: operator position is never operand position. `/`, remainder,
+shifts, negation and the `*%`/`*|` families remain `[OPEN]`, as does the
+numeric literal grammar.
 
 ### Literals, comments, layout
 
@@ -1131,8 +1141,297 @@ claiming a clean pattern over them would be reading one in.
   from morpheme-table roots. §3.8 and §15 #4 stay `[UNTESTED]`; `norma.algebra`
   is still the coinage process's first real test.
 - It spends root-space. Fourteen words here can never be roots (§8.4).
-- Numeric literal grammar, expression precedence, and `sub`'s interaction with
+- Numeric literal grammar and `sub`'s interaction with
   loop scopes are unsettled and deliberately not invented.
+
+## 8.6 Phrase grammar
+
+`[UNTESTED]` Normative, and unexercised: no parser exists, and nothing below
+has parsed a single file. What this section fixes is the grammar the CST
+(§9.1) is built against; what it does not fix is listed at the end, marked.
+The design record is `docs/design/phrase-grammar.md`; where the two disagree
+this section wins.
+
+### The constraint
+
+The parser is hand-written recursive descent in freestanding x86-64 assembly,
+producing the lossless, error-tolerant red-green CST of §9.1. Therefore the
+grammar is **LL(1) with a fixed, enumerated set of two-token peeks** — no
+backtracking, no unbounded lookahead. Every item and statement is decided by
+its leading token; the parser always knows whether it is reading a type or an
+expression; and §16's kill criterion is diagnostics, so a construct that makes
+recovery hard is wrong even if it is parseable. Every peek is listed under
+*Peeks*; a parser that needs one not listed there has found a defect in this
+section.
+
+### Six decisions
+
+1. **`;` terminates every simple statement.** `firma`, `mutabilis`, the
+   statement form of `sub`, `redde`, `rumpe`, `perge`, expression and
+   assignment statements, and the module items `typus`, `firma`, `mutabilis`.
+   Constructs ending in `}` take none. Layout is insignificant (§8.4), so
+   without `;` a line beginning `(` `[` `-` `*` `&` is swallowed by the
+   previous expression and misdiagnosed. Struct, `interfacies` and `externus`
+   bodies are **separator-free**, as §4.3, §5.2, §5.3 and §10.1 write them: a
+   type cannot be continued by an identifier or by `functio`, so the next
+   member is decidable. A missing `;` is `EXS-E0201` with the insertion as its
+   §8.3 fix payload.
+2. **A lambda is `functio` in expression position** —
+   `functio(x: f32) -> f32 { … }` — parameter types required, no `poscit`
+   (§4.1 rule 5: its row is inferred and appears in its *type*, §4.2).
+   `functio` has three roles that never share a position: item position is a
+   declaration, type position a function type, expression position a lambda.
+   `poscit` after a lambda's result type is `EXS-E0201`.
+3. **`sub` has one production and two endings:** `sub P = e;` binds to the end
+   of the enclosing block; `sub P = e { … }` binds for the block. Identical
+   prefix, one-token decision, identical recovery (§4.5).
+4. **Implementation reuses `interfacies`; the cast is `sicut`.**
+   `interfacies Scriptura { … }` declares; `interfacies Scriptura in Scriptor
+   poscit rete { … }` implements. One token after the head decides. `in` is
+   already reserved, and the §10.1 line `publica interfacies legibilis`
+   extends to `publica interfacies legibilis in lector` with no new word. The
+   alternative `implet` was considered and rejected on §8.4's rule that a
+   reserved word spends a root forever. The cast is postfix `sicut Type`:
+   `n sicut u64` is §5.2's explicit widening; `w sicut dyn Scriptura poscit
+   {rete}` is §4.4's trait object. After an operand `sicut` is a cast, inside
+   a row a row item — the positions are disjoint. `impl`, `for` and `as`, as
+   used by the probe fixtures, are inadmissible (§3.9.2).
+5. **Module level** is `Annotation* ['publica'] Item`. `mutabilis` at module
+   level **parses** and is rejected by the checker (`EXS-E0500`, `EXS-E0501`):
+   a parse error can neither name the rule nor tell the capability-typed case
+   apart. Module `firma` is a constant. There is no import statement; dotted
+   paths are `Path`.
+6. **Comparison is spelled with words, so `<` is never an operator.**
+   `lt le gt ge eq ne` are contextual: an identifier in *operator* position is
+   an operator, and identifiers otherwise occur only in *operand* position, so
+   nothing collides and nothing is reserved. `<` after a path segment always
+   opens generic arguments, and the lexer never forms `<<` `>>` `<=` `>=` —
+   §8.4's closed token set does not contain them, so `acies<acies<f32, 4>, 4>`
+   lexes as two `>` tokens. `a < b` is `EXS-E0201` with the message *"`<`
+   opens generic arguments; comparison is `lt`"* and the edit attached. This
+   settles what §8.4 left `[OPEN]` for the comparison words; `/` stays open.
+
+### Expressions
+
+Precedence climbing over a fixed table, one-token peek per step.
+
+| level | operators | assoc |
+|---|---|---|
+| 1 postfix | `.f` `(…)` `[…]` `?` `<…>` | left |
+| 2 prefix | `-` `&` `*` | — |
+| 3 cast | `sicut Type` | left |
+| 4 multiplicative | `*` — `/`, remainder, and the `*%` `*\|` overflow forms are `[OPEN]` | left |
+| 5 additive | `+` `+%` `+\|` `-` `-%` `-\|` | left |
+| 6 range | `..` | none |
+| 7 comparison | `lt` `le` `gt` `ge` `eq` `ne` | none |
+| 8 conjunction | `et` | left |
+| 9 disjunction | `vel` | left |
+
+`&` and `*` are prefix in operand position and binary or type sigils
+elsewhere; the position decides, never the token. Logical negation is
+`[OPEN]`: no §8.4 token exists for it, and a word cannot serve — prefix
+position *is* operand position, so `non(x)` would be a call. `et` and `vel`
+are contextual words like `lt`, and are the only operators here not already
+attested elsewhere in this document; they and the comparison words need a
+§8.4 tier-2 entry. Assignment `=` is a **statement**, never an operator: it is
+excluded from conditions, and the lvalue check is semantic.
+
+Generic arguments and, when they exist, struct literals attach only directly
+after a path segment (`IDENT`, `. IDENT`, or `<…>`). Struct-literal syntax is
+`[OPEN]`; its position — `{` after a path segment — is reserved now, and
+**`ExprNS`** (the expression grammar with that suffix disabled) is defined now,
+so admitting it later touches nothing outside level 1. `ExprNS` is used in
+every position where a `{` block follows an expression: `si`, `sin`, `dum`,
+`terminus`, the `per`/`quisque` range, `discerne`, and the right-hand side of
+`sub`. Array literals, tuples, slices, open-ended ranges, named arguments and
+compound assignment are `[OPEN]`; none of them needs a new peek.
+
+### Types
+
+`Type ::= ('&' | '*')* CoreType (':' IDENT | 'apud' IDENT)*`. Prefixes are the
+reference and raw-pointer sigils; suffixes are byte order (`u32:maior`) and
+placement (`acies<f32, 1024> apud machina`, §5.5). `maior` `minor` `nativus`
+are contextual. A `:` after a `CoreType` is a suffix; a `:` after an
+identifier in a parameter, field, binding or generic parameter is an
+annotation — `x: u32:maior` reads left to right with no peek.
+
+**Bit-width types are decided by the parser.** In type position an identifier
+of the form `u` followed by digits is a `BitType`, admitted only for widths
+1–7 and 8, 16, 24, 32, 40, 48, 56, 64. This is what makes §5.2 rule 2 literally
+true: `u12` *does not parse*, `EXS-E0201`. A byte-order suffix on a `BitType`
+of width below 8 is likewise `EXS-E0201` (§5.2 rule 3). The check is one
+table lookup on the token text.
+
+Function types are `functio(A, B) -> C [poscit {R}]`, trait objects
+`dyn Path [<…>] [poscit {R}]`. In type position the row is **braced**, because
+these types sit in comma-separated lists where a bare row is ambiguous;
+§4.4's `poscit P` is schematic for `poscit {P}`. Nested function types bind a
+row innermost; parenthesise to override.
+
+### Where `poscit` attaches
+
+| position | form | ends at |
+|---|---|---|
+| function declaration, interface member, `externus` member | bare row after `-> Type` or `)` | first token that is not `,` |
+| implementation head (`interfacies … in T poscit …`) | bare row | `{` |
+| function type, `dyn` type | braced `poscit { … }` | `}` |
+| lambda | none — `EXS-E0201` if present | — |
+
+`RowItem ::= Path | 'sicut' IDENT` in both forms. `poscit {}` is an explicit
+empty row; a bare `poscit` with no item is `EXS-E0201`. A type consumes
+`poscit` **only when the next token is `{`** — so a declaration whose result
+type is a function type still takes a bare row without parentheses, and a
+body is never mistaken for a row. The one odd corner is deterministic:
+`-> functio(A) -> B poscit {rete} poscit alloc {` is a braced row on the
+result type followed by the declaration's own bare row, then the body.
+
+### Grammar
+
+Terminals are §8.4's tokens; `IDENT` `INT` `STRING` are the lexer's classes.
+`[…]` optional, `(…)*` repetition, `|` alternation.
+
+    Module        ::= Item* EOF
+    Item          ::= Annotation* ['publica'] ItemBody
+    Annotation    ::= '@' IDENT                              (* arguments [OPEN] *)
+    ItemBody      ::= FunctionDecl | StructDecl | TypeDecl | InterfaceDecl
+                    | PotestasDecl | ExternusBlock | BindingStmt
+    FunctionDecl  ::= Signature Block
+    Signature     ::= 'functio' IDENT [GenericParams] ParamList ['->' Type] [DeclRow]
+    ParamList     ::= '(' [Param (',' Param)*] ')'
+    Param         ::= IDENT ':' Type
+    GenericParams ::= '<' GenericParam (',' GenericParam)* '>'
+    GenericParam  ::= IDENT [':' Type]
+    DeclRow       ::= 'poscit' RowItem (',' RowItem)*
+    TypeRow       ::= 'poscit' '{' [RowItem (',' RowItem)*] '}'
+    RowItem       ::= Path | 'sicut' IDENT
+    StructDecl    ::= 'structura' IDENT [GenericParams] '{' Field* '}'
+    Field         ::= IDENT ':' Type
+    TypeDecl      ::= 'typus' IDENT [GenericParams] '=' Type ';'   (* sum types [OPEN] *)
+    InterfaceDecl ::= 'interfacies' Path [GenericParams]
+                      ( '{' Member* '}'
+                      | 'in' Type [DeclRow] '{' FunctionDecl* '}' )
+    Member        ::= Signature [Block]
+    PotestasDecl  ::= 'potestas' IDENT '=' '{' [Path (',' Path)*] '}'
+    ExternusBlock ::= 'externus' '(' STRING ',' 'abi' ':' IDENT ')' '{' (['publica'] Signature)* '}'
+    BindingStmt   ::= ('firma' | 'mutabilis') IDENT [':' Type] ['=' Expr] ';'
+
+    Block         ::= '{' Stmt* '}'
+    Stmt          ::= BindingStmt | SubStmt | JumpStmt | IfStmt | WhileStmt
+                    | ForStmt | MatchStmt | Block | Expr ['=' Expr] ';'
+    JumpStmt      ::= 'redde' [Expr] ';' | 'rumpe' ';' | 'perge' ';'
+    SubStmt       ::= 'sub' Path '=' ExprNS ( ';' | Block )
+    IfStmt        ::= 'si' ExprNS Block ('sin' ExprNS Block)* ['aliter' Block]
+    WhileStmt     ::= 'dum' ExprNS ['terminus' ExprNS] Block
+    ForStmt       ::= ('per' | 'quisque') IDENT 'in' ExprNS
+                      ('contrahe' IDENT ':' ArithOp)* ['forma' IDENT] Block
+    MatchStmt     ::= 'discerne' ExprNS '{' ('casus' Pattern Block)* ['aliter' Block] '}'
+    Pattern       ::= Literal | Path                         (* constructors [OPEN] *)
+
+    Expr          ::= Or           (* ExprNS: identical, level-1 '{' suffix disabled *)
+    Or            ::= And ('vel' And)*
+    And           ::= Cmp ('et' Cmp)*
+    Cmp           ::= Range [CmpOp Range]
+    CmpOp         ::= 'lt' | 'le' | 'gt' | 'ge' | 'eq' | 'ne'
+    Range         ::= Add ['..' Add]
+    Add           ::= Mul (('+' | '+%' | '+|' | '-' | '-%' | '-|') Mul)*
+    Mul           ::= Cast ('*' Cast)*
+    Cast          ::= Unary ('sicut' Type)*
+    Unary         ::= ('-' | '&' | '*') Unary | Postfix
+    Postfix       ::= Primary Suffix*
+    Suffix        ::= '.' IDENT | '(' [Expr (',' Expr)*] ')' | '[' Expr ']' | '?'
+                    | GenericArgs                            (* after a path segment only *)
+    Primary       ::= Literal | '(' Expr ')' | Lambda | IDENT
+    Lambda        ::= 'functio' ParamList ['->' Type] Block
+    Literal       ::= INT | STRING                           (* INT grammar [OPEN], §8.4 *)
+    ArithOp       ::= '+' | '+%' | '+|' | '-' | '-%' | '-|' | '*'
+
+    Type          ::= ('&' | '*')* CoreType (':' IDENT | 'apud' IDENT)*
+    CoreType      ::= BitType | Path [GenericArgs] | '(' Type ')'
+                    | 'dyn' Path [GenericArgs] [TypeRow]
+                    | 'functio' '(' [Type (',' Type)*] ')' '->' Type [TypeRow]
+    BitType       ::= IDENT                                  (* 'u' + admitted width *)
+    GenericArgs   ::= '<' TypeArg (',' TypeArg)* '>'
+    TypeArg       ::= Type | INT
+    Path          ::= IDENT ('.' IDENT)*
+
+    EgoFile       ::= 'ego' Path '{' EgoEntry* '}' EOF
+    EgoEntry      ::= 'versio' STRING | 'licentia' STRING
+                    | 'fontes' '{' (Path HASH)* '}'
+                    | ('hospites' | 'acceleratores' | 'exitus') '[' [Target (',' Target)*] ']'
+                    | 'potestates' '{' [Path (',' Path)*] '}'
+                    | 'numeri' '{' (IDENT IDENT)* '}'
+                    | 'publica' ( Signature | 'typus' IDENT | 'structura' IDENT
+                                | 'interfacies' Path ['in' Type] )
+    Target        ::= IDENT ('-' IDENT)*
+
+CST node kinds are these nonterminals plus `ERROR` and `MISSING`. The `ego`
+file (§10.1) shares the lexer and the `Type`, `Signature` and `Path`
+productions — the two must not drift — and has its own entry point, selected
+by the driver and confirmed by the first token `ego`. Its entries are
+keyword-led and self-delimiting, so it needs no `;`.
+
+### Peeks
+
+Every place the parser looks past the current token, and how it resolves.
+
+| where | peek | resolution |
+|---|---|---|
+| statement start `functio` | `functio IDENT` | a nested named function: `EXS-E0201`, fix `firma nomen = functio(…) … ;`; otherwise a lambda expression statement |
+| after a function or `dyn` type | `poscit {` | braced `TypeRow` belongs to the type; bare `poscit` belongs to the enclosing declaration |
+| struct / `interfacies` / `externus` body recovery | `IDENT :` or `}` | next member, or end of body |
+| `TypeArg` | `INT` | value argument (`acies<f32, 1024>`); anything else is a `Type`; a named constant parses as `Path` and is resolved semantically |
+
+Everything else is one token: `sub … ;` vs `sub … {`; `redde ;` vs
+`redde Expr ;`; `interfacies X {` vs `<` vs `in`; `dum … terminus` vs
+`dum … {`; `Expr =` vs `Expr ;`; `.` vs `..` (the lexer munches `..` first,
+so `1..n` is `INT .. IDENT` — this depends on the `[OPEN]` numeric grammar
+requiring a digit after a float's `.`); `casus` vs `aliter` vs `}`.
+
+### Recovery
+
+Synchronisation sets are small and fixed. Statement level: `;` and `}`, plus
+the statement-leading keywords. Module level: `@`, `publica`, and the
+item-leading keywords. Lists: `,` and the closing bracket. Bodies: the
+`IDENT :` peek above. **No production consumes a `}` it did not open.** A
+required token that is absent becomes a zero-width `MISSING` node; skipped
+tokens go into an `ERROR` node; whitespace and comments are leading trivia of
+the following token; codepoints §8.1 rejects are emitted as error tokens so
+the tree stays lossless. Codes: `EXS-E0201` for any token where another was
+required; `EXS-E0202` for a bracket, block, or `<…>` still open at end of
+input; `EXS-E0203` for end of input inside any other construct; `EXS-E0220`
+for a reserved word in identifier position; `EXS-E0210` is the lexer's. §13's
+`02xx` range is coarse on purpose and nothing here needs a code it lacks.
+
+### What this section corrects
+
+`;` is now mandatory where §4.2 (`redde f(construe(v))`), §5.1 (`firma t:
+textus = …`) and `examples/saluta.exsc` (`redde "…"`) omit it. Those were
+written before this section and are wrong under it; the rule stands, because
+the alternative is the misdiagnosis in decision 1. `examples/imprime.exsc`
+parses as written. `interfacies` declaration bodies now hold `Member`, which
+is §5.3's and §10.1's separator-free form, not a `;`-terminated one.
+
+### Not settled here
+
+- `[OPEN]` Numeric literal grammar (§8.4) — blocks the `..`/float rule above
+  and the `HASH` token: `sha256-1a2b…` is neither identifier nor literal under
+  any settled rule, so `fontes` cannot yet be lexed.
+- `[OPEN]` Sum types and constructor patterns; `discerne`'s exhaustiveness
+  presupposes an enumeration the language does not yet declare. The natural
+  home is `typus` — keyword-led, LL(1)-harmless — but it is not decided.
+- `[OPEN]` Brand syntax `positio<'t>` (§5.1): `'` is not a §8.4 token.
+- `[OPEN]` Generic implementation heads: `interfacies Legibilis<T> in
+  acies<T, N>` leaves `N` unbound.
+- `[OPEN]` Operators: `/`, remainder, shifts, logical negation, the `*%` `*|`
+  family. Shifts must not become `<<`/`>>` tokens.
+- `[OPEN]` `refero` (§6.4) is reserved and has no phrase-level form here; `apud`
+  is admitted only as a type suffix; annotation arguments; struct literals;
+  labelled `rumpe`/`perge`; a `sub` list form; `si`/`discerne` as expressions.
+- `[OPEN]` `sub` inside `per`/`quisque` bodies (§8.5).
+- `[OPEN]` Whether an unbounded `dum` is admitted outside the `certus` profile.
+  The grammar makes `terminus` optional so that its absence is a CST fact the
+  profile can reject (§8.5); the full language's answer is not given.
+
 ---
 
 # 9. Compilation and the build model
@@ -1506,7 +1805,7 @@ a referenced list is the same mistake as renumbering an error code (§8.3).
 6. **Generator model coverage** (§9.4). "No build scripts" may not survive real FFI binding generation.
 7. **Generated-C debug info** (§9.2). If stepping through Exsecutor is unusable, QBE moves earlier.
 8. **Ecosystem bootstrapping.** Unaddressed by anything in this document, and the actual reason languages die.
-9. **There is no phrase grammar.** `[OPEN]` §8.4 and §8.5 settle tokens and control flow; nothing settles how declarations, expressions, and patterns compose. The entire syntactic surface of this document is thirteen worked examples, and the only written-down grammar anywhere in the tree is `prototypes/capcheck/SYNTAX-PROPOSAL.md`, which explicitly disclaims design intent. This blocks the second half of Stage 1 — §9.1's lossless CST and typed AST have nothing to parse against — and it is why Stage 1 is being taken in two passes. Severity is high; the position in this list is chronological, per the note above.
+9. **Phrase grammar.** `[UNTESTED]` §8.6 now states it as normative — items, statements, the expression precedence table, types, `poscit` attachment, the lambda, `sub`'s two forms, `interfacies … in …` and the `sicut` cast, the `ego` entry point, every peek and every synchronisation set. That closes what this item originally recorded: there *is* a grammar, and it is the one the CST is built against. It does not close the item. Nothing has parsed anything — §9.1's CST does not exist, so the LL(1) claim and the recovery design are unexercised. §8.6's own list is still open: numeric literals and the `HASH` token, sum types and constructor patterns, brand syntax, generic implementation heads, the operators §8.4 lacks, and `sub` inside loop bodies. It also found three contradictions it did not paper over, all since fixed: §4.2's and §5.1's illustrative blocks and `examples/saluta.exsc` omitted the `;` §8.6 requires; §8.4 still marked the comparison words `[OPEN]` and lacked their tier-2 entries; and §4.4 wrote `dyn Trait poscit P` bare, which is not a form that parses. The canonical program gaining a semicolon is the useful one — `tests/unit/lexer_tokens.asm` pins its token count precisely so a change there is a deliberate edit, and the assert caught it. Position in this list is chronological, per the note above.
 
 ---
 

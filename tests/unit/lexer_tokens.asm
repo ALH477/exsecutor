@@ -439,11 +439,16 @@ tok_a:
 	dd	TOK_PUNCT, PUN_LBRACE, ANY, 1	; {
 	dd	TOK_KEYWORD, KW_REDDE, ANY, 5	; redde
 	dd	TOK_STRING, 0, ANY, 103	; the four-line literal
+	dd	TOK_PUNCT, PUN_SEMI, ANY, 1	; ;  -- §8.6 made this mandatory
 	dd	TOK_PUNCT, PUN_RBRACE, ANY, 1	; }
 	dd	TOK_EOF, 0, ANY, 0	; end of input
   tok_a_end:
   TOK_A_N = (tok_a_end - tok_a) / 16
-  assert TOK_A_N = 12
+  ; 12 before §8.6 landed. The count is pinned so that a change to the
+  ; canonical program is a deliberate edit here rather than a silent drift --
+  ; which is exactly what happened: §8.6 made `;` mandatory on every simple
+  ; statement, saluta.exsc gained one, and this assert caught it.
+  assert TOK_A_N = 13
 
   sample_b:
 	db	0x66, 0x69, 0x72, 0x6D, 0x61, 0x20, 0x73, 0x20, 0x3D, 0x20, 0x22, 0x6F
