@@ -1440,6 +1440,88 @@ endp
 ; instruction construction: the common tail every per-shape parser calls
 ; ============================================================================
 
+; __bfa_ps_edges(p, instid, op) -- records the CFG edges a just-emitted
+; TERMINATOR creates, through ir.inc's `bfa_edge_push`, so that every block's
+; BfaBlock.first_pred list is populated in the order terminators were emitted
+; -- docs/design/ssa-ir.md section 2.4's definition of predecessor order, and
+; therefore of phi operand order. Nothing populated those fields before
+; (verify.inc's FINDING 1: declared, never written), so verify.inc's rule 3
+; had to reconstruct predecessors by scanning terminators in block-index
+; order; it now reads this list instead.
+;
+; Called from `__bfa_ps_finish`, the single point every parsed instruction
+; passes through, rather than from `__bfa_ps_jmp`/`__bfa_ps_br` separately:
+; a third terminator added later gets its edges by adding a case here, not
+; by remembering to call this at a new site. `ret` and `trap` create no
+; edges.
+proc __bfa_ps_edges, p, instid, op
+	locals
+		slot cb, dd
+		slot eidx, dd
+	endl
+	mov	rax, [p]
+	mov	rcx, [rax + BfaParser.curblock]
+	mov	[cb], ecx
+
+	mov	eax, [op]
+	cmp	eax, BFA_OP_JMP
+	je	.isjmp
+	cmp	eax, BFA_OP_BR
+	je	.isbr
+	return
+
+  .isjmp:
+	; `jmp bN`: the target is inline in Inst.a.
+	mov	rdi, [p]
+	mov	rdi, [rdi + BfaParser.func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	edx, [rax + BfaInst.a]
+	mov	rdi, [p]
+	mov	rdi, [rdi + BfaParser.func]
+	mov	esi, [cb]
+	call	bfa_edge_push
+	return
+
+  .isbr:
+	; `br %c bT bF`: three extra-pool words, the two targets at +1 and +2,
+	; pushed TRUE first -- the same order verify.inc's `__bfa_verify_succs`
+	; and emit.inc's `__bfa_emit_br` read them in.
+	mov	rdi, [p]
+	mov	rdi, [rdi + BfaParser.func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[eidx], ecx
+
+	mov	rdi, [p]
+	mov	rdi, [rdi + BfaParser.func]
+	mov	eax, [eidx]
+	inc	eax
+	mov	esi, eax
+	call	bfa_extra_get
+	push	rax
+	mov	rdi, [p]
+	mov	rdi, [rdi + BfaParser.func]
+	mov	esi, [cb]
+	pop	rdx
+	call	bfa_edge_push
+
+	mov	rdi, [p]
+	mov	rdi, [rdi + BfaParser.func]
+	mov	eax, [eidx]
+	add	eax, 2
+	mov	esi, eax
+	call	bfa_extra_get
+	push	rax
+	mov	rdi, [p]
+	mov	rdi, [rdi + BfaParser.func]
+	mov	esi, [cb]
+	pop	rdx
+	call	bfa_edge_push
+	return
+endp
+
 ; __bfa_ps_finish(p, op, aux, ty, a, b) -- pushes the Inst, stamps its span
 ; from p.pending_off/len, links it into the current block's phi or body
 ; list (by OP, not by a flag -- `phi` is the only opcode that ever goes on
@@ -1487,6 +1569,12 @@ proc __bfa_ps_finish, p, op, aux, ty, a, b
 	mov	edx, [newid]
 	call	bfa_block_link_phi
   .linked:
+	; CFG edges, iff this instruction was a terminator (see __bfa_ps_edges).
+	mov	rdi, [p]
+	mov	esi, [newid]
+	mov	edx, [op]
+	call	__bfa_ps_edges
+
 	mov	rax, [p]
 	cmp	qword [rax + BfaParser.pending_result], 0
 	je	.done

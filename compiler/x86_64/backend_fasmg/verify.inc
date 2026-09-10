@@ -1959,8 +1959,8 @@ proc __bfa_verify_rule9, ctx
 	mov	esi, eax
 	call	bfa_inst_ptr
 	movzx	ecx, word [rax + BfaInst.op]
-	test	ecx, ecx
-	jnz	.notnop
+	cmp	ecx, BFA_OP_NOP
+	jne	.notnop
 	mov	dword [rbx + BfaVerifyCtx.out_blk], 0
 	mov	eax, [i]
 	inc	eax
@@ -2292,16 +2292,26 @@ proc __bfa_verify_succs, ctx, blockid
 endp
 
 ; __bfa_verify_build_predvecs(ctx) -- allocates ctx.predvecs (Vec<dq>,
-; nblocks entries, each -> Vec<dd>*). See DETERMINISM in this file's
-; header for the exact, fixed scan/append order this produces.
+; nblocks entries, each -> Vec<dd>*), filled by WALKING EACH BLOCK'S OWN
+; EDGE LIST (BfaBlock.first_pred -> BfaEdge.nextp), which ir.inc's
+; `bfa_edge_push` builds in the order terminators were emitted. That is
+; docs/design/ssa-ir.md section 2.4's definition of predecessor order, and
+; this file's header (FINDING 1, and the PREDECESSOR ORDER note) records
+; what stood here before: a scan of blocks 1..N in INDEX order reading each
+; terminator's successors, because nothing populated the edge list. Now
+; parse.inc does, at every terminator it emits, so the approximation is
+; gone and rule 3 checks the real thing. For text this parser produces the
+; two orders coincide (that note explains why); for IR a Braun-style
+; on-the-fly builder produces they do not, and this is the order that is
+; correct then.
 proc __bfa_verify_build_predvecs, ctx
 	uses	rbx
 	locals
 		slot outer, dq
 		slot i, dd
-		slot cnt, dd
-		slot s0, dd
-		slot s1, dd
+		slot pb, dd
+		slot e, dd
+		slot enext, dd
 		slot pv, dq
 	endl
 	mov	rbx, [ctx]
@@ -2345,40 +2355,35 @@ proc __bfa_verify_build_predvecs, ctx
 	mov	eax, [i]
 	cmp	eax, [rbx + BfaVerifyCtx.nblocks]
 	jge	.scandone
-	mov	rdi, rbx
+	mov	rdi, [rbx + BfaVerifyCtx.func]
 	mov	eax, [i]
 	inc	eax
 	mov	esi, eax
-	call	__bfa_verify_succs
-	mov	[cnt], eax
-	mov	[s0], ecx
-	mov	[s1], edx
-
-	cmp	dword [cnt], 0
+	call	bfa_block_ptr
+	mov	ecx, [rax + BfaBlock.first_pred]
+	mov	[e], ecx
+  .edgeloop:
+	cmp	dword [e], 0
 	je	.nextscan
+	mov	rdi, [rbx + BfaVerifyCtx.func]
+	mov	rdi, [rdi + BfaFunc.edges]
+	mov	esi, [e]
+	dec	esi
+	call	vec_get
+	mov	ecx, [rax + BfaEdge.pred]
+	mov	[pb], ecx
+	mov	ecx, [rax + BfaEdge.nextp]
+	mov	[enext], ecx
 	mov	rdi, [outer]
-	mov	eax, [s0]
-	dec	eax
-	mov	esi, eax
+	mov	esi, [i]
 	call	vec_get
 	mov	rdi, [rax]
 	call	vec_push
-	mov	ecx, [i]
-	inc	ecx
+	mov	ecx, [pb]
 	mov	[rax], ecx
-
-	cmp	dword [cnt], 2
-	jne	.nextscan
-	mov	rdi, [outer]
-	mov	eax, [s1]
-	dec	eax
-	mov	esi, eax
-	call	vec_get
-	mov	rdi, [rax]
-	call	vec_push
-	mov	ecx, [i]
-	inc	ecx
-	mov	[rax], ecx
+	mov	ecx, [enext]
+	mov	[e], ecx
+	jmp	.edgeloop
 
   .nextscan:
 	mov	eax, [i]

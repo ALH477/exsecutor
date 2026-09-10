@@ -36,6 +36,14 @@
 ; verbatim (command and output) in the agent's report rather than faked
 ; here as something this sandboxed process cannot actually do.
 ;
+; THE SHARED TRAP STUB IS NO LONGER `ud2`. docs/design/runtime.md 2.5 asked
+; the emitter for `mov edi, 1 / jmp exsrt_abort` -- kind 1, "numeric trap"
+; (prelude/README.md's abort-kind table) -- so that a trapping `+` says
+; which kind it was on fd 2 instead of dying silently with SIGILL. The
+; expected text below carries that, and the emitted module now depends on
+; the prelude supplying `exsrt_abort`, which every `bfa_emit_program` OUT
+; does.
+;
 ; Exit 0 = emitted text matches exactly. 12 = it does not (dump both to
 ; stderr first, for inspection).
 ;
@@ -152,5 +160,6 @@ segment readable writeable
   db "	pop	rbp", 10
   db "	ret", 10
   db "bfausr_trap:", 10
-  db "	db	0x0F, 0x0B", 10
+  db "	mov	edi, 1", 10
+  db "	jmp	exsrt_abort", 10
   .len = $ - expected

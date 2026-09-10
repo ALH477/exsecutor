@@ -1160,6 +1160,715 @@ proc __bfa_make_label_prefix, ctx, module, funcptr, arena
 	return
 endp
 
+; ============================================================================
+; Tier 2 -- what the hello world needs, and nothing speculative
+; (docs/design/runtime.md sections 5 and 6's `backend_fasmg` row)
+; ============================================================================
+;
+; FRAME LAYOUT, EXTENDED. Tier 1's frame was one 8-byte slot per value id.
+; `slot n align` needs storage the emitted code can take the ADDRESS of, so
+; the frame now has two regions:
+;
+;       [rbp - 8]              value slot 1        }  the Tier-1 region,
+;       ...                                        }  unchanged: 8 bytes per
+;       [rbp - 8*ninsts]       value slot ninsts   }  instruction id
+;       ---- align16(8*(ninsts+1)) ----------------
+;       ...                    each `slot` instruction's own bytes,
+;                              in instruction-id order, each aligned
+;       ---- align16(total) = the frame size ------
+;
+; `rbp` is 16-byte aligned inside every emitted function (`rsp` is 8 mod 16
+; at entry, `push rbp` makes it 0 mod 16), so an offset that is a multiple
+; of A gives an address aligned to A for every A up to 16. Alignments above
+; 16 would need a runtime `and rsp, -A` and are REFUSED rather than
+; silently mis-aligned.
+;
+; The offset of a given `slot` is recomputed by walking the instruction Vec
+; from the start each time it is needed -- O(n^2) over a function, which is
+; this backend's standing trade (spec section 9.2: "slow by construction and
+; correct by construction") and avoids threading a per-function side table
+; through a dispatcher that is already at `proc`'s six-argument limit.
+
+; __bfa_align_up(v, a) -> rax = v rounded up to a multiple of `a`, which
+; must be a power of two (checked by the caller, __bfa_emit_slot).
+proc __bfa_align_up, v, a
+	locals
+	endl
+	mov	rax, [v]
+	mov	rcx, [a]
+	add	rax, rcx
+	dec	rax
+	neg	rcx
+	and	rax, rcx
+	return
+endp
+
+; __bfa_frame_layout(func, instid) -> eax.
+;   instid == 0: the whole frame size, 16-byte aligned.
+;   instid != 0: the byte offset from `rbp` of that `slot` instruction's
+;                storage, i.e. the emitted code says `lea rax, [rbp-eax]`.
+; A non-`slot` instid, or one this walk never reaches, is a caller bug and
+; returns the frame size -- callers only ever pass a `slot`'s own id.
+proc __bfa_frame_layout, func, instid
+	uses	rbx
+	locals
+		slot ninsts, dd
+		slot v, dd
+		slot cur, dq
+		slot algn, dq
+	endl
+	mov	rbx, [func]
+	mov	rdi, [rbx + BfaFunc.insts]
+	mov	rax, [rdi + Vec.len]
+	mov	[ninsts], eax
+
+	; the Tier-1 value-slot region, unchanged: (ninsts+1) slots, 16-aligned
+	mov	eax, [ninsts]
+	inc	eax
+	shl	eax, 3
+	add	eax, 15
+	and	eax, -16
+	mov	[cur], rax
+
+	mov	dword [v], 1
+  .loop:
+	mov	eax, [v]
+	cmp	eax, [ninsts]
+	jg	.done
+	mov	rdi, [func]
+	mov	esi, [v]
+	call	bfa_inst_ptr
+	movzx	ecx, word [rax + BfaInst.op]
+	cmp	ecx, BFA_OP_SLOT
+	jne	.next
+	mov	ecx, [rax + BfaInst.a]		; size
+	mov	edx, [rax + BfaInst.b]		; align
+	test	edx, edx
+	jnz	.havealign
+	mov	edx, 1
+  .havealign:
+	mov	[algn], rdx
+	mov	rdi, [cur]
+	add	rdi, rcx
+	mov	rsi, [algn]
+	call	__bfa_align_up
+	mov	[cur], rax
+	mov	eax, [v]
+	cmp	eax, [instid]
+	jne	.next
+	mov	rax, [cur]
+	return
+  .next:
+	mov	eax, [v]
+	inc	eax
+	mov	[v], eax
+	jmp	.loop
+  .done:
+	mov	rax, [cur]
+	add	rax, 15
+	and	rax, -16
+	return
+endp
+
+; __bfa_emit_slot_inst(ctx, module, func, instid) -- `%v = slot n align`.
+proc __bfa_emit_slot_inst, ctx, module, func, instid
+	locals
+		slot algn, dd
+		slot off, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.b]
+	mov	[algn], ecx
+
+	; alignment must be a power of two and at most 16 -- see the note on
+	; frame layout above for why 16 is the ceiling.
+	mov	eax, [algn]
+	test	eax, eax
+	jz	.badalign
+	cmp	eax, 16
+	jg	.badalign
+	mov	ecx, eax
+	dec	ecx
+	and	ecx, eax
+	jnz	.badalign
+
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	__bfa_frame_layout
+	mov	[off], eax
+
+	mov	rdi, [ctx]
+	jmp	.after_lea
+  .lit_lea db "	lea	rax, [rbp-"
+  .after_lea:
+	lea	rsi, [.lit_lea]
+	mov	rdx, .after_lea - .lit_lea
+	call	__bfa_out_lit
+	mov	rdi, [ctx]
+	mov	esi, [off]
+	call	__bfa_out_u64
+	mov	rdi, [ctx]
+	jmp	.after_close
+  .lit_close db "]", 10
+  .after_close:
+	lea	rsi, [.lit_close]
+	mov	rdx, .after_close - .lit_close
+	call	__bfa_out_lit
+
+	mov	rdi, [ctx]
+	mov	esi, [instid]
+	call	__bfa_out_movq_slot_rax
+	return
+  .badalign:
+	jmp	.after_msg
+  .msg db "slot: alignment must be a power of two, 1..16"
+  .after_msg:
+	lea	rdi, [.msg]
+	mov	rsi, .after_msg - .msg
+	call	__bfa_emit_die
+endp
+
+; __bfa_emit_gaddr(ctx, func, instid) -- `%v = gaddr N` -> the address of
+; the data segment label `bfausr_gN`. The label name is this file's half of
+; a two-sided convention: `bfa_emit_program` (program.inc) emits the
+; matching `bfausr_g<id>:` in `segment readable`, in global id order.
+proc __bfa_emit_gaddr, ctx, func, instid
+	locals
+		slot gn, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[gn], ecx
+
+	mov	rdi, [ctx]
+	jmp	.after_lea
+  .lit_lea db "	lea	rax, [bfausr_g"
+  .after_lea:
+	lea	rsi, [.lit_lea]
+	mov	rdx, .after_lea - .lit_lea
+	call	__bfa_out_lit
+	mov	rdi, [ctx]
+	mov	esi, [gn]
+	call	__bfa_out_u64
+	mov	rdi, [ctx]
+	jmp	.after_close
+  .lit_close db "]", 10
+  .after_close:
+	lea	rsi, [.lit_close]
+	mov	rdx, .after_close - .lit_close
+	call	__bfa_out_lit
+
+	mov	rdi, [ctx]
+	mov	esi, [instid]
+	call	__bfa_out_movq_slot_rax
+	return
+endp
+
+; __bfa_check_nativus(func, eidx) -- dies unless the byte order at extra
+; slot `eidx` is `nativus`. `maior`/`minor` need a `bswap` and a width the
+; hello world does not use; refusing by name beats emitting a native-order
+; access for a declaration that asked for big-endian.
+proc __bfa_check_nativus, func, eidx
+	locals
+	endl
+	mov	rdi, [func]
+	mov	esi, [eidx]
+	call	bfa_extra_get
+	cmp	eax, BFA_ORDER_NATIVUS
+	je	.ok
+	jmp	.after_msg
+  .msg db "load/store: only `nativus` byte order is implemented"
+  .after_msg:
+	lea	rdi, [.msg]
+	mov	rsi, .after_msg - .msg
+	call	__bfa_emit_die
+  .ok:
+	return
+endp
+
+; __bfa_emit_load(ctx, module, func, instid) -- `%v = load T %p off order`,
+; T at 64 bits (`ptr` or `u64`/`i64`), order `nativus`.
+proc __bfa_emit_load, ctx, module, func, instid
+	locals
+		slot eidx, dd
+		slot vp, dd
+		slot off, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[eidx], ecx
+	mov	ecx, [rax + BfaInst.ty]
+	push	rcx
+	mov	rdi, [module]
+	pop	rsi
+	call	__bfa_check_width64
+
+	mov	rdi, [func]
+	mov	esi, [eidx]
+	call	bfa_extra_get
+	mov	[vp], eax
+	mov	rdi, [func]
+	mov	eax, [eidx]
+	inc	eax
+	mov	esi, eax
+	call	bfa_extra_get
+	mov	[off], eax
+	mov	rdi, [func]
+	mov	eax, [eidx]
+	add	eax, 2
+	mov	esi, eax
+	call	__bfa_check_nativus
+
+	mov	rdi, [ctx]
+	mov	esi, [vp]
+	call	__bfa_out_movq_rax_slot		; mov rax, [rbp-8p]
+
+	mov	rdi, [ctx]
+	jmp	.after_deref
+  .lit_deref db "	mov	rax, qword [rax+"
+  .after_deref:
+	lea	rsi, [.lit_deref]
+	mov	rdx, .after_deref - .lit_deref
+	call	__bfa_out_lit
+	mov	rdi, [ctx]
+	mov	esi, [off]
+	call	__bfa_out_u64
+	mov	rdi, [ctx]
+	jmp	.after_close
+  .lit_close db "]", 10
+  .after_close:
+	lea	rsi, [.lit_close]
+	mov	rdx, .after_close - .lit_close
+	call	__bfa_out_lit
+
+	mov	rdi, [ctx]
+	mov	esi, [instid]
+	call	__bfa_out_movq_slot_rax
+	return
+endp
+
+; __bfa_emit_store(ctx, module, func, instid) -- `store T %p off order %v`.
+proc __bfa_emit_store, ctx, module, func, instid
+	locals
+		slot eidx, dd
+		slot vp, dd
+		slot off, dd
+		slot vv, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[eidx], ecx
+	mov	ecx, [rax + BfaInst.ty]
+	push	rcx
+	mov	rdi, [module]
+	pop	rsi
+	call	__bfa_check_width64
+
+	mov	rdi, [func]
+	mov	esi, [eidx]
+	call	bfa_extra_get
+	mov	[vp], eax
+	mov	rdi, [func]
+	mov	eax, [eidx]
+	inc	eax
+	mov	esi, eax
+	call	bfa_extra_get
+	mov	[off], eax
+	mov	rdi, [func]
+	mov	eax, [eidx]
+	add	eax, 2
+	mov	esi, eax
+	call	__bfa_check_nativus
+	mov	rdi, [func]
+	mov	eax, [eidx]
+	add	eax, 3
+	mov	esi, eax
+	call	bfa_extra_get
+	mov	[vv], eax
+
+	mov	rdi, [ctx]
+	mov	esi, [vp]
+	call	__bfa_out_movq_rax_slot		; mov rax, [rbp-8p]
+
+	mov	rdi, [ctx]
+	jmp	.after_movc
+  .lit_movc db "	mov	rcx, "
+  .after_movc:
+	lea	rsi, [.lit_movc]
+	mov	rdx, .after_movc - .lit_movc
+	call	__bfa_out_lit
+	mov	rdi, [ctx]
+	mov	esi, [vv]
+	call	__bfa_slot
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+
+	mov	rdi, [ctx]
+	jmp	.after_st
+  .lit_st db "	mov	qword [rax+"
+  .after_st:
+	lea	rsi, [.lit_st]
+	mov	rdx, .after_st - .lit_st
+	call	__bfa_out_lit
+	mov	rdi, [ctx]
+	mov	esi, [off]
+	call	__bfa_out_u64
+	mov	rdi, [ctx]
+	jmp	.after_close
+  .lit_close db "], rcx", 10
+  .after_close:
+	lea	rsi, [.lit_close]
+	mov	rdx, .after_close - .lit_close
+	call	__bfa_out_lit
+	return
+endp
+
+; __bfa_emit_argreg(ctx, i) -- the SysV integer argument register name for
+; argument index `i` (0..5). Six is the limit: a seventh argument is
+; docs/design/runtime.md section 8's own `[OPEN]` ("the seventh SysV
+; argument in emitted `call`s") and is REFUSED here.
+;
+; The brief for this tier asked for `rassert` on the seventh. It is
+; `__bfa_emit_die` instead, deliberately: `rassert`'s condition is elided
+; whole under `RELEASE` (macros/assert.inc's header), so a `RELEASE` build
+; of `exsc` would emit a `call` that silently dropped the seventh argument
+; -- the exact "never silently miscompile" rule this file's own header
+; states. The refusal is unconditional; the reason is recorded here and in
+; this pass's report rather than quietly substituted.
+proc __bfa_emit_argreg, ctx, i
+	locals
+	endl
+	jmp	.after_tab
+  .tab db "rdi", 0, "rsi", 0, "rdx", 0, "rcx", 0, "r8 ", 0, "r9 ", 0
+  .after_tab:
+	mov	rax, [i]
+	cmp	rax, 6
+	jge	.toomany
+	shl	rax, 2
+	lea	rsi, [.tab]
+	add	rsi, rax
+	mov	rdx, 3
+	cmp	byte [rsi + 2], ' '		; r8 / r9 are two characters
+	jne	.len3
+	mov	rdx, 2
+  .len3:
+	mov	rdi, [ctx]
+	call	__bfa_out_lit
+	return
+  .toomany:
+	jmp	.after_msg
+  .msg db "call: a seventh argument is [OPEN] (runtime.md section 8)"
+  .after_msg:
+	lea	rdi, [.msg]
+	mov	rsi, .after_msg - .msg
+	call	__bfa_emit_die
+endp
+
+; __bfa_emit_callee_label(ctx, module, idv) -- prints `bfausr_<name>` for
+; the 1-based module function index `idv`. The `bfausr_` prefix is the name
+; ABI docs/design/runtime.md section 2.2 and prelude/README.md both build
+; on: the prelude labels its IR-callable routines `bfausr_exsrt_<x>` for
+; exactly this reason, so `call @exsrt_scriptor_scribe` resolves with no
+; special case here.
+proc __bfa_emit_callee_label, ctx, module, idv
+	locals
+	endl
+	mov	rdi, [module]
+	mov	rdi, [rdi + BfaModule.funcs]
+	mov	esi, [idv]
+	dec	esi
+	call	vec_get
+	mov	rax, [rax]
+	mov	ecx, [rax + BfaFunc.name]
+	push	rcx
+	mov	rdi, [ctx]
+	jmp	.after_pfx
+  .lit_pfx db "bfausr_"
+  .after_pfx:
+	lea	rsi, [.lit_pfx]
+	mov	rdx, .after_pfx - .lit_pfx
+	call	__bfa_out_lit
+	mov	rdi, [module]
+	mov	rdi, [rdi + BfaModule.names]
+	pop	rsi
+	call	intern_bytes
+	push	rax
+	push	rdx
+	mov	rdi, [ctx]
+	pop	rdx
+	pop	rsi
+	call	__bfa_out_lit
+	return
+endp
+
+; __bfa_emit_call(ctx, module, func, instid) -- `[%v =] call T @f args...`.
+; extra[base] is the 1-based callee index, extra[base+1..] the arguments.
+; Every argument is loaded from its own stack slot into its SysV register
+; immediately before the call, in ascending argument order, and the result
+; (if the call is not `void`) is stored straight back into the result's
+; slot: no register allocation, exactly the Tier-1 contract.
+;
+; STACK ALIGNMENT: the prologue's `sub rsp, framesz` uses a 16-byte
+; multiple and nothing between the prologue and here moves `rsp`, so
+; `rsp` is 0 mod 16 at the `call` -- what SysV requires, and what the
+; prelude's routines assume (prelude/README.md's `exsrt_` ABI).
+proc __bfa_emit_call, ctx, module, func, instid
+	uses	rbx
+	locals
+		slot eidx, dd
+		slot cnt, dd
+		slot tyv, dd
+		slot i, dd
+		slot av, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[eidx], ecx
+	mov	ecx, [rax + BfaInst.b]
+	mov	[cnt], ecx
+	mov	ecx, [rax + BfaInst.ty]
+	mov	[tyv], ecx
+
+	mov	dword [i], 0
+  .argloop:
+	mov	eax, [i]
+	inc	eax
+	cmp	eax, [cnt]
+	jge	.argsdone
+	mov	rdi, [func]
+	mov	eax, [eidx]
+	add	eax, [i]
+	inc	eax
+	mov	esi, eax
+	call	bfa_extra_get
+	mov	[av], eax
+
+	mov	rdi, [ctx]
+	jmp	.after_mov
+  .lit_mov db "	mov	"
+  .after_mov:
+	lea	rsi, [.lit_mov]
+	mov	rdx, .after_mov - .lit_mov
+	call	__bfa_out_lit
+	mov	rdi, [ctx]
+	mov	esi, [i]
+	call	__bfa_emit_argreg
+	mov	rdi, [ctx]
+	jmp	.after_comma
+  .lit_comma db ", "
+  .after_comma:
+	lea	rsi, [.lit_comma]
+	mov	rdx, .after_comma - .lit_comma
+	call	__bfa_out_lit
+	mov	rdi, [ctx]
+	mov	esi, [av]
+	call	__bfa_slot
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+
+	mov	eax, [i]
+	inc	eax
+	mov	[i], eax
+	jmp	.argloop
+  .argsdone:
+
+	mov	rdi, [ctx]
+	jmp	.after_call
+  .lit_call db "	call	"
+  .after_call:
+	lea	rsi, [.lit_call]
+	mov	rdx, .after_call - .lit_call
+	call	__bfa_out_lit
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	push	rcx
+	mov	rdi, [func]
+	pop	rsi
+	call	bfa_extra_get			; eax = 1-based callee index
+	push	rax
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	pop	rdx
+	call	__bfa_emit_callee_label
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+
+	cmp	dword [tyv], 0			; `void` -- no result slot
+	je	.novalue
+	mov	rdi, [ctx]
+	mov	esi, [instid]
+	call	__bfa_out_movq_slot_rax
+  .novalue:
+	return
+endp
+
+; __bfa_emit_arc(ctx, module, func, instid) -- `retain %r` / `release %r`.
+; The prelude routine is chosen by the OPERAND'S OWN TYPE, `ref` (non-
+; atomic) versus `refc` (atomic) -- docs/design/ssa-ir.md section 2.8's
+; "atomicity from `ref`/`refc`", and runtime.md 2.5's request to this file
+; verbatim. `exsrt_retain` and friends carry NO `bfausr_` prefix: they are
+; not IR names, they are labels this emitter hardcodes (prelude/README.md,
+; "Two prefixes, and the difference is the ABI").
+proc __bfa_emit_arc, ctx, module, func, instid
+	locals
+		slot rv, dd
+		slot isrel, dd
+		slot isatomic, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[rv], ecx
+	movzx	ecx, word [rax + BfaInst.op]
+	cmp	ecx, BFA_OP_RELEASE
+	sete	cl
+	movzx	ecx, cl
+	mov	[isrel], ecx
+
+	mov	rdi, [func]
+	mov	esi, [rv]
+	call	bfa_value_type
+	cmp	eax, BFA_VALUE_TYPE_IS_U1
+	je	.badty
+	push	rax
+	mov	rdi, [module]
+	pop	rsi
+	call	bfa_type_ptr
+	movzx	ecx, byte [rax + BfaType.kind]
+	cmp	ecx, BFA_TK_REF
+	je	.nonatomic
+	cmp	ecx, BFA_TK_REFC
+	je	.atomic
+  .badty:
+	jmp	.after_msg
+  .msg db "retain/release: operand is not `ref` or `refc`"
+  .after_msg:
+	lea	rdi, [.msg]
+	mov	rsi, .after_msg - .msg
+	call	__bfa_emit_die
+  .nonatomic:
+	mov	dword [isatomic], 0
+	jmp	.emit
+  .atomic:
+	mov	dword [isatomic], 1
+  .emit:
+	mov	rdi, [ctx]
+	jmp	.after_movrdi
+  .lit_movrdi db "	mov	rdi, "
+  .after_movrdi:
+	lea	rsi, [.lit_movrdi]
+	mov	rdx, .after_movrdi - .lit_movrdi
+	call	__bfa_out_lit
+	mov	rdi, [ctx]
+	mov	esi, [rv]
+	call	__bfa_slot
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+
+	mov	rdi, [ctx]
+	jmp	.after_c
+  .lit_c db "	call	exsrt_"
+  .after_c:
+	lea	rsi, [.lit_c]
+	mov	rdx, .after_c - .lit_c
+	call	__bfa_out_lit
+	cmp	dword [isrel], 0
+	jne	.wrel
+	mov	rdi, [ctx]
+	jmp	.after_ret
+  .lit_ret db "retain"
+  .after_ret:
+	lea	rsi, [.lit_ret]
+	mov	rdx, .after_ret - .lit_ret
+	call	__bfa_out_lit
+	jmp	.suffix
+  .wrel:
+	mov	rdi, [ctx]
+	jmp	.after_rel
+  .lit_rel db "release"
+  .after_rel:
+	lea	rsi, [.lit_rel]
+	mov	rdx, .after_rel - .lit_rel
+	call	__bfa_out_lit
+  .suffix:
+	cmp	dword [isatomic], 0
+	je	.nosuffix
+	mov	rdi, [ctx]
+	jmp	.after_c2
+  .lit_c2 db "_c"
+  .after_c2:
+	lea	rsi, [.lit_c2]
+	mov	rdx, .after_c2 - .lit_c2
+	call	__bfa_out_lit
+  .nosuffix:
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	return
+endp
+
+; __bfa_emit_trap(ctx, module, func, instid) -- `trap KIND`.
+; `Inst.aux` is the interned kind WORD (parse.inc interns whatever text
+; appears; docs/design/ssa-ir.md section 2.3 says only that trap kinds "are
+; an IR enum" and never names one). The kinds that exist are
+; prelude/README.md's, and the only one any design spells today is
+; `terminus` -- kind 5, added at docs/design/lowering.md finding 2's
+; request precisely so a `dum ... terminus N` overrun stops folding into
+; kind 1. Any other word is refused by name rather than guessed at.
+proc __bfa_emit_trap, ctx, module, func, instid
+	locals
+		slot kidv, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	movzx	ecx, word [rax + BfaInst.aux]
+	mov	[kidv], ecx
+
+	mov	rdi, [module]
+	mov	rdi, [rdi + BfaModule.names]
+	mov	esi, [kidv]
+	call	intern_bytes
+	mov	rdi, rax
+	mov	rsi, rdx
+	jmp	.after_term
+  .lit_term db "terminus"
+  .after_term:
+	lea	rdx, [.lit_term]
+	mov	rcx, .after_term - .lit_term
+	call	__bfa_streq
+	test	eax, eax
+	jz	.unknown
+
+	mov	rdi, [ctx]
+	jmp	.after_k5
+  .lit_k5 db "	mov	edi, 5", 10, "	jmp	exsrt_abort", 10
+  .after_k5:
+	lea	rsi, [.lit_k5]
+	mov	rdx, .after_k5 - .lit_k5
+	call	__bfa_out_lit
+	return
+  .unknown:
+	jmp	.after_msg
+  .msg db "trap: unknown kind word (only `terminus` has a prelude kind)"
+  .after_msg:
+	lea	rdi, [.msg]
+	mov	rsi, .after_msg - .msg
+	call	__bfa_emit_die
+endp
+
 ; __bfa_emit_inst(ctx, module, func, instid) -- dispatches one instruction
 ; to its Tier-1 lowering, or dies naming the opcode. `jmp`/`br` need this
 ; function's label prefix too; threaded through two file-scope `=` slots
@@ -1264,8 +1973,74 @@ proc __bfa_emit_inst, ctx, module, func, instid, lblptr, lbllen
 	call	__bfa_emit_ret
 	return
   .notret:
+	cmp	dword [op], BFA_OP_SLOT
+	jne	.notslot
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfa_emit_slot_inst
+	return
+  .notslot:
+	cmp	dword [op], BFA_OP_GADDR
+	jne	.notgaddr
+	mov	rdi, [ctx]
+	mov	rsi, [func]
+	mov	edx, [instid]
+	call	__bfa_emit_gaddr
+	return
+  .notgaddr:
+	cmp	dword [op], BFA_OP_LOAD
+	jne	.notload
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfa_emit_load
+	return
+  .notload:
+	cmp	dword [op], BFA_OP_STORE
+	jne	.notstore
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfa_emit_store
+	return
+  .notstore:
+	cmp	dword [op], BFA_OP_CALL
+	jne	.notcall
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfa_emit_call
+	return
+  .notcall:
+	cmp	dword [op], BFA_OP_RETAIN
+	je	.doarc
+	cmp	dword [op], BFA_OP_RELEASE
+	je	.doarc
+	jmp	.notarc
+  .doarc:
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfa_emit_arc
+	return
+  .notarc:
+	cmp	dword [op], BFA_OP_TRAP
+	jne	.nottrap
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfa_emit_trap
+	return
+  .nottrap:
 	jmp	.after_msg
-  .msg db "opcode not implemented in the Tier-1 emitter"
+  .msg db "opcode not implemented in the Tier-1/Tier-2 emitter"
   .after_msg:
 	lea	rdi, [.msg]
 	mov	rsi, .after_msg - .msg
@@ -1324,16 +2099,16 @@ proc __bfa_emit_function, ctx, module, funcptr, arena
 	call	__bfa_out_lit
 
 	; prologue: one 8-byte slot per instruction id (dense, void ids included
-	; for simplicity), 16-byte aligned.
+	; for simplicity), then one aligned block per `slot` instruction, the
+	; whole frame 16-byte aligned -- __bfa_frame_layout owns the layout and
+	; is the single place it is computed (see its header).
 	mov	rdi, [func]
 	mov	rdi, [rdi + BfaFunc.insts]
 	mov	rax, [rdi + Vec.len]
 	mov	[ninsts], eax
-	mov	eax, [ninsts]
-	inc	eax
-	shl	eax, 3
-	add	eax, 15
-	and	eax, -16
+	mov	rdi, [func]
+	xor	esi, esi
+	call	__bfa_frame_layout
 	mov	[framesz], eax
 
 	jmp	.after_prologue
@@ -1471,11 +2246,25 @@ proc bfa_emit_module, module, arena
 	mov	esi, [i]
 	call	vec_get
 	mov	rax, [rax]
+	; An `externus` function is a DECLARATION: spec section 5.3 says its
+	; body lives in another object, so emitting one here would define a
+	; label something else already defines. This is how the hello world
+	; names the prelude's routines -- `call @exsrt_scriptor_scribe`
+	; resolves against a `functio ... externus sysv_amd64` declaration and
+	; assembles against `bfausr_exsrt_scriptor_scribe` in the blob.
+	;
+	; docs/design/ssa-ir.md section 2.11 gives no BODILESS textual form
+	; (docs/design/lowering.md finding 16), so such a declaration must
+	; still carry a body in text today; it is skipped here and never
+	; reaches OUT. That finding is now hit in practice, not hypothetically.
+	test	dword [rax + BfaFunc.attrs], BFA_FUNC_ATTR_EXTERNUS
+	jnz	.skipfunc
 	mov	rdi, [ctx]
 	mov	rsi, [module]
 	mov	rdx, rax
 	mov	rcx, [arena]
 	call	__bfa_emit_function
+  .skipfunc:
 	mov	eax, [i]
 	inc	eax
 	mov	[i], eax
@@ -1483,7 +2272,14 @@ proc bfa_emit_module, module, arena
   .funcsdone:
 
 	jmp	.after_trap
-  .lit_trap db "bfausr_trap:", 10, "	db	0x0F, 0x0B", 10
+  ; docs/design/runtime.md 2.5, verbatim: "The emitter's `bfausr_trap:`
+  ; (`ud2` alone) should become `mov edi, 1 / jmp exsrt_abort` so that a
+  ; numeric trap says which kind it was." Kind 1 is prelude/README.md's
+  ; "numeric trap: trapping + - * /, zero divisor, failed chk". This makes
+  ; the emitted module depend on the prelude for the first time: a harness
+  ; that assembles `bfa_emit_module`'s text alone must now supply an
+  ; `exsrt_abort`, which `bfa_emit_program`'s OUT always does.
+  .lit_trap db "bfausr_trap:", 10, "	mov	edi, 1", 10, "	jmp	exsrt_abort", 10
   .after_trap:
 	mov	rdi, [ctx]
 	lea	rsi, [.lit_trap]

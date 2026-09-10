@@ -14,7 +14,7 @@
 #                                       its declared capability atoms admit
 #                                       -- asm-conventions.md §6's SECOND
 #                                       closed set (compiler/x86_64/prelude/,
-#                                       docs/design/runtime.md §2.6). Makes
+#                                       docs/design/runtime.md section 2.6). Makes
 #                                       spec §10.3's audit a property of the
 #                                       artifact. See "POTESTATES MODE"
 #                                       below for the table and its source.
@@ -40,7 +40,7 @@
 # table in `compiler/x86_64/prelude/README.md` ("The syscall table, per
 # atom") -- taken from there "as built" (grepped from prelude.asm's actual
 # `if EXS_POTESTAS_<atom>` gates), per this flag's design brief, NOT from
-# `docs/design/runtime.md` §2.6, which disagrees for `archivum`,
+# `docs/design/runtime.md` section 2.6, which disagrees for `archivum`,
 # `horologium`, `fortuna` and `rete`: runtime.md pre-declares specific
 # syscalls for those atoms (openat/close/fstat/lseek/read/write for
 # archivum; clock_gettime for horologium; getrandom for fortuna; "the
@@ -270,7 +270,7 @@ OTHER_FLAGGED = {
 # EXS_POTESTAS_*` block in prelude.asm, even EXS_POTESTAS_MUNDUS (which
 # gates no syscall site in the blob as built today).
 #
-# write(1) is ALSO core, but not unconditionally: README/runtime.md §2.6
+# write(1) is ALSO core, but not unconditionally: README/runtime.md section 2.6
 # both read "write(1) to fd 2 ... from exsrt_abort only" -- exsrt_abort's
 # write loads `edi, 2` as an immediate (fd 2, unconditional, outside every
 # `if` block); exsrt_scriptor_scribe's write (gated on EXS_POTESTAS_AMBITUS)
@@ -425,7 +425,7 @@ def scan(disasm_text):
     output is unaffected. --potestates mode needs it because
     compiler/x86_64/prelude/README.md's core row is not "write(1),
     unconditionally": it is "write(1) to fd 2 ... from exsrt_abort only"
-    (docs/design/runtime.md §2.6 says the same, "from exsrt_abort only").
+    (docs/design/runtime.md section 2.6 says the same, "from exsrt_abort only").
     `exsrt_scriptor_scribe`'s write loads its fd from a Scriptor field
     (register-to-register, not an immediate) and is gated on `ambitus` in
     prelude.asm; `exsrt_abort`'s write loads `edi, 2` as an immediate,
@@ -527,7 +527,7 @@ def classify_potestates(nr, fd, admitted, rete_named, atoms):
             'a failure, not skipped')
     if nr == 1:
         # write -- the one syscall number whose core row is conditioned on
-        # more than the atom list: README/runtime.md §2.6, "write(1) to fd
+        # more than the atom list: README/runtime.md section 2.6, "write(1) to fd
         # 2 ... from exsrt_abort only". `ambitus` admits write(1) to any
         # fd (scribe's case); absent that, only a write whose fd resolves
         # to the immediate 2 is the unconditional exsrt_abort case.
@@ -538,7 +538,7 @@ def classify_potestates(nr, fd, admitted, rete_named, atoms):
             return 'PASS', '1', 'write', (
                 "admitted: core row -- fd resolves to 2, the unconditional "
                 "exsrt_abort case (compiler/x86_64/prelude/README.md / "
-                "runtime.md §2.6); 'ambitus' is not required for this one")
+                "runtime.md section 2.6); 'ambitus' is not required for this one")
         fd_desc = ('fd=%d' % fd) if fd is not None else 'fd INDETERMINATE'
         return 'FAIL', '1', 'write', (
             "not admitted: write(1) with %s is not the core fd-2 "

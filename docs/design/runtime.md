@@ -116,7 +116,7 @@ bfausr_initium:
 bfausr_trap:                                         ; emit.inc's shared stub (section 2.5 asks that it
         db      0x0F, 0x0B                           ; become a jump into exsrt_abort; today it is ud2)
 segment readable                                     ; ---- data: string literals, IR globals in id order
-bfausr_g1:                                           ; `data $1 101 1 …` -> label, then bytes
+bfausr_g0:                                           ; `data $0 101 1 …` -> label, then bytes
         db      0x41,0x76,0x65,0x2C,…                ; hex bytes only, never a quoted string
 segment readable writeable                           ; ---- the prelude's mutable state: the second blob,
         …exsrt_mundus, exsrt_ambitus, exsrt_arena…   ;      verbatim (see below)
@@ -615,12 +615,12 @@ the hello world's three names are ASCII.
 lowering exists, this is what section 2 obliges it to produce):
 
 ```
-data $1 101 1 4176652C206D756E6475732E0A0A45782073696C656E74696F2073757267697420666F726D612E0A4578207369676E6F206E6173636974757220766F782E0A457820636F6469636520666974206C756D656E2E0A0A486F64696520696E636970696D75732E
+data $0 101 1 4176652C206D756E6475732E0A0A45782073696C656E74696F2073757267697420666F726D612E0A4578207369676E6F206E6173636974757220766F782E0A457820636F6469636520666974206C756D656E2E0A0A486F64696520696E636970696D75732E
 
 functio @saluta (ptr) -> void numeri ad_parem vetita explicita conservata {
 b0:
   %0 = param ptr 0                 ; hidden return storage: the caller's 16-byte textus
-  %1 = gaddr 1
+  %1 = gaddr 0
   store ptr %0 0 nativus %1
   %2 = iconst u64 101
   store u64 %0 8 nativus %2
@@ -669,7 +669,7 @@ inside that argument — here, in `Scriptor.a`. The substituted row
    `call exsrt_scriptor_scribe`, stores `rax`, returns it),
    `bfausr_initium` (two `sub rsp`-carved 16-byte slots, three calls,
    `mov eax, 0`, epilogue), `bfausr_trap`;
-5. `segment readable`; `bfausr_g1:` and 101 hex bytes;
+5. `segment readable`; `bfausr_g0:` and 101 hex bytes;
 6. `segment readable writeable`; the data blob.
 
 **`fasmg OUT BIN && ./BIN`**, byte for byte: the kernel maps three
@@ -677,8 +677,8 @@ segments and jumps to `exsrt_start`; `rsp0` is recorded; `ldmxcsr 0x1F80`;
 `bfausr_initium(&exsrt_mundus)`; `exsrt_mundus_ambitus` fills
 `ExsAmbitus` with `{0, 1, 2, argc, argv, envp}` and returns its address;
 `ad_exitum` writes `{&exsrt_ambitus, 1}` into `s`; `saluta` writes
-`{&bfausr_g1, 101}` into the temporary; `imprime_gutenbergio` →
-`scribe` → **one `write(1, &bfausr_g1, 101)`** — the whole literal in one
+`{&bfausr_g0, 101}` into the temporary; `imprime_gutenbergio` →
+`scribe` → **one `write(1, &bfausr_g0, 101)`** — the whole literal in one
 call on a terminal or a file; a pipe may split it and the loop finishes
 it — then `exit_group(0)`. Stdout receives the 101 bytes of
 `examples/saluta.expected`, `Ave, mundus.\n\nEx silentio … incipimus.`,

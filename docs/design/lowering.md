@@ -191,7 +191,7 @@ than copying it (section 5).
 
 `bfa_block_new` creates; **a terminator is the only thing that creates an
 edge**, through two helpers that wrap `bfa_inst_push` + `bfa_block_link_body`
-+ one `bfa_edge_push(func, target, cur)` per successor in operand order
++ one `bfa_edge_push(func, cur, target)` (from, to) per successor in operand order
 (`br`: true target then false target). `bfa_edge_push` does not exist —
 `verify.inc`'s finding 1 records that nothing populates `first_pred`/
 `last_pred`/`edges` — and is the first builder this pass needs (section 5).
@@ -735,7 +735,7 @@ checker (the driver agent's tree), and no conformance entry depends on it
 before then.
 
 **Builders the backend agent must add to `backend_fasmg/ir.inc`** (this
-pass's tree cannot write there): `bfa_edge_push(func, block, pred)` —
+pass's tree cannot write there): `bfa_edge_push(func, from, to)` — as built in ir.inc; an earlier draft here wrote `(func, block, pred)`, and a caller using that order builds a reversed CFG that still verifies on a symmetric fixture —
 append to `block`'s predecessor list (finding 1 of `verify.inc`, now with
 a caller); `bfa_block_prepend_phi(func, block, valueid)` — IR 2.1's O(1)
 prepend, which `bfa_block_link_phi` does not do (it appends); `bfa_sig_new(module,

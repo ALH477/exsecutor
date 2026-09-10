@@ -851,3 +851,665 @@ proc bfa_extra_set, func, index, val
 	mov	[rax], ecx
 	return
 endp
+
+; ============================================================================
+; BUILDERS ADDED FOR THE LOWERING AND THE VERIFIER
+; (docs/design/lowering.md section 5's request list, and verify.inc's
+; FINDING 1 and FINDING 2). Everything above this line predates them and is
+; unchanged; everything below exists because a named consumer asked for it,
+; not speculatively.
+; ============================================================================
+
+; ---- the `nop` opcode, named at last -----------------------------------
+; docs/design/ssa-ir.md section 2.1: "A removed instruction becomes `nop`
+; with `a` = its replacement; reads follow the chain", and section 3 makes
+; "no `nop`" the verifier's rule 9. Until now no BFA_OP_* value stood for
+; it: verify.inc INFERRED raw `Inst.op == 0` (its own FINDING 2) and
+; lowering.md's finding 10 seconded that the constant was missing. 0 is the
+; right value and not a new one -- print.inc's op-shape table already
+; documents index 0 as "never a real opcode", and every BfaInst this file
+; hands out is zeroed or op-assigned, so `op == 0` already means "no real
+; opcode here". Naming it changes no bytes; it removes the inference.
+;
+; There is deliberately NO `nop` mnemonic in parse.inc's optab: section 2.11
+; gives no text for one, a `nop` may only be produced by an
+; instruction-removal pass, and a text form would let hand-written IR spell
+; something the verifier exists to reject.
+BFA_OP_NOP = 0
+
+; ============================================================================
+; predecessor edges -- docs/design/ssa-ir.md section 2.4
+; ============================================================================
+
+; bfa_edge_push(func, pfrom, pto) -> eax = the new 1-based edge index.
+; Appends `pfrom` to `pto`'s predecessor list: allocates a BfaEdge in
+; func.edges and links it onto BfaBlock.first_pred/last_pred, so the list
+; is in THE ORDER TERMINATORS WERE EMITTED -- which is section 2.4's
+; definition of predecessor order and therefore of phi operand order, and
+; which is NOT ascending block index in general (verify.inc's header
+; argues that at length; lowering.md finding 11 is the same point from the
+; other side).
+;
+; ARGUMENT ORDER. This is lowering.md section 5's `bfa_edge_push(func,
+; block, pred)` with the two block ids in the opposite order: (from, to),
+; edge direction, so a call site reads the way the CFG edge does --
+; `bfa_edge_push(f, cur, target)` at the site that emits `jmp target`.
+; Recorded here rather than silently chosen, because a caller written
+; against lowering.md's spelling and this proc's order would build a
+; REVERSED CFG that still verifies on a symmetric fixture. Named
+; `pfrom`/`pto` because a bare `to` is one keystroke from a fasmg
+; size/operator token and `from` is not obviously safe either
+; (docs/asm-conventions.md section 4.1).
+;
+; Edge indices are 1-BASED (0 = end of list) for the same reason value and
+; block ids are: 0 has to stay a free sentinel in `first_pred`/`nextp`.
+proc bfa_edge_push, func, pfrom, pto
+	uses	rbx, r12
+	locals
+		slot eidx, dd
+	endl
+	mov	rdi, [func]
+	mov	rdi, [rdi + BfaFunc.edges]
+	call	vec_push		; rax = the new BfaEdge slot
+	mov	ecx, [pfrom]
+	mov	[rax + BfaEdge.pred], ecx
+	mov	dword [rax + BfaEdge.nextp], 0
+
+	mov	rdi, [func]
+	mov	rdi, [rdi + BfaFunc.edges]
+	mov	rax, [rdi + Vec.len]	; 1-based index = length after push
+	mov	[eidx], eax
+
+	mov	rdi, [func]
+	mov	rsi, [pto]
+	call	bfa_block_ptr
+	mov	rbx, rax
+	mov	r12d, [rbx + BfaBlock.last_pred]
+	test	r12d, r12d
+	jnz	.have_tail
+	mov	eax, [eidx]
+	mov	[rbx + BfaBlock.first_pred], eax
+	mov	[rbx + BfaBlock.last_pred], eax
+	mov	eax, [eidx]
+	return
+  .have_tail:
+	; the old tail edge, re-fetched through vec_get because the push above
+	; may have moved func.edges' backing block (rt/vec.inc: growth moves
+	; the data, never the Vec header -- ir.inc's own header states the
+	; rule and this is the one place in this file that could violate it).
+	mov	rdi, [func]
+	mov	rdi, [rdi + BfaFunc.edges]
+	mov	esi, r12d
+	dec	esi
+	call	vec_get
+	mov	ecx, [eidx]
+	mov	[rax + BfaEdge.nextp], ecx
+	mov	eax, [eidx]
+	mov	[rbx + BfaBlock.last_pred], eax
+	return
+endp
+
+; bfa_edge_count(func, blockid) -> eax = how many predecessor edges the
+; block has. A walk of the same list bfa_edge_push builds; used by rule 3
+; (one phi operand per predecessor) and by anything sizing a phi's `extra`
+; range before filling it.
+proc bfa_edge_count, func, blockid
+	uses	rbx
+	locals
+		slot cnt, dd
+		slot e, dd
+	endl
+	mov	rdi, [func]
+	mov	rsi, [blockid]
+	call	bfa_block_ptr
+	mov	ecx, [rax + BfaBlock.first_pred]
+	mov	[e], ecx
+	mov	dword [cnt], 0
+  .loop:
+	cmp	dword [e], 0
+	je	.done
+	mov	eax, [cnt]
+	inc	eax
+	mov	[cnt], eax
+	mov	rdi, [func]
+	mov	rdi, [rdi + BfaFunc.edges]
+	mov	esi, [e]
+	dec	esi
+	call	vec_get
+	mov	ecx, [rax + BfaEdge.nextp]
+	mov	[e], ecx
+	jmp	.loop
+  .done:
+	mov	eax, [cnt]
+	return
+endp
+
+; bfa_edge_nth(func, blockid, index) -> eax = the 0-based `index`-th
+; predecessor BLOCK id, or 0 if the list is shorter than that. Walks; the
+; list is a handful of entries in every function this backend has seen and
+; a reader that wants all of them should walk it once itself.
+proc bfa_edge_nth, func, blockid, index
+	locals
+		slot i, dd
+		slot e, dd
+	endl
+	mov	rdi, [func]
+	mov	rsi, [blockid]
+	call	bfa_block_ptr
+	mov	ecx, [rax + BfaBlock.first_pred]
+	mov	[e], ecx
+	mov	dword [i], 0
+  .loop:
+	cmp	dword [e], 0
+	je	.none
+	mov	rdi, [func]
+	mov	rdi, [rdi + BfaFunc.edges]
+	mov	esi, [e]
+	dec	esi
+	call	vec_get
+	mov	ecx, [rax + BfaEdge.pred]
+	mov	edx, [rax + BfaEdge.nextp]
+	mov	eax, [i]
+	cmp	eax, [index]
+	je	.hit
+	mov	[e], edx
+	mov	eax, [i]
+	inc	eax
+	mov	[i], eax
+	jmp	.loop
+  .hit:
+	mov	eax, ecx
+	return
+  .none:
+	xor	eax, eax
+	return
+endp
+
+; ============================================================================
+; phi prepend -- docs/design/ssa-ir.md section 2.1's O(1) case
+; ============================================================================
+
+; bfa_block_prepend_phi(func, blockid, valueid) -- puts `valueid` at the
+; FRONT of the block's phi list, O(1), nothing moves. This is the operation
+; section 2.1 describes ("a late phi is prepended in O(1)") and the one
+; Braun's unsealed-block read performs; `bfa_block_link_phi`, just above,
+; APPENDS and is what the text parser wants, since hand-written IR already
+; states its phis in final order. Both exist because they are different
+; operations, not two spellings of one.
+;
+; The prepended instruction must not already be on any list: its `nextp` is
+; overwritten here.
+proc bfa_block_prepend_phi, func, blockid, valueid
+	uses	rbx
+	locals
+	endl
+	mov	rdi, [func]
+	mov	rsi, [blockid]
+	call	bfa_block_ptr
+	mov	rbx, rax
+	mov	rdi, [func]
+	mov	esi, [valueid]
+	call	bfa_inst_ptr
+	mov	ecx, [rbx + BfaBlock.first_phi]
+	mov	[rax + BfaInst.nextp], ecx
+	mov	ecx, [valueid]
+	mov	[rbx + BfaBlock.first_phi], ecx
+	cmp	dword [rbx + BfaBlock.last_phi], 0
+	jne	.have_tail
+	mov	[rbx + BfaBlock.last_phi], ecx
+  .have_tail:
+	return
+endp
+
+; ============================================================================
+; signatures and globals -- the two module-level tables parse.inc built
+; inline (lowering.md section 5: "a second writer should not repeat" that)
+; ============================================================================
+
+; bfa_sig_new(module, retty, ptypes, pn) -> eax = the 0-based signature
+; index, which is what BfaFunc.sig holds. `retty` is a type id or 0 for
+; void; `ptypes` points at `pn` consecutive 32-bit type ids, copied into
+; Module.sig_extra in order. Named in ir.inc's BFA_TK_FN comment long
+; before it existed; signatures are still never de-duplicated (that
+; comment's [UNIMPLEMENTED] stands -- nothing builds `fn.S` values yet).
+proc bfa_sig_new, module, retty, ptypes, pn
+	uses	rbx, r12, r13
+	locals
+		slot base, dd
+		slot i, dd
+	endl
+	mov	rbx, [module]
+	mov	rdi, [rbx + BfaModule.sig_extra]
+	mov	rax, [rdi + Vec.len]
+	mov	[base], eax
+
+	mov	dword [i], 0
+  .ploop:
+	mov	eax, [i]
+	cmp	eax, [pn]
+	jge	.pdone
+	mov	rdi, [rbx + BfaModule.sig_extra]
+	call	vec_push
+	mov	rcx, [ptypes]
+	mov	edx, [i]
+	mov	ecx, [rcx + rdx*4]
+	mov	[rax], ecx
+	mov	eax, [i]
+	inc	eax
+	mov	[i], eax
+	jmp	.ploop
+  .pdone:
+
+	mov	rdi, [rbx + BfaModule.sigs]
+	call	vec_push
+	mov	ecx, [retty]
+	mov	[rax + BfaSig.ret_ty], ecx
+	mov	ecx, [base]
+	mov	[rax + BfaSig.p_first], ecx
+	mov	ecx, [pn]
+	mov	[rax + BfaSig.p_count], ecx
+
+	mov	rdi, [rbx + BfaModule.sigs]
+	mov	rax, [rdi + Vec.len]
+	dec	eax			; index, not length
+	return
+endp
+
+; bfa_global_new(module, gsize, galgn, gbytes, gn) -> eax = the new
+; global's id. Ids are assigned DENSELY FROM 0 in creation order, which is
+; exactly the rule parse.inc's `data $N` line already enforces ("out-of-
+; sequence global $N" if `N` is not the current globals length) -- so a
+; module built through this proc and a module parsed from text agree on
+; ids without either knowing about the other. `gbytes`/`gn` are the initial
+; bytes, copied into Module.gdata; `gn` may be less than `gsize` (a global
+; whose tail is zero-filled), and no check couples the two -- section 2.11
+; prints size and bytes as independent fields.
+proc bfa_global_new, module, gsize, galgn, gbytes, gn
+	uses	rbx
+	locals
+		slot doff, dd
+		slot gid, dd
+		slot i, dd
+	endl
+	mov	rbx, [module]
+	mov	rdi, [rbx + BfaModule.gdata]
+	mov	rax, [rdi + Vec.len]
+	mov	[doff], eax
+	mov	rdi, [rbx + BfaModule.globals]
+	mov	rax, [rdi + Vec.len]
+	mov	[gid], eax
+
+	mov	dword [i], 0
+  .bloop:
+	mov	eax, [i]
+	cmp	eax, [gn]
+	jge	.bdone
+	mov	rdi, [rbx + BfaModule.gdata]
+	call	vec_push
+	mov	rcx, [gbytes]
+	mov	edx, [i]
+	movzx	ecx, byte [rcx + rdx]
+	mov	[rax], cl
+	mov	eax, [i]
+	inc	eax
+	mov	[i], eax
+	jmp	.bloop
+  .bdone:
+
+	mov	rdi, [rbx + BfaModule.globals]
+	call	vec_push
+	mov	ecx, [gid]
+	mov	[rax + BfaGlobal.id], ecx
+	mov	ecx, [gsize]
+	mov	[rax + BfaGlobal.size], ecx
+	mov	ecx, [galgn]
+	mov	[rax + BfaGlobal.algn], ecx
+	mov	ecx, [doff]
+	mov	[rax + BfaGlobal.data_off], ecx
+	mov	ecx, [gn]
+	mov	[rax + BfaGlobal.data_len], ecx
+	mov	eax, [gid]
+	return
+endp
+
+; ============================================================================
+; the operand-slot iterator -- lowering.md section 5's last request
+; ============================================================================
+;
+; WHY A SECOND TABLE RATHER THAN print.inc's SHAPE TABLE. parse.inc,
+; print.inc and verify.inc each carry their own switch over BFA_SH_*
+; deliberately (each file's header says so), and print.inc sits ABOVE this
+; file in the include chain, so reading its table from here would invert
+; the chain ir.inc's header describes. The table below is keyed on the
+; OPCODE directly and answers exactly one question -- which of an
+; instruction's slots hold a VALUE ID -- which is less than a shape and
+; strictly easier to keep true.
+;
+; ONE BYTE PER OPCODE:
+;   bits 0-3  fixed extra mask: bit i set iff extra[base + i] is a value id
+;   bits 4-5  variadic kind: 0 fixed, 1 phi, 2 call, 3 callind
+;   bit 6     Inst.a is a value id
+;   bit 7     Inst.b is a value id
+; An op with all four fields zero has no value operands at all.
+BFA_OPD_A          = 0x40
+BFA_OPD_B          = 0x80
+BFA_OPD_VAR_PHI    = 0x10	; extra = (bP %v)*: ODD indices are values
+BFA_OPD_VAR_CALL   = 0x20	; extra = callee, args...: indices >= 1
+BFA_OPD_VAR_CALIND = 0x30	; extra = %fp, args...: every index
+BFA_OPD_VAR_MASK   = 0x30
+
+; Operand SLOT CODES, the second return of bfa_inst_operand_next and the
+; address bfa_inst_operand_set takes:
+;   0                      Inst.a
+;   1                      Inst.b
+;   2 + <extra pool index> that word of func.extra
+BFA_OSLOT_A       = 0
+BFA_OSLOT_B       = 1
+BFA_OSLOT_EXTRA0  = 2
+
+	jmp	__bfa_opd_tab_end
+__bfa_opd_tab:
+	db	0				; 0  (nop -- no operands to walk;
+						;     its `a` is a REPLACEMENT id,
+						;     not a use, per section 2.1)
+	db	BFA_OPD_A or BFA_OPD_B		; 1  ADD
+	db	BFA_OPD_A or BFA_OPD_B		; 2  SUB
+	db	BFA_OPD_A or BFA_OPD_B		; 3  MUL
+	db	BFA_OPD_A or BFA_OPD_B		; 4  DIV
+	db	BFA_OPD_A or BFA_OPD_B		; 5  REM
+	db	BFA_OPD_A or BFA_OPD_B		; 6  ADDW
+	db	BFA_OPD_A or BFA_OPD_B		; 7  SUBW
+	db	BFA_OPD_A or BFA_OPD_B		; 8  MULW
+	db	BFA_OPD_A or BFA_OPD_B		; 9  ADDS
+	db	BFA_OPD_A or BFA_OPD_B		; 10 SUBS
+	db	BFA_OPD_A or BFA_OPD_B		; 11 MULS
+	db	BFA_OPD_A or BFA_OPD_B		; 12 ADDOV
+	db	BFA_OPD_A or BFA_OPD_B		; 13 SUBOV
+	db	BFA_OPD_A or BFA_OPD_B		; 14 MULOV
+	db	BFA_OPD_A or BFA_OPD_B		; 15 AND
+	db	BFA_OPD_A or BFA_OPD_B		; 16 OR
+	db	BFA_OPD_A or BFA_OPD_B		; 17 XOR
+	db	BFA_OPD_A or BFA_OPD_B		; 18 SHL
+	db	BFA_OPD_A or BFA_OPD_B		; 19 SHR
+	db	BFA_OPD_A or BFA_OPD_B		; 20 CMP
+	db	BFA_OPD_A			; 21 ZEXT
+	db	BFA_OPD_A			; 22 SEXT
+	db	BFA_OPD_A			; 23 TRUNC
+	db	BFA_OPD_A or BFA_OPD_B		; 24 FADD
+	db	BFA_OPD_A or BFA_OPD_B		; 25 FSUB
+	db	BFA_OPD_A or BFA_OPD_B		; 26 FMUL
+	db	BFA_OPD_A or BFA_OPD_B		; 27 FDIV
+	db	BFA_OPD_A			; 28 FNEG
+	db	0x07				; 29 FMA      extra %a %b %c
+	db	BFA_OPD_A or BFA_OPD_B		; 30 FCMP
+	db	BFA_OPD_A			; 31 FEXT
+	db	BFA_OPD_A			; 32 FTRUNC
+	db	BFA_OPD_A			; 33 ITOF
+	db	BFA_OPD_A			; 34 FTOI
+	db	BFA_OPD_A			; 35 BITCAST
+	db	0				; 36 REDINIT  a=shape b=w
+	db	BFA_OPD_A or BFA_OPD_B		; 37 CONTRIB  %h %v
+	db	BFA_OPD_A			; 38 REDFIN   %h
+	db	0				; 39 SLOT     a=size b=align
+	db	0x01				; 40 LOAD     extra %p off order
+	db	0x09				; 41 STORE    extra %p off order %v
+	db	0x01				; 42 LOADBITS extra %p byte bit
+	db	0x09				; 43 STOREBITS
+	db	0x06				; 44 COPY     extra n %d %s
+	db	BFA_OPD_A			; 45 ADDR     a=%p b=off
+	db	0x03				; 46 INDEX    extra %p %i stride
+	db	0				; 47 GADDR    a=N
+	db	BFA_OPD_A or BFA_OPD_B		; 48 CHK      %i %n
+	db	BFA_OPD_A			; 49 RETAIN
+	db	BFA_OPD_A			; 50 RELEASE
+	db	BFA_OPD_VAR_CALL		; 51 CALL
+	db	BFA_OPD_VAR_CALIND		; 52 CALLIND
+	db	BFA_OPD_A			; 53 RET      a=0 when valueless
+	db	0				; 54 JMP      a=block id
+	db	0x01				; 55 BR       extra %c bT bF
+	db	0				; 56 TRAP
+	db	BFA_OPD_VAR_PHI			; 57 PHI
+	db	0				; 58 PARAM
+	db	0				; 59 ICONST   extra lo hi
+	db	0				; 60 FCONST   extra lo hi
+__bfa_opd_tab_end:
+
+; __bfa_opd_of(func, valueid) -> eax = the descriptor byte for this
+; instruction, with the two INLINE bits cleared for any operand the
+; instruction's own `aux` marks as a bare immediate rather than a value.
+; parse.inc's `__bfa_val_or_imm` sets aux bit 0x100 for `a` and 0x200 for
+; `b` on the bin/cmp shapes -- the only shapes that can carry an immediate
+; where a value id would otherwise be -- and emit.inc reads exactly those
+; two bits for the same purpose. No op whose descriptor sets an inline bit
+; uses `aux` for anything else (`trap` and `redinit` do use `aux` as an
+; intern id, which can exceed 0x100, and both have descriptor 0), so
+; masking unconditionally is safe; that argument is the reason it is safe,
+; and it must be rechecked if a future op both takes a value in `a`/`b`
+; and stores something large in `aux`.
+proc __bfa_opd_of, func, valueid
+	locals
+		slot d, dd
+	endl
+	mov	rdi, [func]
+	mov	rsi, [valueid]
+	call	bfa_inst_ptr
+	movzx	ecx, word [rax + BfaInst.op]
+	movzx	edx, word [rax + BfaInst.aux]
+	push	rdx
+	lea	rdx, [__bfa_opd_tab]
+	movzx	eax, byte [rdx + rcx]
+	pop	rdx
+	test	edx, 0x100
+	jz	.nota
+	and	eax, not BFA_OPD_A
+  .nota:
+	test	edx, 0x200
+	jz	.notb
+	and	eax, not BFA_OPD_B
+  .notb:
+	return
+endp
+
+; bfa_inst_operand_slots(func, valueid) -> eax = the descriptor byte
+; (BFA_OPD_*, immediates already masked out), ecx = the extra-pool base
+; index, edx = the extra-pool word count. `ecx`/`edx` are 0 for an
+; instruction whose operands are entirely inline. This is
+; lowering.md section 5's `(inline mask, extra start, extra count)`, with
+; the inline mask in the top two bits of `eax` exactly as the table above
+; lays it out; callers that just want to WALK the value operands should use
+; bfa_inst_operand_next instead of decoding this themselves.
+proc bfa_inst_operand_slots, func, valueid
+	uses	rbx
+	locals
+		slot d, dd
+	endl
+	mov	rdi, [func]
+	mov	rsi, [valueid]
+	call	__bfa_opd_of
+	mov	[d], eax
+	test	eax, 0x3F		; any extra-pool slots at all?
+	jnz	.hasextra
+	mov	eax, [d]
+	xor	ecx, ecx
+	xor	edx, edx
+	return
+  .hasextra:
+	mov	rdi, [func]
+	mov	rsi, [valueid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	edx, [rax + BfaInst.b]
+	mov	eax, [d]
+	return
+endp
+
+; __bfa_opd_extra_is_val(d, i) -> eax = 1 iff extra slot `i` (relative to
+; the base) of an instruction with descriptor `d` holds a value id.
+proc __bfa_opd_extra_is_val, d, i
+	locals
+	endl
+	mov	eax, [d]
+	and	eax, BFA_OPD_VAR_MASK
+	cmp	eax, BFA_OPD_VAR_PHI
+	je	.phi
+	cmp	eax, BFA_OPD_VAR_CALL
+	je	.call
+	cmp	eax, BFA_OPD_VAR_CALIND
+	je	.callind
+	; fixed: the low nibble is a direct mask over slots 0..3
+	mov	ecx, [i]
+	cmp	ecx, 4
+	jge	.no
+	mov	eax, [d]
+	and	eax, 0x0F
+	shr	eax, cl
+	and	eax, 1
+	return
+  .phi:					; (bP %v) pairs: the odd words
+	mov	eax, [i]
+	and	eax, 1
+	return
+  .call:				; extra[0] is the callee index
+	mov	eax, [i]
+	test	eax, eax
+	jz	.no
+	mov	eax, 1
+	return
+  .callind:				; extra[0] is the function POINTER value
+	mov	eax, 1
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
+; bfa_inst_operand_next(func, valueid, cursor) -> eax = the cursor to pass
+; next (0 = no more operands), ecx = the slot code of the operand just
+; found (BFA_OSLOT_*), edx = the value id currently in that slot.
+;
+; Start with cursor = 1. The walk order is: Inst.a, Inst.b, then the extra
+; range in ascending index -- which is the order every operand of every
+; shape is WRITTEN in (parse.inc pushes in text order), so a canonicalising
+; pass that rewrites in walk order rewrites in text order.
+;
+; A `ret` with no value has `a` = 0 and yields no operands at all; that is
+; the one shape whose operand count is not a function of its opcode alone,
+; and it is handled here rather than by every caller.
+proc bfa_inst_operand_next, func, valueid, cursor
+	uses	rbx, r12, r13
+	locals
+		slot d, dd
+		slot cur, dd
+		slot base, dd
+		slot cnt, dd
+		slot idx, dd
+	endl
+	mov	rdi, [func]
+	mov	rsi, [valueid]
+	call	bfa_inst_operand_slots
+	mov	[d], eax
+	mov	[base], ecx
+	mov	[cnt], edx
+	mov	eax, [cursor]
+	mov	[cur], eax
+
+  .again:
+	cmp	dword [cur], 1
+	jne	.tryb
+	mov	eax, [d]
+	test	eax, BFA_OPD_A
+	jz	.skipa
+	mov	rdi, [func]
+	mov	rsi, [valueid]
+	call	bfa_inst_ptr
+	mov	edx, [rax + BfaInst.a]
+	test	edx, edx		; `ret` with no value
+	jz	.skipa
+	mov	eax, 2
+	mov	ecx, BFA_OSLOT_A
+	return
+  .skipa:
+	mov	dword [cur], 2
+  .tryb:
+	cmp	dword [cur], 2
+	jne	.tryextra
+	mov	eax, [d]
+	test	eax, BFA_OPD_B
+	jz	.skipb
+	mov	rdi, [func]
+	mov	rsi, [valueid]
+	call	bfa_inst_ptr
+	mov	edx, [rax + BfaInst.b]
+	mov	eax, 3
+	mov	ecx, BFA_OSLOT_B
+	return
+  .skipb:
+	mov	dword [cur], 3
+  .tryextra:
+	mov	eax, [cur]
+	sub	eax, 3
+	mov	[idx], eax
+	cmp	eax, [cnt]
+	jge	.done
+	mov	edi, [d]
+	mov	esi, [idx]
+	call	__bfa_opd_extra_is_val
+	test	eax, eax
+	jz	.skipextra
+	mov	rdi, [func]
+	mov	eax, [base]
+	add	eax, [idx]
+	mov	esi, eax
+	push	rax
+	call	bfa_extra_get
+	mov	edx, eax
+	pop	rax
+	mov	ecx, eax
+	add	ecx, BFA_OSLOT_EXTRA0	; slot code = 2 + absolute extra index
+	mov	eax, [cur]
+	inc	eax
+	return
+  .skipextra:
+	mov	eax, [cur]
+	inc	eax
+	mov	[cur], eax
+	jmp	.tryextra
+  .done:
+	xor	eax, eax
+	xor	ecx, ecx
+	xor	edx, edx
+	return
+endp
+
+; bfa_inst_operand_set(func, valueid, oslot, val) -- writes `val` into the
+; slot bfa_inst_operand_next reported. The write-back half of the iterator:
+; section 2.5's canonicalisation ("a final canonicalisation resolves every
+; operand's chain, so no backend sees a `nop`") is exactly a walk plus this.
+proc bfa_inst_operand_set, func, valueid, oslot, val
+	locals
+	endl
+	cmp	dword [oslot], BFA_OSLOT_A
+	jne	.nota
+	mov	rdi, [func]
+	mov	rsi, [valueid]
+	call	bfa_inst_ptr
+	mov	ecx, [val]
+	mov	[rax + BfaInst.a], ecx
+	return
+  .nota:
+	cmp	dword [oslot], BFA_OSLOT_B
+	jne	.notb
+	mov	rdi, [func]
+	mov	rsi, [valueid]
+	call	bfa_inst_ptr
+	mov	ecx, [val]
+	mov	[rax + BfaInst.b], ecx
+	return
+  .notb:
+	mov	rdi, [func]
+	mov	esi, [oslot]
+	sub	esi, BFA_OSLOT_EXTRA0
+	mov	edx, [val]
+	call	bfa_extra_set
+	return
+endp
