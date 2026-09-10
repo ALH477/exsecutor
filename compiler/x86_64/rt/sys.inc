@@ -20,7 +20,9 @@
 ; Code produced by this compiler is not covered by the GPL --
 ; see Exception A in LICENSE.EXCEPTION.
 ; -----------------------------------------------------------------------------
-; The ONLY file in this repo permitted to emit a raw `syscall` instruction
+; The ONLY file in THE COMPILER permitted to emit a raw `syscall` instruction
+; (a compiled program carries compiler/x86_64/prelude/, a second closed set
+; audited on its own binary -- docs/asm-conventions.md §6, second bullet)
 ; (docs/asm-conventions.md §6 "Syscall discipline"; CLAUDE.md "The compiler
 ; is freestanding"). One wrapper per allowlisted syscall, closed set:
 ; read(0) write(1) close(3) fstat(5) lseek(8) mmap(9) munmap(11)

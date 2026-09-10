@@ -308,10 +308,16 @@ descriptor is discovered by the write, not the constructor.
 exsrt_scriptor_scribe:                  ; rdi = Scriptor*, rsi = textus*
         push    rbp
         mov     rbp, rsp
+        sub     rsp, 8
         mov     r8d, [rdi + 8]          ; descriptor
         mov     r9, [rsi + 0]           ; bytes
         mov     r10, [rsi + 8]          ; remaining
-        mov     r11, r10                ; total requested
+        mov     [rbp - 8], r10          ; total requested -- in the FRAME, not r11:
+                                        ; the syscall instruction destroys rax, rcx
+                                        ; and r11 (r11 returns holding RFLAGS). The
+                                        ; first draft of this block kept the total
+                                        ; in r11 and the first run of prelude_scribe
+                                        ; wrote all 101 bytes and returned 6.
   .loop:
         test    r10, r10
         jz      .done
@@ -329,9 +335,9 @@ exsrt_scriptor_scribe:                  ; rdi = Scriptor*, rsi = textus*
         cmp     eax, -4                 ; -EINTR: retry, nothing was written
         je      .loop
   .done:
-        mov     rax, r11
+        mov     rax, [rbp - 8]
         sub     rax, r10                ; bytes actually written
-        pop     rbp
+        leave
         ret
 ```
 
@@ -424,9 +430,8 @@ AST 2.9's reverse declaration order; the prelude only dispatches.
 
 ```
 exsrt_abort:                            ; edi = kind, small integer, permanent
-        … write(2, "exsecutor: abortus ", 19)
-        … write(2, decimal of edi, n)   ; digits only
-        … write(2, "\n", 1)
+        … format "exsecutor: abortus N\n" into the data blob's line buffer
+        … write(2, line, len)           ; ONE write, one syscall site (as built)
         db      0x0F, 0x0B              ; ud2: SIGILL, status 132
 ```
 
