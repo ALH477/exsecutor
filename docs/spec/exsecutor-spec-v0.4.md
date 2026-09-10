@@ -394,7 +394,11 @@ structura ScriptorRetis { sock: rete }      // capability-bearing: [rete]
 
 ## 4.4 Dynamic dispatch
 
-`dyn Trait poscit {P}`. Constructing a trait object from an implementation whose mark exceeds `P` is `EXS-E0510`.
+**A trait's declared rows are a ceiling on every implementation of it**, checked at each `interfacies X in T poscit R` declaration. An implementation whose mark exceeds what the trait declares is `EXS-E0510`, whether or not it is ever boxed.
+
+`dyn Trait poscit {P}` narrows that ceiling further at the cast site; constructing a trait object from an implementation whose mark exceeds `P` is the same code.
+
+**This was found by measurement, not design.** Until `prototypes/gendict/`, the exceeds-check was stated *only* for `dyn` construction — so an implementation reached solely through a generic `<T: Trait>` was never checked against anything. `bad_static_impl_exceeds_member_ceiling.exsc` is the demonstration: `Summable.combine` declares `poscit alloc`, `Right` declares `alloc, rete`, `total<T: Summable>` trusts the trait and declares `alloc`, and a call reaches `rete` undeclared. `Right` never becomes a `dyn` object, so §4.4 as written never fired. The probe also showed the hole is transitive — a generic could launder a value past a `dyn` bound that would have caught it directly (`bad_dyn_launder_via_generic.exsc`), and closing the ceiling closes that too.
 
 The row is **braced** in type position. Written bare it is ambiguous inside a comma-separated parameter list, where the next `,` could belong to either the row or the list — §8.6 resolves this by taking a row on the two-token peek `poscit {`. This section previously wrote `poscit P` schematically, which is not a form that parses.
 
@@ -816,7 +820,11 @@ Generic code compiles **once**, using witness tables. Monomorphization is a link
 - Stable ABI becomes achievable, which matters for dynamic linking under Nix.
 - Cost: dictionary indirection in unspecialized code; recovered at link time where it matters.
 
-`[OPEN]` The three-way interaction of generics × capability rows × dictionary layout is unprototyped. Capabilities are values, so a required row can travel in the witness table — but that makes dictionary layout depend on the row.
+`[OPEN]` The three-way interaction of generics × capability rows × dictionary layout **is now prototyped** (`prototypes/gendict/`, ten cases) and partly answered.
+
+Witness-table layout is **stable** across instantiations — same slots, same arities, which §7.2's "modes may never change representation" requires anyway. What varies is the *row* attached to a slot's type, and the fix is §4.4's ceiling: because a trait's declared rows now bind every implementation, a generic can trust the trait's row rather than any particular impl's. Layout does not depend on the row after all; the row is bounded by the interface.
+
+What remains `[OPEN]`: no syntax exists for a row on a **type parameter**. `poscit sicut T` parses — §8.6's `RowItem` does not distinguish a value parameter from a type parameter — and is semantically inert. The probe notes it reproduces the shape of the pre-§4.2 closure-capture defect one level up, except it fails **closed** rather than open, which is the tolerable direction.
 
 ## 7.2 Modes
 
@@ -1645,7 +1653,7 @@ ego norma.textus {
 ## 10.2 Properties
 
 - **Evaluable without building.** The whole dependency graph, capability closure, and platform compatibility compute from `ego` files alone — no compilation, no network.
-- **Interface identity is separate from implementation identity.** Changing a body without changing a signature leaves the `ego` hash unchanged, so dependents do not rebuild. Combined with dictionary-passing generics (§7.1), this actually works. See §9.6 for the hash that must *not* be reused.
+- **Interface identity is separate from implementation identity.** Changing a body without changing a signature leaves the `ego` hash unchanged, so dependents do not rebuild. Combined with dictionary-passing generics (§7.1), this actually works — **but only because of §4.4's ceiling**, and it did not before. `prototypes/gendict/` showed that without it, a new or edited implementation in an unrelated module could invalidate an already-compiled generic's soundness while changing no signature, no body of that generic, and no `ego` hash: the rebuild trigger never fires and soundness is gone anyway. The ceiling is what puts the fact a generic relies on inside the trait's *interface*, where the hash can see it. See §9.6 for the hash that must *not* be reused.
 - **Generated, never written.** `exsc ego --emitte` derives it; CI fails if stale; the LSP shows drift inline. Same discipline as a lockfile — this avoids the OCaml `.mli` sync tax.
 - **Parsed, never included.** No preprocessor, at any layer, ever.
 
@@ -1733,7 +1741,7 @@ Scratch work without ambient authority: `exsc curre --potestates omnes scratch.e
 | `EXS-E0421` | undeclared capability (atom or row) |
 | `EXS-E0500` | module-level mutable state |
 | `EXS-E0501` | capability stored in module-level state |
-| `EXS-E0510` | capability escapes a `dyn` bound |
+| `EXS-E0510` | capability escapes a declared bound (trait ceiling or `dyn`) |
 | `EXS-E0520` | non-atomic `refero` crossing `externus` |
 | `EXS-E0601` | public name does not decompose into the morpheme table |
 | `EXS-E0602` | suffix contract disagrees with declared type |
@@ -1757,6 +1765,11 @@ structured fix payload §8.3 already requires. `EXS-E0220` earns a code of its
 own on frequency: §8.4's keywords are Latin words that read like plausible
 identifiers, so reserved-word-as-identifier is the predictable error, and its
 fix is mechanically derivable.
+
+`EXS-E0510`'s **text** broadened when §4.4 did; the code did not move. §8.3 is
+explicit that "codes are permanent; text is not", and the two cases are one
+violation — a capability escaping a declared bound — differing only in where
+the bound was written. The `dyn` case turns out to be the special one.
 
 `EXS-E0341` and `EXS-E0342` close a gap §5.4 opened. That section states two
 rules — a running accumulator is not readable inside the reduction body, and
@@ -1833,6 +1846,7 @@ Ships with v1. Each entry must **fail to compile**, except entries 16 and 17, wh
 21. `@transitus` bit widths not summing to a whole byte → `EXS-E0322`
 22. `u4:maior` — byte order on a sub-byte field → `EXS-E0201`
 23. `DeModFrame` encode/decode → byte-identical to all 246 vectors of `vendor/hydramesh-wire/golden_vectors.json`
+24. Implementation whose mark exceeds the trait's declared ceiling, reached only through a generic → `EXS-E0510`
 
 Entries 18-20 close a gap: §8.1 defines six source-policy codes and only three
 of them (`E0102`, `E0103`, `E0105`) had an entry, while `E0101`, `E0104` and
@@ -1860,7 +1874,7 @@ a referenced list is the same mistake as renumbering an error code (§8.3).
 2. **Lexicon derivation test** (§16). Cannot be retired by more engineering — needs human subjects. No longer gates whether §3 is load-bearing (ADR 0005); §3 is retained regardless. What remains open is the *size of its cost*, which is unmeasured.
 3. **Reference cycles** (§6.7). No answer. Accepted cost, with a DoS exposure to document. **Still open for the full language.** The `certus` safety-critical profile (`docs/design/profile-certus.md`, ADR 0010) dissolves it by forbidding reference counting outright — arena-only, sized at `initium` — so cycles are structurally impossible there. That is a restriction, not a solution, and does not close this item.
 4. **Root coinage governance** (§3.8). Resolved as design by §3.9 — exhaustion test, a five-rung coinage ladder, review, permanent registration against the content-addressed morpheme table, and a loan register kept as a running measurement of whether §3 scales. `[UNTESTED]`: no root has been coined through it, and `norma.algebra` (which needs *lane*, *stride*, *pivot*, *eigenvalue*) is its first real exercise.
-5. **Generics × capability rows × dictionary layout** (§7.1). Unprototyped three-way interaction, and **harder since §4.2 put rows in function types** — a witness table now carries rows as well as methods.
+5. **Generics × capability rows × dictionary layout** (§7.1). **Prototyped, and it found a soundness hole.** `prototypes/gendict/` demonstrated that §4.4's exceeds-check, stated only for `dyn` construction, left an implementation reached solely through a generic checked against nothing — and that a generic could launder a value past a `dyn` bound that would have caught it directly. §4.4 now makes a trait's declared rows a ceiling on *every* implementation, which closes both and is what makes §10.2's rebuild claim true rather than hopeful. Witness-table layout turned out to be stable; the row is bounded by the interface, so layout never depended on it. Still `[OPEN]`: no syntax for a row on a **type parameter** — `poscit sicut T` parses and is inert. `[UNTESTED]` — ten Python cases are not a proof and none of this is in a compiler.
 6. **Generator model coverage** (§9.4). "No build scripts" may not survive real FFI binding generation.
 7. **Generated-C debug info** (§9.2). If stepping through Exsecutor is unusable, QBE moves earlier.
 8. **Ecosystem bootstrapping.** Unaddressed by anything in this document, and the actual reason languages die.

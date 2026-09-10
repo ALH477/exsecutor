@@ -1,0 +1,55 @@
+// EXPRESSIVENESS GAP, NOT A SOUNDNESS GAP -- the SAFE-DIRECTION failure,
+// unlike every other file in this directory (this file is a plain
+// bad_*, expected to reject, and it does). Written to test: is there a
+// row a generic can require of its TYPE PARAMETER, rather than of a
+// require of its TYPE PARAMETER, rather than of a value? The natural
+// extension of `sicut IDENT` (Sec 4.2 -- defined over a named VALUE
+// parameter of function type: "names one of the callee's parameters")
+// would be `poscit sicut T` for a generic's own type parameter's
+// dictionary. Sec 8.6's grammar does not distinguish this from the
+// value form at parse time -- `RowItem ::= Path | 'sicut' IDENT` accepts
+// any IDENT, including a GenericParam's name -- so this is not a syntax
+// error. It has no defined MEANING, though: GenericParam ::= IDENT
+// [':' Type] carries no row, and Sec 4.2's substitution is resolved by
+// finding a matching entry in `enclosing.params` (a VALUE parameter
+// list) -- T is not in it, by construction, being a type parameter.
+//
+// What actually happens here is not "the checker understood and
+// rejected sicut-on-a-type-parameter." `sicut T` silently contributes
+// NOTHING to total_polimorfico's declared_atoms() (only ('atom', _)
+// entries count, and this is a ('sicut', 'T') entry) -- exactly Sec
+// 4.2's own description of the ORIGINAL closure-capture bug, one level
+// up: "the prototype produced `requires [sicut f]` inside a function
+// having no `f`." Here it is `poscit sicut T` inside a function whose
+// only `T` is a type, not a value -- there is nothing for the name to
+// attach to, again by construction and not by an oversight a smarter
+// parser would close.
+//
+// Unlike the original bug, this fails CLOSED, not open: the file is
+// REJECTED, because the dictionary-call mechanism (see
+// ok_generic_dictionary_declared.exsc) still independently computes
+// a.combine(b)'s real cost from Summable's declared ceiling ({alloc}),
+// and an empty declared_atoms() cannot cover it. A generic wanting to
+// say "whatever my dictionary needs" has no expressible way to do so
+// today; it can only fall back to declaring the trait's own ceiling by
+// hand, which is what every OTHER file in this directory does. Expect
+// under the checker as implemented: reject, EXS-E0421 -- for the
+// "undeclared row" reason, not for any reason naming `sicut T` itself.
+
+interfacies Summable {
+    functio combine(self, other: f32) -> f32 poscit alloc
+}
+
+functio usa_rete(x: f32) -> f32 poscit rete {
+    redde x;
+}
+
+interfacies Summable in Right poscit alloc, rete {
+    functio combine(self, other: f32) -> f32 {
+        redde usa_rete(other);
+    }
+}
+
+publica functio total_polimorfico<T: Summable>(a: T, b: f32) -> f32 poscit sicut T {
+    redde a.combine(b);
+}

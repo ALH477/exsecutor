@@ -1,0 +1,13 @@
+// Same shape as ok_generic_dictionary_declared.exsc, mutated: `total` no
+// longer declares the row Summable's member demands. If dictionary
+// dispatch is checked at all, this must reject exactly like
+// prototypes/capcheck/cases/bad_laundering.exsc does for a named callee.
+// Expect: reject, EXS-E0421.
+
+interfacies Summable {
+    functio combine(self, other: f32) -> f32 poscit alloc
+}
+
+publica functio total<T: Summable>(a: T, b: f32) -> f32 {
+    redde a.combine(b);
+}

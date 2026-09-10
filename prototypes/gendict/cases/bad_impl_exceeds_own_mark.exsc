@@ -1,0 +1,25 @@
+// No generics, no dyn. Isolates whether an impl's BODY is ever checked
+// against its OWN declared mark at all -- independent of every question
+// this directory otherwise asks. prototypes/capcheck/'s dyn-escape check
+// (bad_dyn_escape.exsc) compares an impl's mark only against a `dyn`
+// CAST SITE's bound; nothing in that probe compares an impl's actual
+// body usage to the mark it declares for itself. Right declares only
+// `alloc` but its body calls a function that costs `rete`. Expect:
+// reject, EXS-E0421.
+//
+// Paired with ok_impl_matches_own_mark.exsc: identical file, mutated so
+// the body no longer needs more than the declared mark.
+
+functio usa_rete(x: f32) -> f32 poscit rete {
+    redde x;
+}
+
+interfacies Summable {
+    functio combine(self, other: f32) -> f32 poscit alloc
+}
+
+interfacies Summable in Right poscit alloc {
+    functio combine(self, other: f32) -> f32 {
+        redde usa_rete(other);
+    }
+}

@@ -1,0 +1,18 @@
+// Mutation pair for bad_impl_exceeds_own_mark.exsc: same shape, the body
+// no longer calls the rete-costing helper. Expect: accept. This is what
+// separates "the impl-body check fires on any impl at all" from "the
+// impl-body check fires correctly, only on a real violation."
+
+functio usa_rete(x: f32) -> f32 poscit rete {
+    redde x;
+}
+
+interfacies Summable {
+    functio combine(self, other: f32) -> f32 poscit alloc
+}
+
+interfacies Summable in Right poscit alloc {
+    functio combine(self, other: f32) -> f32 {
+        redde other;
+    }
+}

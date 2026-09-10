@@ -36,6 +36,14 @@ the answer it gives" is the bar — not "good enough to maintain."
   (ADR 0011); §5.2 gained bit-width fields as a result. See `wire/README.md`.
 - **`lexicon/`** — materials for §3's derivation scheme and the §16
   human-subjects derivation test. Currently empty; see `lexicon/README.md`.
+- **`gendict/`** — probe for §15 open problem #5 and §7.1's `[OPEN]` note:
+  the three-way interaction of generics × capability rows × dictionary
+  layout, sharpened by §4.2 putting rows in function types. Ten cases
+  covering dictionary-reached substitution, witness-table layout stability,
+  and whether a dictionary can launder authority past a `dyn` bound
+  (`EXS-E0510`); two are found and reproduced as sound negatives, one
+  reproducing the original closure-capture defect's shape one level up
+  (a type parameter rather than a value). See `gendict/README.md`.
 
 Every subdirectory README states plainly what exists, what doesn't, and
 which spec figures depend on the missing part. That is the point of writing

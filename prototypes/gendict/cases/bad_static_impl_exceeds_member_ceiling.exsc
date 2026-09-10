@@ -1,0 +1,46 @@
+// KNOWN-GAP.
+//
+// Sec 4.4's exceeds-check ("constructing a trait object from an
+// implementation whose mark exceeds P") is stated only for `dyn`
+// construction. Right here never becomes a dyn object -- it is only
+// ever reached through a generic `<T: Summable>` parameter. Right's own
+// mark (alloc, rete) is internally consistent (its body really does use
+// rete, and it declares rete for itself -- bad_impl_exceeds_own_mark.exsc's
+// check does not fire here). The violation is a DIFFERENT one: Right's
+// mark exceeds Summable.combine's own declared ceiling (alloc), the only
+// fact `total<T: Summable>` had available to trust when IT declared
+// `poscit alloc`. Nothing in Sec 4 states a ceiling for this path, so
+// the default checker accepts this file despite the real violation.
+//
+// `python3 exsecutor_gendict_check.py --strict-static-ceiling` on this
+// file rejects it (EXS-E0421) -- the experimental function
+// check_static_ceiling() in this checker, which is NOT run by default.
+// That is the shape a fix would need: generalize Sec 4.4's ceiling from
+// "checked at a `dyn` cast site" to "checked at every `interfacies ...
+// in ... poscit ...` declaration, against the trait's own declared
+// per-member rows" -- not a new mechanism, the existing DeclRow the
+// impl-head grammar already carries, checked against a target it
+// currently is never compared to outside `dyn`.
+//
+// Paired with ok_generic_matches_ceiling.exsc, whose Left/Right both
+// stay within the ceiling and are accepted in both default and strict
+// mode -- the fix-shape experiment is not a checker that rejects every
+// impl, only the ones that violate the ceiling.
+
+interfacies Summable {
+    functio combine(self, other: f32) -> f32 poscit alloc
+}
+
+functio usa_rete(x: f32) -> f32 poscit rete {
+    redde x;
+}
+
+interfacies Summable in Right poscit alloc, rete {
+    functio combine(self, other: f32) -> f32 {
+        redde usa_rete(other);
+    }
+}
+
+publica functio total<T: Summable>(a: T, b: f32) -> f32 poscit alloc {
+    redde a.combine(b);
+}

@@ -1,0 +1,19 @@
+// Mutation pair for bad_static_impl_exceeds_member_ceiling.exsc, and for
+// the --strict-static-ceiling experiment: Left's mark matches Summable's
+// declared ceiling exactly. Expect: accept, in BOTH default and strict
+// mode -- proof that the experimental fix-shape check is not vacuously
+// rejecting every impl it sees.
+
+interfacies Summable {
+    functio combine(self, other: f32) -> f32 poscit alloc
+}
+
+interfacies Summable in Left poscit alloc {
+    functio combine(self, other: f32) -> f32 {
+        redde other;
+    }
+}
+
+publica functio total<T: Summable>(a: T, b: f32) -> f32 poscit alloc {
+    redde a.combine(b);
+}

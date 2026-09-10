@@ -1,0 +1,32 @@
+// Baseline: sound generic dictionary dispatch. Summable's member fixes a
+// row ceiling; both impls match it exactly; the generic function's own
+// declared row matches the ceiling too, and neither instantiation site
+// needs to know anything about which concrete T it holds. Expect: accept.
+
+interfacies Summable {
+    functio combine(self, other: f32) -> f32 poscit alloc
+}
+
+interfacies Summable in Left poscit alloc {
+    functio combine(self, other: f32) -> f32 {
+        redde other;
+    }
+}
+
+interfacies Summable in Right poscit alloc {
+    functio combine(self, other: f32) -> f32 {
+        redde other;
+    }
+}
+
+publica functio total<T: Summable>(a: T, b: f32) -> f32 poscit alloc {
+    redde a.combine(b);
+}
+
+publica functio usa_izquierda(a: Left, b: f32) -> f32 poscit alloc {
+    redde total<Left>(a, b);
+}
+
+publica functio usa_derecha(a: Right, b: f32) -> f32 poscit alloc {
+    redde total<Right>(a, b);
+}

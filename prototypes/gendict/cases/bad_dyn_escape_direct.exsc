@@ -1,0 +1,29 @@
+// Control case for bad_dyn_launder_via_generic.exsc. Identical
+// mark/bound violation (Right's mark {alloc, rete} exceeds the {alloc}
+// bound the cast claims), but the cast's operand has a CONCRETE type, so
+// the cast site names an impl directly -- the same shape Sec 4.4's
+// EXS-E0510 already covers, generalized here from a struct literal
+// (Sec 8.6: [OPEN], not real syntax yet) to a plain identifier, which is
+// how a real program reaches this today. Expect: reject, EXS-E0510.
+//
+// This is what proves bad_dyn_launder_via_generic.exsc's acceptance is a
+// gap specific to the abstract/generic path, not a checker that never
+// enforces EXS-E0510 at all.
+
+interfacies Summable {
+    functio combine(self, other: f32) -> f32 poscit alloc
+}
+
+functio usa_rete(x: f32) -> f32 poscit rete {
+    redde x;
+}
+
+interfacies Summable in Right poscit alloc, rete {
+    functio combine(self, other: f32) -> f32 {
+        redde usa_rete(other);
+    }
+}
+
+publica functio box_directo(x: Right) -> dyn Summable poscit {alloc} {
+    redde x sicut dyn Summable poscit {alloc};
+}

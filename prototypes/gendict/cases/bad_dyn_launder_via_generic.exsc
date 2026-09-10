@@ -1,0 +1,52 @@
+// KNOWN-GAP.
+//
+// Same violation as the control, bad_dyn_escape_direct.exsc: Right's
+// real mark (alloc, rete) exceeds the {alloc} bound the returned dyn
+// value claims. The only difference is that the cast's operand here has
+// an ABSTRACT type T, bound to Summable by `box`'s own generic
+// parameter, rather than the concrete type Right. Sec 4.4's EXS-E0510
+// check is stated at the CAST SITE, against a concrete implementation --
+// but a cast inside a generic function never has one: `box` is compiled
+// once (Sec 7.1), before any T is chosen, so there is no impl for
+// check_dyn_casts_in_func() to compare against, by construction. The
+// checker accepts this file.
+//
+// Composed with a caller that instantiates `box<Right>`, this is a real
+// capability escape: `box<Right>(r)` hands back a value stamped
+// `dyn Summable poscit {alloc}`, and a caller who trusts that stamp (the
+// entire point of a dyn bound, per Sec 4.4) and grants only `alloc` will
+// nonetheless invoke a `combine` that needs `rete`. Nothing catches this
+// anywhere in the pipeline modeled here -- not at `box`'s own definition
+// (it declares and uses nothing itself), not at the cast (T is
+// abstract), and not at Right's own definition (its mark is internally
+// consistent, see bad_static_impl_exceeds_member_ceiling.exsc for that
+// separate, only-checkable-with-the-experimental-flag question).
+//
+// The shape a fix would need is NOT a smarter cast-site check -- the
+// cast site fundamentally cannot see past an abstract T. It is the same
+// fix bad_static_impl_exceeds_member_ceiling.exsc's --strict-static-
+// ceiling experiment models: enforce, at EVERY `interfacies ... in ...
+// poscit ...` declaration, that the impl's mark cannot exceed the
+// trait's own declared per-member ceiling. If that held, Right's
+// declaration -- not `box`, not the cast, not the call site -- would be
+// the thing that fails to compile, and the dyn bound `box` manufactures
+// would be trustworthy by construction, because every impl of Summable,
+// known or future, would already be inside it.
+
+interfacies Summable {
+    functio combine(self, other: f32) -> f32 poscit alloc
+}
+
+functio usa_rete(x: f32) -> f32 poscit rete {
+    redde x;
+}
+
+interfacies Summable in Right poscit alloc, rete {
+    functio combine(self, other: f32) -> f32 {
+        redde usa_rete(other);
+    }
+}
+
+publica functio box<T: Summable>(x: T) -> dyn Summable poscit {alloc} {
+    redde x sicut dyn Summable poscit {alloc};
+}

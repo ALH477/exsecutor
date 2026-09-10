@@ -1,0 +1,20 @@
+// Isolates the question "does substitution work when a call is reached
+// THROUGH a dictionary rather than named at the call site" on its own,
+// with no second impl and no direct call site to muddy it. The only
+// thing knowable about an abstract T, at the generic's own single
+// compilation (Sec 7.1: compiled once), is the trait member's OWN
+// declared row -- there is no concrete callee name to substitute by, so
+// substitution must resolve through the trait's declared ceiling
+// instead. `total` declares exactly that ceiling. Expect: accept.
+//
+// Paired with bad_generic_dictionary_undeclared.exsc: an identical file
+// with the one declared row removed. If the checker's dictionary-call
+// handling is not vacuous, that mutation must flip the verdict.
+
+interfacies Summable {
+    functio combine(self, other: f32) -> f32 poscit alloc
+}
+
+publica functio total<T: Summable>(a: T, b: f32) -> f32 poscit alloc {
+    redde a.combine(b);
+}
