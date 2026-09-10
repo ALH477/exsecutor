@@ -224,8 +224,11 @@ cst_pun_txt:
 	db	'.',0		; PUN_DOT
 	db	'=',0		; PUN_EQ
 	db	'-',0		; PUN_MINUS
+	db	'-%'		; PUN_MINUSPCT
+	db	'-|'		; PUN_MINUSBAR
 cst_pun_len:
 	db	1,1,1,2,1,1,1,2,1,2,2,1,1,1,1,1,1,1,1,1,1,1
+	db	2,2			; PUN_MINUSPCT `-%`, PUN_MINUSBAR `-|`
 cst_pun_len_end:
 ; A PUN_* the table does not spell would produce a fix that inserts the wrong
 ; bytes -- silently, since a wrong glyph still assembles. Checked here instead.

@@ -612,9 +612,22 @@ proc lex_tokenize, lx
 	inc	rax
 	cmp	rax, r13
 	jae	.p_emit
-	cmp	byte [r12 + rax], '>'
-	jne	.p_emit
+	movzx	r8d, byte [r12 + rax]
+	cmp	r8b, '>'
+	jne	.m_not_arrow
 	mov	edx, PUN_ARROW
+	mov	ecx, 2
+	jmp	.p_emit
+  .m_not_arrow:
+	cmp	r8b, '%'			; §5.4 wrapping
+	jne	.m_not_pct
+	mov	edx, PUN_MINUSPCT
+	mov	ecx, 2
+	jmp	.p_emit
+  .m_not_pct:
+	cmp	r8b, '|'			; §5.4 saturating
+	jne	.p_emit
+	mov	edx, PUN_MINUSBAR
 	mov	ecx, 2
 	jmp	.p_emit
 

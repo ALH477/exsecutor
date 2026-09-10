@@ -143,8 +143,22 @@ PUN_COMMA    = 18                        ; B     ,      §10.1, examples/imprime
 PUN_SEMI     = 19                        ; B     ;      examples/imprime.exsc
 PUN_DOT      = 20                        ; B     .      examples/imprime.exsc (s.scribe)
 PUN_EQ       = 21                        ; B     =      examples/imprime.exsc (firma s = ...)
-PUN_MINUS    = 22                        ; B     -      §10.1 (x86_64-linux)
-PUN_COUNT    = 22
+PUN_MINUS    = 22                        ; A     -      §8.4, §5.4   trapping
+PUN_MINUSPCT = 23                        ; A     -%     §8.4, §5.4   wrapping
+PUN_MINUSBAR = 24                        ; A     -|     §8.4, §5.4   saturating
+PUN_COUNT    = 24
+
+; PUN_MINUS was tier B and justified only by §10.1's `x86_64-linux` hyphen;
+; -% and -| did not exist here at all. §8.4's operator table lists all three
+; as tier A -- `- -% -|`, "negation and subtraction, three overflow modes" --
+; and §8.6's additive level and ArithOp both use them. So `a -% b` lexed as
+; `-` followed by a bare `%`, which is EXS-E0201, and the expression silently
+; parsed as `a - b`. Found by cst/parse.inc implementing §8.6's additive
+; level and discovering the tokens it needed were not producible.
+;
+; Appended rather than inserted: cst/parse.inc and lexer_tokens.asm both
+; match on these ids, and renumbering a referenced set is the mistake §8.3
+; forbids for error codes, for the same reason.
 
 ; ---- the token record ------------------------------------------------------
 ; 20 bytes: two u32 and an embedded 12-byte `Span`. Written `span Span`, not

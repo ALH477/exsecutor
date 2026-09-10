@@ -26,7 +26,15 @@ OUT     = build/exsc
 
 all: $(OUT)
 
-$(OUT): $(SRC) | build
+# Every .inc and .bin under compiler/ is a real prerequisite: exsc.asm is a
+# few dozen lines of `include`, and the ~30 files it pulls in are where all
+# the code lives. Without this, editing lexer/lex.inc and running `make`
+# silently reuses a stale binary -- which happened, and cost a wrong
+# conclusion about whether a lexer fix had worked. fasmg has no depfile
+# support, so this is a wildcard rather than generated deps.
+EXSC_SRCS = $(shell find compiler -name '*.inc' -o -name '*.bin' 2>/dev/null)
+
+$(OUT): $(SRC) $(EXSC_SRCS) | build
 	$(FASMG) $(SRC) $@
 	chmod +x $@
 
