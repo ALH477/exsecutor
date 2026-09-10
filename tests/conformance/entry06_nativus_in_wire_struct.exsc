@@ -1,0 +1,28 @@
+// §14 entry 6 -- `:nativus` in a wire struct -> EXS-E0321.
+//
+// §5.2: "Byte order is in the type. `:nativus` is legal in-process and
+// **illegal in any `@transitus` type** (EXS-E0321)." `@transitus` marks a
+// type as a wire format, and a wire format has no "native" byte order to
+// speak of -- only the two ends' agreement, which is exactly what `:maior`
+// (explicit big-endian, attested throughout §5.2's own `Capitulum` and
+// `DeModFrame` examples) commits to and `:nativus` refuses to.
+//
+// DEFERRED: needs the @transitus layout checker, which needs the type
+// checker (Stage 2). compiler/x86_64/ast/ and cst/ are both still empty;
+// `exsc aedifica`, run directly against this file, exits 0 and reports
+// nothing -- confirmed, not assumed. `u32:nativus` today lexes as three
+// ordinary tokens (an identifier, `:`, another identifier) with no special
+// meaning at all: `:nativus`/`:maior` are grammar, not lexicon
+// (compiler/x86_64/lexer/keywords.inc's generated 30-word reserved set has
+// neither word in it).
+
+@transitus
+publica structura Capitulum {
+    signum:    u32:nativus
+    versio:    u8
+    genus:     u8
+    reserva:   u16:maior
+    longitudo: u32:maior
+}
+
+// TEST: entry=6 shape=code expect-code=EXS-E0321 status=deferred needs=wire_layout_checker

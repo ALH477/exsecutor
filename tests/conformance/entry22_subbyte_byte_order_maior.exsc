@@ -1,0 +1,41 @@
+// §14 entry 22 -- `u4:maior` (explicit byte order on a SUB-byte field) ->
+// EXS-E0201 ("unexpected token").
+//
+// §5.2 "Bit-width fields", rule 3: "Byte order is required above 8 bits
+// and is not part of the grammar AT OR BELOW IT. An unannotated multi-byte
+// field in a `@transitus` type IS `:nativus` and is therefore already
+// EXS-E0321; `u4:maior` does not parse, so it is EXS-E0201. Neither needs a
+// new code."
+//
+// NOT REACHABLE THIS WAVE -- FOUND BY RUNNING, CONTRARY TO THE INITIAL
+// PLAN. This entry was scoped as one of the six "lexical, reachable this
+// wave" entries, alongside 3/5/18/19/20. It is not, and the other five are:
+// checked directly against BOTH this suite's own probe and the real
+// `exsc aedifica --diagnostica json`, `u4:maior` produces ZERO diagnostics
+// and exit 0 -- the same silent accept as an ordinary, fully valid file.
+// The reason is exactly what §5.2 rule 3 already says in different words:
+// "does not parse" is a GRAMMAR fact, and grammar is Stage 2 (there is no
+// parser: compiler/x86_64/ast/ and cst/ are both empty, and `exsc` says of
+// itself "only aedifica does anything today: it reads a source file,
+// applies spec 8.1 and lexes it"). Lexically, `u4` is simply XID_Start
+// 'u' + XID_Continue '4' -- ONE ordinary identifier token, not a
+// recognized "sub-byte type" shape -- and `maior` is not a reserved word
+// either (compiler/x86_64/lexer/keywords.inc's generated 30-word table has
+// no entry for it: `:maior`/`:nativus` are grammar sitting after a type,
+// never lexicon). So `u4:maior` tokenizes as IDENT(u4) PUNCT(:)
+// IDENT(maior) and stops there, cleanly, with nothing left to object to
+// until something knows `u4` names a sub-byte width and THEN sees `:maior`
+// attached to it.
+//
+// Recorded as a finding for this suite's report, not silently reclassified
+// without saying so (CLAUDE.md's evidence discipline: "never present a
+// re-derivation as a restoration" -- and, by the same logic, never let a
+// planning assumption stand once running the thing has actually falsified
+// it).
+
+@transitus
+publica structura Malum2 {
+    campus: u4:maior
+}
+
+// TEST: entry=22 shape=code expect-code=EXS-E0201 status=deferred needs=parser

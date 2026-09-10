@@ -1,0 +1,24 @@
+// §14 entry 21 -- `@transitus` bit widths not summing to a whole byte ->
+// EXS-E0322.
+//
+// §5.2 "Bit-width fields", rule 4: "Declared widths must sum to a whole
+// number of bytes. A partial trailing byte is implicit padding --
+// EXS-E0322, the rule above, applied at bit granularity." `versio` (4 bits)
+// and `genus` (3 bits) below sum to 7 bits, not 8 -- one bit short of a
+// whole byte, so it is the same disclosure-class violation entry 7 raises
+// at byte granularity, raised here at bit granularity instead. (Contrast
+// §5.2's own `DeModFrame`, where `versio: u4` and `genus: u4` sum to
+// exactly 8.)
+//
+// DEFERRED: needs the @transitus bit-width layout checker, which needs the
+// type checker (Stage 2). compiler/x86_64/ast/ and cst/ are both still
+// empty; `exsc aedifica`, run directly against this file, exits 0 and
+// reports nothing -- confirmed, not assumed.
+
+@transitus
+publica structura Malum {
+    versio: u4
+    genus:  u3
+}
+
+// TEST: entry=21 shape=code expect-code=EXS-E0322 status=deferred needs=wire_layout_checker

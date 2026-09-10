@@ -1,0 +1,50 @@
+// §14 entry 4 -- Cyrillic homoglyph across two modules -> EXS-E0105.
+//
+// §8.2: "Confusable detection is scoped to the IMPORT CLOSURE, not the
+// compilation unit (EXS-E0105). Module A exporting Cyrillic `аdd` and
+// module B calling `add` contains no confusable pair in either unit. The
+// `ego` files make whole-closure checking cheap."
+//
+// NOT SPELLED `аdd` (spec's own illustration, Cyrillic а + Latin "dd"):
+// tried that first, and tests/conformance/tools/lex_probe showed it fires
+// EXS-E0104 (mixed-script identifier) all by itself, single-file, no
+// closure needed -- because IT mixes Cyrillic and Latin inside one token.
+// That is a true, independent diagnostic (§8.2's mixed-script rule does not
+// care about modules), but it would contaminate this fixture the day
+// EXS-E0105 is implemented: the same name would carry two diagnoses at
+// once, and "fails with the wrong code, or an extra one" is exactly what
+// CLAUDE.md says is worse than no test. Spelled instead as a
+// SINGLE-SCRIPT Cyrillic homoglyph -- every letter substituted (с/c, а/a,
+// р/p, е/e) -- the same shape tests/unit/lexer_ident_scripts.asm's own
+// "paypal homoglyph" row uses, verified against the same probe to raise
+// NEITHER E0104 nor anything else by itself.
+//
+// DEFERRED: needs the `ego` reader and whole-import-closure checking.
+// compiler/x86_64/lexer/ident.inc's own header says this is out of a
+// single-file lexer's reach BY CONSTRUCTION ("NOT HERE: EXS-E0105 ... A
+// single-file lexer cannot see a closure ... it lands with the `ego`
+// reader") -- not a gap in this wave's lexer, the next stage's job
+// entirely, and nothing under compiler/x86_64/lexer/ is expected to change
+// for it.
+//
+// Represented as two "modules" in one file, clearly marked, because there
+// is no multi-module driver yet for two real files to be "the same
+// fixture" through -- once one exists, this should become two files.
+
+// ---- "module A": exports a name that LOOKS LIKE Latin "cape" -----------
+// Every letter below is its Cyrillic look-alike -- с (U+0441), а (U+0430),
+// р (U+0440), е (U+0435) -- so the identifier is single-script Cyrillic,
+// not mixed-script: it is confusable with Latin "cape", not internally
+// mixed the way `аdd` was.
+publica functio саре(x: mensura, y: mensura) -> mensura {
+    redde x + y
+}
+
+// ---- "module B": imports and calls the Latin-spelled name --------------
+publica functio combina(x: mensura, y: mensura) -> mensura {
+    redde cape(x, y)   // Latin `cape` -- no such name exists in THIS file,
+                        // but is confusable with module A's export once
+                        // both are in one import closure: EXS-E0105
+}
+
+// TEST: entry=4 shape=code expect-code=EXS-E0105 status=deferred needs=import_closure

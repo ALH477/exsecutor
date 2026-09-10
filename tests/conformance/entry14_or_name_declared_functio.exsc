@@ -1,0 +1,27 @@
+// §14 entry 14 -- a `-or` name declared `functio` -> EXS-E0602.
+//
+// §3.4's suffix table: `-or` is a SUPINE-stem AGENT suffix and "must
+// declare" `structura`, not `functio`. "A name whose suffix disagrees with
+// its declaration is EXS-E0602. This is a well-formedness condition
+// relating a name to a type, not a style lint." §3.7's own derivation table
+// gives the canonical pairing this fixture violates: "lector structura
+// reader" -- `lector` ("one who reads", agent of `leg-`/`lect-`) declared
+// as a `structura` is correct; declared as a `functio`, below, is not.
+//
+// Chosen over the spec's own `[OPEN]` example (`exterior`, §4.2, flagged
+// unresolved in §3.4 itself because it is a comparative `-ior`, not the
+// plain agentive `-or` this rule is written for) so this fixture is not
+// also exercising an open question the suite cannot yet settle either way.
+//
+// DEFERRED: needs the lexicon/morpheme checker (§3), which is one of this
+// project's eight agents' domains outside compiler/x86_64/lexer/'s current
+// scope and needs the type checker (Stage 2) to know `lector` is declared
+// `functio` at all. compiler/x86_64/ast/ and cst/ are both still empty;
+// `exsc aedifica`, run directly against this file, exits 0 and reports
+// nothing -- confirmed, not assumed.
+
+publica functio lector() -> textus {
+    redde "lectio"
+}
+
+// TEST: entry=14 shape=code expect-code=EXS-E0602 status=deferred needs=lexicon_checker

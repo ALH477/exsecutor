@@ -1,0 +1,22 @@
+// §14 entry 13 -- non-atomic `refero` crossing an `externus` boundary ->
+// EXS-E0520.
+//
+// §6.4: "`refero<T>` -- non-atomic. Cannot cross `externus` (EXS-E0520). A
+// foreign thread racing a non-atomic refcount is a use-after-free, and the
+// type system cannot see the escape." §5.3 gives the `externus` block
+// syntax this fixture reuses directly. `refero_communis<T>` (atomic) is the
+// type that MAY cross this same boundary -- its absence here is the point,
+// not an oversight.
+//
+// DEFERRED: needs the FFI/refcount-crossing checker (§5.3, §6.4), which
+// needs the type checker (Stage 2). compiler/x86_64/ast/ and cst/ are both
+// still empty; `exsc aedifica`, run directly against this file, exits 0
+// and reports nothing -- confirmed, not assumed.
+
+structura Nodus { valor: mensura }
+
+externus("C", abi: sysv_amd64) {
+    functio consume_nodum(n: refero<Nodus>) -> mensura
+}
+
+// TEST: entry=13 shape=code expect-code=EXS-E0520 status=deferred needs=ffi_checker

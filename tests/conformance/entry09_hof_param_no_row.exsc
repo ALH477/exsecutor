@@ -1,0 +1,27 @@
+// §14 entry 9 -- higher-order function calling a function parameter that
+// carries no capability row -> EXS-E0421.
+//
+// Distinct from entry 10 (see that fixture): here the violation is
+// intrinsic to the HOF's OWN declaration, at no particular call site.
+// §4.2's substitution rule: "A capability row is part of a function
+// TYPE... A row variable in a callee's `poscit` names one of the callee's
+// parameters" via `sicut f`. `applica_sine_ordine` below calls its
+// function-typed parameter `f` but never writes `sicut f` anywhere in its
+// own `poscit` clause -- so whatever `f` turns out to need at a given call
+// site is invisible at THIS function's boundary, which is exactly what
+// `poscit`'s §4.1 rule 3 ("Capability sets are part of `functio` types, not
+// only declarations") exists to prevent.
+//
+// DEFERRED: needs the capability-row checker (§4), which needs the type
+// checker (Stage 2) to resolve `f`'s type in the first place.
+// compiler/x86_64/ast/ and cst/ are both still empty; `exsc aedifica`, run
+// directly against this file, exits 0 and reports nothing -- confirmed,
+// not assumed. §4.2 itself is `[UNTESTED]` as a soundness claim beyond a
+// nine-case Python probe (`prototypes/capcheck/`), which CLAUDE.md and
+// `prototypes/README.md` both forbid this suite from depending on.
+
+publica functio applica_sine_ordine(v: f32, f: functio(f32) -> f32) -> f32 poscit alloc {
+    redde f(v)
+}
+
+// TEST: entry=9 shape=code expect-code=EXS-E0421 status=deferred needs=capability_checker

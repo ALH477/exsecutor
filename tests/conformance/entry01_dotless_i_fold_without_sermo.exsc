@@ -1,0 +1,41 @@
+// §14 entry 1 -- Turkish dotless-i case fold in program logic, attempted
+// without holding `sermo` -> plica_sermone without sermo.
+//
+// §5.1: `.plica_unicode()` is total and locale-free (Unicode default case
+// fold: "I" -> "i", always, no capability). `.plica_sermone(sermo)` is the
+// LOCALE-SENSITIVE fold -- under tr-TR, "I" -> dotless "i" (U+0131) -- and
+// the capability itself is the argument: a function with no `sermo` in
+// scope has no value to pass. CVE-2025-49003 (§2.1) is exactly a validation
+// step missing this distinction.
+//
+// NO CODE EXISTS FOR THIS -- confirmed directly against §2.4's
+// unrepresentability table, not just asserted: "Locale case fold in
+// program logic | plica_unicode total and locale-free; plica_sermone
+// requires sermo | --". The Error column is an em dash, the same as two
+// other rows in that table (decimal-separator drift, build nondeterminism)
+// and unlike every row around it (which name EXS-E0332, E0103, E0105, ...).
+// §14 entry 1 itself points at "plica_sermone without sermo", not at an
+// EXS-Exxxx. CLAUDE.md: "Never invent a code" -- so this fixture is graded
+// on the ABSENCE of a registered code, not on a code this file must not
+// invent.
+//
+// Mechanically this would be caught the same way EXS-E0421 catches any
+// other undeclared-capability use (§4.1: "A function with no `poscit` and
+// no capability parameters is pure with respect to ambient state") --
+// `normaliza` below declares no `poscit` at all and still names `sermo` in
+// its body -- but the spec never spends a registry entry on this specific
+// row, so whether a future checker reuses E0421's machinery or something
+// new is an open implementation question, not something this fixture can
+// settle by construction.
+//
+// DEFERRED: needs a capability checker (§4), which is outside this
+// project's current Stage 1 (compiler/x86_64/ast/ and cst/ are both still
+// empty; `exsc aedifica` -- confirmed by actually running it -- says of
+// itself "only aedifica does anything today: it reads a source file,
+// applies spec 8.1 and lexes it").
+
+publica functio normaliza(s: textus) -> textus {
+    redde s.plica_sermone(sermo)
+}
+
+// TEST: entry=1 shape=nocap status=deferred needs=capability_checker

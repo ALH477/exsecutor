@@ -1,0 +1,60 @@
+// §14 entry 23 -- `DeModFrame` encode/decode against ALL 246 vectors of
+// `vendor/hydramesh-wire/golden_vectors.json` -- byte-identical to every
+// one of them. DIFFERENT IN KIND from every other entry (§14 says so
+// itself): the other 22 are cases this project wrote for itself; this one
+// is an EXTERNAL CERTIFICATE this project must satisfy. Under the
+// certificate's own theorem (`vendor/hydramesh-wire/golden_vectors.json`'s
+// "theorem" field, confirmed by reading the file directly: encode is
+// affine over GF(2)^108 -> GF(2)^136 and the validity syndrome is affine
+// GF(2)^136 -> GF(2)^16), matching all 246 vectors -- 109 in
+// `encode_basis`, 137 in `syndrome_basis`, confirmed by counting the file's
+// own arrays, not assumed from the "246" figure alone -- is equivalent to
+// agreeing with the reference implementation on all 2^108 frames.
+//
+// §5.2's own worked example, verbatim:
+//
+//   @transitus
+//   publica structura DeModFrame {
+//       signum:  u8               // 0xD3, the first validity gate
+//       versio:  u4               // packs MSB-first with genus
+//       genus:   u4               // frame type
+//       numerus: u16:maior
+//       fons:    u16:maior
+//       meta:    u16:maior
+//       onus:    u32:maior
+//       tempus:  u24:maior        // 24-bit microsecond offset
+//       cursus:  u16:maior        // CRC-16/CCITT-FALSE over bytes 0..14
+//   }
+//
+// This is the SAME declaration §5.2 attributes to `prototypes/wire/`
+// checking its reading of the format against the same 246 vectors before
+// attempting it. `prototypes/README.md` is explicit that nothing under
+// `prototypes/` may become a build or test dependency ("Never shipped.
+// Never on the build closure... may be referenced from Makefile, the Nix
+// build, or compiler/, or otherwise become a build or test dependency"),
+// so `prototypes/wire/wire_probe.py` is read for context ONLY (it is a
+// design probe, not this suite's reference) and is never invoked from
+// run_conformance_tests.
+//
+// DEFERRED: needs a real encoder/decoder for `@transitus` types (Stage 3
+// backend) to run the 246 vectors through at all, which in turn needs the
+// type checker (Stage 2) to accept the declaration below in the first
+// place. `exsc aedifica`, run directly against this file, exits 0 with no
+// diagnostic (the declaration lexes clean); `exsc aedifica -o OUT` reaches
+// "code generation is not implemented... Spec 16 Stage 3" (exit 4) --
+// confirmed, not assumed, exactly as for entries 16 and 17.
+
+@transitus
+publica structura DeModFrame {
+    signum:  u8
+    versio:  u4
+    genus:   u4
+    numerus: u16:maior
+    fons:    u16:maior
+    meta:    u16:maior
+    onus:    u32:maior
+    tempus:  u24:maior
+    cursus:  u16:maior
+}
+
+// TEST: entry=23 shape=cert status=deferred needs=backend,wire_codec

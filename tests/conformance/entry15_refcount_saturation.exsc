@@ -1,0 +1,46 @@
+// §14 entry 15 -- refcount saturation -> a RUNTIME ABORT, not wraparound.
+// Different SHAPE from almost every other entry: this is not a compile
+// rejection at all.
+//
+// §6.5: "64-bit on every target, including ilp32, saturating with hard
+// abort. A 32-bit refcount overflows at 2^32, which is reachable --
+// CVE-2016-0728 (Linux keyring) is exactly this, overflow -> UAF -> local
+// root. RISC-V ilp32 is in scope; the target's word size does not get to
+// choose." §6.6: "Destructor resurrection -- re-referencing an object under
+// destruction -- aborts."
+//
+// Retaining a `refero<T>` 2^64 times is not something a written loop can
+// reach (that is the whole point of the saturating design -- it is
+// deliberately astronomically far from any workload this project can spend
+// wall-clock time driving to), so the realistic version of this fixture,
+// once it can run at all, is a program built with a debug/test hook that
+// fast-forwards a refcount to `UINT64_MAX - 1` and then performs ONE more
+// retain -- not a `dum ... terminus 2^64` loop, which §8.5 could not even
+// parse today regardless (control flow is `[OPEN]`, design-only). The loop
+// below is written as the honest, ordinary-source shape of "keep retaining
+// this value" for readability; it is explicitly NOT how the real
+// conformance check would be driven once one exists.
+//
+// DEFERRED: needs an executable binary (Stage 3 backend) AND a runtime
+// refcount implementation with a saturation test hook, neither of which
+// exists. `exsc aedifica -o OUT`, run directly, says of itself: "the front
+// end accepts this source, but code generation is not implemented... Spec
+// 16 Stage 3" (exit 4) -- confirmed, not assumed. This is a RUNTIME check
+// (§14: "needs a built and executed binary, not just a compiler exit
+// code"), so it additionally cannot be satisfied by any front-end-only
+// diagnostic even after Stage 3 lands; it needs Stage 3 AND something to
+// execute the result.
+
+// `dum COND { ... }` is §8.5's own attested shape (`dum COND terminus N`);
+// the condition spelling and an unbounded `dum` with no `terminus` are
+// both themselves outside what §8.5 settles (control flow is "[OPEN]
+// Design only" in full, and `certus` rule 6 wants every loop bounded
+// besides) -- `verum` here is illustrative prose, not an attested boolean
+// literal; none exists in any spec section read for this suite.
+publica functio satura(n: refero<mensura>) poscit alloc {
+    dum verum {
+        n.retine()
+    }
+}
+
+// TEST: entry=15 shape=abort status=deferred needs=runtime,backend

@@ -1,0 +1,37 @@
+// §14 entry 17 -- `exsc aedifica --hospes riscv64-linux SOURCE` from
+// x86_64, byte-identical to a native CI build -> byte-identical output,
+// cross-host. SHAPE is byte-identical-output (like entry 16), not
+// reject-with-a-code.
+//
+// §9.5: "`exsc` with no `--hospes` is an error. No default-to-build-
+// platform... Native compilation is the case where build == host, spelled
+// out." §9.2: "a C target that cannot honour the declared `numeri` fails
+// the build rather than degrading silently" -- entry 17 is the same
+// reference-vs-target agreement requirement applied to a full
+// cross-compiled build's OUTPUT rather than one numeric policy.
+//
+// The SOURCE under test does not need anything target-specific for this to
+// be meaningful -- the property is that the SAME source, compiled
+// `--hospes riscv64-linux` on an x86_64 build machine, produces the same
+// bytes a native riscv64 CI runner would produce for it -- so this is
+// deliberately the same ordinary, already-valid file as entry 16.
+//
+// DEFERRED: needs a real cross-compiling backend AND a second (native
+// riscv64, or equivalent CI) build to compare against -- neither exists.
+// `exsc aedifica --hospes riscv64-linux -o OUT`, run directly against this
+// file, reaches the same "code generation is not implemented... Spec 16
+// Stage 3" (exit 4) `--hospes x86_64-linux` does; front-end-only lexing is
+// host-independent by construction (§8.1-§8.4 have no target concept at
+// all), so there is nothing target-specific to check yet even before
+// codegen. `tools/reproduce.sh` covers entry 16's SAME-host divergence but
+// not this entry's CROSS-host comparison -- confirmed by reading it, it
+// varies cwd/TZ/locale/umask/hostname within one `--hospes`, never
+// `--hospes` itself -- so wiring entry 17 up is additional work for
+// whichever future change lands a second real target, not a rename of
+// entry 16's mechanism.
+
+publica functio saluta() -> textus {
+    redde "Ave, mundus."
+}
+
+// TEST: entry=17 shape=bytes status=deferred needs=backend,cross_compile

@@ -1,0 +1,29 @@
+// §14 entry 2 -- index computed on a folded copy, applied to the original
+// -> EXS-E0332.
+//
+// §5.1, verbatim (this fixture is that example, wrapped in a function):
+//
+//   firma abassus = via.plica_unicode()
+//   firma ubi     = abassus.quaere("/")?      // positio<abassus>
+//   firma pars    = via.sectio(0..ubi)?       // EXS-E0332: branded to `abassus`
+//
+// `quaere` returns `positio<'t>`, generatively branded to the buffer it
+// indexed (here, `abassus`, the case-folded COPY). `sectio` accepts only
+// its own brand, so applying `ubi` to `via` -- the ORIGINAL, un-folded
+// buffer -- is exactly CVE-2026-24895's class (§2.1: "case folding changes
+// UTF-8 byte length, shifting a path split so SCRIPT_FILENAME points at an
+// uploaded .txt"). §5.1: "This makes CVE-2026-24895's class
+// unrepresentable rather than discouraged."
+//
+// DEFERRED: needs branded-offset generativity, which needs the type
+// checker (Stage 2). compiler/x86_64/ast/ and cst/ are both still empty;
+// `exsc aedifica`, run directly against this file, exits 0 and reports
+// nothing -- confirmed, not assumed.
+
+publica functio corrige(via: textus) -> textus poscit alloc {
+    firma abassus = via.plica_unicode()
+    firma ubi     = abassus.quaere("/")?
+    redde via.sectio(0..ubi)?
+}
+
+// TEST: entry=2 shape=code expect-code=EXS-E0332 status=deferred needs=type_checker

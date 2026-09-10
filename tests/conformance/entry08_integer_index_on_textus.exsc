@@ -1,0 +1,27 @@
+// §14 entry 8 -- integer index on `textus` -> EXS-E0311.
+//
+// §5.1, verbatim (this fixture is that example, wrapped in a function):
+//
+//   firma t: textus = "café"
+//   t.octeti().numerus()      // 5   bytes
+//   t.scalares().numerus()    // 4   scalar values
+//   t.grapha().numerus()      // 4   grapheme clusters
+//   t[0]                      // EXS-E0311: textus has no integer index
+//
+// `octeti`, `scalares` and `grapha` are distinct types precisely so that a
+// byte offset, a scalar-value offset and a grapheme-cluster offset can
+// never be silently confused (§2.4: "Byte-index panic / grapheme
+// miscount"). Indexing `textus` itself with a bare integer names none of
+// the three, so it is rejected rather than guessing which one was meant.
+//
+// DEFERRED: needs the type checker (Stage 2) to know that `t` has type
+// `textus` and that `textus` has no `[integer]` operator at all.
+// compiler/x86_64/ast/ and cst/ are both still empty; `exsc aedifica`, run
+// directly against this file, exits 0 and reports nothing -- confirmed,
+// not assumed.
+
+publica functio primum_octetum(t: textus) -> octetus {
+    redde t[0]
+}
+
+// TEST: entry=8 shape=code expect-code=EXS-E0311 status=deferred needs=type_checker

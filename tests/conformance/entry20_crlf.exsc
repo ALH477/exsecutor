@@ -1,0 +1,24 @@
+// §14 entry 20 -- CRLF line ending -> EXS-E0106.
+//
+// §8.1: "LF only. CRLF is EXS-E0106. The formatter converts; the
+// compiler does not." One line below ends CRLF (\r\n) instead of LF,
+// deliberately -- everything up to and including that line is otherwise
+// exactly saluta.exsc's own opening function.
+//
+// THIS FILE DELIBERATELY CONTAINS THE VIOLATION IT TESTS -- see entry 3's
+// fixture for why a CRLF here is not a §8.1 self-application violation
+// of this project's own source (this file IS the test input, not the tool;
+// every OTHER line in this file is plain LF, including this directive).
+//
+// lexer/source.inc's §8.1 pass STOPS at the first CR (its own header:
+// "every span after the first CR is about a file the user is about to
+// rewrite anyway"), so nothing after the CRLF line below is scanned by the
+// lexer -- which is why this fixture's own `// TEST:` directive line is
+// placed BEFORE the CRLF, not after, so this comment always shows up
+// however the file is read.
+//
+// TEST: entry=20 shape=code expect-code=EXS-E0106 status=run
+
+publica functio saluta() -> textus {
+    redde "Ave, mundus."
+}

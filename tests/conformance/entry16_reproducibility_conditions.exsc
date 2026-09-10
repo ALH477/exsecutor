@@ -1,0 +1,37 @@
+// §14 entry 16 -- same source, different directory/time/locale/hostname ->
+// byte-identical output. SHAPE is byte-identical-output, not
+// reject-with-a-code: there is no EXS-Exxxx here at all, only a property
+// of two builds' bytes.
+//
+// §9.3: "Byte-identical output for identical inputs across directories,
+// times, locales, hostnames." `exsc proba-reproducibilitatem` builds twice
+// under deliberately divergent ambient conditions and diffs (ships in v1,
+// runs in CI). `tools/reproduce.sh` already implements exactly this
+// mechanism -- varying cwd, TZ, LC_ALL/LANG, SOURCE_DATE_EPOCH, umask and
+// (best-effort) hostname -- and this suite's run_conformance_tests reuses
+// it rather than reimplementing byte-diffing (this agent's own brief is
+// explicit: "tools/reproduce.sh already knows how to do that -- reuse it,
+// do not reimplement").
+//
+// The SOURCE under test does not need anything special -- reproducibility
+// is a property of the COMPILER's build process, not of any particular
+// program -- so this is deliberately an ordinary, already-valid file
+// (`saluta`'s own shape: pure, no `poscit`, per examples/saluta.exsc).
+//
+// DEFERRED: needs a real object-emitting build to diff two of.
+// `tools/reproduce.sh`, run directly, already says so and degrades
+// honestly: with no `compiler/x86_64/exsc.asm` output to build, it falls
+// back to reproducing a `tests/unit/` toolchain fixture instead and prints
+// ">>> THIS RUN TESTS THE FIXTURE, NOT exsc. Re-run once exsc.asm exists.
+// <<<" -- and even now that `exsc.asm` exists, `exsc aedifica -o OUT`
+// itself answers "code generation is not implemented... Spec 16 Stage 3"
+// (exit 4, confirmed by actually running it). A reproduce.sh PASS on the
+// fallback fixture is proof the harness can tell bytes apart, never
+// evidence that entry 16 holds -- counting it as a pass would be exactly
+// the false-green class CLAUDE.md's evidence discipline exists to prevent.
+
+publica functio saluta() -> textus {
+    redde "Ave, mundus."
+}
+
+// TEST: entry=16 shape=bytes status=deferred needs=backend

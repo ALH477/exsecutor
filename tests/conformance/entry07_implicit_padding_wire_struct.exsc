@@ -1,0 +1,34 @@
+// §14 entry 7 -- implicit padding in a wire struct -> EXS-E0322.
+//
+// §5.2's own `Capitulum` example, with the explicit `reserva` field
+// REMOVED:
+//
+//   @transitus
+//   publica structura Capitulum {
+//       signum:    u32:maior
+//       versio:    u8
+//       genus:     u8
+//       reserva:   u16:maior      // explicit; implicit padding is EXS-E0322
+//       longitudo: u32:maior
+//   }
+//
+// `versio` and `genus` together are 2 bytes; without an explicit `reserva`
+// field, the 2 bytes that get `signum`/`longitudo` back onto a 4-byte
+// boundary are IMPLICIT padding -- exactly the uninitialized-memory
+// disclosure class §5.2 states this rule closes: "`@transitus` types may
+// have no implicit padding -- explicit `reserva` fields or rejection."
+//
+// DEFERRED: needs the @transitus layout checker, which needs the type
+// checker (Stage 2). compiler/x86_64/ast/ and cst/ are both still empty;
+// `exsc aedifica`, run directly against this file, exits 0 and reports
+// nothing -- confirmed, not assumed.
+
+@transitus
+publica structura Capitulum {
+    signum:    u32:maior
+    versio:    u8
+    genus:     u8
+    longitudo: u32:maior
+}
+
+// TEST: entry=7 shape=code expect-code=EXS-E0322 status=deferred needs=wire_layout_checker

@@ -1,0 +1,24 @@
+// §14 entry 5 -- non-NFC identifier -> EXS-E0102.
+//
+// §8.1: "NFC required. Non-NFC is EXS-E0102." The identifier below is
+// spelled Latin "c", "a", "f", "e", then COMBINING ACUTE ACCENT (U+0301) as
+// a SEPARATE codepoint -- not the single precomposed "e-with-acute"
+// (U+00E9) NFC would require for the same rendered word. Same construction
+// tests/unit/lexer_source_policy.asm's "non-NFC identifier" row and
+// nfc_normalize.asm's own case table use, reused here as a real .exsc file
+// instead of embedded bytes.
+//
+// THIS FILE DELIBERATELY CONTAINS THE VIOLATION IT TESTS -- see entry 3's
+// fixture for why that is not a §8.1 self-application violation of this
+// project's own source.
+//
+// RUNS this wave: lexer/source.inc's §8.1 pass already implements this
+// exactly (verified by actually running this fixture through
+// tests/conformance/tools/lex_probe -- see run_conformance_tests).
+
+publica functio saluta() -> textus {
+    firma café = "Ave, mundus."
+    redde café
+}
+
+// TEST: entry=5 shape=code expect-code=EXS-E0102 status=run

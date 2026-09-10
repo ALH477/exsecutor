@@ -1,0 +1,29 @@
+// §14 entry 3 -- bidi override inside a `//` comment -> EXS-E0103.
+//
+// §8.1: "Bidi and invisible controls (U+202A-202E, U+2066-2069,
+// U+200B-200F, U+061C, U+FEFF) anywhere in source, including strings and
+// comments, are EXS-E0103. Escapes are the only way to produce them."
+// §8.4 makes the point for exactly this shape: "a lexer that scans
+// only identifiers is defeated by an override sitting in a comment" --
+// the Trojan Source class (CVE-2021-42574).
+//
+// THIS FILE DELIBERATELY CONTAINS THE VIOLATION IT TESTS: the comment
+// below carries a raw U+202E (RIGHT-TO-LEFT OVERRIDE) on purpose. That is
+// the one exemption from this project's own §8.1 self-application rule
+// (docs/asm-conventions.md lists tests/ in scope) -- a fixture whose whole
+// point is to BE rejected cannot also be clean by the rule it exercises.
+// tests/unit/lexer_trojan_source.asm and lexer_source_policy.asm already
+// establish this exact precedent for embedded test bytes; this is the same
+// bytes as a standalone .exsc file instead of a `db` table.
+//
+// RUNS this wave: lexer/source.inc's §8.1 pass already implements this
+// exactly over the whole byte stream, comments included (verified by
+// actually running this fixture through tests/conformance/tools/lex_probe
+// -- see run_conformance_tests in tests/run.sh).
+
+publica functio saluta() -> textus {
+    // harmless ‮ evil
+    redde "Ave, mundus."
+}
+
+// TEST: entry=3 shape=code expect-code=EXS-E0103 status=run

@@ -1,0 +1,23 @@
+// §14 entry 19 -- mixed-script identifier, single module -> EXS-E0104.
+//
+// §8.2: "UTS #39 Moderately Restrictive. Mixed-script is EXS-E0104." The
+// identifier below mixes Latin 'x' with CYRILLIC SMALL LETTER A (U+0430) --
+// one of UTS #39's three named Level-4 exclusions (Latin+Cyrillic,
+// Latin+Greek, Latin+Cherokee), which tests/unit/lexer_ident_scripts.asm
+// also exercises directly.
+//
+// Different in kind from entry 4: this is ONE identifier in ONE module
+// (mixed script within a single name), not two confusable identifiers
+// across an import closure -- §8.2 draws that line explicitly, and this
+// entry sits on the side a single-file lexer CAN already decide.
+//
+// RUNS this wave: lexer/lex.inc's `lex_script_ok` already implements this
+// exactly (verified by actually running this fixture through
+// tests/conformance/tools/lex_probe -- see run_conformance_tests).
+
+publica functio saluta() -> textus {
+    firma xа = "Ave, mundus."
+    redde xа
+}
+
+// TEST: entry=19 shape=code expect-code=EXS-E0104 status=run

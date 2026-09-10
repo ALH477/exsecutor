@@ -15,5 +15,22 @@
 # conversion in both directions.
 vendor/fasmg-x86/** -text
 
+# --- tests/conformance/: byte-exact by definition, DO NOT NORMALISE ---
+#
+# These fixtures exist to violate §8.1 on purpose. entry20_crlf.exsc must
+# CONTAIN a CRLF or it tests nothing, and `* text=auto eol=lf` above would
+# strip it on commit -- leaving a fixture that passes for the wrong reason on
+# every clone. Exactly the vendor/fasmg-x86 problem: a file whose whole point
+# is its bytes, normalised by a rule written for source.
+#
+# Scoped to the whole directory rather than the two files that need it today,
+# because the next fixture that needs byte-exactness will be written by
+# someone who has not read this comment.
+#
+# Caught when entry18_bom.exsc turned out to contain no BOM at all -- it was
+# written with a heredoc that never emitted one, so `exsc` correctly accepted
+# it and the entry had been testing nothing.
+tests/conformance/** -text
+
 # PROVENANCE.md is ours, not upstream's, and is excluded from the digest.
 vendor/fasmg-x86/PROVENANCE.md text eol=lf

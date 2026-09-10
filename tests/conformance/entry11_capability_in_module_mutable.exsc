@@ -1,0 +1,19 @@
+// §14 entry 11 -- capability stored in module-level mutable state ->
+// EXS-E0501.
+//
+// §4.1 rule 7: "No module-level mutable state. (EXS-E0500; with a
+// capability, EXS-E0501.)" A capability held at module scope is reachable
+// from anywhere in the module with no caller in the chain having to grant
+// it -- exactly the ambient-authority class §4 exists to make
+// unrepresentable (§2.4: "Ambient authority | §4 capability model |
+// EXS-E0421, E0500, E0501, E0510").
+//
+// `rete` has no literal, no cast and no default (§4.1 rule 1: "Capability
+// types are unforgeable"), so this binding cannot be given an initial
+// value at all -- which is not a reason to accept the declaration; the
+// VIOLATION is the module-level `mutabilis` binding of capability type
+// existing, independent of what (if anything) could ever initialize it.
+
+mutabilis retis_globalis: rete
+
+// TEST: entry=11 shape=code expect-code=EXS-E0501 status=deferred needs=capability_checker

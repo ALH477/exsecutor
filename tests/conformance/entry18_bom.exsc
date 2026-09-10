@@ -1,0 +1,19 @@
+﻿// §14 entry 18 -- source with a UTF-8 BOM -> EXS-E0101.
+//
+// §8.1: "UTF-8 only. No BOM -- a BOM is EXS-E0101, not a skipped byte."
+// This file's very first three bytes (before this comment even starts) are
+// EF BB BF, the UTF-8 BOM -- deliberately, because that is entry 18.
+//
+// THIS FILE DELIBERATELY CONTAINS THE VIOLATION IT TESTS -- see entry 3's
+// fixture for why a BOM here is not a §8.1 self-application violation of
+// this project's own source (this file IS the test input, not the tool).
+//
+// RUNS this wave: lexer/source.inc's §8.1 pass checks this as its very
+// first step (verified by actually running this fixture through
+// tests/conformance/tools/lex_probe -- see run_conformance_tests).
+
+publica functio saluta() -> textus {
+    redde "Ave, mundus."
+}
+
+// TEST: entry=18 shape=code expect-code=EXS-E0101 status=run

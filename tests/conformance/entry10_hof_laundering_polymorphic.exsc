@@ -1,0 +1,37 @@
+// §14 entry 10 -- laundering a capability through a CORRECTLY polymorphic
+// HOF -> EXS-E0421.
+//
+// §4.2, verbatim (this fixture is that example): `applica` itself is
+// written correctly -- it declares `poscit alloc, sicut f`, so its row
+// travels with whatever function value is actually passed in, exactly as
+// the substitution rule requires. The violation is at the CALL SITE,
+// `exterior`: it forwards `nocens` (which needs `rete`) into `applica`
+// while itself declaring only `poscit alloc`. §4.2: "Putting the row in the
+// type removes the lookup: an escaped closure carries its captured
+// authority in its own type, where a caller and the audit can both see
+// it" -- `exterior` is exactly the caller failing to see it.
+//
+// Distinct from entry 9: there the HOF itself never declared `sicut f` at
+// all. Here `applica` is the worked example of a HOF written CORRECTLY,
+// and the suite's own charter is explicit that "one firing does not excuse
+// the other" -- this fixture and entry09's are independent checks of the
+// same code, from opposite ends of the call.
+//
+// DEFERRED: needs the capability-row checker (§4), which needs the type
+// checker (Stage 2). compiler/x86_64/ast/ and cst/ are both still empty;
+// `exsc aedifica`, run directly against this file, exits 0 and reports
+// nothing -- confirmed, not assumed.
+
+publica functio applica(v: f32, f: functio(f32) -> f32) -> f32 poscit alloc, sicut f {
+    redde f(v)
+}
+
+publica functio nocens(x: f32) -> f32 poscit rete {
+    redde x
+}
+
+publica functio exterior(v: f32) -> f32 poscit alloc {
+    redde applica(v, nocens)
+}
+
+// TEST: entry=10 shape=code expect-code=EXS-E0421 status=deferred needs=capability_checker
