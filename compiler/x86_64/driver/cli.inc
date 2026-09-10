@@ -114,6 +114,16 @@ struct DrvCtx
 	field ctree,     dq	; -> CstTree          } its own
 	field parser,    dq	; -> CstParser, the §8.6 parse
 	field ast,       dq	; -> Ast, the §9.1 Stage 1 typed tree
+	field chk,       dq	; -> ChkCtx, sizeof.ChkCtx = 328 (checker/checker.inc,
+				; checker/resolve/resolve.inc). Stage 2: resolve
+				; (passes 0/1) and, once CHK_S_TYPES is set by a
+				; types pass that does not exist yet, rows/layout.
+				; Bound the same way `vlx`/`vdiags` are: a fixed
+				; block in exsc.asm's writable segment, pointed at
+				; once from `start`, never (re)allocated from an
+				; arena. `chk_init` is called fresh each run and
+				; re-zeroes what it owns; nothing here needs the
+				; block pre-zeroed the way BSS already leaves it.
 end struct
 
 ; ---- the subcommand set, exactly §12's list --------------------------------

@@ -325,6 +325,7 @@ segment readable executable
 
 include '../../compiler/x86_64/cst/cst.inc'
 include '../../compiler/x86_64/ast/ast.inc'
+include '../../compiler/x86_64/checker/checker.inc'
 include '../../compiler/x86_64/driver/driver.inc'
 
 segment readable

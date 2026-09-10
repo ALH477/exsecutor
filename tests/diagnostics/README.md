@@ -194,3 +194,16 @@ threshold is chosen should also gate on `note` and `related` population
 (e.g. "every diagnostic on an `EXS-E020x` code carries a non-null `note`"),
 since a note field that exists but goes unpopulated at half the construction
 sites would pass a message-diversity gate while leaving D1 half-fixed.
+
+## The number moved when the checker joined the pipeline
+
+At the commit that put `checker/` into `exsc` the corpus total went **39 →
+43**: four `EXS-E0301` (name does not resolve) on c14 (+2), c20 (+1), c22
+(+1). All three are parser-recovery cases; the checker's resolve pass now
+walks the recovered tree and reports names that exist only because recovery
+invented structure around a parse error. They are true statements about the
+tree and noise to a reader, the same class as a cascade. Not suppressed here
+— recorded, so the next re-evaluation of §16's criterion compares like with
+like (the Stage 1 numbers were measured before the checker ran). The fix is
+the checker's: do not raise `E0301` on a name inside a subtree that contains
+an `Error` node.

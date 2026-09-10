@@ -29,10 +29,14 @@
 ; source file, applies §8.1, tokenizes it under §8.4, PARSES it under §8.6
 ; into the lossless CST of §9.1, builds the typed AST of §9.1 Stage 1 from
 ; that CST, and reports every diagnostic either half raised, in a human format
-; or JSON. That is the whole of §16 Stage 1. There is no type checker and no
-; backend (Stages 2 and 3), so `exsc aedifica ... -o OUT` finds out whether
-; OUT *could* be built and then says it cannot build it. Nine of the ten
-; subcommands §12 names are refusals that name themselves.
+; or JSON. That is the whole of §16 Stage 1. It THEN runs as much of Stage 2
+; (`docs/design/checker.md`, `compiler/x86_64/checker/`) as exists: passes 0
+; and 1 (atoms, resolve) always, and passes 3/4 (rows, packed layout) only
+; once a types pass -- not yet written -- sets `CHK_S_TYPES`. There is still
+; no type checker (Stage 2 pass 2) and no backend (Stage 3), so
+; `exsc aedifica ... -o OUT` finds out whether OUT *could* be built and then
+; says it cannot build it. Nine of the ten subcommands §12 names are refusals
+; that name themselves.
 ;
 ;	exsc aedifica --hospes TRIPLE SOURCE [-o OUT]
 ;	              [--env KEY=VALUE]... [--epoch N]
@@ -76,13 +80,19 @@
 ;      segment, `anchored at entry point 0x4000e8 [alignment reliable]`.
 ;      Measured both ways; the messages above are copied from the two runs.
 ;
-;   3. cst/cst.inc, then ast/ast.inc, then driver/driver.inc -- and
-;      lexer/lexer.inc is NOT included here at all. cst/cst.inc includes it
-;      itself (see that file's header), and fasmg has one flat namespace, so
-;      including both would process every lexer `proc` twice and fail on the
-;      second. The include graph is a strict CHAIN: cst/ brings lexer/, diag/
-;      and rt/; ast/ and driver/ include none of those and rely on cst/ having
-;      run first.
+;   3. cst/cst.inc, then ast/ast.inc, then checker/checker.inc, then
+;      driver/driver.inc -- and lexer/lexer.inc is NOT included here at all.
+;      cst/cst.inc includes it itself (see that file's header), and fasmg has
+;      one flat namespace, so including both would process every lexer `proc`
+;      twice and fail on the second. The include graph is a strict CHAIN:
+;      cst/ brings lexer/, diag/ and rt/; ast/, checker/ and driver/ include
+;      none of those and rely on cst/ having run first. checker/checker.inc's
+;      own chain (checker.inc -> verify.inc -> rows/rows.inc -> layout.inc ->
+;      compute.inc -> intern.inc -> rowdefs.inc -> resolve/resolve.inc) is
+;      itself a chain, never a diamond, and deliberately never reaches
+;      rt/sort.inc -- which IS a known diamond (rt/vec.inc's header) if pulled
+;      in a second time. checker/ goes before driver/ because driver/run.inc
+;      calls `chk_init`/`chk_set_source`/`chk_set_target`/`chk_run` directly.
 ;   4. compiler/shared/unicode/tables/tables.inc EXACTLY ONCE, in a data
 ;      segment of this file's choosing. lexer/lexer.inc's header is explicit
 ;      that it does not include it: it emits ~120 KB of `file` data and
@@ -162,6 +172,8 @@ segment readable executable
 	mov	[r15 + DrvCtx.parser], rax
 	lea	rax, [drv_ast]
 	mov	[r15 + DrvCtx.ast], rax
+	lea	rax, [drv_chk]
+	mov	[r15 + DrvCtx.chk], rax
 
 	; ---- argc, argv ------------------------------------------------------
 	; rsp is 16-byte aligned at process entry and neither instruction below
@@ -183,6 +195,7 @@ segment readable executable
 
 include 'cst/cst.inc'
 include 'ast/ast.inc'
+include 'checker/checker.inc'
 include 'driver/driver.inc'
 
 segment readable
@@ -212,3 +225,4 @@ segment readable writeable
   drv_ctree	rb sizeof.CstTree	; }
   drv_parser	rb sizeof.CstParser	; the §8.6 parse
   drv_ast	rb sizeof.Ast		; the §9.1 Stage 1 typed tree
+  drv_chk	rb sizeof.ChkCtx	; Stage 2: checker/checker.inc (328 bytes)

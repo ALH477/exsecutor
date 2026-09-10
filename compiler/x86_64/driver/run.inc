@@ -99,6 +99,10 @@ drv_m_todo2  db 'only `aedifica` does anything today: it reads a source file, ap
 drv_m_todolsp db '`lsp` is marked [OPEN] Deferred in spec 18.2 -- it needs the lossless CST, which does not exist.',0
 drv_m_nohospes db 'aedifica: --hospes TRIPLE is required. Spec 9.5: exsc with no --hospes is an error, and there is no default-to-build-platform.',0
 drv_m_emptyhospes db 'aedifica: --hospes: TRIPLE must not be empty',0
+; The only triple this assembly implementation has anything to target --
+; see the comment on drv_aedifica's third required-field check, above.
+drv_t_x86_64_linux db 'x86_64-linux',0
+drv_m_hospesunsup db 'aedifica: --hospes: this build only targets x86_64-linux (no backend exists for any triple, and spec 9.5 forbids guessing one), got: ',0
 drv_m_nosrc  db 'aedifica: no SOURCE given',0
 drv_m_trunc  db 'a diagnostic did not fit its buffer and was truncated; the output above is incomplete. That is a limit of this compiler, not of the source.',0
 drv_m_okpfx  db 'aedifica: ',0
@@ -188,6 +192,22 @@ endp
 ; then SOURCE -- so an invocation missing both always gets the same message.
 ; An order that depended on which check happened to be written first is the
 ; kind of thing that makes a conformance expectation flaky.
+;
+; A THIRD CHECK FOLLOWS THEM, ONCE BOTH ARE PRESENT: `--hospes`'S VALUE MUST
+; BE EXACTLY `x86_64-linux`. Checked here because it was NOT checked before --
+; any non-empty string was silently accepted and then ignored, which was only
+; invisible because nothing downstream read it. That changed the moment
+; Stage 2's `chk_set_target` needed a pointer width derived from the triple
+; (checker/checker.inc's driver-wiring note), and spec §9.5 forbids guessing
+; one: *"`exsc` with no `--hospes` is an error. No default-to-build-platform."*
+; This assembly implementation is x86-64 machine code with no backend at all
+; (§18.2's own note: the §12 cross-compilation demo is "dropped" for exactly
+; this reason), so `x86_64-linux` is the only triple there is anything to do
+; with -- refused with exit 4, not 2: the triple is not malformed, the target
+; is simply unimplemented, the same distinction `drv_stub` already draws for
+; nine whole subcommands. A second accepted triple, the day one exists, is a
+; small table here (triple bytes -> ptrbits) in place of the single compare
+; below -- not a redesign.
 proc drv_aedifica, argc, argv
 	uses	rbx, r12, r13, r14
 	locals
@@ -227,6 +247,14 @@ proc drv_aedifica, argc, argv
 	je	.empty_hospes
 	cmp	qword [r15 + DrvCtx.srcpath], 0
 	je	.no_source
+
+	; ---- the target: only x86_64-linux exists in this build -------------
+	mov	rdi, [r15 + DrvCtx.hospes]
+	mov	rsi, [r15 + DrvCtx.hospesn]
+	lea	rdx, [drv_t_x86_64_linux]
+	call	drv_arg_is
+	test	eax, eax
+	jz	.hospes_unsupported
 
 	; ---- the source ------------------------------------------------------
 	mov	rdi, [r15 + DrvCtx.srcpath]
@@ -328,11 +356,64 @@ proc drv_aedifica, argc, argv
 	mov	rdi, [r15 + DrvCtx.ast]
 	call	ast_verify_stage1
 
+	; ---- Stage 2: the checker (checker/checker.inc) ----------------------
+	; The exact sequence checker.inc's own "HOW THE DRIVER CALLS THIS" note
+	; specifies, plus the `chk_set_target` call that note names but leaves
+	; to the driver: runs on the same non-gate-failed path --emitte already
+	; requires below (this call site is unreachable before
+	; `ast_verify_stage1` returns), and appends straight into
+	; `DrvCtx.diags` -- the SAME vector `.report` below already walks in
+	; source order. A checker diagnostic therefore renders through the
+	; identical path, and gets the identical exit-status treatment (a
+	; nonzero `DrvCtx.diags` length is DRV_EXIT_DIAG), as a lexer or parser
+	; one; there is no separate branch anywhere for "the checker found
+	; something".
+	mov	rdi, [r15 + DrvCtx.chk]	; -> ChkCtx, sizeof.ChkCtx = 328
+	mov	rsi, [r15 + DrvCtx.ast]
+	mov	rdx, [r15 + DrvCtx.diags]
+	mov	rcx, [r15 + DrvCtx.scratch]	; the checker's own scratch arena --
+					; already reset once per --env key,
+					; long before this point, and not
+					; touched again until then next run
+	xor	r8, r8
+	cmp	qword [r15 + DrvCtx.outpath], 0
+	je	.chk_nomain
+	mov	r8, CHK_F_PROGRAM		; -o was given: a PROGRAM was asked
+					; for (spec §4.1 rule 2), so a missing
+					; `initium` is `EXS-E0424`. Without -o
+					; this is a library and its absence is
+					; nothing.
+  .chk_nomain:
+	call	chk_init
+	mov	rdi, [r15 + DrvCtx.chk]
+	mov	rsi, [srcbuf]
+	mov	rdx, [srclen]
+	mov	rcx, [r15 + DrvCtx.srcpath]
+	mov	r8,  [r15 + DrvCtx.srcpathn]
+	call	chk_set_source
+	mov	rdi, [r15 + DrvCtx.chk]
+	mov	esi, 64			; the pointer width of the one triple
+					; --hospes accepts (checked above) --
+					; x86_64-linux is 64-bit. Spec §9.5
+					; forbids guessing this from nothing;
+					; deriving it is only reachable because
+					; the triple was already pinned to a
+					; single accepted value.
+	call	chk_set_target
+	mov	rdi, [r15 + DrvCtx.chk]
+	call	chk_run			; rax = diagnostics appended; already
+					; in DrvCtx.diags, so nothing reads it
+
 	; ---- --emitte: spec 18.2's stage-dump mitigation, if requested --------
-	; Runs whether or not the parse or the AST build raised a diagnostic:
-	; §9.1's CST and the Stage 1 AST are both built on the error path too
-	; (the comments above), so the tree to dump exists either way, and
-	; `.report` below still reports every diagnostic afterward regardless.
+	; Runs whether or not the parse, the AST build, or the checker raised a
+	; diagnostic: §9.1's CST and the Stage 1 AST are both built on the error
+	; path too (the comments above), so the tree to dump exists either way,
+	; and `.report` below still reports every diagnostic afterward
+	; regardless. `--emitte ast` now dumps AFTER the checker has run, so a
+	; `Seg`/`Path`/`Sub` node's `d` slot shows the declaration pass 1
+	; resolved it to (0 where nothing was found, or where the target was a
+	; type-position name pass 1 does not resolve -- see checker/resolve/
+	; resolve.inc's header); driver/msg.inc's usage text says so.
 	cmp	dword [r15 + DrvCtx.emitte], DRV_EMIT_NONE
 	je	.report
 	call	drv_emit_dump
@@ -450,6 +531,17 @@ proc drv_aedifica, argc, argv
 	xor	rcx, rcx
 	call	drv_msg
 	mov	eax, DRV_EXIT_USAGE
+	return
+  .hospes_unsupported:
+	; Not a usage error -- the triple is well-formed, this build simply has
+	; no backend for anything but x86_64-linux. See the comment on this
+	; proc's third required-field check, above, for why that is exit 4.
+	lea	rdi, [drv_m_hospesunsup]
+	mov	rsi, [r15 + DrvCtx.hospes]
+	mov	rdx, [r15 + DrvCtx.hospesn]
+	xor	rcx, rcx
+	call	drv_msg
+	mov	eax, DRV_EXIT_TODO
 	return
   .no_source:
 	lea	rdi, [drv_m_nosrc]

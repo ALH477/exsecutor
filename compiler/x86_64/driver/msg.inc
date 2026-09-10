@@ -299,6 +299,9 @@ drv_s_usage:
 	db 'options, all of them accepted only by `aedifica`:', 10
 	db '  --hospes TRIPLE      target triple. REQUIRED: spec 9.5 makes an absent', 10
 	db '                       --hospes an error. There is no default-to-build-platform.', 10
+	db '                       This build only targets x86_64-linux (exit 4 on any', 10
+	db '                       other triple): this assembly implementation has no', 10
+	db '                       backend for anything else.', 10
 	db '  SOURCE               the file to compile. Exactly one, positional.', 10
 	db '  -o OUT               object to write. Optional here -- with it, aedifica', 10
 	db '                       reports that code generation is unimplemented (exit 4)', 10
@@ -314,7 +317,9 @@ drv_s_usage:
 	db '  --emitte GRADUS      dump a pipeline stage to stdout and nothing else on', 10
 	db '                       stdout (spec 18.2): tokens, cst, or ast. Diagnostics', 10
 	db '                       still go to stderr, so `exsc ... --emitte ast SRC', 10
-	db '                       >tree.txt` puts only the tree in tree.txt.', 10
+	db '                       >tree.txt` puts only the tree in tree.txt. `ast` dumps', 10
+	db '                       after the checker runs, so its `d` slots show what', 10
+	db '                       the checker resolved (0 where it found nothing).', 10
 	db 10
 	db 'exit status:', 10
 	db '  0  the requested work completed and there was nothing to report', 10

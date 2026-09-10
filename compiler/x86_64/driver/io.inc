@@ -89,6 +89,26 @@
 ; `rassert` instead of failing cleanly. The real fix is a growable arena, and
 ; that is rt/'s to build, not this file's to work around.
 ;
+; THE CHECKER (compiler/x86_64/checker/), WIRED IN BY driver/run.inc, DOES NOT
+; CHANGE THIS NUMBER. Its own bookkeeping -- the frame stack, the bind stack,
+; the buffered-diagnostic vector, the capability-use list, and the two module/
+; member tables -- comes out of `DrvCtx.scratch`, a separate, fixed-capacity
+; arena (`DRV_SCRATCH_CAP`, below) that this 256x factor says nothing about;
+; see driver/run.inc's checker-wiring comment for why reusing it there is
+; safe. The one thing the checker DOES allocate from THIS arena is
+; `__chk_fix_text` (checker/resolve/resolve.inc): a borrowed `DiagFix` needs
+; to outlive the checker's own scratch, so its handful of bytes -- a fixed
+; prefix plus one capability atom's name, per §13-listed diagnostic that
+; carries a required fix -- come from `Ast.arena`, i.e. this one. That is
+; bounded by diagnostic COUNT, not by source bytes, and a checker diagnostic
+; is at most one per declaration or per capability draw, never one per byte
+; the way §8.1's dangerous-codepoint case above is -- negligible next to the
+; 64x diagnostic-density term this factor already budgets, and not
+; re-measured here for that reason. If a future checker pass ever allocates
+; per-byte from `DrvCtx.arena` (not `.scratch`), THIS comment is where that
+; measurement belongs, updated by running it the way the two figures above
+; were, not by guessing a new factor.
+;
 ; Spec: docs/spec/exsecutor-spec-v0.4.md §9.3 (purity, the syscall surface),
 ; §8.1 (what the bytes are then held to).
 ; -----------------------------------------------------------------------------
