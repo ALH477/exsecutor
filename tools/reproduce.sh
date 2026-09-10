@@ -62,10 +62,20 @@ trap 'rm -rf "$WORKDIR"' EXIT
 DIR_A="$WORKDIR/build-a/deep/nested/dir1"
 DIR_B="$WORKDIR/build-b/other/dir2"
 mkdir -p "$DIR_A" "$DIR_B"
-SRC_A="$DIR_A/$(basename "$SRC")"
-SRC_B="$DIR_B/$(basename "$SRC")"
-cp "$SRC" "$SRC_A"
-cp "$SRC" "$SRC_B"
+# The source is not one file. exsc.asm includes lexer/, cst/, ast/, diag/,
+# driver/, rt/, macros/ by relative path, and the fixture fallback includes
+# ../../compiler/x86_64/ the same way -- so each build directory gets a
+# copy of the whole compiler/ and tests/ trees at the same relative depth,
+# and SRC keeps its path inside them. Copying exsc.asm alone (what this
+# script did until 2026-09-10) failed the moment exsc.asm gained an
+# include, with `symbol 'DrvCtx.arena' is undefined`.
+REL="${SRC#"$REPO_ROOT/"}"
+for d in "$DIR_A" "$DIR_B"; do
+  cp -r "$REPO_ROOT/compiler" "$d/compiler"
+  mkdir -p "$d/tests" && cp -r "$REPO_ROOT/tests/unit" "$d/tests/unit"
+done
+SRC_A="$DIR_A/$REL"
+SRC_B="$DIR_B/$REL"
 OUT_A="$DIR_A/out.bin"
 OUT_B="$DIR_B/out.bin"
 

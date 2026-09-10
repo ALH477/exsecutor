@@ -19,7 +19,7 @@
 #   - count per distinct message text (desc by count, then by text)
 #   - count per code (desc by count, then by code)
 #   - the single most common message, its count, and its percentage of total
-#   - how many diagnostics carry a non-null note, related span, and fix
+#   - how many diagnostics carry a non-null note, related span, fix, and suggestion
 #   - one line per file: `cNN: N diags [codes...]`
 #
 # This is a MEASUREMENT, not a gate: it always exits 0, and tests/run.sh
@@ -134,6 +134,7 @@ code_counts = Counter()
 n_note = 0
 n_related = 0
 n_fix = 0
+n_sugg = 0
 n_malformed = 0
 n_crash = 0
 per_file_lines = []
@@ -166,6 +167,8 @@ for run in runs:
 			n_related += 1
 		if d.get("fix") is not None:
 			n_fix += 1
+		if d.get("suggestion") is not None:
+			n_sugg += 1
 
 	flag = ""
 	if status not in (0, 1):
@@ -225,7 +228,8 @@ print("-- record richness " + "-" * 58)
 if total > 0:
 	print(f"  note:     {n_note:4d} / {total} ({100.0*n_note/total:5.1f}%) non-null")
 	print(f"  related:  {n_related:4d} / {total} ({100.0*n_related/total:5.1f}%) non-null")
-	print(f"  fix:      {n_fix:4d} / {total} ({100.0*n_fix/total:5.1f}%) non-null")
+	print(f"  fix:      {n_fix:4d} / {total} ({100.0*n_fix/total:5.1f}%) non-null  (machine-applicable; §8.3)")
+	print(f"  suggest.: {n_sugg:4d} / {total} ({100.0*n_sugg/total:5.1f}%) non-null  (advisory; never applied by emenda)")
 else:
 	print("  (no diagnostics)")
 print()
