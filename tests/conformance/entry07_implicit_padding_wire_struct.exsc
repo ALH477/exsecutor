@@ -1,34 +1,45 @@
-// §14 entry 7 -- implicit padding in a wire struct -> EXS-E0322.
+// §14 entry 7 -- a wire struct whose declared bit widths leave a partial
+// trailing byte -> EXS-E0322.
 //
-// §5.2's own `Capitulum` example, with the explicit `reserva` field
-// REMOVED:
+// RESTATED against the §5.2 amendment (commit 4edb704, checker.md finding
+// 13): fields in a `@transitus` type are **packed, alignment 1, always** --
+// offset is the sum of the preceding widths, with no alignment padding ever
+// inserted. The certified `DeModFrame` (`vendor/hydramesh-wire/`) is only
+// readable that way: `cursus: u16:maior` sits at byte 15 directly after a
+// `u24` at byte 12, no gap. Under that reading this fixture's ORIGINAL form
+// -- `Capitulum` with its `reserva: u16:maior` field simply deleted, leaving
+// `versio: u8` and `genus: u8` butted against `signum`/`longitudo` -- is a
+// valid, packed 10-byte struct. There is no natural-alignment gap between
+// whole-byte fields for the checker to call implicit, because §5.2 no
+// longer has such a gap at all; that fixture **does not reject**, and §14's
+// own text changed to say so ("was 'implicit padding' -- under §5.2's
+// packed layout the only padding a field can imply is the bit-granularity
+// kind, rules 2 and 4").
 //
-//   @transitus
-//   publica structura Capitulum {
-//       signum:    u32:maior
-//       versio:    u8
-//       genus:     u8
-//       reserva:   u16:maior      // explicit; implicit padding is EXS-E0322
-//       longitudo: u32:maior
-//   }
-//
-// `versio` and `genus` together are 2 bytes; without an explicit `reserva`
-// field, the 2 bytes that get `signum`/`longitudo` back onto a 4-byte
-// boundary are IMPLICIT padding -- exactly the uninitialized-memory
-// disclosure class §5.2 states this rule closes: "`@transitus` types may
-// have no implicit padding -- explicit `reserva` fields or rejection."
+// So entry 7 now has to violate rule 4 directly: "Declared widths must sum
+// to a whole number of bytes. A partial trailing byte is implicit padding,"
+// applied at bit granularity rather than byte granularity. Below, a
+// multi-byte field (`u16:maior`, byte-boundary-aligned: it starts at byte 0
+// and rule 2's "must begin on a byte boundary" is satisfied), a whole-byte
+// field (`u8`, starts at byte 2), and a trailing sub-byte field (`u4`,
+// starts at byte 3) sum to 16 + 8 + 4 = 28 bits -- 3.5 bytes, not a whole
+// number. The trailing `u4` is deliberately last and alone: every field
+// before it already lands on a byte boundary, so this fixture violates rule
+// 4 only, not rule 2, and is a clean single-rule case (unlike entry 21,
+// which violates rule 4 with a pair of adjacent sub-byte fields --
+// `u4`+`u3` -- and never has a multi-byte field to also satisfy rule 2
+// against).
 //
 // DEFERRED: needs the @transitus layout checker, which needs the type
 // checker (Stage 2). compiler/x86_64/ast/ and cst/ are both still empty;
 // `exsc aedifica`, run directly against this file, exits 0 and reports
-// nothing -- confirmed, not assumed.
+// nothing -- confirmed, not assumed (see this suite's report).
 
 @transitus
-publica structura Capitulum {
-    signum:    u32:maior
-    versio:    u8
-    genus:     u8
-    longitudo: u32:maior
+publica structura Malum {
+    numerus: u16:maior
+    genus:   u8
+    versio:  u4
 }
 
 // TEST: entry=7 shape=code expect-code=EXS-E0322 status=deferred needs=wire_layout_checker

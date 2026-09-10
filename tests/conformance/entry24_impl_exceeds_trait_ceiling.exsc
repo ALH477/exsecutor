@@ -13,11 +13,23 @@
 // it declared `poscit alloc`.
 //
 // Nothing here ever writes `dyn`. That is the point.
+//
+// FIXED, found by running: bare `self` (no type) does not parse. §8.6
+// decision 8 spends no keyword on the receiver -- "There is no `self`, no
+// `Self`, no receiver syntax" -- so `self` is an ordinary parameter name
+// and, like every other `Param ::= IDENT ':' Type`, needs its own type:
+// the interface's own name (`Summable`) in the interface, meaning "the
+// implementing type," and the concrete type (`Right`) in the impl. The
+// original `combine(self, other: f32)` read as `self` immediately
+// followed by `,` with no `:` -- `EXS-E0201` at both signatures, confirmed
+// by `exsc aedifica --emitte ast` before this fix, not assumed from the
+// grammar alone. Same defect §14 entry 12's fixture had (checker.md
+// finding 6); the fix here is the same shape.
 
 // TEST: entry=24 shape=code expect-code=EXS-E0510 status=deferred needs=capability_checker
 
 interfacies Summable {
-    functio combine(self, other: f32) -> f32 poscit alloc
+    functio combine(self: Summable, other: f32) -> f32 poscit alloc
 }
 
 functio usa_rete(x: f32) -> f32 poscit rete {
@@ -25,7 +37,7 @@ functio usa_rete(x: f32) -> f32 poscit rete {
 }
 
 interfacies Summable in Right poscit alloc, rete {
-    functio combine(self, other: f32) -> f32 {
+    functio combine(self: Right, other: f32) -> f32 {
         redde usa_rete(other);
     }
 }

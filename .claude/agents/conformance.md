@@ -32,14 +32,14 @@ hides the bug it claims to catch. Verify the exact code, not just "an error":
 | 6 | `:nativus` in a wire struct | `EXS-E0321` |
 | 7 | implicit padding in a wire struct | `EXS-E0322` |
 | 8 | integer index on `textus` | `EXS-E0311` |
-| 9 | HOF calling a function parameter with no row | `EXS-E0421` |
+| 9 | HOF passing a row-carrying function where a bare function type is expected | `EXS-E0303` (was `E0421`; §8.6 makes the bare row *empty*, so it is a type mismatch) |
 | 10 | laundering through a polymorphic HOF | `EXS-E0421` |
 | 11 | capability in module-level mutable | `EXS-E0501` |
 | 12 | capability-bearing impl behind bare `dyn` | `EXS-E0510` |
 | 13 | non-atomic `refero` through `externus` | `EXS-E0520` |
 | 14 | `-or` name declared as `functio` | `EXS-E0602` |
 
-Cases 9 and 10 both expect `EXS-E0421` from different scenarios — verify
+Case 10 expects `EXS-E0421`; case 9 now expects `EXS-E0303` (see the table) — verify
 each independently; one firing does not excuse the other. Case 1 (Turkish
 dotless-ı case fold) checks that the folded logic needs `sermo`, and case 14
 is a lexicon-suffix check — read each case's exact wording in §14 rather

@@ -7,38 +7,79 @@
 // implementation exceeds it. §4.3's own example: "A type with a
 // capability-typed field, transitively, is capability-bearing... structura
 // ScriptorRetis { sock: rete } // capability-bearing: [rete]" -- reused
-// directly below.
+// directly below; §4.3 also settles (commit 4edb704) that this mark is
+// *computed* from the fields, never separately declared, so there is
+// nothing else to keep in sync with the `sock: rete` field.
 //
-// §4.4 also names the reason this should be rare rather than common: "a
-// file writer's authority IS the handle in its field... If you need [a
-// `poscit` on a trait method], the capability is probably misplaced" -- the
-// violation here is not that `Scriptor` (the trait) declares a `poscit`; it
-// is that erasing `ScriptorRetis` into a BARE `dyn Scriptor` throws away the
-// `[rete]` mark that made it capability-bearing in the first place, which is
-// exactly what would "hide capabilities from the audit" (§10.3) if allowed.
+// REWRITTEN against checker.md finding 20 and the §8.6 decisions the same
+// commit ratified, which is what the ORIGINAL fixture got wrong three ways
+// at once -- and CLAUDE.md is explicit that a case which fails for the
+// wrong reason "hides the bug it claims to catch":
 //
-// The exact surface syntax for an `impl` block associating `ScriptorRetis`
-// with `Scriptor` is not attested anywhere in the spec text read for this
-// suite (§4, §5 and their examples show trait/struct declarations and
-// capability rows, never a full `impl Trait for Type` block) -- represented
-// here as best-effort rather than invented wholesale; the load-bearing part
-// of this fixture is the LAST line, converting a capability-bearing value
-// into a bare (empty-row) `dyn Scriptor`.
+//   1. Arity/receiver (§8.6 decision 8, finding 6). There is no `self` and
+//      no `Self`: a member of an `interfacies` (or of an `interfacies X in
+//      T` block) is an ordinary `Signature` whose FIRST parameter is the
+//      receiver -- typed as the interface's own name (`Scriptor`) in the
+//      interface, meaning "the implementing type," and as the concrete
+//      type (`ScriptorRetis`) in the implementation. `x.m(a)` is `m(x, a)`.
+//      The original `scribe(t: textus)` had arity 1 with no receiver at
+//      all. Below, `scribe(s: Scriptor, t: textus)` in the interface and
+//      `scribe(s: ScriptorRetis, t: textus)` in the impl match that rule.
+//   2. No impl. The original fixture declared `Scriptor` and
+//      `ScriptorRetis` but never associated the two, so there was no
+//      implementation for the checker to find a mark on at all. Below,
+//      `interfacies Scriptor in ScriptorRetis { … }` (§8.6 decision 4:
+//      implementation reuses `interfacies`, one token -- `in` -- after the
+//      head decides) supplies it.
+//   3. No cast. `redde s;` returned a bare `ScriptorRetis` where `dyn
+//      Scriptor` was declared, with no conversion at all -- caught as an
+//      ordinary type mismatch (a class-030x code) before ever reaching
+//      `EXS-E0510`, since Exsecutor has no implicit conversions (§4.5,
+//      §5.2, §5.4, §6.3). §8.6 decision 4 makes the trait-object cast
+//      explicit and postfix: `w sicut dyn Scriptura poscit {rete}` is the
+//      form; below, `s sicut dyn Scriptor` is that cast with the row left
+//      off, i.e. bound to the empty row -- which is the escape this entry
+//      exists to catch. This is now the ONLY error the fixture contains:
+//      the receiver arity matches, the impl exists, and the value is
+//      explicitly, not implicitly, converted to `dyn Scriptor` -- so the
+//      one thing left for the checker to object to is that `ScriptorRetis`'s
+//      computed mark, `{rete}`, exceeds the bare cast's bound, `{}`.
+//
+// `interfacies Scriptor` is not a name collision with any prelude
+// `Scriptor` (`examples/imprime.exsc` uses one without declaring it): §12
+// pre-seeds prelude names in a scope outside the module's own, and a
+// module's own declaration of the same name shadows it there, so this
+// fixture's local `Scriptor` is exactly what a real module would write.
+//
+// `-> mensura`, not `-> eventus<mensura>`: §11 now says `Scriptor.scribe`
+// should report failure as `eventus<mensura>`, since a closed descriptor is
+// only discovered at the write and a bare `mensura` cannot report that --
+// but marks both `examples/imprime.exsc` and this entry `[OPEN]` until
+// `eventus`'s generic syntax exists (`<…>` is presently only attested on
+// `Type`/`GenericArgs`, not spelled for a value-returning `eventus`). Kept
+// as `-> mensura` here for exactly that reason, not overlooked.
 //
 // DEFERRED: needs the capability-bearing-type tracker and `dyn` bound
-// checker (§4), which needs the type checker (Stage 2).
-// compiler/x86_64/ast/ and cst/ are both still empty; `exsc aedifica`, run
-// directly against this file, exits 0 and reports nothing -- confirmed,
-// not assumed.
+// checker (§4), which needs the type checker (Stage 2), and needs the
+// implementation (§8.6 decision 4) and receiver (decision 8) machinery to
+// exist first, since both are new grammar this wave. compiler/x86_64/ast/
+// and cst/ are both still empty; `exsc aedifica`, run directly against this
+// file, exits 0 and reports nothing -- confirmed, not assumed.
 
 interfacies Scriptor {
-    functio scribe(t: textus) -> mensura
+    functio scribe(s: Scriptor, t: textus) -> mensura
 }
 
 structura ScriptorRetis { sock: rete }
 
+interfacies Scriptor in ScriptorRetis {
+    functio scribe(s: ScriptorRetis, t: textus) -> mensura {
+        redde t.octeti().numerus();
+    }
+}
+
 publica functio erade_potestatem(s: ScriptorRetis) -> dyn Scriptor {
-    redde s
+    redde s sicut dyn Scriptor;
 }
 
 // TEST: entry=12 shape=code expect-code=EXS-E0510 status=deferred needs=capability_checker

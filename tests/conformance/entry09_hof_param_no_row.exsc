@@ -1,27 +1,51 @@
-// §14 entry 9 -- higher-order function calling a function parameter that
-// carries no capability row -> EXS-E0421.
+// §14 entry 9 -- a HOF passing a row-carrying function where a bare
+// function type is expected -> EXS-E0303, not EXS-E0421.
 //
-// Distinct from entry 10 (see that fixture): here the violation is
-// intrinsic to the HOF's OWN declaration, at no particular call site.
-// §4.2's substitution rule: "A capability row is part of a function
-// TYPE... A row variable in a callee's `poscit` names one of the callee's
-// parameters" via `sicut f`. `applica_sine_ordine` below calls its
-// function-typed parameter `f` but never writes `sicut f` anywhere in its
-// own `poscit` clause -- so whatever `f` turns out to need at a given call
-// site is invisible at THIS function's boundary, which is exactly what
-// `poscit`'s §4.1 rule 3 ("Capability sets are part of `functio` types, not
-// only declarations") exists to prevent.
+// RESTATED against the §8.6/§4.2 reading ratified in commit 4edb704
+// (checker.md section 2.1 rule 3, finding 11). The ORIGINAL fixture read a
+// bare `functio(f32) -> f32` parameter as an *open* row, so a HOF that
+// called its own function-typed parameter `f` without writing `sicut f`
+// anywhere in its own `poscit` clause was itself the violation -- "whatever
+// `f` turns out to need at a given call site is invisible at THIS
+// function's boundary." §8.6 settles it the other way: `poscit {}` is the
+// *explicit* empty row, so the unannotated, bare form is the *implicit*
+// one, also empty -- not open. Function types then compare by id, rows
+// included (checker.md 2.1 rule 3), so `applica_sine_ordine` below, exactly
+// as originally written, commits to nothing about `f` beyond "takes no
+// capabilities," and calling `f(v)` inside its body is completely
+// consistent with that. There is no violation left at its own definition;
+// `prototypes/capcheck/cases/bad_hof_no_row.exsc` is the same shape and is
+// "not adopted" for the same reason (finding 11).
 //
-// DEFERRED: needs the capability-row checker (§4), which needs the type
-// checker (Stage 2) to resolve `f`'s type in the first place.
-// compiler/x86_64/ast/ and cst/ are both still empty; `exsc aedifica`, run
-// directly against this file, exits 0 and reports nothing -- confirmed,
-// not assumed. §4.2 itself is `[UNTESTED]` as a soundness claim beyond a
-// nine-case Python probe (`prototypes/capcheck/`), which CLAUDE.md and
-// `prototypes/README.md` both forbid this suite from depending on.
+// The attack this entry means to catch still exists, just one step later,
+// at a CALL SITE: `identitas_rete` below is an ordinary top-level function
+// of type `functio(f32) -> f32 poscit rete` -- a real, non-empty row.
+// Passing it where `applica_sine_ordine` declares a bare (empty-row)
+// `f: functio(f32) -> f32` is a type mismatch, because the two function
+// types are not equal once rows are part of identity: `EXS-E0303`, at the
+// `ataca` call site, not `EXS-E0421` at any declaration. This is the
+// "poscit rete function where a bare function type is expected" case §14's
+// text now names directly.
+//
+// DEFERRED: needs the type checker (Stage 2) to resolve both function
+// types and compare them, not the capability-row checker alone -- this is
+// now a class-030x general-typing code, per §13's amendment, not a 042x
+// row code. compiler/x86_64/ast/ and cst/ are both still empty; `exsc
+// aedifica`, run directly against this file, exits 0 and reports nothing --
+// confirmed, not assumed. §4.2 itself is `[UNTESTED]` as a soundness claim
+// beyond a nine-case Python probe (`prototypes/capcheck/`), which CLAUDE.md
+// and `prototypes/README.md` both forbid this suite from depending on.
 
 publica functio applica_sine_ordine(v: f32, f: functio(f32) -> f32) -> f32 poscit alloc {
-    redde f(v)
+    redde f(v);
 }
 
-// TEST: entry=9 shape=code expect-code=EXS-E0421 status=deferred needs=capability_checker
+publica functio identitas_rete(v: f32) -> f32 poscit rete {
+    redde v;
+}
+
+publica functio ataca(v: f32) -> f32 poscit alloc {
+    redde applica_sine_ordine(v, identitas_rete);
+}
+
+// TEST: entry=9 shape=code expect-code=EXS-E0303 status=deferred needs=type_checker

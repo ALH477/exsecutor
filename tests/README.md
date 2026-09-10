@@ -30,7 +30,7 @@ calls):
 ## What is deliberately absent
 
 - **`tests/conformance/` entries.** See above. When `exsc` exists, each of
-  the 23 rows in spec §14 needs a source fixture plus an expectation (a
+  the 24 rows in spec §14 needs a source fixture plus an expectation (a
   diagnostic code for 15 of them; byte-identical output under varied
   conditions for #16, which is exactly what `tools/reproduce.sh` already
   checks; byte-identical output cross-host for #17).
@@ -48,7 +48,7 @@ calls):
   `vendor/hydramesh-wire/golden_vectors.json`, 246 vectors, equivalent under
   its own theorem to agreeing with the reference on all 2^108 frames.
 
-  **23 entries, five rule shapes.** Most are "rejects with exactly code
+  **24 entries, five rule shapes.** Most are "rejects with exactly code
   EXS-Exxxx". Entries 16 and 17 instead require byte-identical output across
   conditions and hosts. Entry 23 is the certificate. Entry 15 is a runtime
   abort, not a compile failure. Entry 1 is a capability absence with no code
