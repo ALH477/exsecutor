@@ -43,6 +43,11 @@
 ;     PROPERLY NESTED -- a pair either nests or is disjoint, never overlaps;
 ;   - every `AstDecl.parent` precedes it, and every `AstDecl.node` points at a
 ;     node whose `d` slot is that declaration;
+;   - spec §4.6's capability atoms, if the tree has them, are ALL ELEVEN, the
+;     last eleven declarations, distinctly named, and have neither a node nor
+;     a parent nor a flag (`__ast_v_caps`);
+;   - every interned `cap` type names one of those declarations and carries
+;     no other field (`__ast_v_types`);
 ;   - the root, if set, is a `Module`.
 ;
 ; WHAT IT DOES NOT CHECK, AND WHY -- both are typed-ast.md section 3 clauses
@@ -357,6 +362,168 @@ proc __ast_v_decls, tree
 	return
 endp
 
+; ---- the eleven capability atoms -------------------------------------------
+; What a tree carrying spec §4.6's atoms must look like, checked as a
+; STRUCTURE rather than trusted from whoever built it -- `ast_cap_push`
+; (ast/build.inc) is one way in, `ast_load` reading eleven `CapAtom` lines is
+; the other, and only this routine sees both.
+;
+;   - an atom declaration has NO introducing node (`node` 0), NO enclosing
+;     declaration (`parent` 0), NO flags, and a real name;
+;   - the atoms are ALL ELEVEN or NONE -- ten is not a smaller capability set,
+;     it is a tree in which some §4.6 ordinal silently names the wrong atom;
+;   - they are the LAST eleven declarations, which is what makes
+;     `ast_cap_base` a bounds check instead of a scan and what makes
+;     checker.md section 2.2's `N + k` true;
+;   - their names are DISTINCT. Two atoms sharing a name id would make
+;     `ast_cap_of_name` return whichever came first and lose the other atom
+;     entirely.
+;
+; WHAT IT DELIBERATELY DOES NOT CHECK: that atom `k`'s name is the `k`-th
+; entry of `ast_cap_names`. That would mean interning eleven strings from
+; inside a verifier -- a side effect on the caller's interner, and a
+; guaranteed trap on any hand-built tree whose interner does not happen to
+; hold them (`ast_load` restores name IDS from a dump, never bytes). The
+; pool-to-decl correspondence is `ast_cap_push`'s own post-condition and is
+; asserted, atom by atom, in tests/unit/ast_cap_atoms.asm.
+proc __ast_v_caps, tree
+	uses	rbx, r12, r13, r14
+	locals
+		slot vc_first, dq
+		slot vc_n,     dq
+	endl
+	mov	rbx, [tree]
+	mov	qword [vc_first], 0
+	mov	qword [vc_n], 0
+	mov	r12, 1
+  .scan:
+	mov	rax, [rbx + Ast.decls.len]
+	cmp	r12, rax
+	jg	.scanned
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	ast_decl_at
+	movzx	ecx, byte [rax + AstDecl.kind]
+	cmp	ecx, AST_D_CAPATOM
+	jne	.next
+	mov	ecx, [rax + AstDecl.parent]
+	rassert	rcx eq 0
+	mov	ecx, [rax + AstDecl.node]
+	rassert	rcx eq 0
+	movzx	ecx, byte [rax + AstDecl.flags]
+	rassert	rcx eq 0
+	mov	ecx, [rax + AstDecl.name]
+	rassert	rcx ge 1
+	inc	qword [vc_n]
+	mov	rax, [vc_first]
+	test	rax, rax
+	jnz	.next
+	mov	[vc_first], r12
+  .next:
+	inc	r12
+	jmp	.scan
+  .scanned:
+	mov	rax, [vc_n]
+	test	rax, rax
+	jz	.done			; a tree with no atoms is well-formed
+	mov	rcx, AST_CAP_COUNT
+	rassert	rax eq rcx		; all eleven, or none
+	mov	rax, [rbx + Ast.decls.len]
+	sub	rax, AST_CAP_COUNT
+	inc	rax
+	mov	rcx, [vc_first]
+	rassert	rcx eq rax		; ... and they are the last eleven,
+					; hence consecutive
+
+	; distinct names: eleven of them, so the quadratic scan is 55 integer
+	; comparisons and needs no map (and could not use one: a map here
+	; would be a second thing to size against a fixed arena).
+	mov	r12, [vc_first]
+	mov	r13, 0
+  .outer:
+	mov	rcx, AST_CAP_COUNT
+	cmp	r13, rcx
+	jge	.done
+	mov	rdi, rbx
+	lea	rsi, [r12 + r13]
+	call	ast_decl_at
+	mov	r14d, [rax + AstDecl.name]
+	lea	rax, [r13 + 1]
+	mov	[vc_n], rax
+  .inner:
+	mov	rcx, AST_CAP_COUNT
+	mov	rax, [vc_n]
+	cmp	rax, rcx
+	jge	.inner_done
+	mov	rdi, rbx
+	mov	rax, [vc_n]
+	lea	rsi, [r12 + rax]
+	call	ast_decl_at
+	mov	ecx, [rax + AstDecl.name]
+	rassert	rcx ne r14
+	inc	qword [vc_n]
+	jmp	.inner
+  .inner_done:
+	inc	r13
+	jmp	.outer
+  .done:
+	return
+endp
+
+; ---- the interned type table -----------------------------------------------
+; Only what a NOMINAL type kind makes checkable per entry: `AST_TY_CAP`'s `a`
+; is a capability atom's declaration (ast/kinds.inc), and an atom type has no
+; other field -- no width, no row, no sign, no byte order, no placement. Two
+; `Mundus` annotations therefore intern to ONE id, which is the whole reason
+; the checker can compare capability types by id (checker.md section 1, rule
+; 5: "type compatibility is equality of interned type ids").
+;
+; The other nominal kinds (`struct` `alias` `iface` `param` `brand`) are not
+; checked here: `brand.a` is admitted to be 0 (checker.md section 2.6's
+; anonymous brand) and the other three point at declarations no Stage 1 tree
+; interns yet, so a rule about them would be prose about unwritten code.
+proc __ast_v_types, tree
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [tree]
+	mov	r12, 1
+  .loop:
+	mov	rax, [rbx + Ast.types.len]
+	cmp	r12, rax
+	jg	.done
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	ast_type_at
+	movzx	ecx, byte [rax + AstType.kind]
+	cmp	ecx, AST_TY_CAP
+	jne	.next
+	mov	ecx, [rax + AstType.a]
+	rassert	rcx ge 1
+	mov	rdx, [rbx + Ast.decls.len]
+	rassert	rcx le rdx
+	mov	edx, [rax + AstType.width]
+	rassert	rdx eq 0
+	mov	edx, [rax + AstType.b]
+	rassert	rdx eq 0
+	movzx	edx, byte [rax + AstType.sign]
+	rassert	rdx eq 0
+	movzx	edx, byte [rax + AstType.order]
+	rassert	rdx eq 0
+	movzx	edx, byte [rax + AstType.place]
+	rassert	rdx eq 0
+	mov	rdi, rbx
+	mov	rsi, rcx
+	call	ast_decl_at
+	movzx	ecx, byte [rax + AstDecl.kind]
+	rassert	rcx eq AST_D_CAPATOM
+  .next:
+	inc	r12
+	jmp	.loop
+  .done:
+	return
+endp
+
 ; ---- the whole tree --------------------------------------------------------
 proc ast_verify, tree
 	uses	rbx, r12, r13
@@ -394,6 +561,10 @@ proc ast_verify, tree
 	call	__ast_v_nest
 	mov	rdi, rbx
 	call	__ast_v_decls
+	mov	rdi, rbx
+	call	__ast_v_caps
+	mov	rdi, rbx
+	call	__ast_v_types
 
 	mov	eax, [rbx + Ast.root]
 	test	eax, eax

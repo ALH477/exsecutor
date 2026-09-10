@@ -132,6 +132,44 @@
 ;     honest fix is an ABI enumeration, which needs spec §5.3 to name more
 ;     than one ABI first.
 ;
+; ---------------------------------------------------------------------------
+; WHAT STAGE 2's DESIGN ASKED FOR, AND WHAT THIS MODULE DID. `docs/design/
+; checker.md` section 9 raised four findings against this tree; three needed
+; code and are done, one needed nothing:
+;
+;  F1. NO TYPE KIND FOR A CAPABILITY. `m: Mundus`, `sock: rete` (spec §4.3)
+;      and a `sub`'s `Decl.ty` had no `AstType` kind at all. Added:
+;      `AST_TY_CAP`, `a` = the atom's declaration (ast/kinds.inc, ast/
+;      types.inc), verified per entry by ast/verify.inc's `__ast_v_types`.
+;  F2. NO DECLARATION KIND FOR AN ATOM. Added `AST_D_CAPATOM` and the pool
+;      entry `CapAtom` -- and, the part that is a DECISION rather than an
+;      enumeration value, THIS MODULE PUSHES THE ELEVEN ATOMS rather than
+;      reserving the ids for the checker: `ast_cap_push`, called at the end
+;      of `ast_from_cst`'s walk, so the atom of §4.6 ordinal `k` is
+;      declaration `N + k` exactly as checker.md section 2.2's pass 0
+;      specifies. The reasons are in ast/build.inc's header; the cost is
+;      that every tree built from a CST now carries eleven declarations no
+;      source text produced, which `ast_dump` shows and `ast_decl_count`
+;      counts. checker.md section 2.2 should now read "pass 0 finds them"
+;      (`ast_cap_base`) rather than "pushes them" -- reported, not edited
+;      here, because docs/ is not this module's.
+;  F3. "BOTH KEYS ARE DECLARATION INDICES" (typed-ast.md section 2.6) is
+;      true now that an atom has a declaration. Nothing to do here: there is
+;      NO `ast_row_intern` in this module and never was -- `Ast.rows` is
+;      present and empty, and checker.md section 6 gives the interning API
+;      (`chk_row_intern`) to the rows agent. The sort that section describes
+;      does not exist in this tree.
+;  F4. `Call.d` WAS AST_R_NONE and the verifier required 0, which would have
+;      trapped the checker writing the impls a generic call chose. It is
+;      AST_R_ANY (ast/kinds.inc; tests/unit/ast_call_d_impls.asm).
+;
+; Not done, and not this module's to do: checker.md's findings 5-22, which
+; are against the spec, the probes and the conformance fixtures rather than
+; against `ast/`. One correction owed to typed-ast.md section 2.3, reported
+; and not edited: its `Member` row is stale -- `Member.c` holds the
+; `GenericArgs` node (finding 7 above), so the row is
+; `Member | E | name id | GenericArgs or 0 | resolved decl | -- |`.
+;
 ; Spec: docs/spec/exsecutor-spec-v0.4.md §9.1 (Stage 1 builds it, Stage 2
 ; types it), §8.6, §5.1-§5.5, §4.1-§4.6, §6, §7.1.
 ; -----------------------------------------------------------------------------

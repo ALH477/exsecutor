@@ -144,7 +144,10 @@ AST_D_SUB	= 14
 AST_D_LOOPVAR	= 15
 AST_D_ACCUM	= 16
 AST_D_LAMBDA	= 17
-AST_DECL_MAX	= 17
+AST_D_CAPATOM	= 18	; a capability ATOM of spec §4.6 -- the one declaration
+			; kind with no declaration SITE. See "capability atoms",
+			; below, and ast/build.inc's `ast_cap_push`.
+AST_DECL_MAX	= 18
 
 ; ---- declaration flags -----------------------------------------------------
 ; `AstDecl.flags` is one byte and typed-ast.md section 2.4 names exactly eight
@@ -233,7 +236,13 @@ AST_TY_EVENTUS	= 20
 AST_TY_BRAND	= 21
 AST_TY_RED	= 22
 AST_TY_UNIT	= 23
-AST_TY_MAX	= 23
+AST_TY_CAP	= 24	; `a` = the atom's declaration (AST_D_CAPATOM). NOT in
+			; typed-ast.md section 2.5's table: `m: Mundus` and
+			; `sock: rete` (spec §4.3) are ordinary type
+			; annotations and had no kind at all, and a `sub`'s
+			; `Decl.ty` needs one too. docs/design/checker.md
+			; section 9, finding 1.
+AST_TY_MAX	= 24
 
 ; `AstType.sign`, `.order`, `.place`. Byte order and placement are FIELDS OF
 ; THE TYPE NODE and part of the interning key: that is what makes spec §5.2's
@@ -296,8 +305,19 @@ AST_NUM_SUBNORMALES	= 3
 ;      typed-ast.md section 3's Stage 2 check, which needs the enclosing
 ;      `Sig` and is not a per-node fact.
 ;
-; And TWO places it is WIDER. `ForHead.d` carries the `forma` WIDTH, and
-; `Member.c` carries GENERIC ARGUMENTS. Spec §8.6 admits `Suffix ::=
+; And THREE places it is WIDER. `ForHead.d` carries the `forma` WIDTH,
+; `Call.d` carries the CHOSEN IMPLS of a generic call, and `Member.c` carries
+; GENERIC ARGUMENTS.
+;
+; `Call.d` was AST_R_NONE -- typed-ast.md section 2.3 leaves the slot blank --
+; and is now AST_R_ANY, on docs/design/checker.md section 2.5's requirement:
+; after Stage 2 it holds "the `extra` offset of the impl decls chosen for each
+; generic argument, in generic-parameter order" (that document's section 2.7,
+; for spec §15 item 5's dictionary layout). AST_R_ANY, not AST_R_LIST: the
+; COUNT lives in the callee's `Generics`, not in a neighbouring slot, and
+; `Call.c` is already the argument count. Stage 1 still writes 0 there -- what
+; changed is that a checker may write something else, which under AST_R_NONE
+; would have tripped `__ast_slot_check`'s `rassert`. Spec §8.6 admits `Suffix ::=
 ; GenericArgs` after any path segment, and a segment reached through `.` in
 ; expression position is an `AST_MEMBER`, whose row in that table has no slot
 ; for them at all -- `Seg.b` covers only the segments of a written `Path`. The
@@ -346,7 +366,7 @@ ast_roles:
 	db AST_R_NODEQ, AST_R_NODEQ, AST_R_NONE,  AST_R_NONE	; 37 Cast
 	db AST_R_NODEQ, AST_R_NODEQ, AST_R_NONE,  AST_R_NONE	; 38 Index
 	db AST_R_NODEQ, AST_R_NONE,  AST_R_NONE,  AST_R_NONE	; 39 Try
-	db AST_R_NODEQ, AST_R_LIST,  AST_R_COUNT, AST_R_NONE	; 40 Call
+	db AST_R_NODEQ, AST_R_LIST,  AST_R_COUNT, AST_R_ANY	; 40 Call
 	db AST_R_NODEQ, AST_R_NAME,  AST_R_NODE,  AST_R_DECL	; 41 Member
 	db AST_R_NODEQ, AST_R_NODEQ, AST_R_NONE,  AST_R_DECL	; 42 Lambda
 	db AST_R_NODEQ, AST_R_NONE,  AST_R_NONE,  AST_R_NONE	; 43 TyPath
@@ -445,6 +465,7 @@ ast_dkind_names:
 	db 7,'LoopVar'
 	db 5,'Accum'
 	db 6,'Lambda'
+	db 7,'CapAtom'
 AST_DKIND_NAMES_LEN = $ - ast_dkind_names
 
 ; Lower case, matching typed-ast.md section 2.5's own table and
@@ -473,4 +494,51 @@ ast_tkind_names:
 	db 5,'brand'
 	db 3,'red'
 	db 4,'unit'
+	db 3,'cap'
 AST_TKIND_NAMES_LEN = $ - ast_tkind_names
+
+; ---- capability atoms ------------------------------------------------------
+; SPEC §4.6's ELEVEN ATOMS, IN THAT SECTION'S OWN ORDER, and the order is the
+; content: `docs/design/checker.md` section 2.1 gives every scope frame a
+; `cap[11]` indexed by the §4.6 ordinal, section 2.2's pass 0 gives the atom
+; whose ordinal is `k` the declaration id `N + k`, and section 2.4's row
+; sorting is "a bit scan once atom ids are consecutive". Permuting this pool
+; therefore silently permutes every row in the language -- which is what
+; tests/unit/ast_cap_atoms.asm asserts against, atom by atom.
+;
+; These are IDENTIFIERS IN THE CAPABILITY NAMESPACE (spec §8.4 tier 3), not
+; reserved words: nothing in lexer/keywords.inc knows them, `rete` is a legal
+; variable name, and the only thing that makes one an atom is a declaration
+; of kind AST_D_CAPATOM whose `name` interns to the bytes below. Three are
+; capitalised -- `Mundus`, `Filum`, `Crudum` -- exactly as §4.6 writes them;
+; §8.1's NFC rule makes byte comparison the whole of identity here.
+;
+; A twelfth atom is a spec amendment to §4.6, not an edit to this table: §4.6
+; closes with the standard streams belonging to `ambitus` "rather than
+; spending a root on a twelfth atom".
+AST_CAP_MUNDUS		= 1
+AST_CAP_ALLOC		= 2
+AST_CAP_SERMO		= 3
+AST_CAP_HOROLOGIUM	= 4
+AST_CAP_ARCHIVUM	= 5
+AST_CAP_RETE		= 6
+AST_CAP_FORTUNA		= 7
+AST_CAP_AMBITUS		= 8
+AST_CAP_FILUM		= 9
+AST_CAP_MACHINA		= 10
+AST_CAP_CRUDUM		= 11
+AST_CAP_COUNT		= 11
+
+ast_cap_names:
+	db 6,'Mundus'
+	db 5,'alloc'
+	db 5,'sermo'
+	db 10,'horologium'
+	db 8,'archivum'
+	db 4,'rete'
+	db 7,'fortuna'
+	db 7,'ambitus'
+	db 5,'Filum'
+	db 7,'machina'
+	db 6,'Crudum'
+AST_CAP_NAMES_LEN = $ - ast_cap_names

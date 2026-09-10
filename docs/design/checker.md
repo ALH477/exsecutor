@@ -143,12 +143,16 @@ visit.
 
 **Pass 0** exists because capability atoms are "identifiers in the
 capability namespace" (spec §8.4 tier 3) with no declaration site, while
-`Seg.d`, `RowItem.d` and row items are declaration ids (AST 2.6). The
-checker pushes one `Decl` per atom at the end of `Ast.decls`, `parent` 0,
-so an atom's id is `N + k` for a module of `N` source decls and §4.6
-ordinal `k` — deterministic, and ascending id is ascending §4.6 order, which
-makes row sorting a bit scan (pass 3). This needs a declaration kind
-`kinds.inc` lacks (finding 2).
+`Seg.d`, `RowItem.d` and row items are declaration ids (AST 2.6). Stage 1
+pushes one `Decl` per atom at the end of `Ast.decls` (`ast_cap_push`, called
+by `ast_from_cst`; kind `AST_D_CAPATOM`, `parent` 0), so an atom's id is
+`N + k` for a module of `N` source decls and §4.6 ordinal `k` —
+deterministic, ascending id is ascending §4.6 order, which makes row sorting
+a bit scan (pass 3), and `ast_verify` enforces all-eleven-or-none and
+last-eleven. Pass 0 therefore *finds* them — `ast_cap_base(tree)` — and
+must not push a second set (it traps). This document first said the
+checker pushes them; the ast agent decided Stage 1 should, so the tree is
+self-describing and `ast_dump`/`ast_load` carry them (finding 2, done).
 
 **Pass 1** resolves what needs no type: a module table (`rt/map.inc`, name
 id → decl, filled from `Module.a` in item order, so forward references

@@ -4636,6 +4636,22 @@ proc ast_from_cst, tree, t, file_id
 	mov	[wr2_root], rax
 	mov	rdi, rbx
 	call	ast_set_root
+
+	; PASS 0 OF THE CHECKER, RUN HERE (checker.md section 2.2, and
+	; ast/build.inc's `ast_cap_push` for why here). Spec §4.6's eleven
+	; atoms have no declaration site in §8.6's grammar, so the eleven
+	; declarations that `Seg.d`, `RowItem.d` and `sub`'s `Decl.ty` will
+	; name have to be pushed by somebody. Here they land AFTER every
+	; source declaration and nothing pushes another, which is what makes
+	; the atom of §4.6 ordinal `k` the declaration `N + k` for a module
+	; of `N` source declarations.
+	;
+	; ON THE FAILED PATH THEY ARE NOT PUSHED. A walk that produced no
+	; root produced no tree either; `ast_verify` admits a tree with no
+	; atoms (a hand-built one usually has none) and a checker asks
+	; `ast_cap_base` rather than assuming.
+	mov	rdi, rbx
+	call	ast_cap_push
 	mov	rax, [wr2_root]
   .done:
 	return

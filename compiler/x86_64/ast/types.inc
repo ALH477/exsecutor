@@ -194,8 +194,11 @@ endp
 ; One-operand kinds: `ptr` `ref` `refc` `borrow` `eventus` `red` take `a` = a
 ; type id and `width` 0; `acies` takes `a` = element type and `width` = the
 ; LANE COUNT, which spec §5.4 puts in the type so that it can never come from
-; the host; `struct` `alias` `iface` `param` `brand` take `a` = a DECLARATION
-; id (nominal identity) and `width` 0.
+; the host; `struct` `alias` `iface` `param` `brand` `cap` take `a` = a
+; DECLARATION id (nominal identity) and `width` 0 -- for `cap` that
+; declaration is one of spec §4.6's eleven atoms (AST_D_CAPATOM), so
+; `m: Mundus` and a `sub`'s `Decl.ty` intern to one id per atom and
+; capability types compare by id like every other type.
 proc ast_type_una, tree, kind, a, width
 	locals
 		slot t0, 16

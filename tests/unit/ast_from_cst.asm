@@ -35,7 +35,11 @@
 ;      postorder holds, every list is inside `extra`, every declaration's
 ;      back-link agrees, and every type slot is still empty
 ;   3. the counts are exactly what the grammar implies -- ten nodes, two
-;      declarations
+;      declarations -- PLUS spec §4.6's eleven capability atoms, which
+;      `ast_from_cst` pushes at the end of the walk (ast/build.inc's
+;      `ast_cap_push`), so thirteen declarations in all. The atoms are the
+;      last eleven and `f`'s and `x`'s ids are unmoved, which is the whole
+;      point of pushing them after rather than before
 ;   4. `publica` reached BOTH places it belongs: `AstDecl.flags` and the
 ;      `Fn` node's `aux`. It is a child of `Item` in the CST and of neither
 ;      the signature nor the body, so nothing else would have carried it.
@@ -166,8 +170,12 @@ segment readable executable
 	jne	.fail3
 	lea	rdi, [fx_ast]
 	call	ast_decl_count
-	cmp	rax, 2
+	cmp	rax, 2 + AST_CAP_COUNT
 	jne	.fail3
+	lea	rdi, [fx_ast]
+	call	ast_cap_base
+	cmp	rax, 3			; N = 2 source declarations, so
+	jne	.fail3			; `Mundus` is declaration 3
 	mov	rax, [fx_root]
 	cmp	rax, 10
 	jne	.fail3

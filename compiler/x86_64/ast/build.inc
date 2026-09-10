@@ -411,6 +411,177 @@ proc ast_decl_flag, tree, id, flags
 	return
 endp
 
+; ---- the eleven capability atoms -------------------------------------------
+; `docs/design/checker.md` section 2.2's PASS 0, moved DOWN into Stage 1.
+;
+; Spec §4.6's atoms are "identifiers in the capability namespace" (§8.4 tier
+; 3) with no declaration site anywhere in §8.6's grammar -- and yet `Seg.d`,
+; `RowItem.d` and a `sub`'s `Decl.ty` all have to name one, and every one of
+; those slots holds a DECLARATION id (typed-ast.md sections 2.3, 2.6). So
+; eleven declarations have to exist that no source text produced.
+;
+; WHO PUSHES THEM, and why it is this file rather than the checker. That
+; document says "the checker pushes one `Decl` per atom at the end of
+; `Ast.decls`"; the ids it specifies -- `N + k` for a module of `N` source
+; declarations and §4.6 ordinal `k` -- are the same either way, because this
+; runs at the END of `ast_from_cst`'s walk, after every source declaration
+; and before anything else can push one. Three reasons to do it here:
+;
+;   1. THE TREE BECOMES SELF-DESCRIBING. `ast_dump` prints the eleven
+;      `CapAtom` lines, `ast_load` reads them back, and `ast_equal` compares
+;      them -- so what a checker fixture resolves against is visible in the
+;      dump of `exsc aedifica --emitte ast` today, before any checker exists.
+;      Pushed by the checker instead, the atoms would be invisible to every
+;      tool in this repository that can currently look at a tree.
+;   2. ONE PLACE OWNS THE ORDER. The §4.6 ordinal is load-bearing in three
+;      separate places in that design (frame slots, row sorting, decl ids);
+;      keeping the pool and the push in `ast/` means a checker never restates
+;      it, and `ast_verify` can check the tree it is handed rather than
+;      trusting the pass that built it.
+;   3. IT COSTS ELEVEN DECLARATIONS. Not per function -- per module.
+;
+; The cost is the one this routine's caller pays and a reader should know:
+; every tree built from a CST now has eleven more declarations than its
+; source has names, and `ast_decl_count` says so (tests/unit/ast_from_cst.asm
+; check 3 went from 2 to 13). A tree built by hand through `ast_load` has
+; them only if its text does; `ast_cap_base` is how a later pass asks.
+;
+; NO SPAN. An atom is not written anywhere, so its `Span` is all zeroes --
+; file 0, offset 0, length 0. A diagnostic about a capability points at the
+; USE (checker.md section 2.4 puts every capability code's span on a node in
+; the source), never at the atom, so there is nothing this span could
+; usefully be. Zero is also what makes two dumps of the same module compare
+; equal regardless of which file id the module happened to get.
+;
+; rax = the declaration id of `Mundus`, so atom `k` is `rax + k - 1`.
+proc ast_cap_push, tree
+	uses	rbx, r12, r13, r14
+	locals
+		slot cp_span, sizeof.Span
+		slot cp_base, dq
+	endl
+	mov	rbx, [tree]
+	mov	rdi, rbx
+	call	ast_cap_base
+	rassert	rax eq 0		; once per tree
+
+	lea	rdi, [cp_span]
+	mov	rcx, sizeof.Span
+	xor	eax, eax
+	cld
+	rep	stosb
+
+	mov	rax, [rbx + Ast.decls.len]
+	inc	rax
+	mov	[cp_base], rax		; `Mundus`'s id, `N + 1`
+	mov	r12, 1
+  .atom:
+	mov	rcx, AST_CAP_COUNT
+	cmp	r12, rcx
+	jg	.done
+	lea	rdi, [ast_cap_names]
+	mov	rsi, r12
+	call	ast_name_at		; rax = bytes, rdx = length
+	mov	r13, rax
+	mov	r14, rdx
+	mov	rdi, [rbx + Ast.names]
+	mov	rsi, r13
+	mov	rdx, r14
+	call	intern_id
+	mov	r13, rax		; the atom's name id
+
+	mov	rdi, rbx
+	mov	rsi, AST_D_CAPATOM
+	mov	rdx, 0			; no flag applies to an atom
+	mov	rcx, r13
+	mov	r8, 0			; module level: `parent` 0
+	lea	r9, [cp_span]
+	call	ast_decl
+	mov	rcx, [cp_base]
+	add	rcx, r12
+	dec	rcx
+	rassert	rax eq rcx		; ids are consecutive from the base --
+					; checker.md section 2.2's `N + k`, and
+					; section 2.4's "ascending id is
+					; ascending §4.6 order"
+	inc	r12
+	jmp	.atom
+  .done:
+	mov	rax, [cp_base]
+	return
+endp
+
+; rax = the declaration id of `Mundus`, or 0 if this tree has no atoms.
+; The atoms are always the LAST eleven declarations (`ast_cap_push` runs
+; after the walk and nothing pushes a declaration afterwards), so this is
+; one bounds check and one kind test, not a scan -- and `ast_verify` is what
+; makes "always the last eleven" true of a tree that came from `ast_load`
+; rather than from `ast_cap_push`.
+proc ast_cap_base, tree
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [tree]
+	mov	r12, [rbx + Ast.decls.len]
+	mov	rcx, AST_CAP_COUNT
+	cmp	r12, rcx
+	jl	.none
+	sub	r12, rcx
+	inc	r12			; the first of the last eleven
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	ast_decl_at
+	movzx	ecx, byte [rax + AstDecl.kind]
+	cmp	ecx, AST_D_CAPATOM
+	jne	.none
+	mov	rax, r12
+	return
+  .none:
+	xor	eax, eax
+	return
+endp
+
+; An interner id -> the §4.6 ORDINAL of the atom of that name (1..11), or 0
+; if the name is not an atom's. This is the whole of "is this identifier a
+; capability?" -- checker.md section 2.1's lookup needs the ordinal to index
+; a frame's `cap[11]`, and `ast_cap_base(tree) + k - 1` is the declaration.
+; Eleven comparisons of two integers; nothing hashes and nothing here can
+; depend on an address (CLAUDE.md, "Determinism is not optional").
+proc ast_cap_of_name, tree, nameid
+	uses	rbx, r12, r13
+	locals
+	endl
+	mov	rbx, [tree]
+	mov	rax, [nameid]
+	test	rax, rax
+	jz	.none
+	mov	rdi, rbx
+	call	ast_cap_base
+	test	rax, rax
+	jz	.none
+	mov	r13, rax
+	mov	r12, 1
+  .atom:
+	mov	rcx, AST_CAP_COUNT
+	cmp	r12, rcx
+	jg	.none
+	mov	rdi, rbx
+	lea	rsi, [r13 + r12 - 1]
+	call	ast_decl_at
+	mov	ecx, [rax + AstDecl.name]
+	mov	rax, [nameid]
+	cmp	rcx, rax
+	je	.hit
+	inc	r12
+	jmp	.atom
+  .hit:
+	mov	rax, r12
+	return
+  .none:
+	xor	eax, eax
+	return
+endp
+
 ; ---- the `extra` pool and the staging stack --------------------------------
 ; APPEND-ONLY. `ast_extra_push` is the raw form; the three `ast_list_*`
 ; routines are how a postorder walk actually builds a list, because it does
