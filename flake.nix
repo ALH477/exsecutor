@@ -494,6 +494,7 @@
             cp -r --no-preserve=mode -- ${./tests} repo/tests
             cp -r --no-preserve=mode -- ${./tools} repo/tools
             cp -r --no-preserve=mode -- ${./compiler} repo/compiler
+            cp -r --no-preserve=mode -- ${./examples} repo/examples
             cp -r --no-preserve=mode -- ${./vendor/fasmg-x86} repo/vendor/fasmg-x86
             chmod +x repo/tests/run.sh repo/tools/*.sh
             # The sandbox has no /usr/bin/env, and tests/run.sh invokes the
@@ -548,6 +549,12 @@
             EXSC_PRESENT=${if compilerExists then "1" else "0"}
             if [ "$EXSC_PRESENT" = 1 ]; then
               echo "auditing the real exsc, not the fixtures"
+              # INCLUDE is required: fasmg resolves `include 'format/...'`
+              # via it, and unlike tests/run.sh (which exports a default)
+              # this invocation is direct. Absolute, because Makefile:14-19
+              # records that a relative INCLUDE breaks the moment anything
+              # builds from a different cwd.
+              export INCLUDE="$PWD/vendor/fasmg-x86"
               "${fasmgPkg}/bin/fasmg" compiler/x86_64/exsc.asm exsc.bin
               bash tools/syscall-audit.sh exsc.bin
             else
