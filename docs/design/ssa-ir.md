@@ -1,6 +1,13 @@
 # SSA IR — design plan
 
-Status: `[OPEN]`. Design only; no IR exists and nothing below has run.
+Status: **partly built.** `compiler/x86_64/backend_fasmg/` (8632 lines, c659ad7)
+implements section 2.1's representation, 2.11's parser and printer (round-trip
+tested) and the naive emitter of spec §9.2 — its output assembled by real fasmg,
+run, and correct, against hand-written IR with no frontend. **Not built:** the
+verifier (section 3) and the AST → SSA construction (section 2.5, Stage 3); no
+lowering exists, so nothing here has yet run on IR a frontend produced. This
+line said "design only; no IR exists" until 2026-09-10, three commits after it
+stopped being true.
 `spec §N` cites `docs/spec/exsecutor-spec-v0.4.md`. Taken as given: spec §9.1's
 pipeline and construction method (Braun et al., CC 2013), spec §5.4/§5.5,
 spec §6, spec §9.2's two backends, `docs/design/phrase-grammar.md`. This is

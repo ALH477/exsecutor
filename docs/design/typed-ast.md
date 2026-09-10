@@ -1,6 +1,13 @@
 # Typed AST — design plan
 
-Status: `[OPEN]`. Design only; no AST exists and nothing below has run.
+Status: **built for Stage 1.** `compiler/x86_64/ast/` (7988 lines, 233d280)
+implements sections 2.1–2.4's tree, `ast_from_cst`, `ast_dump` and
+`ast_verify_stage1`; `exsc aedifica --emitte ast` dumps it, and both
+`examples/*.exsc` build and verify. Every Stage 2 slot (section 2.2: `Node.ty`,
+`Ast.rows`, `Ast.layout`, `konst`, `own`, resolution in `d`) is present and
+empty, as designed; the checker that fills them is `docs/design/checker.md`.
+Findings 7–10 of the review that followed are recorded and not yet acted on.
+This line said "design only; no AST exists" until 2026-09-10.
 `spec §N` cites `docs/spec/exsecutor-spec-v0.4.md`; `IR n.m` cites
 `docs/design/ssa-ir.md`, which this lowers into. Taken as given: spec §9.1,
 spec §8.6 (what the CST holds), `.claude/agents/cst.md`. This is the contract

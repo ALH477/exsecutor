@@ -420,6 +420,18 @@ potestas Hospes = { alloc, archivum, horologium, ambitus }
 
 `alloc` appears in roughly 70% of non-kernel `poscit` clauses and therefore carries little signal; the audit view suppresses it by default (§10.3).
 
+**Standard input, output and error belong to `ambitus`.** They are handed to a process by its environment, not found on a filesystem: a program that writes to its terminal has touched nothing under `archivum`, and borrowing that atom for it would over-grant in exactly the way §10.3's audit exists to expose. `examples/README.md` recorded this as `[OPEN]` when the companion program was written; it is closed by placing the streams, not by spending a root on a twelfth atom.
+
+## 4.7 The entry point
+
+```exsecutor
+publica functio initium(m: Mundus) -> u8 { … }
+```
+
+Rule 2 names `initium` and says `Mundus` is passed to it; this pins the rest. A program has exactly one `initium`; it is `publica`; its one parameter is the root, which is rule 4's second path — received as a parameter — so it carries no `poscit` and there is nothing to declare: the program's whole authority is that one value, and every other capability is derived from it, explicitly (rule 2). Its result is the process exit status. A module with no `initium` is a library, and `aedifica` on one yields a library artifact; "it runs" is a claim only a program can make.
+
+Derivation is by method on the root — `m.ambitus()`, `m.archivum()` — and rule 2's *fallibly* is resolved at two different times. Where presence is a property of the host (`ambitus`, `archivum`: a `none-eabi` target has neither), it is decided at compile time by `--hospes` (§9.5) and the `hospites` list (§10.1), and the derivation itself is total. Where presence is a property of the run (`rete`), the derivation returns `eventus`. `[OPEN]` which atoms fall on which side beyond these three; the checker (`docs/design/checker.md`) decides per atom. `[OPEN]` a second `initium`, or one with the wrong signature, has no §13 code; it belongs to the Stage 2 amendment.
+
 ---
 
 # 5. Types
@@ -882,6 +894,9 @@ Restriction modes work (Rust's `unsafe`, `use strict`, D's `@safe`): the restric
 - **All source echoed in a diagnostic is escaped.** A diagnostic rendering raw bidi makes the error message the attack surface.
 - English text is canonical. Translation, if ever, is a lookup keyed on code. Rust's Fluent effort stalled because translation was entangled with 400+ formatting sites and there is now a proposal to remove it; do not repeat that.
 - Capability and lexicon errors ship machine-applicable fixes; `exsc emenda` applies them. Both classes are unusually suited to auto-fix because the required edit is mechanically derivable.
+- **A diagnostic may carry one note and one related span.** A note is a permanent small-integer `note_id` with at most one argument, and the argument is a compiler-owned token — a §8.4 reserved word or comparison word — never source text and never interpolated: the English for a note is a table lookup on the id, and the argument is appended after it. So the first bullet still holds with the note in place: tools match `code` (and may match `note_id`, which is equally permanent and equally not English); translation stays a lookup, now keyed on `(code, note_id)`. A related span is a second span with no text of its own — the opener that an `EXS-E0202` is unterminated from, for instance — and renders as a second gutter block in text and as `related` in JSON, or `null` when absent. Both are optional on every record; a diagnostic with neither still renders its code, span and fix.
+
+  > Added after the Stage 1 review (`docs/design/diagnostics-review.md`), which measured §16's kill criterion and found 37 of 46 diagnostics were the identical sentence, because the record had no field that could hold anything else. This is the smallest field that can, chosen so that the first bullet stays true rather than softened: a note is an id, not a format string.
 
 ## 8.4 Tokens
 
@@ -1215,9 +1230,20 @@ section.
    nothing collides and nothing is reserved. `<` after a path segment always
    opens generic arguments, and the lexer never forms `<<` `>>` `<=` `>=` —
    §8.4's closed token set does not contain them, so `acies<acies<f32, 4>, 4>`
-   lexes as two `>` tokens. `a < b` is `EXS-E0201` with the message *"`<`
-   opens generic arguments; comparison is `lt`"* and the edit attached. This
-   settles what §8.4 left `[OPEN]` for the comparison words; `/` stays open.
+   lexes as two `>` tokens. `a < b` is `EXS-E0201` **with the `<`→`lt` edit
+   attached**. This settles what §8.4 left `[OPEN]` for the comparison words;
+   `/` stays open.
+
+   > An earlier draft specified the English message here — *"`<` opens
+   > generic arguments; comparison is `lt`"*. That was wrong twice. §8.3 says
+   > "codes are permanent; text is not" and that tools match codes rather
+   > than prose, so pinning a sentence in a grammar section makes text
+   > normative that the diagnostics section deliberately does not. And it
+   > went unkept: `docs/design/diagnostics-review.md` measured this exact
+   > case and found the span and the fix correct and the message
+   > `unexpected token`, because `struct Diag` has no field to hold anything
+   > else. What a grammar can normatively require is the code, the span and
+   > the edit. It cannot require a sentence.
 
 ### Expressions
 
@@ -1742,6 +1768,29 @@ it: `tools/publish-gate.sh` was invoking a bare `exsc SOURCE OUT`, which §9.5
 makes an error outright — *"`exsc` with no `--hospes` is an error"* — and a
 driver cannot be implemented against an unspecified spelling. A subcommand is
 required; there is no bare form.
+
+**`SOURCE` may be repeated.** The files named form one compilation unit — one
+module in §10's sense: one `ego`, one interface hash, one artifact. Their
+order on the command line is the order of their items and is part of the
+input, so §9.3's byte-identity holds for the same command and need not survive
+a reordering. This is the package model of Go and Java. It is chosen now
+because the hello world is three functions in three files
+(`examples/saluta.exsc`, `imprime.exsc`, `initium.exsc`), and the alternative
+— importing across modules — waits on the `ego` reader, the closure resolver
+and `EXS-E0105`'s whole-closure check, none of which a first program should
+wait on. Imports are unaffected: a module is still the unit they name.
+
+**`OUT` is text, and `exsc` never assembles it.** §18.1 says both backends
+emit text — fasmg source for the reference backend, C for the reach backend —
+and `-o OUT` names that text. Turning it into a binary is the build's step:
+for the reference backend, `fasmg OUT BIN` with `vendor/fasmg-x86/` on the
+include path, the one tool §18.1 puts in the closure. The emitted text is
+self-contained — the runtime prelude is emitted into it, not found on a path.
+`exsc` does not run the assembler and cannot: `execve` is not on the syscall
+allowlist (§9.3, `CLAUDE.md`), and locating an assembler by `PATH` is ambient
+state of exactly the kind the contract forbids. A build that wants one command
+has `buildExsecutorPackage` (§16, Stage 3); a two-step build belongs there,
+not inside the compiler.
 
 `exsc novum` scaffolds a working project with a valid `ego.exsc` in one command — first running program under 60 seconds or onboarding has failed.
 

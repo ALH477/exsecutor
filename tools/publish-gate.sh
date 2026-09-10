@@ -21,8 +21,14 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT"
 
 EXSC="build/exsc"
+# spec §12: SOURCE may repeat and the files form one compilation unit; the
+# hello world is three of them. OUT is emitted fasmg text and `exsc` never
+# assembles it (no execve on the allowlist) -- the gate runs fasmg itself,
+# the one tool spec §18.1 puts in the closure.
+SRCS=(examples/saluta.exsc examples/imprime.exsc examples/initium.exsc)
 SRC="examples/saluta.exsc"
 GOLD="examples/saluta.expected"
+FASMG_INC="${INCLUDE:-$ROOT/vendor/fasmg-x86}"
 # spec §9.5: "`exsc` with no `--hospes` is an error. No default-to-build-
 # platform." This gate first invoked a bare `exsc SRC OUT`, which that rule
 # makes permanently impossible -- it would have failed at step 3 forever, and
@@ -42,8 +48,8 @@ echo "== publish gate: examples/saluta.exsc working and proven =="
 if [[ ! -f compiler/x86_64/exsc.asm ]]; then
   no "no compiler: compiler/x86_64/exsc.asm does not exist"
   note "spec §16 puts this at the end of Stage 3 -- the frontend (Stage 1),"
-  note "the type checker (Stage 2), and the C backend (Stage 3) all stand"
-  note "between here and a saluta.exsc that runs. Everything below is"
+  note "the type checker (Stage 2), and the reference backend with its runtime"
+  note "prelude (Stage 3) all stand between here and a program that runs. The rest is"
   note "unreachable until then and is not evaluated."
   echo
   echo "RESULT: GATE NOT MET -- do not publish"
@@ -55,12 +61,17 @@ yes "compiler source exists"
 if make >/dev/null 2>&1 && [[ -x "$EXSC" ]]; then yes "exsc builds"; else no "exsc does not build"; fi
 
 # --- 3. working: it compiles and runs -------------------------------------
-if [[ -x "$EXSC" ]] && "$EXSC" aedifica --hospes "$HOSPES" "$SRC" -o "$WORK/saluta" >"$WORK/log" 2>&1; then
-  yes "exsc compiles $SRC"
-  if "$WORK/saluta" >"$WORK/out" 2>/dev/null; then yes "the result runs"
-  else no "the result does not run"; fi
+if [[ -x "$EXSC" ]] && "$EXSC" aedifica --hospes "$HOSPES" "${SRCS[@]}" -o "$WORK/saluta.asm" >"$WORK/log" 2>&1; then
+  yes "exsc compiles ${SRCS[*]}"
+  if INCLUDE="$FASMG_INC" fasmg "$WORK/saluta.asm" "$WORK/saluta" >"$WORK/asmlog" 2>&1 && chmod +x "$WORK/saluta"; then
+    yes "fasmg assembles the emitted text"
+    if "$WORK/saluta" >"$WORK/out" 2>/dev/null; then yes "the result runs"
+    else no "the result does not run"; fi
+  else
+    no "fasmg cannot assemble the emitted text"; sed 's/^/            /' "$WORK/asmlog" 2>/dev/null | head -5
+  fi
 else
-  no "exsc cannot compile $SRC"; sed 's/^/            /' "$WORK/log" 2>/dev/null | head -5
+  no "exsc cannot compile ${SRCS[*]}"; sed 's/^/            /' "$WORK/log" 2>/dev/null | head -5
 fi
 
 # --- 4. proven: exact bytes ----------------------------------------------
@@ -72,10 +83,11 @@ fi
 
 # --- 5. proven: reproducible (spec §9.3) ----------------------------------
 if [[ -x "$EXSC" ]]; then
+  ABS=(); for s in "${SRCS[@]}"; do ABS+=("$ROOT/$s"); done
   ( cd "$WORK" && TZ=UTC LC_ALL=C \
-      "$ROOT/$EXSC" aedifica --hospes "$HOSPES" "$ROOT/$SRC" -o a >/dev/null 2>&1 )
+      "$ROOT/$EXSC" aedifica --hospes "$HOSPES" "${ABS[@]}" -o a >/dev/null 2>&1 )
   ( cd /tmp && TZ=Asia/Tokyo LC_ALL=tr_TR.UTF-8 \
-      "$ROOT/$EXSC" aedifica --hospes "$HOSPES" "$ROOT/$SRC" -o "$WORK/b" >/dev/null 2>&1 )
+      "$ROOT/$EXSC" aedifica --hospes "$HOSPES" "${ABS[@]}" -o "$WORK/b" >/dev/null 2>&1 )
   if [[ -f "$WORK/a" && -f "$WORK/b" ]] && cmp -s "$WORK/a" "$WORK/b"; then
     yes "byte-identical across directory, TZ and locale (§9.3)"
   else

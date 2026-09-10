@@ -1,8 +1,9 @@
 # examples/
 
-Exsecutor source. **Nothing here compiles** — there is no compiler (spec §16,
-Stage 1). These are the language as specified, kept where they can be read and
-checked by hand against the spec.
+Exsecutor source. Everything here lexes, parses and builds a typed AST
+(`exsc aedifica --hospes x86_64-linux --emitte ast FILE`); nothing here is
+type-checked or compiled to code yet (spec §16, Stages 2 and 3). This file
+said "nothing here compiles — there is no compiler" until 2026-09-10.
 
 ## `saluta.exsc`
 
@@ -46,11 +47,15 @@ compiles `saluta.exsc` and the result runs. *Proven* is that it emits exactly
 these bytes, reproducibly across directory, `TZ` and locale (§9.3), with every
 existing check still green.
 
-It exits 1 today and says why: there is no compiler. Running `saluta.exsc`
-needs the frontend (Stage 1), the type checker (Stage 2) **and** the C backend
-(Stage 3) — §16 estimates 10–14 months. The gate is written now so that the day
-it turns green is unambiguous, and so nobody has to decide by feel whether the
+It exits 1 today and says why. Running the hello world needs the frontend
+(Stage 1, built), the type checker (Stage 2) **and** the reference backend
+with its runtime prelude (Stage 3). The gate is written now so that the day it
+turns green is unambiguous, and so nobody has to decide by feel whether the
 hello world "works."
+
+Since §12 let `SOURCE` repeat, the gate compiles the three files together —
+`saluta.exsc imprime.exsc initium.exsc` — and assembles the emitted text with
+`fasmg`, the one tool in the closure (§18.1); `exsc` never assembles.
 
 ## `imprime.exsc`
 
@@ -85,13 +90,21 @@ file-backed writer needs the filesystem; an in-memory one needs nothing. This
 is §4.2's rule after the amendment that made rows travel with a value's *type*,
 and it is why the function does not have to guess.
 
-`[OPEN]`, found by writing this: **§4.6 has no capability for standard
-output.** The set is `Mundus, alloc, sermo, horologium, archivum, rete,
-fortuna, ambitus, Filum, machina, Crudum`. Writing to a terminal would have to
-borrow `archivum`, which over-grants — "can write to your screen" and "can
-touch your filesystem" are different questions, and §10.3's audit is worth less
-when they collapse. Row-polymorphism dodges it here; a concrete stdout writer
-still has to declare something.
+Found by writing this, and since closed: §4.6 had no capability for
+standard output, and borrowing `archivum` would over-grant — "can write to
+your screen" and "can touch your filesystem" are different questions, and
+§10.3's audit is worth less when they collapse. §4.6 now places the standard
+streams under **`ambitus`**, the process environment, which is where a
+process gets them from. No new atom was spent.
+
+## `initium.exsc`
+
+The third file, and the only one that can run: the entry point §4.7 pins,
+`publica functio initium(m: Mundus) -> u8`. Its whole authority is the one
+`Mundus` parameter; `ambitus` is derived from it and bound with `sub`, and
+`Scriptor.ad_exitum` turns it into the writer `imprime_gutenbergio` needs.
+`[UNTESTED]` — it parses and builds a typed AST; the `Scriptor` it names is
+the runtime prelude's, pinned in `docs/design/runtime.md`.
 
 ### The Latin
 
