@@ -1,0 +1,23 @@
+// c23_caret_byte_vs_char_misalignment.exsc
+//
+// Case c23. The statement: `firma piraña_señor_ñu: u64 = a < 3;` -- three
+// non-ASCII `ñ` in the identifier, each 2 bytes in UTF-8 but 1 character.
+//
+// Review reported: caret printed under the `;` at char 39; the `<` is at
+// char 36. Verdict: "bad" -- this is D4: the caret is padded in bytes, not
+// characters, so each extra UTF-8 byte shifts the caret one column past
+// where it belongs.
+//
+// Reconstruction: byte-faithful and exact. The statement line below is
+// character-for-character what the review quotes. Verified against
+// e5f283d: the `<` sits at character 36 and byte 39 of that line (three
+// `ñ` each contribute one extra byte), and the compiler's JSON `col` --
+// which the review's own "What I could not evaluate" section describes as
+// "a 1-based byte offset within the line" -- reports 39, landing exactly
+// on the `;` instead of the `<`, precisely as D4 describes and precisely
+// the numbers the review gives.
+
+publica functio maxima(a: u64) -> u64 {
+    firma piraña_señor_ñu: u64 = a < 3;
+    redde piraña_señor_ñu;
+}

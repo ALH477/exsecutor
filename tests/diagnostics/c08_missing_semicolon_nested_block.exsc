@@ -1,0 +1,23 @@
+// c08_missing_semicolon_nested_block.exsc
+//
+// Case c08. The mistake: `;` forgotten inside a doubly-nested block.
+//
+// Review reported: `6:9 EXS-E0201`, caret on `}`, fix insert `;`. Verdict:
+// "good" -- one diagnostic; applying the fix gives a clean file.
+//
+// Reconstruction: byte-faithful. Counting from the first byte of `publica`
+// below, this file reproduces `6:9 EXS-E0201`, span on the inner `}`, fix
+// `insert -> ";"` -- exactly as reported. Applying the fix (verified
+// against e5f283d) produces a file the compiler accepts cleanly (front end
+// exits 0), confirming the review's "good" verdict.
+
+publica functio maxima(a: u64, b: u64) -> u64 {
+    si a lt b {
+        si a lt b {
+            firma x: u64 = a;
+            redde x
+        }
+        redde b;
+    }
+    redde b;
+}

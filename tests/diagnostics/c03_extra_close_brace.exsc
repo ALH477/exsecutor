@@ -1,0 +1,21 @@
+// c03_extra_close_brace.exsc
+//
+// Case c03. The mistake: one `}` too many at the end of the file.
+//
+// Review reported: `8:1 EXS-E0201 unexpected token`, no fix. Verdict:
+// "fair" -- one diagnostic, no cascade; it points at the second of two
+// identical braces; a delete-fix is mechanically derivable and absent.
+//
+// Reconstruction: byte-faithful. Counting from the first byte of `publica`
+// below, this is an otherwise-clean 7-line function with one stray extra
+// `}` appended as line 8. Verified against e5f283d: exactly one diagnostic,
+// `8:1 EXS-E0201 unexpected token`, `fix: null`.
+
+publica functio maxima(a: u64, b: u64) -> u64 {
+    firma r: u64 = a;
+    si a lt b {
+        r = b;
+    }
+    redde r;
+}
+}

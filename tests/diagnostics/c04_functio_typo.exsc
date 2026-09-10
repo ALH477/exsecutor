@@ -1,0 +1,18 @@
+// c04_functio_typo.exsc
+//
+// Case c04. The mistake: `funtcio` typed for `functio`.
+//
+// Review reported: `1:9 EXS-E0201` + `3:1 EXS-E0201`, no fix. Verdict:
+// "bad" -- no "did you mean `functio`?" suggestion despite this being a
+// Levenshtein-1 hit in a closed 30-word keyword set (spec §8.4); one typo
+// produces two diagnostics.
+//
+// Reconstruction: byte-faithful. Counting from the first byte of `publica`
+// below, this file reproduces both `1:9 EXS-E0201` (the misspelt keyword
+// itself) and `3:1 EXS-E0201` (the closing `}`, since with no `functio`
+// recognised the whole body never parses as a function), both with
+// `fix: null` -- exactly as reported.
+
+publica funtcio maxima(a: u64) -> u64 {
+    redde a;
+}

@@ -1,0 +1,22 @@
+// c30_errors_line1_and_line4.exsc
+//
+// Case c30. The mistake: errors on line 1 and line 4 (each a missing `;`
+// after a module-level `firma`), with valid lines between and after.
+//
+// Review reported: exactly 2 diagnostics. Verdict: "good" -- no cascade.
+//
+// Reconstruction: byte-faithful on the structural claim. Counting from the
+// first byte of `firma` below, the missing `;`s sit on line 1 and line 4
+// (matching the review's naming convention, confirmed by c01/c15
+// elsewhere in this corpus: the review names the line the mistake is *on*,
+// not the line the compiler's span lands on -- the span points at the
+// following token). Verified against e5f283d: exactly 2 diagnostics, both
+// `EXS-E0201`, landing on line 2 and line 5 respectively (the tokens
+// immediately after each missing `;`), with lines 2-3 and line 5
+// otherwise untouched by any further diagnostic.
+
+firma a: u64 = 1
+firma b: u64 = 2;
+firma c: u64 = 3;
+firma d: u64 = 4
+firma e: u64 = 5;

@@ -1,0 +1,15 @@
+// c18_non_ascii_identifier_missing_semicolon.exsc
+//
+// Case c18. The mistake: a non-ASCII identifier plus a missing `;`.
+//
+// Review reported: `3:5 EXS-E0201`, correct span. Verdict: "good" --
+// non-ASCII lexes and renders fine.
+//
+// Reconstruction: byte-faithful. Counting from the first byte of `publica`
+// below, this file reproduces `3:5 EXS-E0201`, span on `redde`, fix
+// `insert -> ";"` -- exactly as reported.
+
+publica functio maxima(a: u64) -> u64 {
+    firma número: u64 = a
+    redde número;
+}

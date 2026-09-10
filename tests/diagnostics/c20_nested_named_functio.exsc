@@ -1,0 +1,21 @@
+// c20_nested_named_functio.exsc
+//
+// Case c20. The mistake: a nested, named `functio` inside a function body
+// (spec §8.6's peek: `functio IDENT` at statement-start is a nested named
+// function -- `EXS-E0201`, no fix payload; otherwise it is a lambda
+// expression statement).
+//
+// Review reported: `2:5 EXS-E0201`, no fix payload. Verdict: "good" --
+// exactly what spec §8.6 *Peeks* mandates.
+//
+// Reconstruction: byte-faithful. Counting from the first byte of `publica`
+// below, this file reproduces `2:5 EXS-E0201`, span on the inner
+// `functio`, `fix: null` -- exactly as reported, and exactly one
+// diagnostic (no cascade).
+
+publica functio exterior() -> u64 {
+    functio interior() -> u64 {
+        redde 1;
+    }
+    redde interior();
+}

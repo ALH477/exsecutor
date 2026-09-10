@@ -1,0 +1,21 @@
+// c24_stray_close_brace_mid_file.exsc
+//
+// Case c24. The mistake: a stray `}` mid-file, between two otherwise valid
+// functions.
+//
+// Review reported: 1 diagnostic; `duo` still parsed. Verdict: "good" --
+// clean recovery.
+//
+// Reconstruction: approximate but structurally faithful -- the review gives
+// no line:col or byte offset for this case, only the qualitative claim.
+// Verified against e5f283d: exactly one diagnostic (`EXS-E0201` on the
+// stray `}`, `fix: null`), and the second function (named `duo`, as the
+// review names it) produces no diagnostic of its own -- it parses clean.
+
+publica functio unum() -> u64 {
+    redde 1;
+}
+}
+publica functio duo() -> u64 {
+    redde 2;
+}

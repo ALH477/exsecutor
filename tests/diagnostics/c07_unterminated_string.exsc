@@ -1,0 +1,20 @@
+// c07_unterminated_string.exsc
+//
+// Case c07. The mistake: an unterminated `"` swallowing 5 lines.
+//
+// Review reported: `2:11 EXS-E0202`, span 74 bytes to EOF, no fix. Verdict:
+// "good" -- one diagnostic, no cascade, correctly escaped; the rest of the
+// file is silently unparsed, which is unavoidable once a string literal
+// never closes.
+//
+// Reconstruction: byte-faithful, including the exact span length. Counting
+// from the first byte of `publica` below, this file reproduces `2:11
+// EXS-E0202` with `fix: null` and a span of exactly 74 bytes running from
+// the opening `"` to EOF -- matching the review's reported span length
+// exactly, not merely approximately.
+
+publica functio saluta() -> textus {
+    redde "Ave, mundus.
+
+Ex silentio surgit forma.
+Ex signo nascitur vocem aeterna.

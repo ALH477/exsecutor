@@ -1,0 +1,27 @@
+// c29_bidi_override_in_comment.exsc
+//
+// Case c29. The mistake: a raw U+202E (RIGHT-TO-LEFT OVERRIDE) sitting
+// inside a `//` comment -- the Trojan Source class spec §8.1 exists to
+// catch, and which applies inside comments precisely because a lexer that
+// scans only identifiers is defeated by an override sitting in one.
+//
+// THIS FILE DELIBERATELY VIOLATES §8.1 -- that is the point of the case,
+// exactly as CLAUDE.md's task instructions for this corpus anticipate for
+// c29 specifically. It is the one file in this directory that is not
+// clean UTF-8-without-bidi-controls by construction; every other file in
+// tests/diagnostics/ is.
+//
+// Review reported: `2:8 EXS-E0103`, rendered `\u{202e}`, 8 carets over an
+// 8-column escape. Verdict: "good" -- escaping and the caret run are both
+// correct.
+//
+// Reconstruction: byte-faithful and exact. Counting from the first byte of
+// `publica` below, the comment line places U+202E at character/column 8.
+// Verified against e5f283d: `2:8 EXS-E0103`, snippet rendered as the
+// 8-character escape `\u{202e}`, and the text-mode caret run is exactly 8
+// `^` characters wide -- matching the review's numbers exactly.
+
+publica functio maxima() -> u64 {
+// abcd‮
+    redde 1;
+}

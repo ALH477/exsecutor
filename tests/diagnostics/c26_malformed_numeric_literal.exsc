@@ -1,0 +1,15 @@
+// c26_malformed_numeric_literal.exsc
+//
+// Case c26. The mistake: the numeric literal `12ab34`.
+//
+// Review reported: `2:20 EXS-E0210 malformed literal`, exact span.
+// Verdict: "fair" -- correct span, but the message says nothing about what
+// is actually malformed about it.
+//
+// Reconstruction: byte-faithful. Counting from the first byte of `publica`
+// below, this file reproduces `2:20 EXS-E0210`, span exactly the 6 bytes
+// of `12ab34`, `fix: null` -- exactly as reported.
+
+publica functio maxima() -> u64 {
+    firma x: u64 = 12ab34;
+}

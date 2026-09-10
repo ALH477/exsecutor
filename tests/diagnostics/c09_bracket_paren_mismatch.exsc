@@ -1,0 +1,30 @@
+// c09_bracket_paren_mismatch.exsc
+//
+// Case c09. The mistake: `a[0)` -- a `)` where `]` was required.
+//
+// Review reported: `2:23` insert `]`, then `2:24 EXS-E0201` on `)`.
+// Verdict: "fair" -- 2 diagnostics for 1 typo; applying the fixes leaves
+// `a[0])` and 2 new errors.
+//
+// Reconstruction: APPROXIMATE, and it surfaces a discrepancy worth
+// recording. The review's exact source and identifier lengths are not
+// given, so the column numbers below cannot be forced to 23/24 without
+// guessing at padding the review never specified -- unlike c01/c17/c23,
+// where a concrete byte or char offset pins the reconstruction. More
+// importantly, running this shape against e5f283d shows the review's
+// *structural* description does not reproduce either: the actual behaviour
+// is ONE diagnostic located on the `)` itself (unexpected token, wanted
+// `]`, with an `insert "]"` fix at that same byte position -- there is no
+// separate diagnostic one column earlier), followed by a SECOND diagnostic
+// on the token *after* the `)` (here, the trailing `;`), not on the `)` a
+// second time as the review's "then `2:24 EXS-E0201` on `)`" states. The
+// diagnostic count (2) matches; which tokens they land on does not.
+// Verified against e5f283d with the minimal literal `a[0)`:
+//   2:14 EXS-E0201 unexpected token ")", fix insert "]" at the same byte
+//   2:15 EXS-E0201 unexpected token ";" (no fix)
+// This file keeps `a[0)` as literally as the review states it, wrapped in
+// the smallest function that makes it parseable.
+
+publica functio primum(a: u64) -> u64 {
+    redde a[0);
+}

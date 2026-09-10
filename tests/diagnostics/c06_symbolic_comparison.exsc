@@ -1,0 +1,22 @@
+// c06_symbolic_comparison.exsc
+//
+// Case c06. The mistake: `si a < b {` -- symbolic `<` instead of the
+// contextual word `lt` (spec §8.6 decision 6).
+//
+// Review reported: `2:10 EXS-E0201 unexpected token`, fix replace `<` ->
+// `lt`. Verdict: "bad" -- span and fix are exactly right, but the message
+// the spec specifies at §8.6 decision 6 ("`<` opens generic arguments;
+// comparison is `lt`") is not emitted; the compiler prints the generic
+// `unexpected token` instead. This is D2 in the review.
+//
+// Reconstruction: byte-faithful. Counting from the first byte of `publica`
+// below, this file reproduces `2:10 EXS-E0201`, span exactly the `<` token,
+// fix `replace -> "lt"` -- exactly as reported. Message text confirmed to
+// be the generic `unexpected token`, confirming D2.
+
+publica functio maxima(a: u64, b: u64) -> u64 {
+    si a < b {
+        redde a;
+    }
+    redde b;
+}

@@ -1,0 +1,17 @@
+// c17_missing_close_paren_deep_nesting.exsc
+//
+// Case c17. The mistake: a `)` missing inside 5-deep call nesting.
+//
+// Review reported: `2:54 EXS-E0201`, fix insert `)`. Verdict: "fair" -- one
+// diagnostic, correct fix, but no opener span where it matters most (D6):
+// nothing names which of the five `(` is unmatched.
+//
+// Reconstruction: byte-faithful, including the exact column. Counting from
+// the first byte of `publica` below, this file reproduces `2:54
+// EXS-E0201`, fix `insert -> ")"` -- matching the review's column exactly.
+// The identifier and parameter names were chosen to land the missing paren
+// at column 54; no other content was adjusted.
+
+publica functio applic(elem: u64) -> u64 {
+    redde applic(applic(applic(applic(applic(elem))));
+}

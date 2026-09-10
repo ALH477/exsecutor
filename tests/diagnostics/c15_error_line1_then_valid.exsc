@@ -1,0 +1,42 @@
+// c15_error_line1_then_valid.exsc
+//
+// Case c15. The mistake: one error on line 1 (a missing `;`), followed by
+// 24 valid lines.
+//
+// Review reported: exactly 1 diagnostic. Verdict: "good" -- an early error
+// does not poison the rest of the file.
+//
+// Reconstruction: byte-faithful on the structural claim. Counting from the
+// first byte of `firma` below, line 1 carries the only mistake (a missing
+// `;`) and is followed by 24 more lines of valid module-level bindings and
+// functions. Verified against e5f283d: exactly one diagnostic is emitted,
+// `EXS-E0201` reported on the token that follows the missing `;` (line 3,
+// per this file's own layout -- the review's "line 1" names where the
+// mistake *is*, not where the compiler's span lands, matching the same
+// convention c01 and c30 confirm elsewhere in this corpus).
+
+firma limit: u64 = 100
+
+publica functio identitas(a: u64) -> u64 {
+    redde a;
+}
+
+publica functio duplica(a: u64) -> u64 {
+    redde a + a;
+}
+
+publica functio maxima(a: u64, b: u64) -> u64 {
+    firma r: u64 = a;
+    si b gt r {
+        r = b;
+    }
+    redde r;
+}
+
+publica functio minima(a: u64, b: u64) -> u64 {
+    firma r: u64 = a;
+    si b lt r {
+        r = b;
+    }
+    redde r;
+}

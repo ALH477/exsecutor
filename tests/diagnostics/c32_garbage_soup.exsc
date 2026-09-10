@@ -1,0 +1,26 @@
+// c32_garbage_soup.exsc
+//
+// Case c32. The mistake: garbage soup -- 6 mistakes on 4 lines. The review
+// does not name the 6 mistakes or give any position, only the outcome.
+//
+// Review reported: 6 diagnostics. Verdict: "good" -- bounded, no
+// explosion.
+//
+// Reconstruction: approximate by necessity (no positions or specific
+// mistakes are given to reconstruct against), but count-faithful. The 4
+// lines of this program's body combine a reserved word used as a
+// parameter name (`per`), a missing `;`, a `)` where `]` was required, and
+// a symbolic `<` where `lt` was required, plus one stray trailing `}` --
+// six distinct grammar violations across four content lines. Verified
+// against e5f283d: exactly 6 diagnostics, the compiler exits 1 without
+// looping or exploding, matching "bounded, no explosion". Note: the
+// specific cascade this produces (a reserved-word substitution failing to
+// re-enter expression position cleanly, which is what supplies the 6th
+// diagnostic) was discovered empirically, not designed -- it is a real
+// compiler behaviour, not a contrivance to hit a target count.
+
+publica functio garbage(per: u64) -> u64 {
+    firma x: u64 = per
+    redde x[0) < 3;
+}
+}

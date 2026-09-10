@@ -1,0 +1,21 @@
+// c01_missing_semicolon.exsc
+//
+// Case c01 of docs/design/diagnostics-review.md's Stage 1 kill-criterion
+// corpus. The mistake: `;` forgotten after `mutabilis t: u64 = 0`.
+//
+// Review reported: `3:5 EXS-E0201 unexpected token`, caret on `firma`, fix
+// insert `;` at byte 76. Verdict: "fair" -- span points at the token after
+// the damage; the fix byte offset is right and applying it gives a clean
+// file.
+//
+// Reconstruction: byte-faithful. Positions below are counted from the first
+// byte of the `publica` on the line after this header comment (the review's
+// programs carry no such header). Run against e5f283d's build/exsc, this
+// file reproduces line 3, col 5, and a fix insert of `;` at byte 76 relative
+// to that first byte -- exactly as reported.
+
+publica functio incrementa(a: u64, b: u64) -> u64 {
+    mutabilis t: u64 = 0
+    firma u: u64 = 1;
+    redde u;
+}

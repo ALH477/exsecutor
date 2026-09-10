@@ -1,0 +1,21 @@
+// c22_nested_functio_plus_missing_semicolons.exsc
+//
+// Case c22. The mistake: a nested named `functio` (as c20), plus 2 missing
+// `;`s.
+//
+// Review reported: `2:5` (correct, no fix) + 2 cascade `EXS-E0201`s that DO
+// carry fixes. Verdict: "bad" -- the spec-mandated absence of a fix on the
+// primary (§8.6 *Peeks*) is undone by bad fixes on the follow-ons.
+//
+// Reconstruction: byte-faithful. Counting from the first byte of `publica`
+// below, this file reproduces exactly 3 diagnostics: `2:5 EXS-E0201` with
+// `fix: null` (identical position to c20's primary), then `4:5 EXS-E0201`
+// and `6:1 EXS-E0201`, both carrying `insert -> ";"` fixes -- exactly the
+// shape the review describes.
+
+publica functio exterior() -> u64 {
+    functio interior() -> u64 {
+        redde 1
+    }
+    redde interior()
+}

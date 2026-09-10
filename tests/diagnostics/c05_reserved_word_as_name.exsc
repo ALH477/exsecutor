@@ -1,0 +1,23 @@
+// c05_reserved_word_as_name.exsc
+//
+// Case c05. The mistake: `firma per: u64 = a;` -- `per` (reserved, §8.4
+// iteration group) used as a binding name.
+//
+// Review reported: `2:11 EXS-E0220` + fix `per_` -- then 3 more
+// diagnostics, ending in a bogus `EXS-E0203 unexpected end of input`
+// demanding a `}` in a brace-balanced file. Verdict: "bad" -- the primary
+// diagnostic and fix are correct, but 3 spurious follow-on diagnostics
+// appear, one of which (the final EXS-E0203) is actively wrong: the file's
+// braces are balanced.
+//
+// Reconstruction: byte-faithful. Counting from the first byte of `publica`
+// below, this file reproduces the primary `2:11 EXS-E0220` with fix
+// `replace -> "per_"`, followed by exactly 3 more diagnostics, the last of
+// which is `EXS-E0203 unexpected end of input` with a fix inserting `}` at
+// EOF -- even though this file's two `{`/two `}` are balanced. Matches the
+// review's description exactly, including the "bogus" follow-on.
+
+publica functio maxima(a: u64) -> u64 {
+    firma per: u64 = a;
+    redde per;
+}

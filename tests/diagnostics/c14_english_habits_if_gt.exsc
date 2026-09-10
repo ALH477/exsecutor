@@ -1,0 +1,34 @@
+// c14_english_habits_if_gt.exsc
+//
+// Case c14. The mistake: English habits -- `if a > 10 { return a; }`
+// written where `si a gt 10 { redde a; }` was meant. `if`, `return` are
+// ordinary identifiers in this language (not reserved), and `>` is not an
+// operator (spec §8.6 decision 6), so none of this is recognised as the
+// control-flow and comparison it was meant to be.
+//
+// Review reported: FOUR `EXS-E0201 unexpected token`, all four with fix
+// `insert ";"`; applying all four fixes yields `if; a; > 10 {`. Verdict:
+// "worst case found" -- nothing names `si`, nothing names `gt`, and the
+// fixes actively corrupt the file.
+//
+// Reconstruction: APPROXIMATE, and this is the one place this corpus found
+// the review's own number does not reproduce. Run against e5f283d, this
+// exact line produces THREE diagnostics, not four:
+//   2:8  EXS-E0201 unexpected token "a", fix insert ";" (after `if`)
+//   2:10 EXS-E0201 unexpected token ">", fix insert ";" (after the first `a`)
+//   2:24 EXS-E0201 unexpected token "a", fix insert ";" (after `return`,
+//        inside the `{ return a; }` block, which `10 { ...` parses as
+//        immediately once the wrong-comparison expression is abandoned)
+// `__cst_err`'s one-diagnostic-per-token suppression (parse.inc:698) means
+// `>` and the `10` that follows it are skipped as a unit during recovery
+// and produce no diagnostic of their own, landing the parser cleanly on the
+// `{` as a fresh block statement -- three diagnostics, not four. The
+// corpus keeps this case because it still demonstrates D1's headline
+// finding (repeated identical `unexpected token`) and the fix-corruption
+// point D3 makes, at three fixes rather than four; the discrepancy with
+// the review's stated count is recorded here rather than silently
+// corrected.
+
+publica functio maxima(a: u64) -> u64 {
+    if a > 10 { return a; }
+}

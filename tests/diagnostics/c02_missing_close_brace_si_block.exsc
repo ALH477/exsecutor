@@ -1,0 +1,25 @@
+// c02_missing_close_brace_si_block.exsc
+//
+// Case c02. The mistake: the `}` of an `si` block is missing, 3 lines up
+// from EOF.
+//
+// Review reported: `8:1 EXS-E0202 unterminated construct` (file has 7
+// lines), fix insert `}` at EOF. Verdict: "bad" -- no opener span (the `{`
+// that is actually unterminated is never named); the fix compiles but
+// silently moves the trailing `redde` into the `si` block.
+//
+// Reconstruction: byte-faithful on the structural claims. Counting from the
+// first byte of `publica` below, this program is exactly 7 lines and is
+// reported at line 8, col 1, EXS-E0202, with a fix inserting `}` at EOF --
+// matching the review's line count and reported position. The review gives
+// no explicit byte offset for this case, only "at EOF", which also matches.
+// Applying the fix (verified) yields a file that compiles clean but folds
+// the final `redde r;` inside the `si` block, exactly as D3 describes.
+
+publica functio maxima(a: u64, b: u64) -> u64 {
+    firma r: u64 = a;
+    si a lt b {
+        r = b;
+        r = r;
+    redde r;
+}
