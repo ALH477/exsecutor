@@ -1,0 +1,114 @@
+// forma -- milestone M6 of docs/design/wire-codec.md: spec §5.2's D2 (byte
+// order belongs to places), §8.6's D3 (struct literals) and §5.2's D4 (the
+// one aggregate cast), run end to end on the certified example frame.
+//
+// It builds `d31312340001ffffdeadbeefab12cd24c0` -- HydraMesh's example
+// frame, vendor/hydramesh-wire/golden_vectors.json's `exampleFrame_full` --
+// from a struct literal, computes its CRC-16/CCITT-FALSE through the byte
+// view `f sicut acies<u8, 17>`, stores it with a big-endian field write,
+// checks all seventeen bytes one by one, then reads every field back through
+// `b sicut DeModFrame`. Exit 0 is all of it; every other status names the
+// first check that failed:
+//
+//   1        the CRC over bytes 0..14 is not 0x24c0
+//   10..26   byte (status - 10) of the frame is wrong
+//   30       the byte view was not a copy (a write to `f` showed in `b`)
+//   40..48   field (status - 40) of the decoded frame is wrong, in
+//            declaration order: signum versio genus numerus fons meta onus
+//            tempus cursus
+//   50       the decoded frame's CRC does not hold
+//
+// DEFERRED (TEST): it type-checks and lowers to verified IR today --
+// tests/unit/lwr_forma.asm lowers exactly this file -- and the emitter does
+// not yet produce `load`/`store` at `maior`, `loadbits`/`storebits`, `copy`,
+// `index`, `chk`, narrow arithmetic or `xor`/`shl` (milestones M3 and M4).
+
+@transitus
+publica structura DeModFrame {
+    signum:  u8
+    versio:  u4
+    genus:   u4
+    numerus: u16:maior
+    fons:    u16:maior
+    meta:    u16:maior
+    onus:    u32:maior
+    tempus:  u24:maior
+    cursus:  u16:maior
+}
+
+// CRC-16/CCITT-FALSE over b[0..n): init 0xFFFF, polynomial 0x1021, no
+// reflection, no final xor. `c sursum 1` discards the top bit (D1), which is
+// why there is no mask; `c ge 0x8000` reads it before it goes.
+functio redundantia(b: acies<u8, 17>, n: mensura) -> u16 {
+    mutabilis c: u16 = 0xffff;
+    per i in 0..n {
+        c = c aut ((b[i] sicut u16) sursum 8);
+        per k in 0..8 {
+            si c ge 0x8000 {
+                c = (c sursum 1) aut 0x1021;
+            } aliter {
+                c = c sursum 1;
+            }
+        }
+    }
+    redde c;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    // D3: every field named, in any order; the stores come out in
+    // declaration order regardless. `cursus` is written by the seal below.
+    mutabilis f = DeModFrame {
+        signum: 0xd3,
+        genus: 3,
+        versio: 1,
+        numerus: 0x1234,
+        fons: 1,
+        meta: 0xffff,
+        onus: 0xdeadbeef,
+        tempus: 0xab12cd,
+        cursus: 0
+    };
+
+    // D4 read through the byte view, D2 write through a big-endian place
+    f.cursus = redundantia(f sicut acies<u8, 17>, 15);
+    si f.cursus ne 0x24c0 { redde 1; }
+
+    // D4 bound: `b` is a copy, and the seventeen bytes are the wire's
+    mutabilis b = f sicut acies<u8, 17>;
+    si b[0] ne 0xd3 { redde 10; }
+    si b[1] ne 0x13 { redde 11; }
+    si b[2] ne 0x12 { redde 12; }
+    si b[3] ne 0x34 { redde 13; }
+    si b[4] ne 0x00 { redde 14; }
+    si b[5] ne 0x01 { redde 15; }
+    si b[6] ne 0xff { redde 16; }
+    si b[7] ne 0xff { redde 17; }
+    si b[8] ne 0xde { redde 18; }
+    si b[9] ne 0xad { redde 19; }
+    si b[10] ne 0xbe { redde 20; }
+    si b[11] ne 0xef { redde 21; }
+    si b[12] ne 0xab { redde 22; }
+    si b[13] ne 0x12 { redde 23; }
+    si b[14] ne 0xcd { redde 24; }
+    si b[15] ne 0x24 { redde 25; }
+    si b[16] ne 0xc0 { redde 26; }
+
+    // the cast's result is a value: a later write to `f` is not seen in `b`
+    f.signum = 0;
+    si b[0] ne 0xd3 { redde 30; }
+
+    // and back: a received buffer becomes a frame (D4's other direction),
+    // every field read in its own order and width (D2)
+    firma g = b sicut DeModFrame;
+    si g.signum ne 0xd3 { redde 40; }
+    si g.versio ne 1 { redde 41; }
+    si g.genus ne 3 { redde 42; }
+    si g.numerus ne 0x1234 { redde 43; }
+    si g.fons ne 1 { redde 44; }
+    si g.meta ne 0xffff { redde 45; }
+    si g.onus ne 0xdeadbeef { redde 46; }
+    si g.tempus ne 0xab12cd { redde 47; }
+    si g.cursus ne 0x24c0 { redde 48; }
+    si redundantia(b, 15) ne g.cursus { redde 50; }
+    redde 0;
+}

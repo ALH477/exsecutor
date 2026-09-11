@@ -348,6 +348,15 @@ proc __chk_ty_suffix, chkt_wv, chkt_nv, chkt_tv
 	call	__chk_ty_pool
 	test	rax, rax
 	jz	.bad
+	; `__chk_ty_pool` answers a 1-BASED index (0 is the miss) and
+	; `AST_ORD_*` is 0-based, so the enumerator is the index minus one.
+	; This stored the index itself until wire-codec.md's M6 lowered the
+	; first ordered field from source and printed `load u16 %p 2 minor`
+	; for a `u16:maior` -- every order one too high, `:nativus` stored as
+	; `maior` (so `EXS-E0321` could not see an explicit one) and `:minor`
+	; as 3, which is no order at all. tests/unit/lwr_transitus.asm pins
+	; `maior`, `minor` and `nativus` from source.
+	dec	rax
 	mov	[chkt_tv2 + AstType.order], al
 	jmp	.intern
 
@@ -383,8 +392,9 @@ proc __chk_ty_suffix, chkt_wv, chkt_nv, chkt_tv
 	return
 endp
 
-; Spec §5.2's three byte orders, in `AST_ORD_*` order so that the pool index IS
-; the enumerator; and spec §5.5's one placement. Contextual identifiers, not
+; Spec §5.2's three byte orders, in `AST_ORD_*` order so that the pool index
+; MINUS ONE is the enumerator (the pool is 1-based -- `__chk_ty_suffix` says
+; what it cost to read that as "is"); and spec §5.5's one placement. Contextual identifiers, not
 ; keywords (spec §8.6: "`maior` `minor` `nativus` are contextual").
 chk_ty_order_names:
 	db 7,'nativus'

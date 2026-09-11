@@ -168,6 +168,8 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	je	.try
 	cmp	rcx, AST_LAMBDA
 	je	.lambda
+	cmp	rcx, AST_STRUCTLIT
+	je	.structlit
 	cmp	rcx, AST_ERROR
 	je	.err
 	; Anything else in expression position answers `unit`, AND THIS ARM IS A
@@ -262,6 +264,22 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	mov	rdx, r12
 	call	__chk_ty_settled
 	mov	r13, rax
+	; spec §5.2: "`&` is not taken of a field of a `@transitus` type: it is
+	; `EXS-E0305`". A sub-byte field has no address, and an ordered one's
+	; address would be a `&u16:maior` -- a value carrying an order, which
+	; D2 rules out. Judged after the operand is typed, so `Member.d` is
+	; this pass's answer; the borrow is still built, over the operand's
+	; (order-free) type, so nothing above this node cascades.
+	mov	rdi, rbx
+	mov	rsi, [chkt_ap]
+	call	__chk_ty_wirefield
+	test	eax, eax
+	jz	.u_addr_ok
+	mov	rdi, rbx
+	mov	rsi, 305
+	mov	rdx, r12
+	call	__chk_ty_raise
+  .u_addr_ok:
 	mov	rdi, [rbx + ChkTyWork.wtre]
 	mov	rsi, AST_TY_BORROW
 	mov	rdx, r13
@@ -303,16 +321,50 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	jmp	.out
 
   .cast:
-	; `e sicut T` (spec §8.6 decision 4). The target type is the answer;
-	; whether the two are RELATED is checker.md class E and `[OPEN]` -- see
-	; this file's header. A `sicut dyn I poscit {P}` cast's bound is pass
-	; 3's `EXS-E0510`, which reads the interned `dyn` type this builds.
+	; `e sicut T` (spec §8.6 decision 4). The target type is the answer.
+	; Whether two SCALAR types are related is checker.md class E and still
+	; `[OPEN]` -- see this file's header. Whether two AGGREGATES are is not:
+	; spec §5.2 admits exactly one pair, a `@transitus` struct and
+	; `acies<u8, sizeof>`, and every other aggregate `sicut` is `EXS-E0305`
+	; (member.inc's `__chk_ty_castagg`). A `sicut dyn I poscit {P}` cast's
+	; bound is pass 3's `EXS-E0510`, which reads the interned `dyn` type
+	; this builds.
 	mov	rdi, rbx
 	mov	rsi, [chkt_ap]
 	call	__chk_ty_expr
+	mov	r13, rax			; the source, or 0 for a pending literal
 	mov	rdi, rbx
 	mov	rsi, [chkt_bp]
 	call	chk_ty_of_node
+	mov	r14, rax			; the target
+	test	r13, r13
+	jz	.cast_out
+	cmp	r13, 1
+	je	.cast_out			; AST_TY_ERROR: already diagnosed
+	cmp	r14, 1
+	je	.cast_out
+	mov	rdi, rbx
+	mov	rsi, r13
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_STRUCT
+	je	.cast_agg
+	cmp	rax, AST_TY_ACIES
+	je	.cast_agg
+	mov	rdi, rbx
+	mov	rsi, r14
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_STRUCT
+	je	.cast_agg
+	cmp	rax, AST_TY_ACIES
+	jne	.cast_out
+  .cast_agg:
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, r13
+	mov	rcx, r14
+	call	__chk_ty_castagg
+  .cast_out:
+	mov	rax, r14
 	jmp	.out
 
   .index:
@@ -359,6 +411,13 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	call	__chk_ty_lambda
 	jmp	.out
 
+  .structlit:
+	; `Path { f: e, ... }` -- spec §8.6, member.inc's `__chk_ty_structlit`
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_structlit
+	jmp	.out
+
   .out:
 	mov	r13, rax
 	mov	rdi, rbx
@@ -372,8 +431,15 @@ endp
 ; __chk_ty_settled(w, t, n) -> rax = `t`, or -- when `t` is 0, a literal
 ; nothing gave a width -- `EXS-E0308` at `n` and the error type.
 ; The one place a PENDING literal becomes a diagnostic.
+;
+; THE ERROR TYPE IS WHAT COMES BACK, and until wire-codec.md's M6 it was not:
+; `rax` was `__chk_ty_setty`'s leftover (whatever `ast_node_ty` left there),
+; so a caller that went on to classify the answer classified junk. Found by
+; `per i in 3 { }`, which raised this routine's E0308 and then an E0305 from
+; `__chk_ty_for` judging that junk "not iterable" -- two diagnostics for one
+; mistake. tests/unit/chk_ty_transitus.asm's row c13 pins exactly one.
 proc __chk_ty_settled, chkt_wS2, chkt_tS2, chkt_nS2
-	uses	rbx
+	uses	rbx, r12
 	locals
 	endl
 	mov	rbx, [chkt_wS2]
@@ -386,10 +452,12 @@ proc __chk_ty_settled, chkt_wS2, chkt_tS2, chkt_nS2
 	call	__chk_ty_raise
 	mov	rdi, rbx
 	call	__chk_ty_err
+	mov	r12, rax
 	mov	rdi, rbx
 	mov	rsi, [chkt_nS2]
-	mov	rdx, rax
+	mov	rdx, r12
 	call	__chk_ty_setty
+	mov	rax, r12
   .out:
 	return
 endp

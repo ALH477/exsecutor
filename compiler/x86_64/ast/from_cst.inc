@@ -1406,6 +1406,7 @@ proc __ast_w_postfix, w, red
 		slot wo_j,    dq
 		slot wo_off,  dq
 		slot wo_cnt,  dq
+		slot wo_sp3,  sizeof.Span
 	endl
 	mov	rbx, [w]
 	mov	r12, [red]
@@ -1514,6 +1515,8 @@ proc __ast_w_postfix, w, red
 	je	.index
 	cmp	eax, CST_TRY_SUFFIX
 	je	.try
+	cmp	eax, CST_STRUCT_LIT_SUFFIX
+	je	.structlit
 	; Anything else here -- a stray `GenericArgs` with no segment to own
 	; it, or a recovery node -- becomes an `Error` operand rather than a
 	; silently dropped one.
@@ -1631,6 +1634,55 @@ proc __ast_w_postfix, w, red
 	mov	[wo_acc], rax
 	jmp	.sfx
 
+  .structlit:
+	; `Path { f: e, ... }` (spec §8.6, wire-codec.md D3). The operand built
+	; so far is the literal's PATH, and it names a type: it is wrapped in a
+	; `TyPath` carrying the path's own span, so that pass 1 resolves it in
+	; type position and pass 2 types it with `chk_ty_of_node` like any other
+	; type. The parser admits the suffix after `. IDENT` too, where the
+	; operand is a `Member` and not a `Path`; that is left unwrapped and
+	; pass 2 answers it with `EXS-E0305` ("a path that is not a
+	; `structura`") -- this file raises nothing.
+	mov	rdi, [rbx + AstWalk.ast]
+	mov	rsi, [wo_acc]
+	call	ast_node_at
+	movzx	ecx, word [rax + AstNode.kind]
+	mov	rdx, qword [rax + AstNode.span]
+	mov	qword [wo_sp3], rdx
+	mov	edx, dword [rax + AstNode.span + 8]
+	mov	dword [wo_sp3 + 8], edx
+	cmp	ecx, AST_PATH
+	jne	.sl_fields
+	mov	rdi, rbx
+	lea	rsi, [wo_sp3]
+	mov	rdx, AST_TYPATH
+	xor	rcx, rcx
+	mov	r8, [wo_acc]
+	xor	r9, r9
+	call	__ast_w_mks
+	mov	[wo_acc], rax
+  .sl_fields:
+	mov	rdi, rbx
+	lea	rsi, [wo_sub]
+	mov	rdx, CST_FIELD_INIT
+	call	__ast_w_list
+	mov	[wo_off], rax
+	mov	[wo_cnt], rdx
+	mov	rdi, rbx
+	lea	rsi, [wo_sp]
+	mov	rdx, AST_STRUCTLIT
+	xor	rcx, rcx
+	mov	r8, [wo_acc]
+	mov	r9, [wo_off]
+	call	__ast_w_mks
+	mov	[wo_acc], rax
+	mov	rdi, [rbx + AstWalk.ast]
+	mov	rsi, [wo_acc]
+	mov	rdx, [wo_cnt]
+	xor	rcx, rcx
+	call	ast_node_cd
+	jmp	.sfx
+
   .done:
 	mov	rax, [wo_acc]
 	return
@@ -1638,6 +1690,40 @@ proc __ast_w_postfix, w, red
 	mov	rdi, rbx
 	mov	rsi, r12
 	call	__ast_w_err
+	return
+endp
+
+; `FieldInit ::= IDENT ':' Expr` -> `AST_FIELDINIT` (a = the name's interner
+; id, b = the initialiser). A missing initialiser (`S { a: }`) has already been
+; reported by the parser and becomes an `Error` operand, which is what
+; `FieldInit.b` being AST_R_NODEQ requires.
+proc __ast_w_fieldinit, w, red
+	uses	rbx, r12, r13, r14
+	locals
+	endl
+	mov	rbx, [w]
+	mov	r12, [red]
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__ast_w_name
+	mov	r13, rax
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__ast_w_inner
+	test	rax, rax
+	jnz	.have
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__ast_w_err
+  .have:
+	mov	r14, rax
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, AST_FIELDINIT
+	xor	rcx, rcx
+	mov	r8, r13
+	mov	r9, r14
+	call	__ast_w_mk
 	return
 endp
 
@@ -4339,13 +4425,20 @@ proc __ast_w_node, w, red
 	je	.typearg
 	cmp	r13, CST_PATH
 	je	.path
+	cmp	r13, CST_FIELD_INIT
+	je	.fieldinit
 	cmp	r13, CST_ERROR
 	je	.error
 	; Consumed by a parent: PARAM_LIST, ANNOTATION, INTERFACE_BODY,
 	; IMPL_HEAD, IMPL_BODY, EXTERNUS_HEAD, SIN_ARM, ALITER_ARM,
-	; TERMINUS_CLAUSE, CONTRAHE_CLAUSE, FORMA_CLAUSE, the four expression
+	; TERMINUS_CLAUSE, CONTRAHE_CLAUSE, FORMA_CLAUSE, the five expression
 	; suffixes, ORDER_SUFFIX, PLACE_SUFFIX.
 	xor	eax, eax
+	return
+  .fieldinit:
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__ast_w_fieldinit
 	return
 
   .module:

@@ -102,7 +102,13 @@ AST_TYFN	= 47
 AST_TYSUFFIX	= 48
 AST_GENARGS	= 49
 AST_ERROR	= 50
-AST_KIND_MAX	= 50
+; APPENDED after `Error`, not inserted at their place in typed-ast.md's table
+; (which predates them): spec §8.6's struct literal, settled by
+; docs/design/wire-codec.md D3. Every consumer indexes the two tables below by
+; the same number, and nothing reads an order off these values.
+AST_STRUCTLIT	= 51
+AST_FIELDINIT	= 52
+AST_KIND_MAX	= 52
 
 ; ---- operand roles ---------------------------------------------------------
 ; What one of `a b c d` holds, for one kind. `AST_R_LIST` and `AST_R_LIST2`
@@ -415,6 +421,16 @@ ast_roles:
 	db AST_R_NODEQ, AST_R_NAME,  AST_R_NONE,  AST_R_NONE	; 48 TySuffix
 	db AST_R_LIST,  AST_R_COUNT, AST_R_NONE,  AST_R_NONE	; 49 GenericArgs
 	db AST_R_NONE,  AST_R_NONE,  AST_R_NONE,  AST_R_NONE	; 50 Error
+	; `StructLit.a` is a `TyPath` over the literal's `Path` -- the path NAMES
+	; A TYPE, and wrapping it is what puts it in type position for pass 1
+	; (resolve.inc's `__chk_walk`) and hands pass 2 the `chk_ty_of_node`
+	; answer every other type position gets. `b`/`c` are the `FieldInit`s in
+	; SOURCE order, which is evaluation order (spec §8.6).
+	db AST_R_NODEQ, AST_R_LIST,  AST_R_COUNT, AST_R_NONE	; 51 StructLit
+	; `FieldInit.a` the field's name, `b` its initialiser, `d` the field's
+	; declaration once pass 2 has matched the name (0 until then, and 0 for
+	; a name the struct does not declare).
+	db AST_R_NAME,  AST_R_NODEQ, AST_R_NONE,  AST_R_DECL	; 52 FieldInit
 AST_ROLES_LEN = $ - ast_roles
 assert AST_ROLES_LEN = AST_KIND_MAX * 4
 
@@ -483,6 +499,8 @@ ast_kind_names:
 	db 8,'TySuffix'
 	db 11,'GenericArgs'
 	db 5,'Error'
+	db 9,'StructLit'
+	db 9,'FieldInit'
 AST_KIND_NAMES_LEN = $ - ast_kind_names
 
 ast_dkind_names:

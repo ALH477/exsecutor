@@ -1,2 +1,0 @@
-# lege.exsc's header says why exsc must refuse this, and why by `rassert`.
-TEST: exsc-exit=132

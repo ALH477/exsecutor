@@ -145,22 +145,24 @@ CST_FIELD_SUFFIX    = 64
 CST_CALL_SUFFIX     = 65
 CST_INDEX_SUFFIX    = 66
 CST_TRY_SUFFIX      = 67
-CST_PAREN_EXPR      = 68
-CST_LITERAL         = 69
-CST_NAME_EXPR       = 70
-CST_LAMBDA          = 71
-CST_TYPE            = 72
-CST_BIT_TYPE        = 73
-CST_DYN_TYPE        = 74
-CST_FN_TYPE         = 75
-CST_PAREN_TYPE      = 76
-CST_GENERIC_ARGS    = 77
-CST_TYPE_ARG        = 78
-CST_ORDER_SUFFIX    = 79
-CST_PLACE_SUFFIX    = 80
-CST_PATH            = 81
-CST_ERROR           = 82
-CST_KIND_COUNT = 82
+CST_STRUCT_LIT_SUFFIX = 68	; spec §8.6 `StructLit`, wire-codec.md D3
+CST_FIELD_INIT      = 69
+CST_PAREN_EXPR      = 70
+CST_LITERAL         = 71
+CST_NAME_EXPR       = 72
+CST_LAMBDA          = 73
+CST_TYPE            = 74
+CST_BIT_TYPE        = 75
+CST_DYN_TYPE        = 76
+CST_FN_TYPE         = 77
+CST_PAREN_TYPE      = 78
+CST_GENERIC_ARGS    = 79
+CST_TYPE_ARG        = 80
+CST_ORDER_SUFFIX    = 81
+CST_PLACE_SUFFIX    = 82
+CST_PATH            = 83
+CST_ERROR           = 84
+CST_KIND_COUNT = 84
 
 ; ---- kind names ------------------------------------------------------------
 ; For `cst_dump` (cst/red.inc) and for fixtures. Not output: no rendered
@@ -236,21 +238,23 @@ cst_kind_text:
   cst_kn_65:	db	'CALL_SUFFIX'
   cst_kn_66:	db	'INDEX_SUFFIX'
   cst_kn_67:	db	'TRY_SUFFIX'
-  cst_kn_68:	db	'PAREN_EXPR'
-  cst_kn_69:	db	'LITERAL'
-  cst_kn_70:	db	'NAME_EXPR'
-  cst_kn_71:	db	'LAMBDA'
-  cst_kn_72:	db	'TYPE'
-  cst_kn_73:	db	'BIT_TYPE'
-  cst_kn_74:	db	'DYN_TYPE'
-  cst_kn_75:	db	'FN_TYPE'
-  cst_kn_76:	db	'PAREN_TYPE'
-  cst_kn_77:	db	'GENERIC_ARGS'
-  cst_kn_78:	db	'TYPE_ARG'
-  cst_kn_79:	db	'ORDER_SUFFIX'
-  cst_kn_80:	db	'PLACE_SUFFIX'
-  cst_kn_81:	db	'PATH'
-  cst_kn_82:	db	'ERROR'
+  cst_kn_68:	db	'STRUCT_LIT_SUFFIX'
+  cst_kn_69:	db	'FIELD_INIT'
+  cst_kn_70:	db	'PAREN_EXPR'
+  cst_kn_71:	db	'LITERAL'
+  cst_kn_72:	db	'NAME_EXPR'
+  cst_kn_73:	db	'LAMBDA'
+  cst_kn_74:	db	'TYPE'
+  cst_kn_75:	db	'BIT_TYPE'
+  cst_kn_76:	db	'DYN_TYPE'
+  cst_kn_77:	db	'FN_TYPE'
+  cst_kn_78:	db	'PAREN_TYPE'
+  cst_kn_79:	db	'GENERIC_ARGS'
+  cst_kn_80:	db	'TYPE_ARG'
+  cst_kn_81:	db	'ORDER_SUFFIX'
+  cst_kn_82:	db	'PLACE_SUFFIX'
+  cst_kn_83:	db	'PATH'
+  cst_kn_84:	db	'ERROR'
   cst_kn_end:
 
 cst_kind_off:
@@ -336,6 +340,8 @@ cst_kind_off:
 	dd	cst_kn_80 - cst_kind_text
 	dd	cst_kn_81 - cst_kind_text
 	dd	cst_kn_82 - cst_kind_text
+	dd	cst_kn_83 - cst_kind_text
+	dd	cst_kn_84 - cst_kind_text
 	dd	cst_kn_end - cst_kind_text
 
 ; cst_kind_name(kind) -> rax = pointer to the name's bytes, rdx = its length.

@@ -445,6 +445,7 @@ proc __lwr_binding, lwrsp, lwrn
 	mov	edx, [lwrs]
 	xor	rcx, rcx
 	mov	r8d, r12d
+	xor	r9, r9			; BFA_ORDER_NATIVUS
 	call	lwr_store
 	jmp	.reg
   .intoslot:
@@ -800,10 +801,16 @@ proc __lwr_assign, lwrsp, lwrn
 	mov	edx, r12d
 	xor	rcx, rcx
 	mov	r8d, [lwrv]
+	xor	r9, r9			; BFA_ORDER_NATIVUS
 	call	lwr_store
 	return
 
   .member:
+	; a field write: `store T %p off ORDER %v`, or below a byte
+	; `storebits T %p byte bit %v` (expr.inc's `__lwr_field_off` and
+	; `__lwr_field_bits`; the bit operand is MSB-first, cfg.inc). The
+	; checker typed the target as the field's type WITHOUT its order (spec
+	; §5.2, D2), so `lwrir` is already the value's type.
 	mov	rdi, rbx
 	mov	esi, [lwrl]
 	call	__lwr_node
@@ -814,15 +821,33 @@ proc __lwr_assign, lwrsp, lwrn
 	mov	esi, r13d
 	call	__lwr_field_off
 	mov	[lwrd], eax
+	mov	r13d, edx			; the packed place
 	mov	rdi, rbx
 	mov	esi, r12d
 	call	lwr_expr_agg
+	mov	r12d, eax
+	mov	edi, r13d
+	call	__lwr_field_bits
+	test	eax, eax
+	jnz	.mbits
 	mov	rdi, rbx
 	mov	esi, [lwrir]
-	mov	edx, eax
+	mov	edx, r12d
 	mov	ecx, [lwrd]
 	mov	r8d, [lwrv]
+	mov	r9d, r13d
+	shr	r9d, 16				; the order
 	call	lwr_store
+	return
+  .mbits:
+	mov	rdi, rbx
+	mov	esi, [lwrir]
+	mov	edx, r12d
+	mov	ecx, [lwrd]
+	mov	r8d, r13d
+	and	r8d, 0xFF			; the bit offset, MSB-first
+	mov	r9d, [lwrv]
+	call	lwr_storebits
 	return
 
   .index:
@@ -834,6 +859,7 @@ proc __lwr_assign, lwrsp, lwrn
 	mov	edx, eax
 	xor	rcx, rcx
 	mov	r8d, [lwrv]
+	xor	r9, r9			; BFA_ORDER_NATIVUS
 	call	lwr_store
 	return
 
@@ -852,6 +878,7 @@ proc __lwr_assign, lwrsp, lwrn
 	mov	edx, eax
 	xor	rcx, rcx
 	mov	r8d, [lwrv]
+	xor	r9, r9			; BFA_ORDER_NATIVUS
 	call	lwr_store
 	return
 

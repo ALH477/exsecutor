@@ -155,17 +155,30 @@ proc lwr_extra4, lwrsp, lwrx, lwry, lwrz, lwrw
 	return
 endp
 
-; lwr_load(st, lwrty, lwrp, lwroff) -> eax -- `%v = load T %p off nativus`.
-proc lwr_load, lwrsp, lwrty, lwrp, lwroff
+; lwr_load(st, lwrty, lwrp, lwroff, lwrord) -> eax -- `%v = load T %p off
+; ORDER`. `lwrord` is a `BFA_ORDER_*`; every caller but a `@transitus` field
+; read passes `BFA_ORDER_NATIVUS` (0), and a field read passes the field's
+; own `AstLayout.order` -- the two enumerations are one numbering, asserted
+; below rather than converted.
+;
+; THE ORDER USED TO BE HARD-CODED HERE, and that was the bug the wire-codec
+; plan's M1 guard stood in front of: every field access handed this routine an
+; offset and nothing else, so a `u16:maior` field became a `nativus` load.
+assert AST_ORD_NATIVUS = BFA_ORDER_NATIVUS
+assert AST_ORD_MAIOR   = BFA_ORDER_MAIOR
+assert AST_ORD_MINOR   = BFA_ORDER_MINOR
+proc lwr_load, lwrsp, lwrty, lwrp, lwroff, lwrord
 	uses	rbx
 	locals
 		slot lwrbse, dd
 	endl
 	mov	rbx, [lwrsp]
+	mov	eax, [lwrord]
+	rassert	eax le BFA_ORDER_MINOR
 	mov	rdi, rbx
 	mov	esi, [lwrp]
 	mov	edx, [lwroff]
-	mov	ecx, BFA_ORDER_NATIVUS
+	mov	ecx, [lwrord]
 	call	lwr_extra3
 	mov	[lwrbse], eax
 	mov	rdi, rbx
@@ -178,8 +191,48 @@ proc lwr_load, lwrsp, lwrty, lwrp, lwroff
 	return
 endp
 
-; lwr_store(st, lwrty, lwrp, lwroff, lwrv) -- `store T %p off nativus %v`.
-proc lwr_store, lwrsp, lwrty, lwrp, lwroff, lwrv
+; lwr_store(st, lwrty, lwrp, lwroff, lwrv, lwrord) -- `store T %p off ORDER
+; %v`, `lwrord` as for `lwr_load`.
+proc lwr_store, lwrsp, lwrty, lwrp, lwroff, lwrv, lwrord
+	uses	rbx
+	locals
+		slot lwrbse, dd
+	endl
+	mov	rbx, [lwrsp]
+	mov	eax, [lwrord]
+	rassert	eax le BFA_ORDER_MINOR
+	mov	rdi, rbx
+	mov	esi, [lwrp]
+	mov	edx, [lwroff]
+	mov	ecx, [lwrord]
+	mov	r8d, [lwrv]
+	call	lwr_extra4
+	mov	[lwrbse], eax
+	mov	rdi, rbx
+	mov	esi, BFA_OP_STORE
+	xor	rdx, rdx
+	mov	ecx, [lwrty]
+	mov	r8d, [lwrbse]
+	mov	r9d, 4
+	call	lwr_emit
+	return
+endp
+
+; lwr_loadbits(st, lwrty, lwrp, lwrbyte, lwrbit) -> eax -- `%v = loadbits T
+; %p byte bit`: a field of at most eight bits that is not a whole byte at a
+; byte boundary (docs/design/ssa-ir.md 2.7).
+;
+; THE BIT OPERAND COUNTS FROM THE MOST SIGNIFICANT BIT OF BYTE `byte`: bit 0 is
+; the byte's top bit, and the field occupies bits `bit` .. `bit + width - 1`
+; in that numbering -- spec §5.2 rule 1's "the first-declared field occupies
+; the high bits", and exactly `AstLayout.bitoff` as checker/rows/layout.inc
+; computes it (`bits and 7` of an offset that ACCUMULATES in declaration
+; order). So `DeModFrame`'s `versio` is `loadbits u4 %p 1 0` and `genus` is
+; `loadbits u4 %p 1 4`, and ssa-ir.md 2.7's own example (`loadbits u4 %p 1 4
+; ; u4 at byte 1, bits 4..7, MSB-first`) is the same convention read the same
+; way. The value is `(byte deorsum (8 - bit - width))` masked to `width` bits
+; when the field lies in one byte.
+proc lwr_loadbits, lwrsp, lwrty, lwrp, lwrbyte, lwrbit
 	uses	rbx
 	locals
 		slot lwrbse, dd
@@ -187,13 +240,38 @@ proc lwr_store, lwrsp, lwrty, lwrp, lwroff, lwrv
 	mov	rbx, [lwrsp]
 	mov	rdi, rbx
 	mov	esi, [lwrp]
-	mov	edx, [lwroff]
-	mov	ecx, BFA_ORDER_NATIVUS
+	mov	edx, [lwrbyte]
+	mov	ecx, [lwrbit]
+	call	lwr_extra3
+	mov	[lwrbse], eax
+	mov	rdi, rbx
+	mov	esi, BFA_OP_LOADBITS
+	xor	rdx, rdx
+	mov	ecx, [lwrty]
+	mov	r8d, [lwrbse]
+	mov	r9d, 3
+	call	lwr_emit
+	return
+endp
+
+; lwr_storebits(st, lwrty, lwrp, lwrbyte, lwrbit, lwrv) -- `storebits T %p
+; byte bit %v`, the bit operand as for `lwr_loadbits`. A read-modify-write of
+; the bytes the field touches is the backend's (M4); the IR says only where.
+proc lwr_storebits, lwrsp, lwrty, lwrp, lwrbyte, lwrbit, lwrv
+	uses	rbx
+	locals
+		slot lwrbse, dd
+	endl
+	mov	rbx, [lwrsp]
+	mov	rdi, rbx
+	mov	esi, [lwrp]
+	mov	edx, [lwrbyte]
+	mov	ecx, [lwrbit]
 	mov	r8d, [lwrv]
 	call	lwr_extra4
 	mov	[lwrbse], eax
 	mov	rdi, rbx
-	mov	esi, BFA_OP_STORE
+	mov	esi, BFA_OP_STOREBITS
 	xor	rdx, rdx
 	mov	ecx, [lwrty]
 	mov	r8d, [lwrbse]

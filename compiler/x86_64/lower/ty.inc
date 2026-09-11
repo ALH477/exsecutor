@@ -248,7 +248,11 @@ endp
 ; `textus` is 16/8 and a `structura` reads `Ast.layout` at its declaration
 ; (`AstLayout.off` holds a struct's SIZE, checker/rows/layout.inc's own
 ; comment) -- unless the declaration slot carries the prelude tag, in which
-; case the size is `prelude/interface.inc`'s. Anything else is
+; case the size is `prelude/interface.inc`'s. An `acies<T, N>` is `N` elements
+; of `T`'s size at `T`'s alignment -- no padding between them, which is what
+; `__lwr_elem`'s `index %p %i stride` already assumes when it strides by `T`'s
+; size alone, and what the one aggregate cast needs (`acies<u8, 17>` is
+; exactly `DeModFrame`'s seventeen bytes, spec §5.2). Anything else is
 ; `[UNIMPLEMENTED]` and traps rather than guessing a number the emitter would
 ; then carve a frame from.
 proc lwr_ty_size, lwrsp, lwrt
@@ -256,6 +260,7 @@ proc lwr_ty_size, lwrsp, lwrt
 	locals
 		slot lwrk, dd
 		slot lwrd, dd
+		slot lwrn, dd
 	endl
 	mov	rbx, [lwrsp]
 	mov	rdi, rbx
@@ -266,17 +271,34 @@ proc lwr_ty_size, lwrsp, lwrt
 	je	.textus
 	cmp	eax, AST_TY_STRUCT
 	je	.struc
+	cmp	eax, AST_TY_ACIES
+	je	.acies
 	; scalars can be address-taken and then need a slot too
 	mov	rdi, rbx
 	mov	esi, [lwrt]
 	call	lwr_ty_scalar
 	test	eax, eax
 	jnz	.scalar
-	rassert	eax ne 0		; [UNIMPLEMENTED]: acies, dyn, octeti,
+	rassert	eax ne 0		; [UNIMPLEMENTED]: dyn, octeti,
 					; scalares, grapha, eventus, brand
   .textus:
 	mov	rax, EXS_IFACE_TEXTUS_SIZE
 	mov	rdx, EXS_IFACE_TEXTUS_ALIGN
+	return
+  .acies:
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, [lwrt]
+	call	ast_type_at
+	mov	ecx, [rax + AstType.width]	; the element COUNT (spec §5.4)
+	mov	[lwrn], ecx
+	mov	ecx, [rax + AstType.a]		; the element type
+	mov	rdi, rbx
+	mov	esi, ecx
+	call	lwr_ty_size
+	mov	r12, rdx			; the element's alignment
+	mov	ecx, [lwrn]
+	imul	rax, rcx
+	mov	rdx, r12
 	return
   .scalar:
 	mov	rdi, rbx

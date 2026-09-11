@@ -302,6 +302,7 @@ proc __lwr_release_decl, lwrsp, lwrdid
 	mov	esi, [lwrt]
 	mov	edx, r12d
 	xor	rcx, rcx
+	xor	r8, r8			; BFA_ORDER_NATIVUS
 	call	lwr_load
 	mov	[lwrv], eax
   .emit:
@@ -551,6 +552,7 @@ proc __lwr_path, lwrsp, lwrn
 	mov	esi, [lwrt]
 	mov	edx, r12d
 	xor	rcx, rcx
+	xor	r8, r8			; BFA_ORDER_NATIVUS
 	call	lwr_load
 	return
   .slotagg:
@@ -688,6 +690,7 @@ proc __lwr_unary, lwrsp, lwrn
 	mov	esi, eax
 	mov	edx, r12d
 	xor	rcx, rcx
+	xor	r8, r8			; BFA_ORDER_NATIVUS
 	call	lwr_load
 	return
   .derefagg:
@@ -1037,10 +1040,12 @@ proc __lwr_shortcircuit, lwrsp, lwrn
 	return
 endp
 
-; __lwr_cast(st, lwrn) -> eax -- `sicut`. Widening is `zext`/`sext` BY SOURCE
-; SIGN, narrowing is `trunc` (IR 2.3's `[OPEN]` on narrowing semantics stands;
-; the opcode does not), int<->float is `itof`/`ftoi`, `f32`<->`f64` is
-; `fext`/`ftrunc`, and a cast to the same id emits nothing at all.
+; __lwr_cast(st, lwrn) -> eax -- a SCALAR `sicut`. Widening is `zext`/`sext`
+; BY SOURCE SIGN, narrowing is `trunc` (IR 2.3's `[OPEN]` on narrowing
+; semantics stands; the opcode does not), int<->float is `itof`/`ftoi`,
+; `f32`<->`f64` is `fext`/`ftrunc`, and a cast between two types that lower
+; to the same IR type emits nothing at all. The aggregate cast (spec §5.2) is
+; never here: its type is not scalar, so it reaches `lwr_expr_agg`.
 proc __lwr_cast, lwrsp, lwrn
 	uses	rbx, r12, r13
 	locals
@@ -1076,6 +1081,18 @@ proc __lwr_cast, lwrsp, lwrn
 	mov	esi, [lwrdt]
 	call	lwr_ty_ir
 	mov	[lwrir], eax
+	; TWO AST TYPES, ONE IR TYPE: nothing to convert. `u16:maior` and `u16`
+	; are different AST ids and the same `u16` in a register (spec §5.2,
+	; D2: no value carries an order), and `mensura` is the target's `u64`
+	; (ty.inc). Without this the width comparison below picks `trunc` for
+	; equal widths and emits a `trunc u16` of a `u16` -- an instruction
+	; whose operand and result types are equal, which IR 2.3's `convert`
+	; row does not describe.
+	mov	rdi, rbx
+	mov	esi, [lwrst]
+	call	lwr_ty_ir
+	cmp	eax, [lwrir]
+	je	.same
 
 	mov	rdi, rbx
 	mov	esi, [lwrst]
@@ -1881,9 +1898,14 @@ proc lwr_expr_into, lwrsp, lwrn, lwrdst
 	je	.lit
 	cmp	eax, AST_CALL
 	je	.call
-	; a Path, Member or Index of aggregate type: its storage exists
-	; already, so this is a byte copy plus one `retain` per reference field
-	; (IR 2.7) -- the retain half is [UNIMPLEMENTED], see __lwr_copy
+	cmp	eax, AST_STRUCTLIT
+	je	.structlit
+	; a Path, Member, Index or aggregate Cast: its storage exists already,
+	; so this is a byte copy plus one `retain` per reference field (IR 2.7)
+	; -- the retain half is [UNIMPLEMENTED], see __lwr_copy. For a Cast
+	; this copy IS spec §5.2's "binding it copies": `firma b = f sicut
+	; acies<u8, 17>` gets its own seventeen bytes, while every READ of the
+	; cast goes through `lwr_expr_agg` and copies nothing.
 	mov	rdi, rbx
 	mov	esi, [lwrn]
 	call	lwr_expr_agg
@@ -1909,13 +1931,30 @@ proc lwr_expr_into, lwrsp, lwrn, lwrdst
 	mov	edx, [lwrdst]
 	call	__lwr_call
 	return
+  .structlit:
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	mov	edx, [lwrdst]
+	call	__lwr_structlit
+	return
 endp
 
 ; lwr_expr_agg(st, lwrn) -> eax = a `ptr` to the value of non-scalar
 ; expression `lwrn`. A `Path` to a memory-resident binding passes ITS OWN SLOT
 ; with no copy -- docs/design/runtime.md section 5's
-; `call u64 @imprime_gutenbergio %2 %3` names `s`'s own slot -- and anything
-; else is lowered into a fresh one.
+; `call u64 @imprime_gutenbergio %2 %3` names `s`'s own slot -- and so do a
+; field, an element, a dereference and spec §5.2's one aggregate cast, each of
+; which names bytes that already exist. Anything else (a call, a literal) is
+; lowered into a fresh slot.
+;
+; THE FOUR ARMS THAT NAME EXISTING BYTES ARE WHAT STOP A RECURSION: before
+; them a `Member`, `Index` or `Cast` of aggregate type went to `.fresh`, whose
+; `lwr_expr_into` sent a non-literal, non-call node straight back here --
+; forever (the wire-codec plan's B5). The `Cast` arm is the pointer
+; passthrough spec §5.2 permits "exactly where no write can observe the
+; difference": a read through the cast (an index, a call argument, which IR
+; 2.9 makes read-only) cannot, and a write THROUGH a cast is `EXS-E0306` in
+; the checker, so none reaches here.
 proc lwr_expr_agg, lwrsp, lwrn
 	uses	rbx, r12
 	locals
@@ -1926,11 +1965,48 @@ proc lwr_expr_agg, lwrsp, lwrn
 	mov	esi, [lwrn]
 	call	__lwr_nkind
 	cmp	eax, AST_PATH
-	jne	.fresh
+	je	.path
+	cmp	eax, AST_MEMBER
+	je	.member
+	cmp	eax, AST_INDEX
+	je	.index
+	cmp	eax, AST_CAST
+	je	.cast
+	cmp	eax, AST_UNARY
+	je	.unary
+	jmp	.fresh
+  .path:
 	mov	rdi, rbx
 	mov	esi, [lwrn]
 	call	__lwr_path		; a slot or an aggregate `param` -- both
 	return				;   are already the address
+  .member:
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_member_read	; an aggregate field: `addr %p off`
+	return
+  .index:
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_elem		; `chk` then `index %p %i stride`
+	return
+  .cast:
+	; the checker admitted an aggregate `sicut` only between a `@transitus`
+	; struct and `acies<u8, sizeof>` (spec §5.2): the same bytes
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_node
+	mov	ecx, [rax + AstNode.a]
+	mov	rdi, rbx
+	mov	esi, ecx
+	call	lwr_expr_agg
+	return
+  .unary:
+	; `*p` of aggregate type: `p`'s value is the address (__lwr_unary)
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_unary
+	return
   .fresh:
 	mov	rdi, rbx
 	mov	esi, [lwrn]
@@ -1944,6 +2020,198 @@ proc lwr_expr_agg, lwrsp, lwrn
 	mov	edx, [lwrs]
 	call	lwr_expr_into
 	mov	eax, [lwrs]
+	return
+endp
+
+; __lwr_structlit(st, lwrn, lwrdst) -- spec §8.6's struct literal, written
+; through `lwrdst`: every initialiser EVALUATED IN SOURCE ORDER, then every
+; field STORED IN DECLARATION ORDER (docs/design/wire-codec.md D3). So a
+; `@transitus` literal writes bytes 0..N-1 in order whatever order its source
+; named the fields, the emitted stores are a function of the declaration
+; alone, and `f = S { a: f.b, b: f.a }` reads both old fields before it
+; writes either.
+;
+; The values wait in `LwrState.tmpv` between the two walks, the staging
+; vector calls already use and for the same reason: an initialiser may itself
+; contain a call, whose own staging pushes and pops above ours and leaves our
+; entries where they were.
+;
+; A scalar field is one `store`/`storebits` exactly as `x.f = v` is (stmt.inc's
+; `__lwr_assign`); an aggregate field -- nothing in a `@transitus` type, but a
+; `textus` in any other struct -- was evaluated to a `ptr` and is copied into
+; `addr %dst off`.
+proc __lwr_structlit, lwrsp, lwrn, lwrdst
+	uses	rbx, r12, r13, r14
+	locals
+		slot lwroff, dd
+		slot lwrcnt, dd
+		slot lwrsd, dd
+		slot lwrfd, dd
+		slot lwrbase, dq
+		slot lwrfo, dd
+		slot lwrpk, dd
+		slot lwrft, dd
+		slot lwrv, dd
+		slot lwrnd, dq
+	endl
+	mov	rbx, [lwrsp]
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_node
+	mov	ecx, [rax + AstNode.b]
+	mov	[lwroff], ecx
+	mov	ecx, [rax + AstNode.c]
+	mov	[lwrcnt], ecx
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_nty
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, eax
+	call	ast_type_at
+	movzx	ecx, byte [rax + AstType.kind]
+	rassert	ecx eq AST_TY_STRUCT
+	mov	ecx, [rax + AstType.a]
+	mov	[lwrsd], ecx
+	and	ecx, LWR_PRELUDE_TAG
+	rassert	ecx eq 0		; the checker refuses a prelude struct
+
+	; ---- evaluate, in SOURCE order ----
+	mov	rdi, [rbx + LwrState.tmpv]
+	mov	rax, [rdi + Vec.len]
+	mov	[lwrbase], rax
+	xor	r12d, r12d
+  .eval:
+	cmp	r12d, [lwrcnt]
+	jge	.evaled
+	mov	rdi, rbx
+	mov	esi, [lwroff]
+	mov	edx, r12d
+	call	__lwr_listat		; the FieldInit
+	mov	rdi, rbx
+	mov	esi, eax
+	call	__lwr_node
+	mov	r13d, [rax + AstNode.b]	; its initialiser
+	mov	rdi, rbx
+	mov	esi, r13d
+	call	lwr_expr_arg		; a scalar's value, an aggregate's `ptr`
+	mov	rdi, rbx
+	mov	esi, eax
+	call	__lwr_stage
+	inc	r12d
+	jmp	.eval
+  .evaled:
+
+	; ---- store, in DECLARATION order ----
+	; A struct's fields are the declarations right after it whose parent it
+	; is (typed-ast.md 2.4 -- checker/types/member.inc's `__chk_ty_field_of`
+	; reads them the same way).
+	mov	rdi, [rbx + LwrState.tree]
+	call	ast_decl_count
+	mov	[lwrnd], rax
+	mov	eax, [lwrsd]
+	inc	eax
+	mov	[lwrfd], eax
+  .field:
+	mov	eax, [lwrfd]
+	cmp	rax, [lwrnd]
+	ja	.done
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, [lwrfd]
+	call	ast_decl_at
+	mov	ecx, [rax + AstDecl.parent]
+	cmp	ecx, [lwrsd]
+	jne	.done
+	movzx	ecx, byte [rax + AstDecl.kind]
+	cmp	ecx, AST_D_FIELD
+	jne	.next
+	mov	ecx, [rax + AstDecl.ty]
+	mov	[lwrft], ecx
+	; which initialiser names this field -- exactly one does, or the
+	; checker raised EXS-E0304 / E0302 and nothing is lowered
+	xor	r12d, r12d
+  .find:
+	cmp	r12d, [lwrcnt]
+	jge	.missing
+	mov	rdi, rbx
+	mov	esi, [lwroff]
+	mov	edx, r12d
+	call	__lwr_listat
+	mov	rdi, rbx
+	mov	esi, eax
+	call	__lwr_node
+	mov	ecx, [rax + AstNode.d]
+	cmp	ecx, [lwrfd]
+	je	.found
+	inc	r12d
+	jmp	.find
+  .missing:
+	rassert	r12d eq -1		; unreachable: see above
+  .found:
+	mov	rdi, [rbx + LwrState.tmpv]
+	mov	rsi, [lwrbase]
+	add	rsi, r12
+	call	vec_get
+	mov	eax, [rax]
+	mov	[lwrv], eax
+	mov	rdi, rbx
+	mov	esi, [lwrfd]
+	call	__lwr_field_off
+	mov	[lwrfo], eax
+	mov	[lwrpk], edx
+	mov	rdi, rbx
+	mov	esi, [lwrft]
+	call	lwr_ty_scalar
+	test	eax, eax
+	jz	.aggfield
+	; the STORED type drops the field's order: a register has none, and
+	; the order is the access's (spec §5.2, D2)
+	mov	rdi, rbx
+	mov	esi, [lwrft]
+	call	lwr_ty_ir
+	mov	r14d, eax
+	mov	edi, [lwrpk]
+	call	__lwr_field_bits
+	test	eax, eax
+	jnz	.bits
+	mov	rdi, rbx
+	mov	esi, r14d
+	mov	edx, [lwrdst]
+	mov	ecx, [lwrfo]
+	mov	r8d, [lwrv]
+	mov	r9d, [lwrpk]
+	shr	r9d, 16			; the order
+	call	lwr_store
+	jmp	.next
+  .bits:
+	mov	rdi, rbx
+	mov	esi, r14d
+	mov	edx, [lwrdst]
+	mov	ecx, [lwrfo]
+	mov	r8d, [lwrpk]
+	and	r8d, 0xFF		; the bit offset, MSB-first
+	mov	r9d, [lwrv]
+	call	lwr_storebits
+	jmp	.next
+  .aggfield:
+	mov	rdi, rbx
+	mov	esi, BFA_OP_ADDR
+	xor	rdx, rdx
+	mov	ecx, [rbx + LwrState.tptr]
+	mov	r8d, [lwrdst]
+	mov	r9d, [lwrfo]
+	call	lwr_emit
+	mov	rdi, rbx
+	mov	esi, [lwrft]
+	mov	edx, eax
+	mov	ecx, [lwrv]
+	call	__lwr_copy
+  .next:
+	inc	dword [lwrfd]
+	jmp	.field
+  .done:
+	mov	rdi, [rbx + LwrState.tmpv]
+	mov	rax, [lwrbase]
+	mov	[rdi + Vec.len], rax
 	return
 endp
 
@@ -2044,6 +2312,7 @@ proc __lwr_lit_textus, lwrsp, lwrn, lwrdst
 	mov	edx, [lwrdst]
 	xor	rcx, rcx
 	mov	r8d, [lwrv]
+	xor	r9, r9			; BFA_ORDER_NATIVUS
 	call	lwr_store
 
 	mov	rdi, rbx
@@ -2057,27 +2326,27 @@ proc __lwr_lit_textus, lwrsp, lwrn, lwrdst
 	mov	edx, [lwrdst]
 	mov	ecx, EXS_IFACE_TEXTUS_LEN
 	mov	r8d, [lwrv]
+	xor	r9, r9			; BFA_ORDER_NATIVUS
 	call	lwr_store
 	return
 endp
 
 ; __lwr_field_off(st, lwrd) -> eax = the byte offset of field declaration
-; `lwrd`, from `Ast.layout`. Traps on a field that is not whole bytes at a
-; byte boundary: that needs `loadbits`/`storebits`, which nothing in this
-; tree has a fixture for -- `[UNIMPLEMENTED]`, recorded rather than guessed.
+; `lwrd`, and edx = the rest of its place, packed: bits 0-7 the bit offset
+; (MSB-first, `AstLayout.bitoff`), bits 8-15 the width in bits
+; (`AstLayout.width`, 0 for an aggregate field too wide for the byte), bits
+; 16-23 the byte order (`AST_ORD_*`, which is `BFA_ORDER_*` -- cfg.inc asserts
+; the two numberings are one). `__lwr_field_bits` below reads it.
 ;
-; ALSO TRAPS ON A MULTI-BYTE FIELD WHOSE ORDER IS NOT `nativus`. Both callers
-; (`__lwr_member_read` below, the field store in stmt.inc) hand only the
-; OFFSET to `lwr_load`/`lwr_store`, which write `nativus` into the IR
-; (lower/cfg.inc) -- the field's own `AstLayout.order` is dropped here. For a
-; `u16:maior` field that is a little-endian read of a big-endian place, and
-; nothing downstream can tell. It is not hypothetical: before this guard, a
-; `u64:maior` field read compiled and emitted `mov rax, qword [rax+0]`, and
-; the only reason `u16:maior` did not was that the emitter still refuses
-; every width but 64 -- which M3 of the wire-codec plan removes. At or below
-; 8 bits there is one byte and no order (spec 5.2 rule 3), so those pass.
-; M6 deletes this guard, when field access carries its byte order into
-; `load`/`store` (docs/design/ssa-ir.md 2.3 already has the operand).
+; THE M1 GUARD IS GONE, and this is where it stood. Both callers used to get
+; the offset alone and hand it to `lwr_load`/`lwr_store`, which wrote
+; `nativus` into the IR: a `u16:maior` field was a little-endian read of a
+; big-endian place, and the guard (`order == nativus or width <= 8`) made that
+; an `rassert` rather than a silent wrong answer until the order could travel.
+; It travels now -- `lwr_load`/`lwr_store` take it -- and a sub-byte field
+; goes to `loadbits`/`storebits` instead of trapping, so the guard has nothing
+; left to guard. tests/unit/lwr_transitus.asm is the positive test that
+; replaced tests/programs/ordo_maior_custodia/'s refusal.
 proc __lwr_field_off, lwrsp, lwrd
 	locals
 	endl
@@ -2085,28 +2354,51 @@ proc __lwr_field_off, lwrsp, lwrd
 	mov	rdi, [rdi + LwrState.tree]
 	mov	rsi, [lwrd]
 	call	ast_layout_at
+	movzx	edx, byte [rax + AstLayout.order]
+	shl	edx, 8
+	movzx	ecx, byte [rax + AstLayout.width]
+	or	edx, ecx
+	shl	edx, 8
 	movzx	ecx, byte [rax + AstLayout.bitoff]
-	rassert	ecx eq 0
-	movzx	ecx, byte [rax + AstLayout.width]
-	and	ecx, 7
-	rassert	ecx eq 0
-	; order == nativus, or width <= 8 (AST_ORD_NATIVUS is 0, ast/kinds.inc)
-	movzx	ecx, byte [rax + AstLayout.order]
-	cmp	ecx, AST_ORD_NATIVUS
-	je	.order_ok
-	movzx	ecx, byte [rax + AstLayout.width]
-	rassert	ecx le 8
-  .order_ok:
+	or	edx, ecx
 	mov	eax, [rax + AstLayout.off]
 	return
 endp
 
-; __lwr_member_read(st, lwrn) -> eax -- a field read `x.f`.
+; __lwr_field_bits(pack) -> eax = 1 if a SCALAR field with this packed place
+; needs `loadbits`/`storebits`: fewer than eight bits, or not starting on a
+; byte boundary (a `u8` after a `u4` straddles two bytes, and ssa-ir.md 2.7
+; gives `loadbits` "any width <= 8 at any bit offset, straddling a byte if the
+; declaration did"). Every other scalar field is whole bytes at a byte
+; boundary -- spec §5.2 rule 2 -- and is a `load`/`store` with its order.
+proc __lwr_field_bits, lwrfpk
+	locals
+	endl
+	mov	eax, [lwrfpk]
+	test	eax, 0xFF
+	jnz	.yes
+	shr	eax, 8
+	and	eax, 0xFF
+	cmp	eax, 8
+	jb	.yes
+	xor	eax, eax
+	return
+  .yes:
+	mov	eax, 1
+	return
+endp
+
+; __lwr_member_read(st, lwrn) -> eax -- a field read `x.f`. A scalar field is
+; `load T %p off ORDER` or, below a byte, `loadbits T %p byte bit`; `T` is
+; the Member node's type, which spec §5.2 (D2) makes the field's type WITHOUT
+; its order -- the order is on the access, not on the value.
 proc __lwr_member_read, lwrsp, lwrn
 	uses	rbx, r12, r13
 	locals
 		slot lwroff, dd
+		slot lwrpk, dd
 		slot lwrt, dd
+		slot lwrir, dd
 	endl
 	mov	rbx, [lwrsp]
 	mov	rdi, rbx
@@ -2123,6 +2415,7 @@ proc __lwr_member_read, lwrsp, lwrn
 	mov	esi, r13d
 	call	__lwr_field_off
 	mov	[lwroff], eax
+	mov	[lwrpk], edx
 	mov	rdi, rbx
 	mov	esi, r12d
 	call	lwr_expr_agg
@@ -2139,11 +2432,27 @@ proc __lwr_member_read, lwrsp, lwrn
 	mov	rdi, rbx
 	mov	esi, [lwrt]
 	call	lwr_ty_ir
+	mov	[lwrir], eax
+	mov	edi, [lwrpk]
+	call	__lwr_field_bits
+	test	eax, eax
+	jnz	.bits
 	mov	rdi, rbx
-	mov	esi, eax
+	mov	esi, [lwrir]
 	mov	edx, r12d
 	mov	ecx, [lwroff]
+	mov	r8d, [lwrpk]
+	shr	r8d, 16				; the order
 	call	lwr_load
+	return
+  .bits:
+	mov	rdi, rbx
+	mov	esi, [lwrir]
+	mov	edx, r12d
+	mov	ecx, [lwroff]
+	mov	r8d, [lwrpk]
+	and	r8d, 0xFF			; the bit offset, MSB-first
+	call	lwr_loadbits
 	return
   .agg:
 	mov	rdi, rbx
@@ -2253,6 +2562,7 @@ proc __lwr_index_read, lwrsp, lwrn
 	mov	esi, eax
 	mov	edx, r12d
 	xor	rcx, rcx
+	xor	r8, r8			; BFA_ORDER_NATIVUS
 	call	lwr_load
 	return
   .agg:

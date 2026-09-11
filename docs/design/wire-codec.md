@@ -630,6 +630,24 @@ through an index `x[b] = …` on a `mutabilis` `acies` binding is an lvalue
 (§8.6, lvalue check semantic); `mutabilis g = f` copies the struct (§5.2,
 the cast paragraph: binding an aggregate value is by value).
 
+**What M6 checked of this section, and what it did not.** The `codex.exsc`
+block above, with the fixture's `DeModFrame`; the two `probatio.exsc`
+helpers with each `s.scribe_octetum(b[k])` replaced by an `aut` into a
+`u8` (`scribe_octetum` is M7's); the encode-basis walk; and an `initium`
+calling them, was compiled by the M6 compiler: it type-checks clean, and
+`lwr_module` lowers it to IR that `bfa_verify_func` accepts --
+`obsigna(f) sicut acies<u8, 17>` passing a fresh slot the call writes into,
+`Syndroma { valor: v } sicut acies<u8, 2>` a `store u16 ... 0 maior` and a
+two-byte `copy`, `per i in 0..17 { ... b[i] ... }` a `u64` loop with `chk`
+and `index` on the bound copy. So nothing in the example needed changing.
+It has not RUN: the emitter lacks the opcodes M3 and M4 add, and every
+marker in this file stays `[UNTESTED]` until `tests/programs/forma/` (the
+M6 program, deferred) and entry 23 do. One placement differs from D4's
+text: the size equality `N` = size of `S` is checked in pass 2, inside the
+cast's own check (`checker/types/member.inc`, `__chk_ty_wirebytes`), not in
+pass 4 -- pass 4 runs after the bodies are typed, and a packed `@transitus`
+size is the sum of the declared widths, which pass 2 already has.
+
 ## 9. Findings
 
 Numbered; each names the document and the sentence. Where the spec is the

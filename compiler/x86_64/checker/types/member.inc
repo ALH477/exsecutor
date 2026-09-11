@@ -515,7 +515,16 @@ proc __chk_ty_member, chkt_wMB, chkt_nMB
 	call	ast_decl_at
 	mov	eax, [rax + AstDecl.ty]
 	test	eax, eax
-	jnz	.out
+	jz	.field_err
+	; spec §5.2, D2: a field declared `T:o` READS as `T` -- the order is the
+	; place's, and this expression is a value. Writes come through here too
+	; (stmt.inc's `__chk_ty_lvalue` types its target with `__chk_ty_expr`),
+	; so `f.numerus = n` accepts a `u16` by the same line.
+	mov	rdi, rbx
+	mov	esi, eax
+	call	__chk_ty_placeless
+	jmp	.out
+  .field_err:
 	mov	rdi, rbx
 	call	__chk_ty_err
 	jmp	.out
@@ -1118,5 +1127,606 @@ proc __chk_ty_lambda, chkt_wLM, chkt_nLM
 	mov	rax, [chkt_vD2]
 	mov	[rbx + ChkTyWork.wredd], eax
 	mov	rax, r13
+	return
+endp
+
+; =============================================================================
+; spec §5.2's places and spec §8.6's struct literal (docs/design/wire-codec.md
+; D2, D3, D4; `[UNTESTED]` in the spec until tests/unit/chk_ty_structlit.asm,
+; chk_ty_transitus.asm and lwr_transitus.asm run)
+; =============================================================================
+
+; __chk_ty_placeless(w, t) -> rax = `t` with its BYTE ORDER dropped: `u16` for
+; `u16:maior`, `t` itself for anything that is not an ordered integer.
+;
+; SPEC §5.2, "Byte order belongs to places, not values": a field declared
+; `T:o` is a place whose bytes lie in order `o`; a read from it has type `T`
+; and a write to it accepts `T`. The declaration keeps `u16:maior` -- that is
+; what `EXS-E0321` and the layout rules are stated over, and `sig.inc`'s
+; "different ids" stays true of it -- but the EXPRESSION `f.numerus` is typed
+; by this routine, so no value in a program ever carries an order. The
+; alternative (an explicit `sicut` at every access) is the one D2 rejected.
+proc __chk_ty_placeless, chkt_wPL, chkt_tPL
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [chkt_wPL]
+	mov	r12, [chkt_tPL]
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_INT
+	jne	.same
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, r12
+	call	ast_type_at
+	movzx	ecx, byte [rax + AstType.order]
+	cmp	ecx, AST_ORD_NATIVUS
+	je	.same
+	movzx	esi, byte [rax + AstType.sign]
+	mov	edx, [rax + AstType.width]
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rcx, AST_ORD_NATIVUS
+	call	ast_type_int
+	return
+  .same:
+	mov	rax, r12
+	return
+endp
+
+; __chk_ty_wirefield(w, n) -> eax = 1 if expression `n` is a `Member` naming a
+; FIELD of a `@transitus` struct. Read after `n` has been typed, when
+; `Member.d` is this pass's answer and not pass 1's hint.
+proc __chk_ty_wirefield, chkt_wWF, chkt_nWF
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [chkt_wWF]
+	mov	r12, [chkt_nWF]
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_kind
+	cmp	rax, AST_MEMBER
+	jne	.no
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_node
+	mov	r12d, [rax + AstNode.d]
+	test	r12, r12
+	jz	.no
+	mov	rdi, r12
+	call	__chk_ty_is_pre
+	test	eax, eax
+	jnz	.no
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, r12
+	call	ast_decl_at
+	movzx	ecx, byte [rax + AstDecl.kind]
+	cmp	ecx, AST_D_FIELD
+	jne	.no
+	mov	esi, [rax + AstDecl.parent]
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	call	ast_decl_at
+	movzx	ecx, byte [rax + AstDecl.flags]
+	test	ecx, AST_F_TRANSITUS
+	jz	.no
+	mov	eax, 1
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
+; __chk_ty_wirebytes(w, sd) -> rax = the size in BYTES of `@transitus` struct
+; declaration `sd`, 0 when it is not one the aggregate cast admits, or -1 when
+; its widths do not sum to whole bytes.
+;
+; SPEC §5.2's CONDITION, CHECKED BY THE CAST ITSELF: "every field of `S` is an
+; unsigned integer as just stated -- a condition the cast checks itself
+; (`EXS-E0305` when it fails) rather than inheriting from the layout pass,
+; because the cast is where a byte pattern becomes a value". So this walks the
+; fields and answers 0 at the first that is not an `AST_TY_INT` with
+; `AST_SIGN_U` -- a `textus`, a `refero`, a nested struct, an `iN`, a float.
+;
+; THE SIZE IS THE SUM OF THE DECLARED WIDTHS, because a `@transitus` layout is
+; packed with no padding (spec §5.2, "offset = sum of the preceding widths"),
+; so it is computed here in pass 2 rather than read from pass 4's
+; `Ast.layout`, which does not exist yet when a body is typed
+; (checker/checker.inc runs `chk_layout` after `chk_types`). The two cannot
+; disagree for a struct that passes the condition: pass 4 lays out exactly
+; these widths in exactly this order. A sum that is not a whole number of
+; bytes is pass 4's `EXS-E0322` (rule 4); -1 tells the cast to add no second
+; diagnostic to that one.
+proc __chk_ty_wirebytes, chkt_wWB, chkt_dWB
+	uses	rbx, r12, r13, r14
+	locals
+		slot chkt_nWB, dq
+	endl
+	mov	rbx, [chkt_wWB]
+	mov	r12, [chkt_dWB]
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, r12
+	call	ast_decl_at
+	movzx	ecx, byte [rax + AstDecl.kind]
+	cmp	ecx, AST_D_STRUCT
+	jne	.no
+	movzx	ecx, byte [rax + AstDecl.flags]
+	test	ecx, AST_F_TRANSITUS
+	jz	.no
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	call	ast_decl_count
+	mov	[chkt_nWB], rax
+	xor	r14, r14			; bits so far
+	lea	r13, [r12 + 1]
+  .field:
+	cmp	r13, [chkt_nWB]
+	ja	.sum
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, r13
+	call	ast_decl_at
+	mov	ecx, [rax + AstDecl.parent]
+	cmp	rcx, r12
+	jne	.sum				; the struct's range ended
+	movzx	ecx, byte [rax + AstDecl.kind]
+	cmp	ecx, AST_D_FIELD
+	jne	.next
+	mov	esi, [rax + AstDecl.ty]
+	test	esi, esi
+	jz	.no
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	call	ast_type_at
+	movzx	ecx, byte [rax + AstType.kind]
+	cmp	ecx, AST_TY_INT
+	jne	.no
+	movzx	ecx, byte [rax + AstType.sign]
+	cmp	ecx, AST_SIGN_U
+	jne	.no
+	mov	ecx, [rax + AstType.width]
+	add	r14, rcx
+  .next:
+	inc	r13
+	jmp	.field
+  .sum:
+	test	r14, 7
+	jnz	.partial
+	mov	rax, r14
+	shr	rax, 3
+	return
+  .partial:
+	mov	rax, -1
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
+; __chk_ty_castagg(w, n, src, dst) -- spec §5.2's one aggregate cast, judged.
+; Called for a `Cast` whose source or target type is an aggregate (a struct or
+; an `acies`); raises `EXS-E0305` at the `Cast` unless the pair is a
+; `@transitus` struct `S` and `acies<u8, N>` with `N` = `S`'s size in bytes,
+; in either direction, and `S` meets the field condition. `EXS-E0305` is
+; `types.inc`'s existing answer to "are these two types related" for a cast
+; (docs/design/wire-codec.md section 4). Everything else aggregate -- two
+; structs, the same struct twice, a struct and `acies<u8, N+1>`, a struct
+; that is not `@transitus`, `acies<u16, N>` -- is refused: "No other aggregate
+; `sicut` exists" (spec §5.2).
+proc __chk_ty_castagg, chkt_wCA, chkt_nCA, chkt_sCA, chkt_tCA
+	uses	rbx, r12, r13, r14
+	locals
+	endl
+	mov	rbx, [chkt_wCA]
+	; which side is the struct
+	mov	rdi, rbx
+	mov	rsi, [chkt_sCA]
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_STRUCT
+	jne	.srcnot
+	mov	r12, [chkt_sCA]			; the struct
+	mov	r13, [chkt_tCA]			; the byte view
+	jmp	.pair
+  .srcnot:
+	mov	r12, [chkt_tCA]
+	mov	r13, [chkt_sCA]
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_STRUCT
+	jne	.bad
+  .pair:
+	; the other side: `acies` of `u8` (`AST_TY_INT`, unsigned, eight bits,
+	; no order), host placement
+	mov	rdi, rbx
+	mov	rsi, r13
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_ACIES
+	jne	.bad
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, r13
+	call	ast_type_at
+	movzx	ecx, byte [rax + AstType.place]
+	cmp	ecx, AST_PLACE_HOST
+	jne	.bad
+	mov	r14d, [rax + AstType.width]	; N
+	mov	r13d, [rax + AstType.a]		; the element type
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, AST_SIGN_U
+	mov	rdx, 8
+	mov	rcx, AST_ORD_NATIVUS
+	call	ast_type_int
+	cmp	rax, r13
+	jne	.bad
+	; the struct: `@transitus`, every field an unsigned integer, N bytes
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, r12
+	call	ast_type_at
+	mov	r12d, [rax + AstType.a]		; its declaration
+	mov	rdi, r12
+	call	__chk_ty_is_pre
+	test	eax, eax
+	jnz	.bad				; the prelude's `Scriptor`
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_wirebytes
+	test	rax, rax
+	jz	.bad
+	cmp	rax, -1
+	je	.out				; pass 4's EXS-E0322, not ours
+	cmp	rax, r14
+	jne	.bad
+  .out:
+	return
+  .bad:
+	mov	rdi, rbx
+	mov	rsi, 305
+	mov	rdx, [chkt_nCA]
+	call	__chk_ty_raise
+	return
+endp
+
+; __chk_ty_isplace(w, n) -> eax = 1 if expression `n` names a PLACE that
+; assignment may write through: a `Path`, a dereference, or a `Member` /
+; `Index` whose base is itself such a place. Anything else at the root -- a
+; call, a literal, a cast -- is a value, and `EXS-E0306`: spec §5.2's
+; "`(f sicut acies<u8, 17>)[0] = 1` is `EXS-E0306`, a non-lvalue target",
+; which the lvalue check could not see while it looked at the target node
+; alone (stmt.inc's `__chk_ty_lvalue`).
+proc __chk_ty_isplace, chkt_wIP, chkt_nIP
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [chkt_wIP]
+	mov	r12, [chkt_nIP]
+  .walk:
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_kind
+	cmp	rax, AST_PATH
+	je	.yes
+	cmp	rax, AST_MEMBER
+	je	.down
+	cmp	rax, AST_INDEX
+	je	.down
+	cmp	rax, AST_UNARY
+	jne	.no
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_node
+	movzx	ecx, word [rax + AstNode.aux]
+	cmp	ecx, AST_U_DEREF
+	je	.yes
+	jmp	.no
+  .down:
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_node
+	mov	r12d, [rax + AstNode.a]
+	jmp	.walk
+  .yes:
+	mov	eax, 1
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
+; __chk_ty_structlit(w, n) -> rax = the type of a `StructLit` (spec §8.6).
+;
+; THE PATH MUST NAME A `structura` -- `EXS-E0305` at the path otherwise
+; (wire-codec.md D3: "a `Path` that resolves to something that is not a
+; `structura`"). Judged on pass 1's resolution BEFORE the path is typed as a
+; type: a function or a binding name reaching `chk_ty_of_node` would be
+; `EXS-E0309` ("not a type"), which is true and is not the rule this
+; construct states. An unresolved name is typed anyway, so it gets the one
+; `EXS-E0301` every other type position gives it.
+;
+; THEN EVERY INITIALISER, IN SOURCE ORDER: a name the struct does not declare
+; is `EXS-E0301` at that initialiser; a name already given is `EXS-E0302`; a
+; known name's value is typed AGAINST THE FIELD'S TYPE WITHOUT ITS ORDER (D2)
+; -- so `numerus: 0x1234` gives the literal `u16` -- and `FieldInit.d` records
+; the field for the lowering, which stores in declaration order. Last, a
+; field no initialiser named is `EXS-E0304`, ONCE per literal at the literal:
+; the diagnostic cannot name the field (§8.3's text is the code's), so one per
+; missing field would be several identical lines. Missing fields are never
+; zero-filled (spec §8.6).
+;
+; Once the path has failed, the initialisers are still typed -- against the
+; error type, which accepts anything, so a literal among them does not add an
+; `EXS-E0308` to the one diagnostic that matters.
+proc __chk_ty_structlit, chkt_wSL, chkt_nSL
+	uses	rbx, r12, r13, r14
+	locals
+		slot chkt_aSL, dq	; the TyPath (or whatever stands there)
+		slot chkt_oSL, dq	; the FieldInit list
+		slot chkt_cSL, dq	; its count
+		slot chkt_tSL, dq	; the literal's type
+		slot chkt_dSL, dq	; the struct's declaration
+		slot chkt_iSL, dq
+		slot chkt_fSL, dq	; the current FieldInit
+		slot chkt_vSL, dq	; its value
+		slot chkt_mSL, dq	; its name
+		slot chkt_kSL, dq	; the field matched
+		slot chkt_zSL, dq
+	endl
+	mov	rbx, [chkt_wSL]
+	mov	r12, [chkt_nSL]
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_node
+	mov	ecx, [rax + AstNode.a]
+	mov	[chkt_aSL], rcx
+	mov	ecx, [rax + AstNode.b]
+	mov	[chkt_oSL], rcx
+	mov	ecx, [rax + AstNode.c]
+	mov	[chkt_cSL], rcx
+
+	; ---- the path --------------------------------------------------------
+	mov	rdi, rbx
+	mov	rsi, [chkt_aSL]
+	call	__chk_ty_kind
+	cmp	rax, AST_TYPATH
+	jne	.notpath
+	mov	rdi, rbx
+	mov	rsi, [chkt_aSL]
+	call	__chk_ty_node
+	mov	ecx, [rax + AstNode.a]		; the `Path`
+	mov	rdi, rbx
+	mov	rsi, rcx
+	call	__chk_ty_seg0
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	__chk_ty_node
+	mov	r13d, [rax + AstNode.d]		; pass 1's declaration, or 0
+	test	r13, r13
+	jz	.astype
+	mov	rdi, r13
+	call	__chk_ty_is_pre
+	test	eax, eax
+	jnz	.astype				; `Scriptor`: refused below
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, r13
+	call	ast_decl_at
+	movzx	ecx, byte [rax + AstDecl.kind]
+	cmp	ecx, AST_D_STRUCT
+	je	.astype
+	cmp	ecx, AST_D_TYPUS
+	je	.astype				; transparent: judged on what it names
+	; a function, a binding, an interface, an atom ...
+	mov	rdi, rbx
+	call	__chk_ty_err
+	mov	rdi, rbx
+	mov	rsi, [chkt_aSL]
+	mov	rdx, rax
+	call	__chk_ty_setty
+	jmp	.e0305
+  .astype:
+	mov	rdi, rbx
+	mov	rsi, [chkt_aSL]
+	call	chk_ty_of_node
+	mov	[chkt_tSL], rax
+	cmp	rax, 1
+	je	.failed				; already diagnosed (E0301)
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_STRUCT
+	jne	.e0305
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_tSL]
+	call	ast_type_at
+	mov	ecx, [rax + AstType.a]
+	mov	[chkt_dSL], rcx
+	mov	rdi, rcx
+	call	__chk_ty_is_pre
+	test	eax, eax
+	jnz	.e0305				; the prelude's `Scriptor` has no
+						; declared fields to name
+	jmp	.inits
+  .notpath:
+	; `a.B { ... }` -- the parser admits the suffix after `. IDENT`, and the
+	; operand is then a `Member`. Nothing in this language gives a name a
+	; namespace (sig.inc's `__chk_ty_path_type`: a multi-segment type path
+	; names nothing), so it is not a `structura`.
+	mov	rdi, rbx
+	mov	rsi, [chkt_aSL]
+	call	__chk_ty_expr
+	mov	rdi, rbx
+	mov	rsi, rax
+	mov	rdx, [chkt_aSL]
+	call	__chk_ty_settled
+  .e0305:
+	mov	rdi, rbx
+	mov	rsi, 305
+	mov	rdx, [chkt_aSL]
+	call	__chk_ty_raise
+  .failed:
+	; type every value against the error type, then answer it
+	mov	qword [chkt_iSL], 0
+  .f_loop:
+	mov	rax, [chkt_iSL]
+	cmp	rax, [chkt_cSL]
+	jae	.f_done
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_oSL]
+	add	rsi, [chkt_iSL]
+	call	ast_extra_at
+	mov	[chkt_fSL], rax
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	__chk_ty_node
+	mov	ecx, [rax + AstNode.b]
+	mov	[chkt_vSL], rcx
+	mov	rdi, rbx
+	call	__chk_ty_err
+	mov	r14, rax
+	mov	rdi, rbx
+	mov	rsi, [chkt_vSL]
+	mov	rdx, r14
+	call	__chk_ty_want
+	mov	rdi, rbx
+	mov	rsi, [chkt_fSL]
+	mov	rdx, r14
+	call	__chk_ty_setty
+	inc	qword [chkt_iSL]
+	jmp	.f_loop
+  .f_done:
+	mov	rdi, rbx
+	call	__chk_ty_err
+	return
+
+	; ---- the initialisers, in source order ---------------------------------
+  .inits:
+	mov	qword [chkt_iSL], 0
+  .i_loop:
+	mov	rax, [chkt_iSL]
+	cmp	rax, [chkt_cSL]
+	jae	.i_done
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_oSL]
+	add	rsi, [chkt_iSL]
+	call	ast_extra_at
+	mov	[chkt_fSL], rax
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	__chk_ty_node
+	mov	ecx, [rax + AstNode.a]
+	mov	[chkt_mSL], rcx
+	mov	ecx, [rax + AstNode.b]
+	mov	[chkt_vSL], rcx
+	mov	rdi, rbx
+	mov	rsi, [chkt_dSL]
+	mov	rdx, [chkt_mSL]
+	call	__chk_ty_field_of
+	mov	[chkt_kSL], rax
+	test	rax, rax
+	jnz	.known
+	; EXS-E0301: the name does not resolve in the struct's scope
+	mov	rdi, rbx
+	mov	rsi, 301
+	mov	rdx, [chkt_fSL]
+	call	__chk_ty_raise
+	mov	rdi, rbx
+	call	__chk_ty_err
+	mov	r14, rax
+	jmp	.value
+  .known:
+	; EXS-E0302: the same name earlier in this literal
+	xor	r13, r13
+  .dup:
+	cmp	r13, [chkt_iSL]
+	jae	.nodup
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_oSL]
+	add	rsi, r13
+	call	ast_extra_at
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	__chk_ty_node
+	mov	ecx, [rax + AstNode.a]
+	cmp	rcx, [chkt_mSL]
+	je	.isdup
+	inc	r13
+	jmp	.dup
+  .isdup:
+	mov	rdi, rbx
+	mov	rsi, 302
+	mov	rdx, [chkt_fSL]
+	call	__chk_ty_raise
+  .nodup:
+	mov	rdi, rbx
+	mov	rsi, [chkt_fSL]
+	mov	rdx, [chkt_kSL]
+	call	__chk_ty_setd
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_kSL]
+	call	ast_decl_at
+	mov	esi, [rax + AstDecl.ty]
+	test	esi, esi
+	jnz	.fty
+	mov	rdi, rbx
+	call	__chk_ty_err
+	mov	r14, rax
+	jmp	.value
+  .fty:
+	mov	rdi, rbx
+	call	__chk_ty_placeless
+	mov	r14, rax
+  .value:
+	mov	rdi, rbx
+	mov	rsi, [chkt_vSL]
+	mov	rdx, r14
+	call	__chk_ty_want
+	mov	rdi, rbx
+	mov	rsi, [chkt_fSL]
+	mov	rdx, r14
+	call	__chk_ty_setty
+	inc	qword [chkt_iSL]
+	jmp	.i_loop
+  .i_done:
+
+	; ---- every field named? ------------------------------------------------
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	call	ast_decl_count
+	mov	[chkt_zSL], rax
+	mov	r13, [chkt_dSL]
+	inc	r13
+  .m_field:
+	cmp	r13, [chkt_zSL]
+	ja	.m_done
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, r13
+	call	ast_decl_at
+	mov	ecx, [rax + AstDecl.parent]
+	cmp	rcx, [chkt_dSL]
+	jne	.m_done
+	movzx	ecx, byte [rax + AstDecl.kind]
+	cmp	ecx, AST_D_FIELD
+	jne	.m_next
+	xor	r14, r14
+  .m_find:
+	cmp	r14, [chkt_cSL]
+	jae	.missing
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_oSL]
+	add	rsi, r14
+	call	ast_extra_at
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	__chk_ty_node
+	mov	ecx, [rax + AstNode.d]
+	cmp	rcx, r13
+	je	.m_next
+	inc	r14
+	jmp	.m_find
+  .missing:
+	mov	rdi, rbx
+	mov	rsi, 304
+	mov	rdx, r12
+	call	__chk_ty_raise
+	jmp	.m_done
+  .m_next:
+	inc	r13
+	jmp	.m_field
+  .m_done:
+	mov	rax, [chkt_tSL]
 	return
 endp

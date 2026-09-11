@@ -25,15 +25,23 @@
 ; checker/types/sig.inc's `chk_ty_litval` computes it and `__chk_ty_fits`
 ; then checks it against the width the literal lands in.
 ;
-; THE TOKEN IS NOT BUILT BY THE LEXER HERE, deliberately. Making `0x1021` one
-; `INT` token is the lexer's half of D6 and is landing separately; on this
-; branch lexer/lex.inc still gives `0x…` `EXS-E0210`. So each row's source
+; THE TOKEN IS NOT BUILT BY THE LEXER HERE, deliberately. Each row's source
 ; carries a decimal placeholder, the front end runs normally, and then the
 ; ONE `Lit` node's text id is re-pointed at the interned hex spelling before
-; `chk_run` -- exactly the tree the lexer's `INT` token will produce, since
+; `chk_run` -- exactly the tree the lexer's `INT` token produces, since
 ; `Lit.a` is an interner id and the checker reads nothing else of the token
-; (typed-ast.md section 2.3: `Lit` keeps text). When the lexer lands, the same
-; rows can be written as source and this indirection deleted.
+; (typed-ast.md section 2.3: `Lit` keeps text).
+;
+; This was written while the lexer's half of D6 was landing separately, and
+; said the indirection would be deleted once it had. It has landed
+; (lexer/lex.inc lexes `0x[0-9a-fA-F]+` as one INT), and the indirection
+; STAYS, for a reason that only became visible then: three of the rows
+; below -- `0x`, `0x1g`, `0X1` -- are malformed spellings the lexer now
+; rejects as `EXS-E0210` before the checker ever sees them. Written as
+; source they would test the lexer and stop testing `chk_ty_litval`'s own
+; refusal, which is this fixture's subject; the well-formed rows are also
+; covered from real source by chk_ty_structlit.asm (`0x1234`) and
+; lwr_forma.asm (`0xdeadbeef`, `0xab12cd`).
 ;
 ; Rows, each checking the diagnostic count and, when accepted, the `konst`:
 ;

@@ -35,7 +35,8 @@ calls):
    39 fixtures (`IR_FIXTURE_FLOOR`).
 4. **`tests/programs/`** — Exsecutor sources, RUN. Each directory is one
    program: `exsc aedifica --hospes x86_64-linux SRC... -o OUT`, `fasmg OUT
-   BIN`, run, check. 6 programs (`PROGRAM_FIXTURE_FLOOR`).
+   BIN`, run, check. 5 programs run (`PROGRAM_FIXTURE_FLOOR`) and 1 is
+   deferred (`forma/`, type-checked only; see below).
 
 Phases 3 and 4 are the first in this script to execute code a compiler
 *emitted*. Until them a `tests/unit/` fixture could only compare emitted
@@ -165,9 +166,20 @@ unit is the directory's own `*.exsc` in byte order (`LC_ALL=C`), or
 live elsewhere; `saluta/` uses it to build the hello world from `examples/`
 rather than keep a second copy. A file `expected.out` is the stdout
 reference when present. `exsc-exit=N` expects `exsc` itself to fail with
-shell status `N` and runs nothing; `ordo_maior_custodia/` uses it for the
-lowering's byte-order guard, until milestone M6 replaces it with a program
-that reads a big-endian field.
+shell status `N` and runs nothing; `ordo_maior_custodia/` used it for the
+lowering's byte-order guard until milestone M6 removed the guard, and the
+positive test of the read it refused is now `tests/unit/lwr_transitus.asm`.
+
+`status=deferred needs=A,B` marks a program written ahead of the backend
+that can run it, in the conformance suite's sense of the word: it is
+compiled without `-o` (lexed, parsed, type-checked), that must exit 0 and
+is counted as one check, and nothing is assembled or run. It is reported
+`DEFERRED` with what it waits on and never counted toward
+`PROGRAM_FIXTURE_FLOOR`, which counts directories that run. Its
+`expect-exit=`/`abort=`/`stdout=` stay in the directive, so un-deferring
+is deleting two keys. `forma/` is the first: milestone M6's program, which
+lowers to verified IR today (`tests/unit/lwr_forma.asm` lowers that very
+file) and waits on the emitter's M3/M4 opcodes.
 
 ## Adding a case
 

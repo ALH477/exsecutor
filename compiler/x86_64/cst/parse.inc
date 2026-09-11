@@ -63,15 +63,16 @@
 ;   4. NO NODE PER PRECEDENCE LEVEL WHEN THE LEVEL DID NOT APPLY -- see
 ;      cst/kinds.inc's header, departure 1. Twelve nested nodes per atom is what
 ;      a literal reading produces.
-;   5. `ExprNS` IS TODAY EXACTLY `Expr`. §8.6 defines `ExprNS` as "the
-;      expression grammar with that suffix disabled", where the suffix is the
-;      struct literal -- which is `[OPEN]` and therefore not implemented at
-;      all, so the two grammars currently coincide. `__cst_expr_ns` exists as
-;      its own entry point anyway, called from exactly the seven positions
-;      §8.6 names, so that admitting struct literals later touches level 1 and
-;      nothing else. That is what §8.6 asked for; it is recorded here because
-;      a reader diffing the two routines would otherwise conclude one of them
-;      is dead code.
+;   5. `ExprNS` WAS EXACTLY `Expr` UNTIL STRUCT LITERALS WERE SETTLED. §8.6
+;      defines `ExprNS` as "the expression grammar with that suffix disabled",
+;      where the suffix is the struct literal; while that was `[OPEN]` the two
+;      grammars coincided and `__cst_expr_ns` existed only so that admitting
+;      the literal later would touch level 1 and nothing else. It did:
+;      docs/design/wire-codec.md D3 settled the syntax, `__cst_struct_lit`
+;      parses it, and the whole difference between the two grammars is one
+;      flag (`CstParser.nolit`) set by `__cst_expr_ns`, cleared by
+;      `__cst_expr_lit` inside brackets and blocks, and read by
+;      `__cst_postfix` alone.
 ;   6. `'abi'` IS WRITTEN AS A TERMINAL AND IS NOT ONE. §8.6's `ExternusBlock`
 ;      spells `'externus' '(' STRING ',' 'abi' ':' IDENT ')'`, but §8.4 lists
 ;      `abi` under tier 2 -- contextual, "meaningful only in a specific
@@ -220,6 +221,8 @@ struct CstParser
 	field lasterr,   dd	; token index the last error was reported at
 	field ndiag,     dd	; diagnostics THIS parse recorded
 	field firstcode, dd	; numeric part of the first one; 0 = none
+	field nolit,     dd	; 1 inside `ExprNS`: no struct-literal suffix
+	field nlpad,     dd
 	ostk dd CST_OPEN_MAX*4 dup (?)	; the open delimiters, innermost last
 end struct
 
@@ -2459,9 +2462,9 @@ proc __cst_lambda, p
 endp
 
 ; __cst_primary(p) -> eax = 1 if what was parsed is a PATH SEGMENT, which is
-; the one fact `__cst_postfix` needs: §8.6 restricts generic arguments (and,
-; when they exist, struct literals) to "directly after a path segment (`IDENT`,
-; `. IDENT`, or `<…>`)".
+; the one fact `__cst_postfix` needs: §8.6 restricts generic arguments and
+; struct literals to "directly after a path segment (`IDENT`, `. IDENT`, or
+; `<…>`)".
 proc __cst_primary, p
 	uses	rbx, r12, r13
 	locals
@@ -2523,7 +2526,7 @@ proc __cst_primary, p
 	mov	esi, PUN_LPAREN
 	call	__cst_xpun
 	mov	rdi, rbx
-	call	__cst_expr
+	call	__cst_expr_lit
 	mov	rdi, rbx
 	mov	esi, PUN_RPAREN
 	call	__cst_xpun
@@ -2617,7 +2620,7 @@ proc __cst_call_args, p
 	test	eax, eax
 	jz	.bad
 	mov	rdi, rbx
-	call	__cst_expr
+	call	__cst_expr_lit
 	jmp	.sep
   .bad:
 	mov	rdi, rbx
@@ -2644,7 +2647,9 @@ proc __cst_call_args, p
 	return
 endp
 
-; __cst_postfix(p) -- level 1: `.f` `(…)` `[…]` `?` `<…>`, left-associative.
+; __cst_postfix(p) -- level 1: `.f` `(…)` `[…]` `?` `<…>` `{…}`,
+; left-associative. The last two only after a path segment, and `{…}` only
+; outside `ExprNS`.
 proc __cst_postfix, p
 	uses	rbx, r12, r13, r14
 	locals
@@ -2686,6 +2691,15 @@ proc __cst_postfix, p
 	call	__cst_pun
 	test	eax, eax
 	jnz	.generic
+	; spec §8.6's `StructLit`, after a path segment only and never in
+	; `ExprNS` -- the one place `CstParser.nolit` is read
+	cmp	dword [rbx + CstParser.nolit], 0
+	jne	.done
+	mov	rdi, rbx
+	mov	esi, PUN_LBRACE
+	call	__cst_pun
+	test	eax, eax
+	jnz	.structlit
   .done:
 	cmp	qword [nsuf], 0
 	je	.cancel
@@ -2728,7 +2742,7 @@ proc __cst_postfix, p
 	mov	esi, PUN_LBRACKET
 	call	__cst_xpun
 	mov	rdi, rbx
-	call	__cst_expr
+	call	__cst_expr_lit
 	mov	rdi, rbx
 	mov	esi, PUN_RBRACKET
 	call	__cst_xpun
@@ -2758,6 +2772,98 @@ proc __cst_postfix, p
 	inc	qword [nsuf]
 	mov	r13d, 1
 	jmp	.suffix
+  .structlit:
+	mov	rdi, rbx
+	call	__cst_struct_lit
+	inc	qword [nsuf]
+	xor	r13d, r13d		; a literal is not a path segment
+	jmp	.suffix
+endp
+
+; __cst_struct_lit(p) -- spec §8.6's `StructLit ::= '{' [FieldInit (','
+; FieldInit)*] '}'`, `FieldInit ::= IDENT ':' Expr`, as a
+; `CST_STRUCT_LIT_SUFFIX` over `CST_FIELD_INIT`s. `[UNTESTED]` in the spec;
+; docs/design/wire-codec.md D3.
+;
+; COMMAS ARE MANDATORY AND A TRAILING ONE IS `EXS-E0201`, at the `}` it runs
+; into -- "no trailing comma, as in every other list here" (§8.6). Which
+; fields are present, missing or doubled is the CHECKER's (`EXS-E0301`/
+; `E0302`/`E0304`): the grammar admits any identifiers, as a call admits any
+; argument count.
+;
+; The initialisers are `__cst_expr_lit`: inside the literal's own braces a
+; nested literal is unambiguous even when the literal itself sits in a
+; parenthesised `ExprNS` position.
+proc __cst_struct_lit, p
+	uses	rbx, r12, r13
+	locals
+	endl
+	mov	rbx, [p]
+	mov	rdi, [rbx + CstParser.tree]
+	call	cst_open
+	mov	r12, rax
+	mov	rdi, rbx
+	mov	esi, PUN_LBRACE
+	call	__cst_xpun
+  .field:
+	mov	rdi, rbx
+	mov	esi, PUN_RBRACE
+	call	__cst_pun
+	test	eax, eax
+	jnz	.close
+	mov	rdi, rbx
+	xor	esi, esi
+	call	__cst_kindn
+	cmp	eax, TOK_EOF
+	je	.close
+	cmp	eax, TOK_IDENT
+	jne	.bad
+	mov	rdi, [rbx + CstParser.tree]
+	call	cst_open
+	mov	r13, rax
+	mov	rdi, rbx
+	call	__cst_bump		; the field's name
+	mov	rdi, rbx
+	mov	esi, PUN_COLON
+	call	__cst_xpun
+	mov	rdi, rbx
+	call	__cst_expr_lit
+	mov	rdi, [rbx + CstParser.tree]
+	mov	esi, CST_FIELD_INIT
+	mov	rdx, r13
+	call	cst_close
+	jmp	.sep
+  .bad:
+	mov	rdi, rbx
+	mov	esi, CST_SYNC_LIST
+	mov	edx, PUN_RBRACE
+	call	__cst_error_skip
+  .sep:
+	mov	rdi, rbx
+	mov	esi, PUN_COMMA
+	call	__cst_pun
+	test	eax, eax
+	jz	.close
+	mov	rdi, rbx
+	call	__cst_bump
+	; `S { a: 1, }` -- the list ended on a comma
+	mov	rdi, rbx
+	mov	esi, PUN_RBRACE
+	call	__cst_pun
+	test	eax, eax
+	jz	.field
+	mov	rdi, rbx
+	mov	esi, 201
+	call	__cst_err
+  .close:
+	mov	rdi, rbx
+	mov	esi, PUN_RBRACE
+	call	__cst_xpun
+	mov	rdi, [rbx + CstParser.tree]
+	mov	esi, CST_STRUCT_LIT_SUFFIX
+	mov	rdx, r12
+	call	cst_close
+	return
 endp
 
 ; __cst_unary(p) -- level 2: prefix `-` `&` `*`. §8.6: "`&` and `*` are prefix
@@ -3223,17 +3329,46 @@ endp
 ; expression: `si`, `sin`, `dum`, `terminus`, the `per`/`quisque` range,
 ; `discerne`, and the right-hand side of `sub`."
 ;
-; IT IS TODAY THE SAME GRAMMAR AS `Expr`, and that is not an oversight -- see
-; this file's header, finding 5. Struct-literal syntax is `[OPEN]`; §8.6
-; reserves its position and asks that `ExprNS` be defined now "so admitting it
-; later touches nothing outside level 1". This routine is that definition, and
-; every one of the seven positions calls it, so the later change is one flag in
-; one place instead of seven call sites to find.
+; THE FLAG IS `CstParser.nolit`, read at level 1 by `__cst_postfix` and
+; nowhere else. It was one call site away from existing for as long as struct
+; literals were `[OPEN]` (this file's header, finding 5, records the wait);
+; `docs/design/wire-codec.md` D3 settled the syntax and this is the flag.
+;
+; SAVED AND RESTORED, NOT SET AND CLEARED: `si (S { a: 1 }).a eq 1 {` reaches
+; `__cst_expr_lit` inside the parentheses, which clears the flag for the
+; bracketed sub-expression and must hand it back SET to the rest of the
+; condition -- or the `{` of the block would be read as a literal.
 proc __cst_expr_ns, p
+	uses	rbx, r12
 	locals
 	endl
-	mov	rdi, [p]
+	mov	rbx, [p]
+	mov	r12d, [rbx + CstParser.nolit]
+	mov	dword [rbx + CstParser.nolit], 1
+	mov	rdi, rbx
 	call	__cst_expr
+	mov	[rbx + CstParser.nolit], r12d
+	return
+endp
+
+; __cst_expr_lit(p) -- `Expr` with the struct-literal suffix ADMITTED again,
+; whatever the enclosing position said. Called where an expression sits
+; between brackets of its own -- `( … )`, a call's `( … )`, an index's
+; `[ … ]`, a literal's own `{ … }` -- and, through `__cst_block`, for every
+; statement of a block. Inside brackets a `{` cannot be the block `ExprNS`
+; guards, which is the same rule Rust applies and the one §8.6's "a literal
+; in one of those positions is parenthesised" presupposes: parenthesising
+; would not help if the flag survived the parenthesis.
+proc __cst_expr_lit, p
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [p]
+	mov	r12d, [rbx + CstParser.nolit]
+	mov	dword [rbx + CstParser.nolit], 0
+	mov	rdi, rbx
+	call	__cst_expr
+	mov	[rbx + CstParser.nolit], r12d
 	return
 endp
 
@@ -3411,10 +3546,15 @@ endp
 ; token), and a second "expected `}`" for a brace the author never opened is
 ; the cascade this rule exists to prevent.
 proc __cst_block, p
-	uses	rbx, r12, r13
+	uses	rbx, r12, r13, r14
 	locals
 	endl
 	mov	rbx, [p]
+	; a block's statements are full `Expr` positions even when the block
+	; itself sits inside an `ExprNS` (a lambda in a `si` head); the flag is
+	; the enclosing position's and comes back at the `}`
+	mov	r14d, [rbx + CstParser.nolit]
+	mov	dword [rbx + CstParser.nolit], 0
 	mov	rdi, [rbx + CstParser.tree]
 	call	cst_open
 	mov	r12, rax
@@ -3451,6 +3591,7 @@ proc __cst_block, p
 	mov	esi, CST_BLOCK
 	mov	rdx, r12
 	call	cst_close
+	mov	[rbx + CstParser.nolit], r14d
 	return
 endp
 
@@ -4877,6 +5018,7 @@ proc cst_parse, p, lx, t
 	mov	dword [rbx + CstParser.lasterr], -1
 	mov	dword [rbx + CstParser.ndiag], 0
 	mov	dword [rbx + CstParser.firstcode], 0
+	mov	dword [rbx + CstParser.nolit], 0
 
 	mov	rdi, rbx
 	call	__cst_module

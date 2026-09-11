@@ -542,9 +542,9 @@ proc __chk_ty_lvalue, chkt_wLV, chkt_nLV
 	cmp	r14, AST_PATH
 	je	.path
 	cmp	r14, AST_MEMBER
-	je	.place
+	je	.within
 	cmp	r14, AST_INDEX
-	je	.place
+	je	.within
 	cmp	r14, AST_UNARY
 	je	.unary
 	; a call result, a literal, an operator application: not a place
@@ -560,6 +560,22 @@ proc __chk_ty_lvalue, chkt_wLV, chkt_nLV
 	mov	rdx, r12
 	call	__chk_ty_settled
 	return
+
+  .within:
+	; a field or an element is a place only inside a place: `x.f = e` and
+	; `w[j] = e` are; `f().x = e` and spec §5.2's `(f sicut acies<u8,
+	; 17>)[0] = 1` are not -- a cast's result is a value (member.inc's
+	; `__chk_ty_isplace`)
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_isplace
+	test	eax, eax
+	jnz	.place
+	mov	rdi, rbx
+	mov	rsi, 306
+	mov	rdx, r12
+	call	__chk_ty_raise
+	jmp	.place
 
   .unary:
 	; `*p = e` is a place; `-x = e` and `&x = e` are not
@@ -823,6 +839,35 @@ proc __chk_ty_for, chkt_wFR, chkt_nFR
 	mov	rdi, rbx
 	mov	rsi, [chkt_aFR]
 	call	__chk_ty_expr
+	test	rax, rax
+	jnz	.iter_typed
+	; SPEC §8.5: "A range both of whose bounds are pending literals (`per i
+	; in 0..17`) types them, and the variable, as `mensura` -- the index
+	; type, and what anyone writes over an array." Before this rule
+	; `__chk_ty_settled` made every such loop `EXS-E0308`. Only a RANGE gets
+	; the expectation: any other pending iterable is not iterable at all
+	; and keeps its E0308 (a bare `per i in 3`).
+	mov	rdi, rbx
+	mov	rsi, [chkt_aFR]
+	call	__chk_ty_kind
+	cmp	rax, AST_BINARY
+	jne	.iter_pending
+	mov	rdi, rbx
+	mov	rsi, [chkt_aFR]
+	call	__chk_ty_node
+	movzx	ecx, word [rax + AstNode.aux]
+	cmp	ecx, AST_OP_RANGE
+	jne	.iter_pending
+	mov	rdi, rbx
+	call	__chk_ty_mensura
+	mov	rdi, rbx
+	mov	rsi, [chkt_aFR]
+	mov	rdx, rax
+	call	__chk_ty_expect
+	jmp	.iter_typed
+  .iter_pending:
+	xor	eax, eax
+  .iter_typed:
 	mov	rdi, rbx
 	mov	rsi, rax
 	mov	rdx, [chkt_aFR]

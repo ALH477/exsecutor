@@ -1,0 +1,7 @@
+# forma.exsc's header lists what each exit status means. Deferred: exsc
+# checks it and lowers it to verified IR (tests/unit/lwr_forma.asm lowers
+# this very file), and the emitter cannot yet produce `maior` loads and
+# stores, `loadbits`/`storebits`, `copy`, `chk`, `index`, `xor`/`shl`/`zext`
+# or any width below 64 -- milestones M3 and M4 of docs/design/wire-codec.md.
+# Un-deferring it is deleting `status=` and `needs=`.
+TEST: status=deferred needs=backend_narrow,backend_order,backend_bits,backend_aggregates expect-exit=0

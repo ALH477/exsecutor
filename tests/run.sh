@@ -49,13 +49,22 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # this -- the test is `found < floor` -- so a floor that drifts below the real
 # count still catches the failure mode that matters: a discovery mechanism
 # silently finding nothing. Drift costs precision, not the guarantee.
-UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-149}"
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-154}"
 
 # The same guarantee for the two run phases below: tests/ir/*.ir fixtures,
 # and tests/programs/*/ directories. Same rule -- `found < floor` fails --
 # and the same reason. Raise each in the commit that adds a fixture.
+#
+# PROGRAM_FIXTURE_FLOOR COUNTS DIRECTORIES THAT RUN, not directories that
+# exist: a `status=deferred` program (run_program_tests' header) is counted
+# separately and never toward this floor, for the reason the conformance
+# suite never counts a deferred entry as passing. It went from 6 to 5 when
+# ordo_maior_custodia/ was retired -- that directory expected exsc to REFUSE
+# a `u64:maior` field read, milestone M6 made the read compile, and the
+# positive test of what it compiles to is tests/unit/lwr_transitus.asm
+# (`load u64 %0 0 maior`), because the emitter cannot run a `maior` load yet.
 IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-39}"
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-6}"
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-5}"
 
 PASS=0
 FAIL=0
@@ -546,12 +555,13 @@ check_run() {
 }
 
 # parse_run_keys LABEL KV... -- sets k_expect_exit k_abort k_stdout k_emit_exit
-# k_exsc_exit k_sources from the tokens; returns 1 (having said why) on an
-# unknown key, a malformed number, or a stdout= that does not exist.
+# k_exsc_exit k_sources k_status k_needs from the tokens; returns 1 (having
+# said why) on an unknown key, a malformed number, or a stdout= that does not
+# exist.
 parse_run_keys() {
   local label="$1"; shift
   k_expect_exit=""; k_abort=""; k_stdout=""; k_emit_exit="0"; k_exsc_exit="0"
-  k_sources=""
+  k_sources=""; k_status="run"; k_needs=""
   local kv
   for kv in "$@"; do
     case "$kv" in
@@ -561,9 +571,21 @@ parse_run_keys() {
       emit-exit=*)   k_emit_exit="${kv#emit-exit=}" ;;
       exsc-exit=*)   k_exsc_exit="${kv#exsc-exit=}" ;;
       sources=*)     k_sources="${kv#sources=}" ;;
+      status=*)      k_status="${kv#status=}" ;;
+      needs=*)       k_needs="${kv#needs=}" ;;
       *) bad "$label: unknown directive key '$kv'"; return 1 ;;
     esac
   done
+  if [[ "$k_status" != "run" && "$k_status" != "deferred" ]]; then
+    bad "$label: unknown status='$k_status' (expected run|deferred)"; return 1
+  fi
+  if [[ "$k_status" == "deferred" && -z "$k_needs" ]]; then
+    bad "$label: status=deferred but no needs= -- say what it is waiting on"
+    return 1
+  fi
+  if [[ "$k_status" == "run" && -n "$k_needs" ]]; then
+    bad "$label: needs= without status=deferred"; return 1
+  fi
   local n
   for n in "$k_expect_exit" "$k_abort" "$k_emit_exit" "$k_exsc_exit"; do
     if [[ -n "$n" && ! "$n" =~ ^[0-9]+$ ]]; then
@@ -646,8 +668,8 @@ run_ir_tests() {
     fi
     # shellcheck disable=SC2086
     parse_run_keys "$name" $directive || continue
-    if [[ -n "$k_sources" || "$k_exsc_exit" != "0" ]]; then
-      bad "$name: sources=/exsc-exit= belong to tests/programs/, not an IR fixture"
+    if [[ -n "$k_sources" || "$k_exsc_exit" != "0" || "$k_status" != "run" ]]; then
+      bad "$name: sources=/exsc-exit=/status= belong to tests/programs/, not an IR fixture"
       continue
     fi
 
@@ -700,6 +722,17 @@ run_program_tests() {
   #   exsc-exit=N   exsc's exit status (default 0), as the shell reports it
   #                 (132 = an `rassert` in the compiler). Non-zero: nothing
   #                 is assembled or run.
+  #   status=deferred needs=A,B
+  #                 the program is WRITTEN AHEAD of the machinery that can
+  #                 run it (the conformance suite's own word and rule): it is
+  #                 compiled WITHOUT -o -- lexed, parsed, type-checked -- and
+  #                 that must exit 0, which is a real check and is counted as
+  #                 one; nothing is lowered to a file, assembled or run, the
+  #                 directory is reported DEFERRED with what it waits on, and
+  #                 it is NEVER counted toward PROGRAM_FIXTURE_FLOOR or as a
+  #                 program that ran. Its expect-exit=/abort=/stdout= stay in
+  #                 the directive, so un-deferring is deleting two keys.
+  #                 needs= is required; status=run is the default.
   # A file <name>/expected.out is the stdout reference when present (as if
   # stdout=tests/programs/<name>/expected.out); stdout= and expected.out
   # together are refused as ambiguous.
@@ -727,11 +760,10 @@ run_program_tests() {
     return
   fi
 
-  local found=0 dir
+  local found=0 deferred=0 dir
   shopt -s nullglob
   for dir in "$REPO_ROOT"/tests/programs/*/; do
     dir="${dir%/}"
-    found=$((found + 1))
     local name; name="$(basename "$dir")"
     local w="$workdir/$name"
     echo "-- $name/"
@@ -777,6 +809,27 @@ run_program_tests() {
       ref="tests/programs/$name/expected.out"
     fi
 
+    if [[ "$k_status" == "deferred" ]]; then
+      if [[ "$k_exsc_exit" != "0" ]]; then
+        bad "$name: status=deferred is a program written ahead of its backend; exsc-exit= is a refusal"
+        continue
+      fi
+      want_one_outcome "$name" || continue
+      deferred=$((deferred + 1))
+      local drc=0
+      "$exsc" aedifica --hospes x86_64-linux "${srcs[@]}" \
+        >"$w.exsclog" 2>&1 || drc=$?
+      if [[ "$drc" -eq 0 ]]; then
+        ok "$name: type-checks clean (exsc aedifica, no -o)"
+      else
+        bad "$name: exsc aedifica (no -o) exit=$drc -- a deferred program must still check"
+        sed 's/^/         /' "$w.exsclog"
+      fi
+      note "$name: DEFERRED (needs=$k_needs) -- not assembled, not run, not counted as passing"
+      continue
+    fi
+    found=$((found + 1))
+
     local crc=0
     "$exsc" aedifica --hospes x86_64-linux "${srcs[@]}" -o "$w.asm" \
       >"$w.exsclog" 2>&1 || crc=$?
@@ -809,8 +862,9 @@ run_program_tests() {
   done
   shopt -u nullglob
   rm -rf "$workdir"
-  floor_check "program directories in tests/programs/" "$found" \
+  floor_check "program directories in tests/programs/ that run" "$found" \
     "$PROGRAM_FIXTURE_FLOOR" PROGRAM_FIXTURE_FLOOR
+  note "$deferred program directories DEFERRED (type-checked only; not counted as passing)"
 }
 
 run_unit_tests

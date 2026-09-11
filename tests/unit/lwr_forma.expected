@@ -1,0 +1,398 @@
+functio @redundantia (ptr u64) -> u16 numeri ad_parem vetita explicita conservata {
+b0:
+%0 = param ptr 0
+%1 = param u64 1
+%2 = iconst u16 65535
+%3 = iconst u64 0
+jmp b1
+b1:
+%4 = phi u16 b0 %2 b4 %18
+%5 = phi u64 b0 %3 b4 %17
+%6 = cmp.lt u64 %5 %1
+br %6 b2 b3
+b2:
+%7 = iconst u64 17
+chk %5 %7
+%8 = index %0 %5 1
+%9 = load u8 %8 0 nativus
+%10 = zext u16 %9
+%11 = iconst u16 8
+%12 = shl u16 %10 %11
+%13 = xor u16 %4 %12
+%14 = iconst u64 0
+%15 = iconst u64 8
+jmp b5
+b3:
+ret %4
+b4:
+%16 = iconst u64 1
+%17 = addw u64 %5 %16
+jmp b1
+b5:
+%18 = phi u16 b2 %13 b8 %31
+%19 = phi u64 b2 %14 b8 %24
+%20 = cmp.lt u64 %19 %15
+br %20 b6 b7
+b6:
+%21 = iconst u16 32768
+%22 = cmp.ge u16 %18 %21
+br %22 b9 b10
+b7:
+jmp b4
+b8:
+%23 = iconst u64 1
+%24 = addw u64 %19 %23
+jmp b5
+b9:
+%25 = iconst u16 1
+%26 = shl u16 %18 %25
+%27 = iconst u16 4129
+%28 = xor u16 %26 %27
+jmp b11
+b10:
+%29 = iconst u16 1
+%30 = shl u16 %18 %29
+jmp b11
+b11:
+%31 = phi u16 b9 %28 b10 %30
+jmp b8
+}
+functio @initium (ptr) -> u8 numeri ad_parem vetita explicita conservata {
+b0:
+%0 = param ptr 0
+%1 = slot 17 1
+%2 = iconst u8 211
+%3 = iconst u4 3
+%4 = iconst u4 1
+%5 = iconst u16 4660
+%6 = iconst u16 1
+%7 = iconst u16 65535
+%8 = iconst u32 3735928559
+%9 = iconst u24 11211469
+%10 = iconst u16 0
+store u8 %1 0 nativus %2
+storebits u4 %1 1 0 %4
+storebits u4 %1 1 4 %3
+store u16 %1 2 maior %5
+store u16 %1 4 maior %6
+store u16 %1 6 maior %7
+store u32 %1 8 maior %8
+store u24 %1 12 maior %9
+store u16 %1 15 maior %10
+%11 = iconst u64 15
+%12 = call u16 @redundantia %1 %11
+store u16 %1 15 maior %12
+%13 = load u16 %1 15 maior
+%14 = iconst u16 9408
+%15 = cmp.ne u16 %13 %14
+br %15 b1 b2
+b1:
+%16 = iconst u8 1
+ret %16
+b2:
+%17 = slot 17 1
+copy 17 %17 %1
+%18 = iconst u64 0
+%19 = iconst u64 17
+chk %18 %19
+%20 = index %17 %18 1
+%21 = load u8 %20 0 nativus
+%22 = iconst u8 211
+%23 = cmp.ne u8 %21 %22
+br %23 b3 b4
+b3:
+%24 = iconst u8 10
+ret %24
+b4:
+%25 = iconst u64 1
+%26 = iconst u64 17
+chk %25 %26
+%27 = index %17 %25 1
+%28 = load u8 %27 0 nativus
+%29 = iconst u8 19
+%30 = cmp.ne u8 %28 %29
+br %30 b5 b6
+b5:
+%31 = iconst u8 11
+ret %31
+b6:
+%32 = iconst u64 2
+%33 = iconst u64 17
+chk %32 %33
+%34 = index %17 %32 1
+%35 = load u8 %34 0 nativus
+%36 = iconst u8 18
+%37 = cmp.ne u8 %35 %36
+br %37 b7 b8
+b7:
+%38 = iconst u8 12
+ret %38
+b8:
+%39 = iconst u64 3
+%40 = iconst u64 17
+chk %39 %40
+%41 = index %17 %39 1
+%42 = load u8 %41 0 nativus
+%43 = iconst u8 52
+%44 = cmp.ne u8 %42 %43
+br %44 b9 b10
+b9:
+%45 = iconst u8 13
+ret %45
+b10:
+%46 = iconst u64 4
+%47 = iconst u64 17
+chk %46 %47
+%48 = index %17 %46 1
+%49 = load u8 %48 0 nativus
+%50 = iconst u8 0
+%51 = cmp.ne u8 %49 %50
+br %51 b11 b12
+b11:
+%52 = iconst u8 14
+ret %52
+b12:
+%53 = iconst u64 5
+%54 = iconst u64 17
+chk %53 %54
+%55 = index %17 %53 1
+%56 = load u8 %55 0 nativus
+%57 = iconst u8 1
+%58 = cmp.ne u8 %56 %57
+br %58 b13 b14
+b13:
+%59 = iconst u8 15
+ret %59
+b14:
+%60 = iconst u64 6
+%61 = iconst u64 17
+chk %60 %61
+%62 = index %17 %60 1
+%63 = load u8 %62 0 nativus
+%64 = iconst u8 255
+%65 = cmp.ne u8 %63 %64
+br %65 b15 b16
+b15:
+%66 = iconst u8 16
+ret %66
+b16:
+%67 = iconst u64 7
+%68 = iconst u64 17
+chk %67 %68
+%69 = index %17 %67 1
+%70 = load u8 %69 0 nativus
+%71 = iconst u8 255
+%72 = cmp.ne u8 %70 %71
+br %72 b17 b18
+b17:
+%73 = iconst u8 17
+ret %73
+b18:
+%74 = iconst u64 8
+%75 = iconst u64 17
+chk %74 %75
+%76 = index %17 %74 1
+%77 = load u8 %76 0 nativus
+%78 = iconst u8 222
+%79 = cmp.ne u8 %77 %78
+br %79 b19 b20
+b19:
+%80 = iconst u8 18
+ret %80
+b20:
+%81 = iconst u64 9
+%82 = iconst u64 17
+chk %81 %82
+%83 = index %17 %81 1
+%84 = load u8 %83 0 nativus
+%85 = iconst u8 173
+%86 = cmp.ne u8 %84 %85
+br %86 b21 b22
+b21:
+%87 = iconst u8 19
+ret %87
+b22:
+%88 = iconst u64 10
+%89 = iconst u64 17
+chk %88 %89
+%90 = index %17 %88 1
+%91 = load u8 %90 0 nativus
+%92 = iconst u8 190
+%93 = cmp.ne u8 %91 %92
+br %93 b23 b24
+b23:
+%94 = iconst u8 20
+ret %94
+b24:
+%95 = iconst u64 11
+%96 = iconst u64 17
+chk %95 %96
+%97 = index %17 %95 1
+%98 = load u8 %97 0 nativus
+%99 = iconst u8 239
+%100 = cmp.ne u8 %98 %99
+br %100 b25 b26
+b25:
+%101 = iconst u8 21
+ret %101
+b26:
+%102 = iconst u64 12
+%103 = iconst u64 17
+chk %102 %103
+%104 = index %17 %102 1
+%105 = load u8 %104 0 nativus
+%106 = iconst u8 171
+%107 = cmp.ne u8 %105 %106
+br %107 b27 b28
+b27:
+%108 = iconst u8 22
+ret %108
+b28:
+%109 = iconst u64 13
+%110 = iconst u64 17
+chk %109 %110
+%111 = index %17 %109 1
+%112 = load u8 %111 0 nativus
+%113 = iconst u8 18
+%114 = cmp.ne u8 %112 %113
+br %114 b29 b30
+b29:
+%115 = iconst u8 23
+ret %115
+b30:
+%116 = iconst u64 14
+%117 = iconst u64 17
+chk %116 %117
+%118 = index %17 %116 1
+%119 = load u8 %118 0 nativus
+%120 = iconst u8 205
+%121 = cmp.ne u8 %119 %120
+br %121 b31 b32
+b31:
+%122 = iconst u8 24
+ret %122
+b32:
+%123 = iconst u64 15
+%124 = iconst u64 17
+chk %123 %124
+%125 = index %17 %123 1
+%126 = load u8 %125 0 nativus
+%127 = iconst u8 36
+%128 = cmp.ne u8 %126 %127
+br %128 b33 b34
+b33:
+%129 = iconst u8 25
+ret %129
+b34:
+%130 = iconst u64 16
+%131 = iconst u64 17
+chk %130 %131
+%132 = index %17 %130 1
+%133 = load u8 %132 0 nativus
+%134 = iconst u8 192
+%135 = cmp.ne u8 %133 %134
+br %135 b35 b36
+b35:
+%136 = iconst u8 26
+ret %136
+b36:
+%137 = iconst u8 0
+store u8 %1 0 nativus %137
+%138 = iconst u64 0
+%139 = iconst u64 17
+chk %138 %139
+%140 = index %17 %138 1
+%141 = load u8 %140 0 nativus
+%142 = iconst u8 211
+%143 = cmp.ne u8 %141 %142
+br %143 b37 b38
+b37:
+%144 = iconst u8 30
+ret %144
+b38:
+%145 = slot 17 1
+copy 17 %145 %17
+%146 = load u8 %145 0 nativus
+%147 = iconst u8 211
+%148 = cmp.ne u8 %146 %147
+br %148 b39 b40
+b39:
+%149 = iconst u8 40
+ret %149
+b40:
+%150 = loadbits u4 %145 1 0
+%151 = iconst u4 1
+%152 = cmp.ne u4 %150 %151
+br %152 b41 b42
+b41:
+%153 = iconst u8 41
+ret %153
+b42:
+%154 = loadbits u4 %145 1 4
+%155 = iconst u4 3
+%156 = cmp.ne u4 %154 %155
+br %156 b43 b44
+b43:
+%157 = iconst u8 42
+ret %157
+b44:
+%158 = load u16 %145 2 maior
+%159 = iconst u16 4660
+%160 = cmp.ne u16 %158 %159
+br %160 b45 b46
+b45:
+%161 = iconst u8 43
+ret %161
+b46:
+%162 = load u16 %145 4 maior
+%163 = iconst u16 1
+%164 = cmp.ne u16 %162 %163
+br %164 b47 b48
+b47:
+%165 = iconst u8 44
+ret %165
+b48:
+%166 = load u16 %145 6 maior
+%167 = iconst u16 65535
+%168 = cmp.ne u16 %166 %167
+br %168 b49 b50
+b49:
+%169 = iconst u8 45
+ret %169
+b50:
+%170 = load u32 %145 8 maior
+%171 = iconst u32 3735928559
+%172 = cmp.ne u32 %170 %171
+br %172 b51 b52
+b51:
+%173 = iconst u8 46
+ret %173
+b52:
+%174 = load u24 %145 12 maior
+%175 = iconst u24 11211469
+%176 = cmp.ne u24 %174 %175
+br %176 b53 b54
+b53:
+%177 = iconst u8 47
+ret %177
+b54:
+%178 = load u16 %145 15 maior
+%179 = iconst u16 9408
+%180 = cmp.ne u16 %178 %179
+br %180 b55 b56
+b55:
+%181 = iconst u8 48
+ret %181
+b56:
+%182 = iconst u64 15
+%183 = call u16 @redundantia %17 %182
+%184 = load u16 %145 15 maior
+%185 = cmp.ne u16 %183 %184
+br %185 b57 b58
+b57:
+%186 = iconst u8 50
+ret %186
+b58:
+%187 = iconst u8 0
+ret %187
+}
