@@ -38,7 +38,7 @@ spec amendment to §13 first, then a regeneration -- never a hand edit of
 
 ## The compiler is freestanding, and the allowlist is closed
 
-No libc, no dynamic linking; direct syscalls only, through `rt/sys.inc`. The
+No libc, no dynamic linking; direct syscalls only, through `compiler/x86_64/rt/sys.inc`. The
 allowlist is `read(0) write(1) close(3) fstat(5) lseek(8) mmap(9) munmap(11)
 openat(257) exit_group(231)`, and it is closed: adding one is a reviewed change
 with a stated reason, and a socket-family syscall is never added (§9.3).
@@ -48,7 +48,7 @@ do not weaken it, and do not route a syscall number through a second register
 to get past it -- the audit reports that as `INDETERMINATE` and fails too.
 
 No environment reads outside `--env KEY=VALUE`. No `$HOME`, no dotfiles, no
-clock (`--epoch`). Maps iterate in insertion order (`rt/map.inc`); no ordering
+clock (`--epoch`). Maps iterate in insertion order (`compiler/x86_64/rt/map.inc`); no ordering
 may depend on a pointer value; output is byte-identical across directories,
 times, locales and hostnames, and `make reproduce` checks it.
 
