@@ -77,6 +77,13 @@ include 'format/format.inc'
 format ELF64 executable 3
 entry start
 
+; backend_fasmg/ir.inc no longer includes rt/ (the consumer brings it, as
+; every other module's does), so this fixture brings the chain itself (cst/ brings lexer/, diag/ and rt/, as exsc.asm does).
+include '../../compiler/x86_64/cst/cst.inc'
+; lower/ reads prelude/interface.inc's constants and does not include it
+; (checker/types/ does, and two paths to a label-emitting leaf collide).
+include '../../compiler/x86_64/prelude/interface.inc'
+include '../../compiler/x86_64/ast/ast.inc'
 include '../../compiler/x86_64/lower/cfg.inc'
 
 segment readable executable
@@ -841,3 +848,8 @@ segment readable writeable
   db "ret %1", 10
   db "}", 10
   .len = $ - lsexp
+
+segment readable
+  ; cst/ -> lexer/ -> shared/unicode/ needs the UCD blobs, exactly as
+  ; exsc.asm and every other fixture on that chain includes them.
+  include '../../compiler/shared/unicode/tables/tables.inc'

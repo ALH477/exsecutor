@@ -55,7 +55,15 @@ include 'cfg.inc'
 ; `interface.inc` includes nothing, so this is not a second path to anything.
 EXS_IFACE_EMIT_DECLS = 1
 	jmp	__lwr_iface_end
-include '../prelude/interface.inc'
+; NO include of `../prelude/interface.inc` here, though this file reads its
+; constants. `checker/types/prim.inc` includes it, fasmg has no include
+; guards, and it emits labels rather than only macros -- so a second path
+; redefines `exsrt_iface_nomina`. A self-guard is not the answer either: an
+; `if ~ defined X` around a file that then defines X oscillates between
+; passes and fasmg gives up with "could not generate code within the allowed
+; number of passes" (measured). So the CONSUMER includes it exactly once,
+; before lower/: exsc.asm gets it through checker/, and each lwr_ fixture
+; includes it itself.
   __lwr_iface_end:
 
 ; The prelude tag, restated. `checker/types/prim.inc` defines `CHK_TY_PRELUDE`

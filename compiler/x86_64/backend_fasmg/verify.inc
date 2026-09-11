@@ -2025,6 +2025,29 @@ proc bfa_verify_func, module, func, varena, out_blk, out_inst
 		slot ctx, dq
 		slot r, dd
 	endl
+	; A function with no blocks is a DECLARATION -- ssa-ir.md section 2.11's
+	; `;' form, "nothing is emitted for it" -- and has nothing to verify.
+	; Falling through built a ctx whose idom vec is sized by nblocks, so
+	; rule 4's first vec_get(idom, 0) trapped and rule 4's convergence bound
+	; was `1 le 0`. Every bodiless `externus` the lowering emits is this
+	; shape (found by compiler/x86_64/lower/, which had to skip three
+	; functions and say so in its fixture).
+	mov	rdi, [func]
+	mov	rdi, [rdi + BfaFunc.blocks]
+	test	rdi, rdi
+	jz	.no_blocks
+	mov	rax, [rdi + Vec.len]
+	test	rax, rax
+	jnz	.has_blocks
+  .no_blocks:
+	mov	rdi, [out_blk]
+	mov	dword [rdi], 0
+	mov	rdi, [out_inst]
+	mov	dword [rdi], 0
+	xor	eax, eax
+	return
+  .has_blocks:
+
 	mov	rdi, [varena]
 	mov	rsi, sizeof.BfaVerifyCtx
 	call	arena_alloc

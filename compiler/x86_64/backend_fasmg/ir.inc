@@ -60,13 +60,22 @@
 ; faithfully). Design contract: docs/design/ssa-ir.md, sections 2.1-2.3.
 ; -----------------------------------------------------------------------------
 
-; ONE rt/ include, chosen deepest-first per the diamond discipline every rt/
-; file already documents (rt/vec.inc's header, rt/map.inc's header): intern.inc
-; -> map.inc -> vec.inc -> arena.inc (-> struct.inc, assert.inc, sys.inc ->
-; proc.inc). Every other backend_fasmg/*.inc includes exactly one other file
-; in THIS directory (never rt/ directly), forming a single strict chain,
-; never a diamond, exactly like rt/'s own internals.
-include '../rt/intern.inc'
+; NO rt/ INCLUDE. This file needs rt/intern.inc's chain (intern -> map -> vec
+; -> arena -> struct, assert, sys, proc) and does not include it: the CONSUMER
+; brings rt/, which is what ast/, checker/, cst/, diag/, driver/ and lexer/ all
+; already do, and what exsc.asm already arranges.
+;
+; It used to include it, on a diamond-discipline argument that was right about
+; diamonds and wrong about who owns the root. cst/ reaches rt/intern.inc by its
+; own path (diag/ -> rt/span.inc); fasmg has no include guards; so the second
+; path through that file died with `symbol 'sizeof?.Arena' is undefined` and
+; NO fasmg program could contain both checker/ and backend_fasmg/ at once --
+; that is, no `exsc` could both type-check a program and emit one. Found by
+; the lowering agent, which had to restate `struct Span` to work around it
+; (compiler/x86_64/lower/ssa.inc).
+;
+; Every other backend_fasmg/*.inc still includes exactly one other file in THIS
+; directory, never rt/ directly: a single strict chain, never a diamond.
 
 ; ---- type kinds (BfaType.kind) -----------------------------------------
 BFA_TK_U    = 1		; uN

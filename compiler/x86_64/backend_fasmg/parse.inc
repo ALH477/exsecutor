@@ -1873,14 +1873,14 @@ proc __bfa_ps_slot, p, op
 	locals
 		slot tyv, dd
 		slot sz, dd
-		slot al, dd
+		slot bfa_al, dd
 	endl
 	mov	rdi, [p]
 	call	__bfa_next_udec
 	mov	[sz], eax
 	mov	rdi, [p]
 	call	__bfa_next_udec
-	mov	[al], eax
+	mov	[bfa_al], eax
 	mov	rdi, [p]
 	mov	rdi, [rdi + BfaParser.module]
 	call	bfa_ty_ptr
@@ -1890,7 +1890,7 @@ proc __bfa_ps_slot, p, op
 	xor	edx, edx
 	mov	ecx, [tyv]
 	mov	r8d, [sz]
-	mov	r9d, [al]
+	mov	r9d, [bfa_al]
 	call	__bfa_ps_finish
 	return
 endp
@@ -3784,7 +3784,7 @@ proc __bfa_parse_global, p
 	locals
 		slot id, dd
 		slot sz, dd
-		slot al, dd
+		slot bfa_al, dd
 		slot doff, dd
 		slot dlen, dd
 		slot hp, dq
@@ -3832,7 +3832,7 @@ proc __bfa_parse_global, p
 	mov	[sz], eax
 	mov	rdi, [p]
 	call	__bfa_next_udec
-	mov	[al], eax
+	mov	[bfa_al], eax
 
 	mov	rdi, [p]
 	mov	rdi, [rdi + BfaParser.module]
@@ -3901,7 +3901,7 @@ proc __bfa_parse_global, p
 	mov	[rax + BfaGlobal.id], ecx
 	mov	ecx, [sz]
 	mov	[rax + BfaGlobal.size], ecx
-	mov	ecx, [al]
+	mov	ecx, [bfa_al]
 	mov	[rax + BfaGlobal.algn], ecx
 	mov	ecx, [doff]
 	mov	[rax + BfaGlobal.data_off], ecx

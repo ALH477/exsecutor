@@ -45,7 +45,7 @@ include 'format/format.inc'
 format ELF64 executable 3
 entry start
 
-include '../../compiler/x86_64/rt/intern.inc'
+include '../../compiler/x86_64/rt/span.inc'
 
 segment readable executable
   start:

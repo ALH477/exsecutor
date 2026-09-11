@@ -85,34 +85,37 @@
 ; section 2.5.
 ; -----------------------------------------------------------------------------
 
-include '../backend_fasmg/verify.inc'
+; The TOP of backend_fasmg/'s chain, not the middle: program.inc -> emit.inc
+; -> verify.inc -> print.inc -> parse.inc -> ir.inc is one strict chain, so a
+; consumer that includes lower/ has the whole backend -- the verifier this
+; file calls, and the emitter the driver calls -- and must not include any of
+; it a second time.
+include '../backend_fasmg/program.inc'
 
-; ---- D2, undone (see this file's header) -----------------------------------
-; Two `slot al, dd` in parse.inc, so two `restore`s. The `virtual` block that
-; follows is the check: if a future parse.inc stops burning `al`, or burns it
-; a different number of times, `mov al, 1` here stops assembling to the two
-; bytes B0 01 and this file fails loudly at the line that is wrong, instead of
-; somewhere in ast/.
-restore al
-restore al
+; ---- D2, fixed upstream; the tripwire stays -------------------------------
+; parse.inc's two `slot al, dd` are now `slot bfa_al, dd`, so nothing burns
+; the register name and the two `restore al` this file used to carry are gone.
+; The check stays: if any file below ever burns `al` again, `mov al, 1` stops
+; assembling to the two bytes B0 01 and this file fails at the line that is
+; wrong, instead of somewhere in ast/.
 virtual at 0
 	mov	al, 1
 	assert $ = 2
 end virtual
 
-; ---- D1, worked around (see this file's header) ----------------------------
-; rt/span.inc's own 12 bytes, restated because that file cannot be included
-; here. Its header says "nothing here calls into rt/intern.inc" -- the include
-; that makes it unreachable is documentary -- so this is a copy of a
-; definition, not of any code.
-struct Span
-	field file_id, dd
-	field start,   dd
-	field len,     dd
-end struct
+; ---- D1, fixed upstream --------------------------------------------------
+; This file used to restate rt/span.inc's `struct Span`, because
+; backend_fasmg/ir.inc included rt/intern.inc and a second path through that
+; chain could not be taken. ir.inc no longer includes rt/ at all -- the
+; consumer brings it, as it does for ast/, checker/, cst/, diag/, driver/ and
+; lexer/ -- so `struct Span` is rt/span.inc's again, and restating it here
+; would now be the redefinition rather than the workaround.
 assert sizeof.Span = 12
 
-include '../ast/build.inc'
+; NO ast/ INCLUDE, for the reason D1 above gives about rt/: ast/ast.inc's
+; chain reaches build.inc, so a consumer holding both ast/ and lower/ would
+; process it twice and fail on the second. The consumer brings ast/ BEFORE
+; lower/ -- exsc.asm's order, and every lwr_ fixture's.
 
 ; ============================================================================
 ; the state record

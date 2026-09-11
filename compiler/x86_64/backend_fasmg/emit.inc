@@ -71,7 +71,13 @@
 ; guarantees this backend exists to make testable at all -- ADR 0012).
 ; -----------------------------------------------------------------------------
 
-include 'print.inc'
+; `verify.inc`, not `print.inc`: both of them included print.inc, which made
+; this directory's own graph a DIAMOND -- reachable only if no consumer ever
+; pulled emit.inc and verify.inc on separate paths, which stopped being true
+; the moment the lowering wanted the verifier and the driver wanted the
+; emitter. The chain is now strictly linear, top to bottom:
+;   program.inc -> emit.inc -> verify.inc -> print.inc -> parse.inc -> ir.inc
+include 'verify.inc'
 
 
 ; __bfa_emit_die(msg_ptr, msg_len) -- never returns. An opcode/width this
