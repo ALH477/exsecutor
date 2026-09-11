@@ -332,12 +332,71 @@ proc lex_tokenize, lx
 	mov	r14, r13
 	jmp	.next
 
-	; ---- a run of ASCII digits (§8.4, `[OPEN]`) ------------------------
-	; See token.inc's header. Only `0`-`9`, because that is the one form
-	; every candidate numeric grammar contains; a run that does not cleanly
-	; END is EXS-E0210 rather than a silent tokenization choice.
+	; ---- a run of ASCII digits, or `0x` + hex digits (§8.4) ------------
+	; See token.inc's header. Decimal is only `0`-`9`, the one form every
+	; candidate numeric grammar contains; a run that does not cleanly END
+	; is EXS-E0210 rather than a silent tokenization choice.
+	;
+	; D6 (docs/design/wire-codec.md) settles hex: `0x[0-9a-fA-F]+`, ONE
+	; spelling of the prefix. This is entered only when the byte AFTER the
+	; leading `0` is exactly lowercase `x` (0x78) and the byte after THAT
+	; is a hex digit -- every other case (bare `0x`, capital `0X`, `0`
+	; followed by anything else) falls straight through to the unchanged
+	; decimal path below, which already reports EXS-E0210 for all of them
+	; via the same "digit run into an identifier character" rule this
+	; comment described before D6: `X`, and a lowercase `x` with no hex
+	; digit after it, are themselves XID_Continue, so `.num_scan`/
+	; `.num_done`/`.num_bad` consume and report them exactly as they did
+	; before this change -- nothing about that path is touched.
   .number:
 	mov	[tstart], r14
+	cmp	eax, '0'		; eax/[cpv] still the char AT r14 (unclobbered
+	jne	.num_scan		; since the dispatch cmp, above)
+	lea	rax, [r14 + 1]
+	cmp	rax, r13
+	jae	.num_scan		; '0' at EOF -- decimal path (emits "0")
+	cmp	byte [r12 + rax], 'x'
+	jne	.num_scan		; not lowercase 'x' -- decimal path (handles
+					; capital '0X...' too, unchanged)
+	lea	rcx, [r14 + 2]
+	cmp	rcx, r13
+	jae	.num_scan		; bare "0x" at EOF -- decimal path reports
+					; EXS-E0210 for it, as today
+	movzx	edx, byte [r12 + rcx]
+	cmp	dl, '0'
+	jb	.num_scan
+	cmp	dl, '9'
+	jbe	.hex_confirmed
+	cmp	dl, 'A'
+	jb	.num_scan
+	cmp	dl, 'F'
+	jbe	.hex_confirmed
+	cmp	dl, 'a'
+	jb	.num_scan
+	cmp	dl, 'f'
+	ja	.num_scan		; no hex digit after 'x' -- decimal path
+					; reports EXS-E0210, as today
+  .hex_confirmed:
+	add	r14, 2			; consume '0' 'x'; r14 -> first hex digit,
+					; already confirmed valid by the peek above
+  .hex_scan:
+	inc	r14
+	cmp	r14, r13
+	jae	.num_done
+	movzx	eax, byte [r12 + r14]
+	cmp	al, '0'
+	jb	.num_done
+	cmp	al, '9'
+	jbe	.hex_scan
+	cmp	al, 'A'
+	jb	.num_done
+	cmp	al, 'F'
+	jbe	.hex_scan
+	cmp	al, 'a'
+	jb	.num_done
+	cmp	al, 'f'
+	jbe	.hex_scan
+	jmp	.num_done
   .num_scan:
 	inc	r14
 	cmp	r14, r13
@@ -359,9 +418,10 @@ proc lex_tokenize, lx
 	call	xid_continue
 	test	eax, eax
 	jz	.num_emit
-	; The literal runs into an identifier character: `0x10`, `1_000`,
-	; `1e5`, `10u32`. Consume the whole run so this is reported once, then
-	; emit no token -- there is no token shape to emit it as.
+	; The literal runs into an identifier character: `0X10` (capital X),
+	; `0x1G`, `1_000`, `1e5`, `10u32`. Consume the whole run so this is
+	; reported once, then emit no token -- there is no token shape to
+	; emit it as.
   .num_bad:
 	cmp	r14, r13
 	jae	.num_report

@@ -46,12 +46,19 @@
 ;
 ; The eleven error rows are the §8.4 codes this module can raise from the
 ; token layer, each pinned to its span. Two of them are the `[OPEN]` numeric
-; grammar: `0x10` and `1_000` are `EXS-E0210` rather than a silent
-; tokenization, because §8.4 says the grammar "is not settled and is
-; deliberately not invented here" and splitting them into two tokens would BE
-; a settlement. The last two rows are the other side of that: a plain digit
-; run is fine, and `0..n` -- §8.5's own iteration syntax -- must lex as three
-; tokens and not as a malformed literal.
+; grammar: `0x1G` and `1_000` are `EXS-E0210` rather than a silent
+; tokenization -- `1_000` because §8.4 says separators are "not settled and
+; deliberately not invented here" and splitting it into two tokens would BE
+; a settlement; `0x1G` because D6 (docs/design/wire-codec.md) settled the
+; hex PREFIX (`0x[0-9a-fA-F]+`) but left everything past a hex digit run
+; that meets an identifier character exactly where a decimal run already
+; was. `0x10` itself is no longer an error -- D6 retired that, and
+; tests/unit/lex_hex_literal.asm is where the hex grammar itself (accepted
+; and rejected forms) is pinned; this row exists only to confirm the
+; hex path still defers to the same "runs into an identifier character"
+; rule once past its own digits. The last two rows are the other side of
+; that: a plain digit run is fine, and `0..n` -- §8.5's own iteration syntax
+; -- must lex as three tokens and not as a malformed literal.
 ;
 ; Checks 5 and 6 exist because mutation testing said they had to. Making
 ; `Tok.aux` always 0 for identifiers, and zeroing every span's `file_id`, were
@@ -541,7 +548,7 @@ tok_d:
 	db	0x6F, 0x20, 0x65, 0x6E, 0x64, 0x20, 0x68, 0x65, 0x72, 0x65, 0x0A, 0x66
 	db	0x69, 0x72, 0x6D, 0x61, 0x20, 0x73, 0x20, 0x3D, 0x20, 0x22, 0x61, 0x62
 	db	0x63, 0x5C, 0x66, 0x69, 0x72, 0x6D, 0x61, 0x20, 0x6E, 0x20, 0x3D, 0x20
-	db	0x30, 0x78, 0x31, 0x30, 0x0A, 0x66, 0x69, 0x72, 0x6D, 0x61, 0x20, 0x6E
+	db	0x30, 0x78, 0x31, 0x47, 0x0A, 0x66, 0x69, 0x72, 0x6D, 0x61, 0x20, 0x6E
 	db	0x20, 0x3D, 0x20, 0x31, 0x5F, 0x30, 0x30, 0x30, 0x0A, 0x66, 0x69, 0x72
 	db	0x6D, 0x61, 0x20, 0x71, 0x20, 0x3D, 0x20, 0x61, 0x20, 0x2F, 0x20, 0x62
 	db	0x0A, 0x66, 0x69, 0x72, 0x6D, 0x61, 0x20, 0x71, 0x20, 0x3D, 0x20, 0x61
@@ -554,7 +561,10 @@ tok_d:
   case_tab:
 	dd	0, 23, 1, 202, 10, 13	; unterminated string literal
 	dd	23, 15, 1, 202, 10, 5	; backslash at end of input
-	dd	38, 15, 1, 210, 10, 4	; a numeric literal that runs into an identifier
+	dd	38, 15, 1, 210, 10, 4	; a hex literal that runs into a non-hex
+					; identifier char (D6, wire-codec.md);
+					; formerly the "0x10" row -- 0x10 is now
+					; a valid TOK_NUMBER, see lex_hex_literal.asm
 	dd	53, 16, 1, 210, 10, 5	; 1_000 needs the grammar §8.4 does not have
 	dd	69, 16, 1, 201, 12, 1	; a bare slash is not attested
 	dd	85, 16, 1, 201, 12, 1	; percent outside +%
