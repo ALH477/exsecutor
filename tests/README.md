@@ -20,7 +20,9 @@ calls):
    `E0322`). **Entry 23 runs its certificate**: the DeModFrame codec
    written in Exsecutor (`conformance/entry23/codex.exsc`, pure;
    `probatio.exsc`, the driver) is compiled with the fixture as one unit,
-   run, audited (`write` and `exit_group` only), and its 2,502-byte stream
+   run, audited (`read`, `write` and `exit_group` only -- the `read` is
+   the `ambitus` atom's, carried by the gate rather than called), and its
+   2,502-byte stream
    compared section by section with what `entry23/expecta.py` builds from
    `vendor/hydramesh-wire/golden_vectors.json` — 246/246 certificate
    vectors, the three anchors and two laws reported apart — after which
@@ -131,15 +133,25 @@ Each `.asm` file may carry one directive comment, anywhere in the file,
 read by `tests/run.sh`:
 
 ```
-; TEST: run=yes|no  expect-exit=<N>  audit=pass|fail|skip
+; TEST: run=yes|no  expect-exit=<N>  audit=pass|fail|skip  stdin=<PATH>
 ```
 
-All three keys are optional; defaults are `run=yes expect-exit=0
-audit=skip`. `tests/run.sh` always assembles every fixture; `run=no` skips
-*executing* the resulting binary (for a fixture whose point is static
-detection, not runtime behavior — see `socket_syscall.asm`); `audit=pass`
-or `audit=fail` runs `tools/syscall-audit.sh` on the assembled binary and
-asserts its verdict.
+All four keys are optional; defaults are `run=yes expect-exit=0
+audit=skip`, and stdin from `/dev/null`. `tests/run.sh` always assembles
+every fixture; `run=no` skips *executing* the resulting binary (for a
+fixture whose point is static detection, not runtime behavior — see
+`socket_syscall.asm`); `audit=pass` or `audit=fail` runs
+`tools/syscall-audit.sh` on the assembled binary and asserts its verdict;
+`stdin=PATH` (repo-root-relative, the spelling `stdout=` uses in the two
+run phases below) opens that file as the fixture's fd 0 —
+`prelude_lege_octeto.asm` reads its four bytes through the descriptor
+`Lector.ab_introitu(a)` derives from `ExsAmbitus.in`, which is the whole
+point of feeding it rather than opening a path inside the fixture.
+
+Every fixture runs under a **20-second limit**. A hang is a failure, not a
+stuck suite: `timeout` exits 124, which matches no fixture's
+`expect-exit=`. It went in with the reader, whose loop ends only when the
+end-of-input sentinel arrives.
 
 Current fixtures: see `UNIT_FIXTURE_FLOOR` in `tests/run.sh` (124 as of
 b9c0abc; this sentence said 46 for a long time), covering the macro dialect,
@@ -188,12 +200,21 @@ directive's style):
 | `expect-exit=N` | the program exits normally with `N`; its stderr must be empty |
 | `abort=N` | spec §6.6's one abort shape: killed by `SIGILL`, with a stderr line ending `abortus N`. Not shell status 132, which `redde 132;` also produces — the runner tells a signal from an exit status |
 | `stdout=PATH` | stdout byte-identical to `PATH`, relative to the repo root. Absent: stdout must be empty |
+| `stdin=PATH` | the program's stdin is that file, repo-root-relative exactly as `stdout=` is. Absent: `/dev/null`, which is what every fixture written before a reader existed assumed |
 
 Exactly one of `expect-exit=` / `abort=` is required for anything that
 runs. **An unknown key fails the fixture** — the unit directive silently
 ignores one, so a typo there falls back to the default and passes.
-Binaries run with stdin from `/dev/null`, an empty environment, and a
-20-second limit.
+Binaries run with an empty environment and a 20-second limit.
+
+`lector/` is `stdin=F stdout=F` with the same `F`: a `cat` program proved
+against the one file rather than against a copy of it, so no second file
+can drift from the input. `F` is `tests/data/lector_intra.bin`, 41 bytes —
+not a power of two, so a reader that lost a tail shows up — holding `0x00`,
+`0xff`, a lone `0x80` and a CR, which is why `.gitattributes` marks
+`tests/data/*.bin` `-text`. Its companion `lector_numerus/` reads the same
+file, writes nothing, and returns the COUNT as its exit status
+(`expect-exit=41`).
 
 **`tests/ir/*.ir`:** the directive is a `; TEST:` line in the IR itself
 (`;` is the IR's comment). One more key, `emit-exit=N` — `emit_ir`'s own

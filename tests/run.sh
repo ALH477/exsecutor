@@ -4,7 +4,8 @@
 # Four phases:
 #   1. run_unit_tests: discovers tests/unit/*.asm, assembles each with
 #      fasmg, and checks the expectations declared in its `; TEST:`
-#      directive comment (run=yes|no, expect-exit=<N>, audit=pass|fail|skip).
+#      directive comment (run=yes|no, expect-exit=<N>, audit=pass|fail|skip,
+#      stdin=<repo-relative PATH>).
 #      This is the only phase that can do anything today -- there is no
 #      compiler's own modules and the toolchain; exsc exists and the
 #      driver_* fixtures drive it.
@@ -49,7 +50,7 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # this -- the test is `found < floor` -- so a floor that drifts below the real
 # count still catches the failure mode that matters: a discovery mechanism
 # silently finding nothing. Drift costs precision, not the guarantee.
-UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-162}"
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-163}"
 
 # The same guarantee for the two run phases below: tests/ir/*.ir fixtures,
 # and tests/programs/*/ directories. Same rule -- `found < floor` fails --
@@ -64,7 +65,7 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-162}"
 # positive test of what it compiles to is tests/unit/lwr_transitus.asm
 # (`load u64 %0 0 maior`), because the emitter cannot run a `maior` load yet.
 IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-48}"
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-13}"
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-15}"
 
 PASS=0
 FAIL=0
@@ -95,11 +96,11 @@ run_unit_tests() {
   local src
   for src in "$REPO_ROOT"/tests/unit/*.asm; do
     found=$((found + 1))
-    local name run_flag expect_exit audit_flag directive kv
+    local name run_flag expect_exit audit_flag stdin_ref directive kv
     name="$(basename "$src")"
     echo "-- $name"
 
-    run_flag="yes"; expect_exit="0"; audit_flag="skip"
+    run_flag="yes"; expect_exit="0"; audit_flag="skip"; stdin_ref=""
     directive="$(directive_of "$src")"
     if [[ -n "$directive" ]]; then
       for kv in $directive; do
@@ -107,8 +108,20 @@ run_unit_tests() {
           run=*) run_flag="${kv#run=}" ;;
           expect-exit=*) expect_exit="${kv#expect-exit=}" ;;
           audit=*) audit_flag="${kv#audit=}" ;;
+          stdin=*) stdin_ref="${kv#stdin=}" ;;
         esac
       done
+    fi
+    # stdin=PATH -- repo-root-relative, the same spelling stdout= has in the
+    # two run phases below. Absent: </dev/null, as every fixture had before
+    # a reader existed to notice the difference.
+    local stdin_path="/dev/null"
+    if [[ -n "$stdin_ref" ]]; then
+      if [[ ! -f "$REPO_ROOT/$stdin_ref" ]]; then
+        bad "$name: stdin=$stdin_ref does not exist (paths are repo-root-relative)"
+        continue
+      fi
+      stdin_path="$REPO_ROOT/$stdin_ref"
     fi
 
     local out="$workdir/$name.out"
@@ -123,7 +136,12 @@ run_unit_tests() {
 
     if [[ "$run_flag" == "yes" ]]; then
       local rc=0
-      "$out" </dev/null >"$workdir/$name.runlog" 2>&1 || rc=$?
+      # A 20-SECOND LIMIT, the same one the two run phases give an emitted
+      # program: a fixture that hangs -- a read loop whose end-of-input
+      # sentinel stopped arriving is the case that put this here -- must be a
+      # FAILURE, not a stuck suite. `timeout` exits 124 (or 128+SIGKILL after
+      # -k), which matches no fixture's expect-exit=.
+      timeout -k 5 20 "$out" <"$stdin_path" >"$workdir/$name.runlog" 2>&1 || rc=$?
       if [[ "$rc" == "$expect_exit" ]]; then
         ok "$name: runs, exit=$rc (expected $expect_exit)"
       else
@@ -543,7 +561,13 @@ run_conformance_tests() {
 #      and runs: exit 0 (probatio's own count of 2,502 one-byte writes), no
 #      stderr.
 #   3. the syscall audit with `--potestates Mundus,ambitus` passes, AND the
-#      syscall sites it finds are `write` and `exit_group` and nothing else.
+#      syscall sites it finds are `read`, `write` and `exit_group` and
+#      nothing else. `read` is in that set without this program calling it:
+#      the prelude gates by ATOM, not by use (runtime.md 2.6), so a binary
+#      whose closure holds `ambitus` carries the whole atom -- both writers
+#      and `exsrt_lector_lege_octeto` -- and the audit's claim is about the
+#      closure, not about reachability. This list read `exit_group write`
+#      until the reader landed.
 #   4. a second run writes the byte-identical stream (spec §9.3).
 #   5. entry23/expecta.py --compara: section by section against the stream
 #      built from vendor/hydramesh-wire/golden_vectors.json. Sections 1-2
@@ -657,10 +681,10 @@ cert_entry23() {
     local kinds
     kinds="$(grep -E '^0x[0-9a-f]+[[:space:]]+[0-9]+[[:space:]]' "$p.audit" |
              awk '{print $3}' | LC_ALL=C sort -u | tr '\n' ' ')"
-    if [[ "$kinds" == "exit_group write " ]]; then
-      ok "$name: entry 23: syscall audit (--potestates Mundus,ambitus) passes; the binary's syscalls are write and exit_group, nothing else"
+    if [[ "$kinds" == "exit_group read write " ]]; then
+      ok "$name: entry 23: syscall audit (--potestates Mundus,ambitus) passes; the binary's syscalls are read, write and exit_group, nothing else (the read is the ambitus atom's, carried by the gate rather than called -- see this function's header)"
     else
-      bad "$name: entry 23: syscall kinds found are '$kinds', expected exactly exit_group and write"
+      bad "$name: entry 23: syscall kinds found are '$kinds', expected exactly exit_group, read and write"
       sed 's/^/         /' "$p.audit"; rc=1
     fi
   else
@@ -757,6 +781,12 @@ cert_entry23() {
 #   stdout=PATH     stdout must be byte-identical to PATH, relative to the
 #                   repo root (so a fixture can point at examples/ rather
 #                   than copy it). Absent: stdout must be EMPTY.
+#   stdin=PATH      the program's stdin is that file, opened read-only,
+#                   repo-root-relative exactly as stdout= is. Absent:
+#                   /dev/null, which is what every fixture written before a
+#                   reader existed assumed. A `cat` program is
+#                   `stdin=F stdout=F` and proves identity against the one
+#                   file rather than against a copy of it.
 #
 # Exactly one of expect-exit= / abort= is required for anything that runs.
 # An UNKNOWN KEY FAILS THE FIXTURE: the unit directive ignores one, and a
@@ -764,26 +794,32 @@ cert_entry23() {
 # passes -- a false green of exactly the kind UNIT_FIXTURE_FLOOR's header
 # lists. These two phases do not repeat it.
 #
-# Every binary runs with stdin </dev/null, an EMPTY environment, and a
-# 20-second limit (a hang -- a loop the emitter got wrong -- is a failure,
+# Every binary runs with stdin </dev/null (or stdin=PATH), an EMPTY
+# environment, and a 20-second limit (a hang -- a loop the emitter got wrong -- is a failure,
 # not a stuck suite). python3 runs it because bash cannot tell a signal from
 # an exit status >= 128; python3 is already required by tools/syscall-audit.sh.
 # Every binary is then audited with `--potestates Mundus,ambitus`, the
 # publish gate's own invocation for the hello world.
 # ===========================================================================
 
-# run_binary BIN OUT ERR -- prints "exit N", "signal N" or "timeout".
+# run_binary BIN OUT ERR [STDIN] -- prints "exit N", "signal N" or "timeout".
+# STDIN is a path (absolute, or already resolved by the caller); absent or
+# empty means /dev/null.
 run_binary() {
-  python3 - "$1" "$2" "$3" <<'PY'
+  python3 - "$1" "$2" "$3" "${4:-}" <<'PY'
 import subprocess, sys
-exe, out, err = sys.argv[1:4]
+exe, out, err, inp = sys.argv[1:5]
 with open(out, 'wb') as o, open(err, 'wb') as e:
+    i = open(inp, 'rb') if inp else None
     try:
-        r = subprocess.run([exe], stdin=subprocess.DEVNULL, stdout=o,
+        r = subprocess.run([exe], stdin=(i or subprocess.DEVNULL), stdout=o,
                            stderr=e, env={}, timeout=20)
     except subprocess.TimeoutExpired:
         print('timeout')
         sys.exit(0)
+    finally:
+        if i is not None:
+            i.close()
 if r.returncode < 0:
     print('signal %d' % -r.returncode)
 else:
@@ -791,13 +827,17 @@ else:
 PY
 }
 
-# check_run LABEL BIN WORK EXPECT_EXIT ABORT STDOUT_REF -- runs BIN, checks
-# the keys above, audits it. EXPECT_EXIT/ABORT/STDOUT_REF are "" when unset.
+# check_run LABEL BIN WORK EXPECT_EXIT ABORT STDOUT_REF [STDIN_REF] -- runs
+# BIN, checks the keys above, audits it. EXPECT_EXIT/ABORT/STDOUT_REF/
+# STDIN_REF are "" when unset; STDIN_REF is repo-root-relative.
 # Returns 0 iff every check passed (each check also counts ok/bad itself).
 check_run() {
   local label="$1" bin="$2" work="$3" want_exit="$4" want_abort="$5" ref="$6"
+  local sref="${7:-}"
   local out="$work.stdout" err="$work.stderr" status rcode=0
-  status="$(run_binary "$bin" "$out" "$err")"
+  local inp=""
+  [[ -n "$sref" ]] && inp="$REPO_ROOT/$sref"
+  status="$(run_binary "$bin" "$out" "$err" "$inp")"
 
   if [[ -n "$want_abort" ]]; then
     if [[ "$status" == "signal 4" ]] &&
@@ -849,13 +889,14 @@ check_run() {
 parse_run_keys() {
   local label="$1"; shift
   k_expect_exit=""; k_abort=""; k_stdout=""; k_emit_exit="0"; k_exsc_exit="0"
-  k_sources=""; k_status="run"; k_needs=""
+  k_sources=""; k_status="run"; k_needs=""; k_stdin=""
   local kv
   for kv in "$@"; do
     case "$kv" in
       expect-exit=*) k_expect_exit="${kv#expect-exit=}" ;;
       abort=*)       k_abort="${kv#abort=}" ;;
       stdout=*)      k_stdout="${kv#stdout=}" ;;
+      stdin=*)       k_stdin="${kv#stdin=}" ;;
       emit-exit=*)   k_emit_exit="${kv#emit-exit=}" ;;
       exsc-exit=*)   k_exsc_exit="${kv#exsc-exit=}" ;;
       sources=*)     k_sources="${kv#sources=}" ;;
@@ -882,6 +923,10 @@ parse_run_keys() {
   done
   if [[ -n "$k_stdout" && ! -f "$REPO_ROOT/$k_stdout" ]]; then
     bad "$label: stdout=$k_stdout does not exist (paths are repo-root-relative)"
+    return 1
+  fi
+  if [[ -n "$k_stdin" && ! -f "$REPO_ROOT/$k_stdin" ]]; then
+    bad "$label: stdin=$k_stdin does not exist (paths are repo-root-relative)"
     return 1
   fi
   return 0
@@ -990,7 +1035,7 @@ run_ir_tests() {
       bad "$name: fasmg cannot assemble the emitted program"
       sed 's/^/         /' "$w.asmlog"; continue
     fi
-    check_run "$name" "$w.bin" "$w" "$k_expect_exit" "$k_abort" "$k_stdout" || true
+    check_run "$name" "$w.bin" "$w" "$k_expect_exit" "$k_abort" "$k_stdout" "$k_stdin" || true
   done
   shopt -u nullglob
   rm -rf "$workdir"
@@ -1147,7 +1192,7 @@ run_program_tests() {
       bad "$name: fasmg cannot assemble exsc's output"
       sed 's/^/         /' "$w.asmlog"; continue
     fi
-    check_run "$name" "$w.bin" "$w" "$k_expect_exit" "$k_abort" "$ref" || true
+    check_run "$name" "$w.bin" "$w" "$k_expect_exit" "$k_abort" "$ref" "$k_stdin" || true
   done
   shopt -u nullglob
   rm -rf "$workdir"

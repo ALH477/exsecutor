@@ -22,7 +22,13 @@
 #                                       and audit them, proving this script
 #                                       works before compiler/x86_64/exsc.asm
 #                                       exists to produce a real target.
-#                                       Covers both modes above.
+#                                       Covers both modes above, on three
+#                                       fixtures: clean_syscalls.asm,
+#                                       socket_syscall.asm, and
+#                                       prelude_lege_octeto.asm -- the last
+#                                       being a real prelude binary whose
+#                                       read(0) must pass under `ambitus` and
+#                                       fail without it.
 #
 # Exit status: 0 = audit passed. 1 = audit failed (disallowed syscall,
 # indeterminate syscall number, or not freestanding). 2 = usage/environment
@@ -77,10 +83,18 @@
 #                                       (edi loaded from a Scriptor field)
 #                                       when both compile to the identical
 #                                       `mov eax,1` / `syscall`.
-#   ambitus:   read(0), write(1) to any fd -- exsrt_scriptor_scribe (`read`
-#                                       is [UNIMPLEMENTED], no reader
-#                                       exists yet, but the atom's admitted
-#                                       set is tabulated regardless)
+#   ambitus:   read(0), write(1) to any fd -- exsrt_scriptor_scribe and
+#                                       exsrt_scriptor_scribe_octeto write;
+#                                       exsrt_lector_lege_octeto reads. Both
+#                                       halves of the atom's row are issued
+#                                       by a routine now; `read` was
+#                                       [UNIMPLEMENTED] until the reader
+#                                       landed and this comment said so.
+#                                       read(0) needs no fd resolution the
+#                                       way write(1) does below: nothing
+#                                       outside the `ambitus` gate reads, so
+#                                       there is no core row to tell it
+#                                       apart from.
 #   alloc:     mmap(9), munmap(11)  -- exsrt_alloc_novum, exsrt_alloc_dimitte
 #   rete:      the socket family    -- SPECIAL-CASED, not read off either
 #                                       table (both leave it [OPEN] with no
@@ -296,7 +310,7 @@ POTESTATES_TABLE = {
     'archivum':   {},
     'rete':       {},   # special-cased in classify_potestates -- see below
     'fortuna':    {},
-    'ambitus':    {0: 'read', 1: 'write'},
+    'ambitus':    {0: 'read', 1: 'write'},  # read: exsrt_lector_lege_octeto
     'Filum':      {},
     'machina':    {},
     'Crudum':     {},
@@ -717,14 +731,14 @@ self_test() {
   tmpdir="$(mktemp -d)"
   trap 'rm -rf "$tmpdir"' EXIT
 
-  echo "### self-test 1/4: clean_syscalls.asm -- expect AUDIT: PASS ###"
+  echo "### self-test 1/5: clean_syscalls.asm -- expect AUDIT: PASS ###"
   INCLUDE="${INCLUDE:-$REPO_ROOT/vendor/fasmg-x86}" "$FASMG" "$clean_src" "$tmpdir/clean.out" >/dev/null
   chmod +x "$tmpdir/clean.out"
   local clean_rc=0
   audit_binary "$tmpdir/clean.out" || clean_rc=$?
   echo
 
-  echo "### self-test 2/4: socket_syscall.asm -- expect AUDIT: FAIL (socket flagged) ###"
+  echo "### self-test 2/5: socket_syscall.asm -- expect AUDIT: FAIL (socket flagged) ###"
   INCLUDE="${INCLUDE:-$REPO_ROOT/vendor/fasmg-x86}" "$FASMG" "$socket_src" "$tmpdir/socket.out" >/dev/null
   chmod +x "$tmpdir/socket.out"
   local socket_rc=0
@@ -736,25 +750,50 @@ self_test() {
   # socket_syscall.asm already exercises the one syscall this whole script
   # exists to reject unconditionally in default mode).
 
-  echo "### self-test 3/4: clean_syscalls.asm --potestates Mundus,ambitus -- expect AUDIT: PASS ###"
+  echo "### self-test 3/5: clean_syscalls.asm --potestates Mundus,ambitus -- expect AUDIT: PASS ###"
   local pot_clean_admit_rc=0
   audit_binary "$tmpdir/clean.out" "Mundus,ambitus" || pot_clean_admit_rc=$?
   echo
 
-  echo "### self-test 3/4: clean_syscalls.asm --potestates Mundus (no ambitus) -- expect AUDIT: FAIL (read not admitted) ###"
+  echo "### self-test 3/5: clean_syscalls.asm --potestates Mundus (no ambitus) -- expect AUDIT: FAIL (read not admitted) ###"
   local pot_clean_deny_rc=0
   audit_binary "$tmpdir/clean.out" "Mundus" || pot_clean_deny_rc=$?
   echo
 
-  echo "### self-test 4/4: socket_syscall.asm --potestates Mundus,rete -- expect AUDIT: PASS (rete admits the socket family) ###"
+  echo "### self-test 4/5: socket_syscall.asm --potestates Mundus,rete -- expect AUDIT: PASS (rete admits the socket family) ###"
   local pot_socket_admit_rc=0
   audit_binary "$tmpdir/socket.out" "Mundus,rete" || pot_socket_admit_rc=$?
   echo
 
-  echo "### self-test 4/4: socket_syscall.asm --potestates Mundus (no rete) -- expect AUDIT: FAIL (socket-family, rete not named) ###"
+  echo "### self-test 4/5: socket_syscall.asm --potestates Mundus (no rete) -- expect AUDIT: FAIL (socket-family, rete not named) ###"
   local pot_socket_deny_rc=0
   audit_binary "$tmpdir/socket.out" "Mundus" || pot_socket_deny_rc=$?
   echo
+
+  # --potestates, on the PRELUDE's own reader rather than on a synthetic
+  # fixture: tests/unit/prelude_lege_octeto.asm assembles the blob with
+  # {Mundus, ambitus} and its `read(0)` is `exsrt_lector_lege_octeto`'s. The
+  # two cases above prove the TABLE admits read under ambitus; these two
+  # prove it on the binary a compiled program actually carries, in both
+  # directions -- which is the claim prelude/README.md's per-atom table
+  # makes and the one `read` had no routine to support until the reader
+  # landed.
+  local lector_src="$REPO_ROOT/tests/unit/prelude_lege_octeto.asm"
+  local pot_lector_admit_rc=0 pot_lector_deny_rc=0
+  if [[ -f "$lector_src" ]]; then
+    echo "### self-test 5/5: prelude_lege_octeto.asm --potestates Mundus,ambitus -- expect AUDIT: PASS (the prelude's read(0)) ###"
+    INCLUDE="${INCLUDE:-$REPO_ROOT/vendor/fasmg-x86}" "$FASMG" "$lector_src" "$tmpdir/lector.out" >/dev/null
+    chmod +x "$tmpdir/lector.out"
+    audit_binary "$tmpdir/lector.out" "Mundus,ambitus" || pot_lector_admit_rc=$?
+    echo
+
+    echo "### self-test 5/5: prelude_lege_octeto.asm --potestates Mundus (no ambitus) -- expect AUDIT: FAIL (read and the stream writes need ambitus) ###"
+    audit_binary "$tmpdir/lector.out" "Mundus" || pot_lector_deny_rc=$?
+    echo
+  else
+    echo "self-test: fixture missing: $lector_src" >&2
+    exit 2
+  fi
 
   local all_ok=1
   [[ "$clean_rc" -eq 0 ]] || all_ok=0
@@ -763,14 +802,17 @@ self_test() {
   [[ "$pot_clean_deny_rc" -ne 0 ]] || all_ok=0
   [[ "$pot_socket_admit_rc" -eq 0 ]] || all_ok=0
   [[ "$pot_socket_deny_rc" -ne 0 ]] || all_ok=0
+  [[ "$pot_lector_admit_rc" -eq 0 ]] || all_ok=0
+  [[ "$pot_lector_deny_rc" -ne 0 ]] || all_ok=0
 
   if [[ "$all_ok" -eq 1 ]]; then
-    echo "SELF-TEST: PASS -- default-mode clean/socket fixtures correct; --potestates union (Mundus,ambitus / Mundus,rete) admits what it should and Mundus alone rejects read and socket correctly"
+    echo "SELF-TEST: PASS -- default-mode clean/socket fixtures correct; --potestates union (Mundus,ambitus / Mundus,rete) admits what it should, Mundus alone rejects read and socket correctly, and the prelude's own reader passes under ambitus and fails without it"
     exit 0
   else
     echo "SELF-TEST: FAIL -- clean_rc=$clean_rc(want 0) socket_rc=$socket_rc(want !=0)" \
          "pot_clean_admit_rc=$pot_clean_admit_rc(want 0) pot_clean_deny_rc=$pot_clean_deny_rc(want !=0)" \
-         "pot_socket_admit_rc=$pot_socket_admit_rc(want 0) pot_socket_deny_rc=$pot_socket_deny_rc(want !=0)" >&2
+         "pot_socket_admit_rc=$pot_socket_admit_rc(want 0) pot_socket_deny_rc=$pot_socket_deny_rc(want !=0)" \
+         "pot_lector_admit_rc=$pot_lector_admit_rc(want 0) pot_lector_deny_rc=$pot_lector_deny_rc(want !=0)" >&2
     exit 1
   fi
 }

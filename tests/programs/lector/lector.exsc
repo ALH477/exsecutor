@@ -1,0 +1,45 @@
+// `cat`, in Exsecutor: every byte of standard input, unchanged, on standard
+// output. `Lector.ab_introitu(a)` is the reader `Scriptor.ad_exitum(a)` is the
+// writer -- spec 4.6 puts all three streams in `ambitus` -- and
+// `l.lege_octeto()` is `s.scribe_octeto(b)` turned round.
+//
+// WHY IT IS A `u16`. A byte has 256 values and the loop needs a 257th thing
+// to mean "the input ended", so `lege_octeto` answers 0..255 or 256. That is
+// provisional exactly as `scribe`'s count is (spec 11 wants `eventus`, which
+// has no syntax yet), and it is why the comparison below is against 256 and
+// the write takes `c sicut u8`: inside the loop the value IS a byte.
+//
+// EOF AND ERROR ARE THE SAME ANSWER. A broken stream also reads 256, so this
+// program cannot tell a truncated input from a complete one. Stated here
+// because a `cat` that silently stops at an I/O error is a real hazard; the
+// fix is `eventus`, not a second sentinel.
+//
+// The input is tests/data/lector_intra.bin -- 41 bytes, which is not a power
+// of two, holding 0x00, 0xff, a lone 0x80 and a CR -- and the expected stdout
+// is THAT SAME FILE, compared with `cmp`. A text comparison would be the
+// wrong test for these bytes; identity against the one file rather than
+// against a copy of it means no second file can drift.
+//
+// `lege` is `emitte`'s shape in tests/programs/octeti: the authority is the
+// reader's own (spec 4.2's table -- a capability-bearing type's row is its
+// mark), so its declared row is `poscit sicut l` and nothing else.
+
+functio lege(l: Lector) -> u16 poscit sicut l {
+    redde l.lege_octeto();
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma l = Lector.ab_introitu(a);
+    firma s = Scriptor.ad_exitum(a);
+
+    mutabilis c: u16 = lege(l);
+    dum c ne 256 {
+        si s.scribe_octeto(c sicut u8) ne 1 {
+            redde 2;
+        }
+        c = lege(l);
+    }
+    redde 0;
+}

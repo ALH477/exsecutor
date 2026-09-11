@@ -636,6 +636,15 @@ chk_row_pre_marks:
 	db 0			; 6 `functio scribe(s: Scriptor, t: textus)`
 	db 0			; 7 `functio alloc(m: Mundus, n: mensura)`
 	db 0			; 8 `functio scribe_octeto(s: Scriptor, b: u8)`
+	db AST_CAP_AMBITUS	; 9 `structura Lector` -- mark {ambitus}, through
+				;   its field `a`, exactly as row 1. `Lector`
+				;   declares no FIELD row (interface.inc part A
+				;   says why), so this byte is the only place the
+				;   mark is written down -- which is the drift
+				;   this header already reports, now with one
+				;   fewer row to cross-read it against.
+	db 0			; 10 `functio ab_introitu(a: ambitus) -> Lector`
+	db 0			; 11 `functio lege_octeto(l: Lector) -> u16`
 assert $ - chk_row_pre_marks = CHK_TY_PRE_COUNT
 
 ; ---- spec §4.3: the atoms a TYPE bears -------------------------------------

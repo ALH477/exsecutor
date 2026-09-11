@@ -1,0 +1,13 @@
+# `cat`: stdin is tests/data/lector_intra.bin and stdout must be that same
+# file, byte for byte (check_run compares with `cmp`). One file, used twice --
+# a copy under expected.out could drift from the input and the test would
+# still pass. The file is BINARY (0x00, 0xff, a lone 0x80, a CR) and
+# .gitattributes marks tests/data/*.bin -text so no checkout normalises it.
+#
+# 41 bytes: not a power of two, so a reader that filled a 16- or 32-byte
+# buffer and lost the tail would show here rather than pass by luck.
+#
+# stdin= is tests/run.sh's key for this, added with the reader; absent, a
+# program test's stdin is /dev/null, which for this program is a zero-byte
+# stdout and a green test that proves nothing.
+TEST: expect-exit=0 stdin=tests/data/lector_intra.bin stdout=tests/data/lector_intra.bin

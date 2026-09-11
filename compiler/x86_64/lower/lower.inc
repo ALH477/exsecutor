@@ -155,6 +155,8 @@ proc __lwr_iface_ir, lwrsp, lwrc
 	je	.u64
 	cmp	eax, EXS_IFACE_T_I32
 	je	.i32
+	cmp	eax, EXS_IFACE_T_U16
+	je	.u16
 	xor	eax, eax
 	return
   .ptr:
@@ -165,6 +167,19 @@ proc __lwr_iface_ir, lwrsp, lwrc
 	return
   .u64:
 	mov	eax, [rbx + LwrState.tu64]
+	return
+  .u16:
+	; `lege_octeto`'s result (interface.inc row 10): a byte, or the 256 that
+	; is not one. Interned exactly as `ty.inc`'s `.int` interns a `u16`
+	; -- (BFA_TK_U, sign 0, width 16) -- so the declaration this pass emits
+	; for the prelude routine and the type of the CALL that reaches it are
+	; the same IR type id and not two that print alike.
+	mov	rdi, [rbx + LwrState.mdl]
+	mov	esi, BFA_TK_U
+	xor	edx, edx
+	mov	ecx, 16
+	xor	r8, r8
+	call	bfa_type_intern
 	return
   .i32:
 	; sign 1, as ty.inc's `.int` and parse.inc give every `iN` -- the sign

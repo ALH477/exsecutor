@@ -88,7 +88,7 @@
 ; `docs/design/runtime.md` 2.2 and spec §12: the prelude's names are
 ; "pre-seeded declarations in a scope OUTSIDE the module", which a module's own
 ; declaration SHADOWS rather than colliding with. `prelude/interface.inc` part
-; B serializes eight of them and says its serialization "is the checker agent's
+; B serializes eleven of them and says its serialization "is the checker agent's
 ; to accept or replace". It is ACCEPTED as the source of the facts (part A's
 ; offsets and part B's row order) and REPLACED as the storage: this file
 ; carries its own name pool and builds real `Ast.types` entries, because a
@@ -134,7 +134,7 @@
 ;   - `chk_verify`'s `__chk_v_path` asserts that a filled `d` names a
 ;     declaration that exists. One line was added there -- `btr r13, 31`,
 ;     immediately after the `jz .unresolved` -- which drops the tag and leaves
-;     the row index, a number in 1..8 that is always <= `ast_decl_count` (the
+;     the row index, a number in 1..11 that is always <= `ast_decl_count` (the
 ;     eleven atoms alone make the count >= 11). A one-segment `Path`'s
 ;     `rassert r14 eq r13` still compares two TAGGED values and is unaffected,
 ;     because it runs before that line. That edit is outside this agent's tree
@@ -174,6 +174,9 @@ CHK_TY_PRE_AD_EXITUM	= EXS_IFACE_D_AD_EXITUM + 1
 CHK_TY_PRE_SCRIBE	= EXS_IFACE_D_SCRIBE + 1
 CHK_TY_PRE_ALLOC	= EXS_IFACE_D_ALLOC_NOVUM + 1
 CHK_TY_PRE_SCRIBE_OCT	= EXS_IFACE_D_SCRIBE_OCTETUM + 1
+CHK_TY_PRE_LECTOR	= EXS_IFACE_D_LECTOR + 1
+CHK_TY_PRE_AB_INTROITU	= EXS_IFACE_D_AB_INTROITU + 1
+CHK_TY_PRE_LEGE_OCT	= EXS_IFACE_D_LEGE_OCTETO + 1
 CHK_TY_PRE_COUNT	= EXS_IFACE_DECL_COUNT
 
 ; ---- primitive pool indices ------------------------------------------------
@@ -286,10 +289,14 @@ chk_ty_pre_names:
 	db 6,'scribe'
 	db 5,'alloc'
 	db 13,'scribe_octeto'
+	db 6,'Lector'
+	db 11,'ab_introitu'
+	db 11,'lege_octeto'
 CHK_TY_PRE_NAMES_LEN = $ - chk_ty_pre_names
 assert CHK_TY_PRE_ALLOC = 7
 assert CHK_TY_PRE_SCRIBE_OCT = 8
-assert CHK_TY_PRE_COUNT = 8
+assert CHK_TY_PRE_LEGE_OCT = 11
+assert CHK_TY_PRE_COUNT = 11
 
 ; `arborea` and `ordinata` -- spec §5.4's two reduction shapes, §8.6's
 ; `['forma' IDENT [INT]]`. Not keywords (lexer/keywords.inc does not know
@@ -512,6 +519,30 @@ proc __chk_ty_is_pre, chkt_d7
 	return
 endp
 
+; __chk_ty_pre_is_type(k) -> eax = 1 if 1-based prelude row `k` names a TYPE
+; -- a row `prelude/interface.inc` gives `EXS_IFACE_K_STRUCT`. Two today,
+; `Scriptor` and `Lector`, and every reader that used to compare against
+; `CHK_TY_PRE_SCRIPTOR` alone asks this instead: module-scope lookup (below),
+; type position (sig.inc), expression position (types.inc) and an associated
+; call's receiver (member.inc). A third prelude struct is then one line here
+; and one row there, which is what "generalised" has to mean for a table the
+; compiler cannot read at runtime (it holds part A's constants only --
+; compute.inc's `chk_row_pre_marks` header states that bargain in full).
+proc __chk_ty_pre_is_type, chkt_kpt
+	locals
+	endl
+	mov	rax, [chkt_kpt]
+	cmp	rax, CHK_TY_PRE_SCRIPTOR
+	je	.yes
+	cmp	rax, CHK_TY_PRE_LECTOR
+	je	.yes
+	xor	eax, eax
+	return
+  .yes:
+	mov	eax, 1
+	return
+endp
+
 ; __chk_ty_raise(w, code, n) -> rax = the buffered `ChkDiag`, so a caller may
 ; attach a note or a related span. Every diagnostic this pass raises goes
 ; through `chk_raise` with `CHK_P_TYPES`, so that `chk_flush` can put the
@@ -676,9 +707,10 @@ endp
 ; and that the table has no entry for spec §5.1's type names -- and both are
 ; answered here: the tag (this file's header) and the primitive table (part 1).
 ;
-; ONLY `Scriptor` IS IN MODULE SCOPE. The other seven rows are members and
-; associated functions of it, reached through `Member` and resolved against a
-; receiver's TYPE (`__chk_ty_member`, types.inc), never by a bare name; and
+; ONLY THE TYPE ROWS ARE IN MODULE SCOPE -- `Scriptor` and `Lector`. The other
+; rows are members and associated functions of one of them, reached through
+; `Member` and resolved against a receiver's TYPE (`__chk_ty_member`,
+; types.inc), never by a bare name; and
 ; `ambitus` and `alloc` are spec §4.6 capability ATOMS before they are anything
 ; else, so `ast_cap_of_name` answers them in pass 1 and this table must not
 ; also claim the spelling. Spec §12: a module's own declaration SHADOWS the
@@ -718,9 +750,14 @@ proc chk_ty_prelude_lookup, chkt_cx2, chkt_nm2
 	lea	rdx, [chk_ty_pre_names]
 	mov	rcx, CHK_TY_PRE_NAMES_LEN
 	call	__chk_ty_pool
-	cmp	rax, CHK_TY_PRE_SCRIPTOR
-	jne	.none
-	mov	rax, CHK_TY_PRELUDE or CHK_TY_PRE_SCRIPTOR
+	mov	rbx, rax
+	mov	rdi, rax
+	call	__chk_ty_pre_is_type
+	test	eax, eax
+	jz	.none
+	mov	eax, ebx
+	or	eax, CHK_TY_PRELUDE	; 0x80000000: a 32-bit `or`, which
+					; is what fits in an imm32
 	return
   .none:
 	xor	eax, eax
@@ -888,6 +925,12 @@ proc chk_ty_prelude_type, chkt_wp, chkt_kp
 	je	.fn_alloc
 	cmp	r12, CHK_TY_PRE_SCRIBE_OCT
 	je	.fn_scribe_oct
+	cmp	r12, CHK_TY_PRE_LECTOR
+	je	.lector
+	cmp	r12, CHK_TY_PRE_AB_INTROITU
+	je	.fn_abintroitu
+	cmp	r12, CHK_TY_PRE_LEGE_OCT
+	je	.fn_lege_oct
 	mov	rdi, rbx
 	call	__chk_ty_err
 	return
@@ -1076,6 +1119,82 @@ proc chk_ty_prelude_type, chkt_wp, chkt_kp
 	mov	rdi, rbx
 	mov	rsi, [chkt_ep]
 	mov	rdx, 2
+	call	__chk_ty_fn_empty
+	return
+
+  .lector:
+	; `structura Lector { a: ambitus, descriptor: i32 }` -- `Scriptor`'s
+	; representation for the input stream. Nominal identity is the tagged
+	; row, exactly as above, so `Lector` and `Scriptor` are DIFFERENT ids
+	; and neither is assignable to the other.
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, AST_TY_STRUCT
+	mov	rdx, CHK_TY_PRELUDE or CHK_TY_PRE_LECTOR
+	xor	rcx, rcx
+	call	ast_type_una
+	return
+
+  .fn_abintroitu:
+	; functio ab_introitu(a: ambitus) -> Lector  (associated, no receiver)
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	call	ast_list_mark
+	mov	[chkt_np], rax
+	mov	rdi, rbx
+	mov	rsi, AST_CAP_AMBITUS
+	call	__chk_ty_atom
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, rbx
+	mov	rsi, CHK_TY_PRE_LECTOR
+	call	chk_ty_prelude_type
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_np]
+	call	ast_list_emit
+	mov	[chkt_ep], rax
+	mov	rdi, rbx
+	mov	rsi, [chkt_ep]
+	mov	rdx, 1
+	call	__chk_ty_fn_empty
+	return
+
+  .fn_lege_oct:
+	; functio lege_octeto(l: Lector) -> u16
+	; THE RESULT IS `u16`, NOT `mensura` AND NOT `u8`: the routine answers a
+	; byte or 256, and 256 is not a byte (prelude/interface.inc row 10 and
+	; the blob's own comment). `u8` has no value left for "the input ended",
+	; and `mensura` would promise a count this call does not return. The row
+	; is APERTUM for `scribe`'s reason and this table follows the ROW, not
+	; the amendment, so the two cannot disagree silently. The same empty row
+	; as `scribe`: the authority is the receiver's mark (spec §4.2's table),
+	; so a caller writes `poscit sicut l`.
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	call	ast_list_mark
+	mov	[chkt_np], rax
+	mov	rdi, rbx
+	mov	rsi, CHK_TY_PRE_LECTOR
+	call	chk_ty_prelude_type
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, AST_SIGN_U
+	mov	rdx, 16
+	mov	rcx, AST_ORD_NATIVUS
+	call	ast_type_int
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_np]
+	call	ast_list_emit
+	mov	[chkt_ep], rax
+	mov	rdi, rbx
+	mov	rsi, [chkt_ep]
+	mov	rdx, 1
 	call	__chk_ty_fn_empty
 	return
 endp

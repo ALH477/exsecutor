@@ -559,9 +559,9 @@ proc __lwr_path, lwrsp, lwrn
 	mov	eax, r12d
 	return
   .prelude:
-	; a bare prelude NAME in value position -- only `Scriptor` can be one,
-	; and only as the receiver of an associated call, which __lwr_call
-	; handles without ever lowering the path
+	; a bare prelude NAME in value position -- only a prelude TYPE can be
+	; one (`Scriptor`, `Lector`), and only as the receiver of an associated
+	; call, which __lwr_call handles without ever lowering the path
 	rassert	eax eq 0
 	return
 endp
@@ -1699,8 +1699,10 @@ proc __lwr_recv_is_type, lwrsp, lwrrecv
 	jz	.no
 	mov	eax, ecx
 	test	eax, LWR_PRELUDE_TAG
-	jnz	.yes			; the only prelude name in module scope
-					; is `Scriptor`, which is a type
+	jnz	.yes			; the only prelude names in module scope
+					; are `Scriptor` and `Lector`, and both
+					; are types (checker/types/prim.inc's
+					; `__chk_ty_pre_is_type`)
 	mov	rdi, [rbx + LwrState.tree]
 	mov	esi, [lwrd]
 	call	ast_decl_at

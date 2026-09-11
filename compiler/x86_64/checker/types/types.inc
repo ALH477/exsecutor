@@ -800,9 +800,13 @@ proc __chk_ty_path_expr, chkt_wA, chkt_nA
 	lea	rdx, [chk_ty_pre_names]
 	mov	rcx, CHK_TY_PRE_NAMES_LEN
 	call	__chk_ty_pool
-	cmp	rax, CHK_TY_PRE_SCRIPTOR
-	jne	.unres
-	mov	r13, CHK_TY_PRELUDE or CHK_TY_PRE_SCRIPTOR
+	mov	r14, rax			; the row, before the type test
+	mov	rdi, rax
+	call	__chk_ty_pre_is_type		; `Scriptor` or `Lector` (prim.inc)
+	test	eax, eax
+	jz	.unres
+	mov	r13d, r14d
+	or	r13d, CHK_TY_PRELUDE
 	mov	rdi, rbx
 	mov	rsi, [chkt_sA]
 	mov	rdx, r13

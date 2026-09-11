@@ -1,0 +1,8 @@
+# The count IS the exit status: tests/data/lector_intra.bin is 41 bytes, so
+# `expect-exit=41` is the whole assertion. Nothing is written, so check_run's
+# "wrote to stdout, expected nothing" is the second half of it -- a reader
+# that stopped at the first 0x00 would exit 1, one that never saw EOF would
+# be killed by the 20-second limit, and both are failures here.
+#
+# No stdout= and no expected.out: a program whose only output is its status.
+TEST: expect-exit=41 stdin=tests/data/lector_intra.bin

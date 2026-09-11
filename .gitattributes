@@ -50,6 +50,17 @@ tests/conformance/** -text
 # `eol=lf` would then rewrite the expectation instead of the program failing.
 tests/programs/*/expected.out -text
 
+# --- tests/data/*.bin: a fixture's INPUT bytes, byte-exact ---
+#
+# The same rule for the other direction. tests/run.sh's `stdin=` points a
+# fixture's fd 0 at one of these (tests/data/lector_intra.bin holds 0x00,
+# 0xff, a lone 0x80 and a CR; tests/data/lector_quattuor.bin is four bytes and
+# no NUL-free heuristic would call it text), and for the `cat` program the
+# same file is ALSO the expected stdout -- so a checkout that rewrote a CR
+# would change the input and the expectation together and the test would pass
+# while proving nothing. `-text`, for exactly the reason above.
+tests/data/*.bin -text
+
 # PROVENANCE.md is ours, not upstream's, and is excluded from the digest.
 vendor/fasmg-x86/PROVENANCE.md text eol=lf
 vendor/hydramodem-tx/PROVENANCE.md text eol=lf

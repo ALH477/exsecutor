@@ -556,18 +556,24 @@ proc __chk_ty_path_type, chkt_wh, chkt_nh
 	lea	rdx, [chk_ty_pre_names]
 	mov	rcx, CHK_TY_PRE_NAMES_LEN
 	call	__chk_ty_pool
-	cmp	rax, CHK_TY_PRE_SCRIPTOR
-	jne	.unknown
+	mov	r14, rax		; the row, before the type test
+	mov	rdi, rax
+	call	__chk_ty_pre_is_type	; `Scriptor` or `Lector` (prim.inc): a
+					; MEMBER row is not a type name
+	test	eax, eax
+	jz	.unknown
 	mov	rdi, rbx
 	mov	rsi, r13
-	mov	rdx, CHK_TY_PRELUDE or CHK_TY_PRE_SCRIPTOR
+	mov	edx, r14d
+	or	edx, CHK_TY_PRELUDE
 	call	__chk_ty_setd
 	mov	rdi, rbx
 	mov	rsi, r12
-	mov	rdx, CHK_TY_PRELUDE or CHK_TY_PRE_SCRIPTOR
+	mov	edx, r14d
+	or	edx, CHK_TY_PRELUDE
 	call	__chk_ty_setd
 	mov	rdi, rbx
-	mov	rsi, CHK_TY_PRE_SCRIPTOR
+	mov	rsi, r14
 	call	chk_ty_prelude_type
 	jmp	.out
 

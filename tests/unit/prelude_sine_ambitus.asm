@@ -32,11 +32,18 @@
 ; accident would have shipped in every Mundus-only program unnoticed.
 ;
 ; THIS FIXTURE: the closure is {Mundus} alone, and after the blob is
-; assembled it ASSERTS that none of the gated labels exists -- the four
+; assembled it ASSERTS that none of the gated labels exists -- the six
 ; IR-callable `ambitus` routines, `Scriptor.scribe_octeto` among them
-; (wire-codec.md D7 puts it inside this gate), and the ExsAmbitus record in
+; (wire-codec.md D7 puts it inside this gate) and both halves of the READER
+; (`Lector.ab_introitu`, `Lector.lege_octeto`), and the ExsAmbitus record in
 ; the data blob. Moving any of them out of the gate is an assembly failure
 ; here, naming the label. The run itself is the entry stub and a `redde 0`.
+;
+; THE READER IS WHY THE GATE IS NOW CHECKED IN BOTH DIRECTIONS AND NOT ONE.
+; `read(0)` is the atom's other syscall, and the unit phase audits against
+; the COMPILER's nine, which include `read` as well as `write` -- so an
+; ungated reader would pass every AMBITUS=0 fixture's audit exactly as an
+; ungated writer did. This file, not the audit, is what catches it.
 ;
 ; `defined` in fasmg sees a label defined anywhere in the source, before or
 ; after the test, so the checks come last only for the reader's sake.
@@ -86,6 +93,12 @@ if defined bfausr_exsrt_scriptor_scribe
 end if
 if defined bfausr_exsrt_scriptor_scribe_octeto
 	err 'prelude: bfausr_exsrt_scriptor_scribe_octeto is assembled with EXS_POTESTAS_AMBITUS = 0 -- it is outside the ambitus gate'
+end if
+if defined bfausr_exsrt_lector_ab_introitu
+	err 'prelude: bfausr_exsrt_lector_ab_introitu is assembled with EXS_POTESTAS_AMBITUS = 0 -- it is outside the ambitus gate'
+end if
+if defined bfausr_exsrt_lector_lege_octeto
+	err 'prelude: bfausr_exsrt_lector_lege_octeto is assembled with EXS_POTESTAS_AMBITUS = 0 -- it is outside the ambitus gate'
 end if
 if defined exsrt_ambitus
 	err 'prelude_data: exsrt_ambitus is assembled with EXS_POTESTAS_AMBITUS = 0 -- it is outside the ambitus gate'

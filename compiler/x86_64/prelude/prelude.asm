@@ -169,6 +169,12 @@ EXS_SCRIPTOR_A		= 0		; Scriptor.a          ambitus (ptr)
 EXS_SCRIPTOR_DESCRIPTOR	= 8		; Scriptor.descriptor i32
 EXS_SCRIPTOR_SIZE	= 16		; align 8
 
+EXS_LECTOR_A		= 0		; Lector.a            ambitus (ptr)
+EXS_LECTOR_DESCRIPTOR	= 8		; Lector.descriptor   i32
+EXS_LECTOR_SIZE		= 16		; align 8 -- Scriptor's representation,
+					; the other direction (spec 3.3: `leg-`
+					; supine `lect-`, `-or` an agent noun)
+
 EXS_TEXTUS_PTR		= 0		; textus.ptr          ptr    (runtime.md 2.3)
 EXS_TEXTUS_LEN		= 8		; textus.len          u64
 EXS_TEXTUS_SIZE		= 16
@@ -401,6 +407,90 @@ bfausr_exsrt_scriptor_scribe_octeto:
 	cmp	eax, -4				; -EINTR: nothing was written, retry
 	je	.loop
 	xor	eax, eax			; any other -errno: 0 bytes written
+  .done:
+	mov	rsp, rbp
+	pop	rbp
+	ret
+
+; bfausr_exsrt_lector_ab_introitu(ret: ptr, a: ptr) -> void
+;   `Lector.ab_introitu(a)`. The reader over the process's standard INPUT, as
+;   `Scriptor.ad_exitum(a)` is the writer over its standard output: spec 4.6
+;   places all three streams in `ambitus` ("Standard input, output and error
+;   belong to `ambitus`"), and this is the input one. `Lector` is an
+;   aggregate, so IR 2.9 passes a hidden pointer to caller-owned storage
+;   FIRST and the receiver-less argument `a` second -- `ad_exitum`'s shape,
+;   instruction for instruction, reading `ExsAmbitus.in` where that one reads
+;   `.out`. It cannot fail: spec 4.7 makes the derivation total on a host
+;   that has the atom, and a closed descriptor is discovered by the READ, not
+;   by the constructor.
+bfausr_exsrt_lector_ab_introitu:
+	mov	[rdi + EXS_LECTOR_A], rsi
+	mov	eax, [rsi + EXS_AMBITUS_IN]	; read the stream, do not hardcode 0
+	mov	[rdi + EXS_LECTOR_DESCRIPTOR], eax
+	ret
+
+; bfausr_exsrt_lector_lege_octeto(l: ptr) -> u16
+;   `l.lege_octeto()`. Reads EXACTLY ONE byte from the Lector's descriptor
+;   with `read(0)` and returns it, 0..255 -- or 256, which no byte is, at end
+;   of input. `l` is an aggregate and travels by pointer; the result is a
+;   scalar in `eax`, zero-extended, so a `u16` slot holds it whole.
+;
+;   256 IS THE SENTINEL AND IT IS NOT A BYTE. Spec 5.1 gives `octeti` a byte
+;   per element, so a reader returning `u8` has no value left to spell "the
+;   stream ended" and would need the count `scribe` returns. A `u16` has 256
+;   spare values and this uses exactly one of them. That is the same
+;   provisional bargain `scribe` makes -- interface.inc marks this row
+;   EXS_IFACE_F_APERTUM -- and it ends the same way: spec 11 (as amended)
+;   says I/O reports failure as `eventus`, and when `eventus` has syntax this
+;   returns `eventus<u8>` and the sentinel goes.
+;
+;   EOF AND ERROR ARE NOT DISTINGUISHED, deliberately and provisionally. A
+;   kernel `read` returning 0 is end of input; any -errno other than EINTR --
+;   a closed descriptor, EIO, a directory handed in as fd 0 -- returns 256
+;   too, so a program cannot tell "the input ended" from "the input broke".
+;   `scribe` has the same hole in the other direction (its count is 0 on
+;   every failure) and for the same reason: there is no `eventus` to carry
+;   the difference. Stated here rather than implied, because a codec driver
+;   that loops until 256 will treat a broken stream as a complete one.
+;
+;   ERROR CONVENTION, `scribe`'s: EINTR retries the same call. A zero-length
+;   read is NOT retried -- for `read` that is end of input, not `scribe`'s
+;   "nothing moved, go again". EAGAIN on a non-blocking descriptor returns
+;   256 here rather than spinning as `scribe` does [OPEN]. The EINTR path
+;   needs a second process to produce and is [UNTESTED], as `scribe`'s is.
+;
+;   The byte lands in the frame because `read` takes a buffer ADDRESS; the
+;   kernel preserves rdi, rsi and rdx, so the EINTR retry re-issues the same
+;   call without reloading them, and nothing is held in `rcx` or `r11` (this
+;   file's header).
+;
+;   SAME GATE, THE ATOM'S OTHER SYSCALL. It sits inside
+;   `if EXS_POTESTAS_AMBITUS` next to `scribe`, and `read(0)` is what
+;   runtime.md 2.6's `ambitus` row has always tabulated and nothing has
+;   issued until now. No syscall is added to either closed set: `read` is on
+;   the compiler's nine as well, and tools/syscall-audit.sh admits it under
+;   `ambitus` and under nothing else.
+bfausr_exsrt_lector_lege_octeto:
+	push	rbp
+	mov	rbp, rsp
+	sub	rsp, 16
+	mov	edi, [rdi + EXS_LECTOR_DESCRIPTOR]
+	lea	rsi, [rbp - 8]
+	mov	edx, 1
+  .loop:
+	mov	eax, 0				; read -- an immediate, adjacent to
+	syscall					; its syscall, so the audit resolves it
+	cmp	rax, -4096			; the Linux raw-syscall error range
+	ja	.err
+	test	rax, rax			; 0 bytes and no error: END OF INPUT,
+	jz	.finis				; never a retry
+	movzx	eax, byte [rbp - 8]		; 0..255, zero-extended
+	jmp	.done
+  .err:
+	cmp	eax, -4				; -EINTR: nothing was read, retry
+	je	.loop
+  .finis:
+	mov	eax, 256			; EOF, and every other -errno with it
   .done:
 	mov	rsp, rbp
 	pop	rbp

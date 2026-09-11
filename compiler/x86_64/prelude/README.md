@@ -19,7 +19,7 @@ itself and never reaches `OUT`.
 
 ## Status
 
-`prelude.asm` and `prelude_data.asm` assemble and run, under eleven fixtures
+`prelude.asm` and `prelude_data.asm` assemble and run, under twelve fixtures
 (below). `interface.inc` part A — the layout constants — is checked against
 the blob every time both are assembled together. `interface.inc` part B — the
 serialized `Decl` rows — is `[UNTESTED]`: `checker/resolve/` does not exist,
@@ -103,6 +103,8 @@ IR-callable (`bfausr_exsrt_…`), with the IR signature the lowering must emit:
 | `exsrt_scriptor_ad_exitum` | `(ptr ptr) -> void` | hidden return `ptr` first (IR 2.9), then `a`. Cannot fail |
 | `exsrt_scriptor_scribe` | `(ptr ptr) -> u64` | both aggregates by `ptr`; returns the count. `[OPEN]`: spec 11 as amended wants `eventus<mensura>` |
 | `exsrt_scriptor_scribe_octeto` | `(ptr u8) -> u64` | `s.scribe_octeto(b)`: ONE raw byte, `b`'s low 8 bits (wire-codec.md D7). Returns the count, 1 or 0 -- `scribe`'s convention and `scribe`'s `[OPEN]` |
+| `exsrt_lector_ab_introitu` | `(ptr ptr) -> void` | `Lector.ab_introitu(a)`: the reader over `ExsAmbitus.in`, `ad_exitum`'s shape with the other stream. Cannot fail |
+| `exsrt_lector_lege_octeto` | `(ptr) -> u16` | `l.lege_octeto()`: ONE raw byte, or **256** at end of input -- a value no byte has. EOF and error are NOT distinguished; `[OPEN]` for `scribe`'s reason |
 | `exsrt_alloc_novum` | `(ptr u64) -> ptr` | `(Mundus, capacity) -> ExsArena*`. `[OPEN]` surface spelling |
 | `exsrt_alloc_da` | `(ptr u64 u64) -> ptr` | `(arena, n, align)`. `align` is a precondition: a power of two, at least 1 |
 | `exsrt_alloc_reconde` | `(ptr) -> void` | `cur = base` (spec 6.3 decision 1) |
@@ -135,6 +137,7 @@ ExsMundus  { rsp0 ptr @0 }                                     8 bytes
 ExsAmbitus { in i32 @0, out i32 @4, err i32 @8,
              argc u64 @16, argv ptr @24, envp ptr @32 }       40 bytes
 Scriptor   { a ambitus @0, descriptor i32 @8 }                16 bytes, align 8
+Lector     { a ambitus @0, descriptor i32 @8 }                16 bytes, align 8
 textus     { ptr @0, len u64 @8 }                             16 bytes, a VALUE view
 ExsObj     { rc u64 @0, dtor ptr @8 }, payload at +16
 ExsArena   { base ptr @0, cur ptr @8, limit ptr @16 }         24 bytes
@@ -186,7 +189,7 @@ audit a property of the artifact.
 | atom | syscalls | routines |
 |---|---|---|
 | core (always) | `exit_group(231)`; `write(1)` to fd 2 | `exsrt_start`, `exsrt_abort` |
-| `ambitus` | `write(1)`, `read(0)` | `exsrt_scriptor_scribe`, `exsrt_scriptor_scribe_octeto` (`read` is `[UNIMPLEMENTED]` — no reader exists yet) |
+| `ambitus` | `write(1)`, `read(0)` | `exsrt_scriptor_scribe`, `exsrt_scriptor_scribe_octeto`; `exsrt_lector_lege_octeto` is the `read` — the row's other half, tabulated since the blob was written and `[UNIMPLEMENTED]` until it landed |
 | `alloc` | `mmap(9)`, `munmap(11)` | `exsrt_alloc_novum`, `exsrt_alloc_dimitte` |
 | `archivum` `horologium` `fortuna` `rete` `Filum` `machina` `sermo` `Crudum` | `[OPEN]` | none |
 
@@ -196,17 +199,22 @@ Measured, not asserted — `tools/syscall-audit.sh` on each fixture binary:
 |---|---|---|
 | `prelude_scribe` | Mundus, ambitus | `exit_group`, `write` ×3 (`scribe`, `scribe_octeto`, and `exsrt_abort`'s unreached path) |
 | `prelude_scribe_octeto` | Mundus, ambitus | the same three, plus the fixture's OWN `lseek` -- its instrument for stdout's offset, not a prelude syscall |
+| `prelude_lege_octeto` | Mundus, ambitus | `exit_group`, `read` (`lege_octeto`), `write` ×3 (the two writers, and `exsrt_abort`'s unreached path) |
 | `prelude_sine_ambitus` | Mundus | `exit_group`, `write` (abort only) |
 | `prelude_arc`, `prelude_arc_resurrectio`, `prelude_abortus_terminus`, `prelude_mxcsr*` | Mundus | `exit_group`, `write` (abort only) |
 | `prelude_arena`, `prelude_arena_exhausta` | Mundus, alloc | `exit_group`, `mmap`, `munmap`, `write` (abort only) |
 
-The gating is therefore checked in both directions: `scribe`'s `write`
-disappears when `ambitus` is 0, and `mmap`/`munmap` appear only when `alloc`
-is 1. That is runtime.md H2 kept per atom. The `ambitus` half is no longer
-only measured: `prelude_sine_ambitus` assembles the blob with the atom at 0
-and fails to assemble if any `ambitus` routine or record is still defined.
-(The audit alone cannot catch that in the unit phase, which checks against
-the compiler's nine, `write` included.)
+The gating is therefore checked in both directions: `scribe`'s `write` and
+`lege_octeto`'s `read` disappear when `ambitus` is 0, and `mmap`/`munmap`
+appear only when `alloc` is 1. That is runtime.md H2 kept per atom. The
+`ambitus` half is no longer only measured: `prelude_sine_ambitus` assembles
+the blob with the atom at 0 and fails to assemble if any `ambitus` routine or
+record is still defined. (The audit alone cannot catch that in the unit
+phase, which checks against the compiler's nine — `read` and `write` both
+included, so the reader needs that fixture exactly as the writer did.)
+`tools/syscall-audit.sh --self-test` now audits `prelude_lege_octeto`'s own
+binary under `Mundus,ambitus` (PASS) and under `Mundus` alone (FAIL), which
+is the `--potestates` half of the same claim.
 
 **No socket-family syscall appears here, and none ever will without a `rete`
 routine.** CLAUDE.md's "no socket-family syscall, ever" binds `exsc`'s own
@@ -230,7 +238,8 @@ hand-written `bfausr_initium` in place of an emitted one — the way
 |---|---|---|---|
 | `prelude_scribe.asm` | Mundus, ambitus | `exit=101`, `audit=pass` | the entry stub, `m.ambitus()`, `Scriptor.ad_exitum`, `scribe` writing 101 bytes and **returning 101**; the literal byte-identical to `examples/saluta.expected`; `Scriptor.descriptor` read through `interface.inc`'s own offset (H4) |
 | `prelude_scribe_octeto.asm` | Mundus, ambitus | `exit=7`, `audit=pass` | `scribe_octeto` writes EXACTLY one byte per call -- stdout's file offset, read back with `lseek`, moves by one each time -- and returns 1, for 0x00 0x7f 0xff 0x80 0xd3 and two arguments with garbage above bit 7; returns 0 and writes nothing on a descriptor the kernel refuses; touches no callee-saved register. The byte VALUES are `tests/programs/octeti`'s, compared with `cmp` |
-| `prelude_sine_ambitus.asm` | Mundus | `exit=0` | with `ambitus` at 0, none of the four `ambitus` routines nor `exsrt_ambitus` is assembled -- an assembly-time check, so a routine moved out of the gate fails here by name |
+| `prelude_lege_octeto.asm` | Mundus, ambitus | `exit=0`, `audit=pass`, `stdin=tests/data/lector_quattuor.bin` | `Lector.ab_introitu(a)` takes `ExsAmbitus.in` (descriptor 0, read back through `interface.inc`'s own offset); `lege_octeto` returns 0x00, 0x7f, 0x80, 0xff in order, then **256** at end of input, 256 again after that, and 256 on a descriptor the kernel refuses -- EOF and error being the same answer is the documented hole, pinned here rather than implied. Touches no callee-saved register |
+| `prelude_sine_ambitus.asm` | Mundus | `exit=0` | with `ambitus` at 0, none of the six `ambitus` routines nor `exsrt_ambitus` is assembled -- an assembly-time check, so a routine moved out of the gate fails here by name |
 | `prelude_arc.asm` | Mundus | `exit=132`, `abortus 2` | retain/release, the destructor running exactly once with `rc == 0`, the atomic pair, then saturation at 2⁶⁴−1 |
 | `prelude_arc_resurrectio.asm` | Mundus | `exit=132`, `abortus 3` | a retain from inside the destructor aborts |
 | `prelude_arena.asm` | Mundus, alloc | `exit=0`, `audit=pass` | `novum`/`da`/`reconde`/`dimitte`, alignment, and a mapping that is really readable and writeable |
@@ -278,21 +287,22 @@ runtime.md 2.4's code block is requested in the prelude agent's report.
 
 ## What is not here
 
-`[UNIMPLEMENTED]`: readers on `ambitus` (`read(0)` is in the atom's table and
-has no routine); `scalares`/`grapha` on `textus`, which need the Unicode
+`[UNIMPLEMENTED]`: `scalares`/`grapha` on `textus`, which need the Unicode
 tables inside the program (spec 11's content-addressed dependency); arena
 growth; a size-class free list, so a released object's bytes come back only
 with `reconde` (runtime.md H3).
 
-`[UNTESTED]`: `scribe`'s partial-write loop and its `EINTR` retry, and
-`scribe_octeto`'s `EINTR` and zero-return retries. None can be produced
-without a second process, which `tests/run.sh` does not have.
+`[UNTESTED]`: `scribe`'s partial-write loop and its `EINTR` retry,
+`scribe_octeto`'s `EINTR` and zero-return retries, and `lege_octeto`'s
+`EINTR` retry. None can be produced without a second process, which
+`tests/run.sh` does not have.
 runtime.md 3 says so and this file repeats it rather than quietly implying
 coverage.
 
 `[OPEN]`: the eight atoms with no routine and their records; `m.alloc(n)`'s
-spelling and unit; `scribe`'s and `scribe_octeto`'s `eventus<mensura>`; `EAGAIN` on a non-blocking
-descriptor; `SIGPIPE`, which kills the process under the ambient disposition
+spelling and unit; `scribe`'s and `scribe_octeto`'s `eventus<mensura>` and
+`lege_octeto`'s `eventus<u8>` -- with it, the 256 sentinel goes and EOF stops
+looking like an error; `EAGAIN` on a non-blocking descriptor; `SIGPIPE`, which kills the process under the ambient disposition
 because `rt_sigaction` is on no allowlist; weak references and `dtor`
 conventions for fields; re-asserting MXCSR after an `externus` return
 (ADR 0012's open item — the hook is that the image is a named constant a

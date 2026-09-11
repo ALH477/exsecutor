@@ -65,25 +65,36 @@
 
 ; __chk_ty_pre_assoc(k) -> eax = 1 if prelude row `k` is ASSOCIATED (called as
 ; `Type.name(...)`, no receiver). `prelude/interface.inc`'s
-; `EXS_IFACE_F_ASSOCIATA`, which today is `ad_exitum` and nothing else.
+; `EXS_IFACE_F_ASSOCIATA`: today `Scriptor.ad_exitum` and
+; `Lector.ab_introitu`, the two stream constructors, and nothing else.
 proc __chk_ty_pre_assoc, chkt_kv
 	locals
 	endl
+	mov	rax, [chkt_kv]
+	cmp	rax, CHK_TY_PRE_AD_EXITUM
+	je	.yes
+	cmp	rax, CHK_TY_PRE_AB_INTROITU
+	je	.yes
 	xor	eax, eax
-	cmp	qword [chkt_kv], CHK_TY_PRE_AD_EXITUM
-	jne	.out
+	return
+  .yes:
 	mov	eax, 1
-  .out:
 	return
 endp
 
 ; __chk_ty_pre_member(w, recvty, nameid) -> rax = the 1-based prelude row a
 ; member of `recvty` named `nameid` resolves to, or 0.
 ;
-; Three rows are reachable this way: `Scriptor.a`, `Scriptor.descriptor` and
-; `Scriptor.scribe` on a `Scriptor` value, and `Mundus.ambitus` on the
-; capability `Mundus` -- which is spec §4.7's "derivation is by method on the
-; root, `m.ambitus()`".
+; Reachable this way: `Scriptor.a`, `Scriptor.descriptor`, `Scriptor.scribe`,
+; `Scriptor.scribe_octeto` and `Scriptor.ad_exitum` on a `Scriptor`;
+; `Lector.lege_octeto` and `Lector.ab_introitu` on a `Lector`; and
+; `Mundus.ambitus` on the capability `Mundus` -- which is spec §4.7's
+; "derivation is by method on the root, `m.ambitus()`".
+;
+; THE RECEIVER'S TYPE DECIDES, NOT THE NAME ALONE. `lege_octeto` on a
+; `Scriptor` is no member at all (`EXS-E0305`), and so is `scribe_octeto` on a
+; `Lector`: the name pool answers one row and that row's owner is compared
+; against `recvty` below.
 proc __chk_ty_pre_member, chkt_wPM, chkt_tPM, chkt_mPM
 	uses	rbx, r12, r13
 	locals
@@ -115,7 +126,7 @@ proc __chk_ty_pre_member, chkt_wPM, chkt_tPM, chkt_mPM
 	mov	rsi, CHK_TY_PRE_SCRIPTOR
 	call	chk_ty_prelude_type
 	cmp	rax, r12
-	jne	.no
+	jne	.lector
 	cmp	r13, CHK_TY_PRE_SCR_A
 	je	.yes
 	cmp	r13, CHK_TY_PRE_SCR_FD
@@ -125,6 +136,18 @@ proc __chk_ty_pre_member, chkt_wPM, chkt_tPM, chkt_mPM
 	cmp	r13, CHK_TY_PRE_SCRIBE_OCT
 	je	.yes
 	cmp	r13, CHK_TY_PRE_AD_EXITUM
+	je	.yes
+	jmp	.no
+
+  .lector:
+	mov	rdi, rbx
+	mov	rsi, CHK_TY_PRE_LECTOR
+	call	chk_ty_prelude_type
+	cmp	rax, r12
+	jne	.no
+	cmp	r13, CHK_TY_PRE_LEGE_OCT
+	je	.yes
+	cmp	r13, CHK_TY_PRE_AB_INTROITU
 	je	.yes
 	jmp	.no
   .yes:
@@ -174,10 +197,11 @@ proc __chk_ty_typedecl_of, chkt_wTD, chkt_nTD
 	je	.yes
 	jmp	.no
   .pre:
-	mov	rax, r13
-	and	rax, CHK_TY_PRE_MASK
-	cmp	rax, CHK_TY_PRE_SCRIPTOR
-	jne	.no
+	mov	rdi, r13
+	and	rdi, CHK_TY_PRE_MASK
+	call	__chk_ty_pre_is_type	; `Scriptor` or `Lector`, never a member row
+	test	eax, eax
+	jz	.no
   .yes:
 	mov	rax, r13
 	return

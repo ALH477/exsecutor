@@ -38,8 +38,8 @@
 ; into `exsc` and copied into `OUT` (runtime.md 2.1). This one is `include`d
 ; into `exsc` itself.
 ;
-; RUNTIME.MD H4 -- TWO COPIES OF THE SAME LAYOUT. `ExsAmbitus`, `Scriptor`
-; and `ExsObj` offsets appear in the blob and here, and the emitter never
+; RUNTIME.MD H4 -- TWO COPIES OF THE SAME LAYOUT. `ExsAmbitus`, `Scriptor`,
+; `Lector` and `ExsObj` offsets appear in the blob and here, and the emitter never
 ; sees them (runtime.md 2.2), so this pair is the only place they can
 ; disagree. Each offset is stated ONCE below, with the blob symbol it
 ; mirrors named in its comment -- and, whenever prelude.asm has been
@@ -86,6 +86,7 @@ EXS_IFACE_T_PTR		= 1
 EXS_IFACE_T_U8		= 2
 EXS_IFACE_T_U64		= 3		; `mensura` on x86_64-linux (runtime.md 2.3)
 EXS_IFACE_T_I32		= 4
+EXS_IFACE_T_U16		= 5		; `lege_octeto`'s result: a byte, or 256
 
 ; ---- declaration flags ------------------------------------------------------
 EXS_IFACE_F_PUBLICA	= 0x01		; every prelude name is public
@@ -110,6 +111,28 @@ EXS_IFACE_SCRIPTOR_A		= 0	; mirrors prelude.asm EXS_SCRIPTOR_A
 EXS_IFACE_SCRIPTOR_DESCRIPTOR	= 8	; mirrors prelude.asm EXS_SCRIPTOR_DESCRIPTOR
 EXS_IFACE_SCRIPTOR_SIZE		= 16	; mirrors prelude.asm EXS_SCRIPTOR_SIZE
 EXS_IFACE_SCRIPTOR_ALIGN	= 8
+
+; ---- Lector -- the reader, `Scriptor`'s mirror ------------------------------
+; `structura Lector { a: ambitus, descriptor: i32 }`, capability-bearing with
+; mark {ambitus} (spec 4.3), concrete for `Scriptor`'s reason. Spec 4.6 puts
+; standard INPUT in `ambitus` with the other two streams, and spec 3.3 gives
+; `leg-` the supine `lect-`, so 3.4's `-or` agent noun of "read" is `Lector`
+; -- the name 3.7's own derivation table prints. Same representation as
+; `Scriptor`, byte for byte; mirrors prelude.asm's EXS_LECTOR_*.
+;
+; ITS FIELDS HAVE NO ROWS, and that is a decision. `Scriptor.a` and
+; `Scriptor.descriptor` are rows 1 and 2 because a member is resolved by
+; NAME through one pool (checker/types/prim.inc's `chk_ty_pre_names`), and a
+; second `a` in that pool would be unreachable behind the first. Nothing in
+; the language needs `l.descriptor`, the prelude reads these two fields
+; through the constants below, and the layout facts a consumer needs -- size
+; and alignment -- are stated here. If `l.a` is ever wanted, the pool needs a
+; (row, name) lookup rather than a name lookup; that is the edit, and it is
+; not made speculatively.
+EXS_IFACE_LECTOR_A		= 0	; mirrors prelude.asm EXS_LECTOR_A
+EXS_IFACE_LECTOR_DESCRIPTOR	= 8	; mirrors prelude.asm EXS_LECTOR_DESCRIPTOR
+EXS_IFACE_LECTOR_SIZE		= 16	; mirrors prelude.asm EXS_LECTOR_SIZE
+EXS_IFACE_LECTOR_ALIGN		= 8
 
 ; ---- ambitus -- the ExsAmbitus record, runtime.md 2.2 -----------------------
 ; NOT a surface type: `ambitus` is a capability atom and its carrier is one
@@ -167,6 +190,9 @@ if defined EXS_SCRIPTOR_A
 	assert EXS_IFACE_SCRIPTOR_A = EXS_SCRIPTOR_A
 	assert EXS_IFACE_SCRIPTOR_DESCRIPTOR = EXS_SCRIPTOR_DESCRIPTOR
 	assert EXS_IFACE_SCRIPTOR_SIZE = EXS_SCRIPTOR_SIZE
+	assert EXS_IFACE_LECTOR_A = EXS_LECTOR_A
+	assert EXS_IFACE_LECTOR_DESCRIPTOR = EXS_LECTOR_DESCRIPTOR
+	assert EXS_IFACE_LECTOR_SIZE = EXS_LECTOR_SIZE
 	assert EXS_IFACE_AMBITUS_IN = EXS_AMBITUS_IN
 	assert EXS_IFACE_AMBITUS_OUT = EXS_AMBITUS_OUT
 	assert EXS_IFACE_AMBITUS_ERR = EXS_AMBITUS_ERR
@@ -244,7 +270,11 @@ EXS_IFACE_D_SCRIBE		= 5
 EXS_IFACE_D_ALLOC_NOVUM		= 6
 EXS_IFACE_D_SCRIBE_OCTETUM	= 7	; APPENDED, not inserted next to row 5:
 					; an insertion renumbers alloc (above)
-EXS_IFACE_DECL_COUNT		= 8
+EXS_IFACE_D_LECTOR		= 8	; APPENDED for the same reason: a decl id
+EXS_IFACE_D_AB_INTROITU		= 9	; is an INDEX into the table below, so a
+EXS_IFACE_D_LEGE_OCTETO		= 10	; row next to `Scriptor`'s would renumber
+					; every reference to rows 1-7
+EXS_IFACE_DECL_COUNT		= 11
 
 if defined EXS_IFACE_EMIT_DECLS
 
@@ -276,6 +306,15 @@ exsrt_iface_nomina:
   .scribe_octeto	= $ - exsrt_iface_nomina
 	db 'scribe_octeto'
   .scribe_octeto_len	= $ - exsrt_iface_nomina - .scribe_octeto
+  .Lector		= $ - exsrt_iface_nomina
+	db 'Lector'
+  .Lector_len		= $ - exsrt_iface_nomina - .Lector
+  .ab_introitu		= $ - exsrt_iface_nomina
+	db 'ab_introitu'
+  .ab_introitu_len	= $ - exsrt_iface_nomina - .ab_introitu
+  .lege_octeto		= $ - exsrt_iface_nomina
+	db 'lege_octeto'
+  .lege_octeto_len	= $ - exsrt_iface_nomina - .lege_octeto
   ; ---- prelude symbols. The label in the blob carries emit.inc's `bfausr_`
   ; prefix (runtime.md 2.2); the IR names the short form, and the emitter
   ; prints the prefix. These are the SHORT forms.
@@ -294,6 +333,12 @@ exsrt_iface_nomina:
   .sym_scribe_octeto	= $ - exsrt_iface_nomina
 	db 'exsrt_scriptor_scribe_octeto'
   .sym_scribe_octeto_len = $ - exsrt_iface_nomina - .sym_scribe_octeto
+  .sym_ab_introitu	= $ - exsrt_iface_nomina
+	db 'exsrt_lector_ab_introitu'
+  .sym_ab_introitu_len	= $ - exsrt_iface_nomina - .sym_ab_introitu
+  .sym_lege_octeto	= $ - exsrt_iface_nomina
+	db 'exsrt_lector_lege_octeto'
+  .sym_lege_octeto_len	= $ - exsrt_iface_nomina - .sym_lege_octeto
 EXS_IFACE_NOMINA_LEN = $ - exsrt_iface_nomina
 
 ; ---- signature pool ---------------------------------------------------------
@@ -319,6 +364,15 @@ exsrt_iface_signa:
 								; (ptr u8) -> u64:
 								; the Scriptor by ptr,
 								; the byte by value
+  .ab_introitu		= $ - exsrt_iface_signa
+	db 2, EXS_IFACE_T_VOID, EXS_IFACE_T_PTR, EXS_IFACE_T_PTR
+								; (ptr ptr) -> void:
+								; `ad_exitum`'s shape --
+								; hidden return ptr first,
+								; then `a`
+  .lege_octeto		= $ - exsrt_iface_signa
+	db 1, EXS_IFACE_T_U16, EXS_IFACE_T_PTR	; (ptr) -> u16: the Lector by
+						; ptr, the byte-or-256 by value
 EXS_IFACE_SIGNA_LEN = $ - exsrt_iface_signa
 
 ; ---- the declarations -------------------------------------------------------
@@ -415,6 +469,55 @@ exsrt_iface_decls:
 	dd exsrt_iface_nomina.sym_scribe_octeto, exsrt_iface_nomina.sym_scribe_octeto_len
 	dd EXS_IFACE_D_SCRIPTOR
 	dd exsrt_iface_signa.scribe_octeto
+	dd 0, 0
+
+; 8: structura Lector { a: ambitus, descriptor: i32 }
+;    `Scriptor`'s row, for the other direction. Capability-bearing, mark
+;    {ambitus} (spec 4.3), stated here as row 0 states `Scriptor`'s -- and
+;    with no FIELD rows after it, for the reason part A's Lector block gives.
+;    The mark is therefore this row's `flags` and
+;    checker/rows/compute.inc's `chk_row_pre_marks` byte, with no
+;    `Lector.a : ambitus` row between them.
+	db EXS_IFACE_K_STRUCT, EXS_IFACE_F_PUBLICA or EXS_IFACE_F_CAPBEARING
+	db EXS_IFACE_CAP_NONE, 0
+	dd exsrt_iface_nomina.Lector, exsrt_iface_nomina.Lector_len
+	dd 0, 0
+	dd EXS_IFACE_NULLUS
+	dd EXS_IFACE_NULLUS
+	dd EXS_IFACE_LECTOR_SIZE, EXS_IFACE_LECTOR_ALIGN
+
+; 9: functio ab_introitu(a: ambitus) -> Lector, on Lector
+;    Associated, not a method, exactly as `Scriptor.ad_exitum(a)` is: there is
+;    no receiver value to have. Spec 3.1's qualifier rule wants an ABLATIVE
+;    after the `_`, and `introitu` is the ablative of `introitus`, the
+;    entrance -- `ab introitu`, "from the entrance", the preposition's own
+;    case. (`ad_exitum`, row 4, writes the accusative; that mismatch predates
+;    this row and is reported, not copied.)
+	db EXS_IFACE_K_FN, EXS_IFACE_F_PUBLICA or EXS_IFACE_F_ASSOCIATA
+	db EXS_IFACE_CAP_NONE, 0
+	dd exsrt_iface_nomina.ab_introitu, exsrt_iface_nomina.ab_introitu_len
+	dd exsrt_iface_nomina.sym_ab_introitu, exsrt_iface_nomina.sym_ab_introitu_len
+	dd EXS_IFACE_D_LECTOR
+	dd exsrt_iface_signa.ab_introitu
+	dd 0, 0
+
+; 10: functio lege_octeto(l: Lector) -> u16
+;    One raw byte from `l`'s descriptor, or 256 at end of input. `lege` is
+;    spec 3.3's own worked root (`leg-` + the third-conjugation imperative
+;    3.4 calls `-e`) and `octeto` is `scribe_octeto`'s ablative qualifier, so
+;    the pair reads as one family.
+;
+;    PROVISIONAL, and marked APERTUM for `scribe`'s reason: spec 11 as
+;    amended wants `eventus`, which has no syntax, so the result is a `u16`
+;    with 256 for "no byte" -- and EOF and error are NOT distinguished (the
+;    blob's own comment says so at the routine). When `eventus` lands this
+;    becomes `eventus<u8>` and the sentinel goes.
+	db EXS_IFACE_K_FN, EXS_IFACE_F_PUBLICA or EXS_IFACE_F_APERTUM
+	db EXS_IFACE_CAP_NONE, 0
+	dd exsrt_iface_nomina.lege_octeto, exsrt_iface_nomina.lege_octeto_len
+	dd exsrt_iface_nomina.sym_lege_octeto, exsrt_iface_nomina.sym_lege_octeto_len
+	dd EXS_IFACE_D_LECTOR
+	dd exsrt_iface_signa.lege_octeto
 	dd 0, 0
 
 assert $ - exsrt_iface_decls = EXS_IFACE_DECL_COUNT * EXS_IFACE_DECL_SIZE

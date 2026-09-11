@@ -1,0 +1,36 @@
+// Count the bytes of standard input and EXIT with the count.
+//
+// The companion to tests/programs/lector: that one proves the bytes are the
+// right bytes, this one proves there are the right NUMBER of them and that
+// the loop stops. It writes nothing at all -- its whole result is the exit
+// status, which spec 4.7 makes `initium`'s `u8` -- so a reader that ran off
+// the end, or stopped early, or handed back the same byte forever, is a
+// wrong number here and not a diff.
+//
+// The input is the same 41-byte tests/data/lector_intra.bin. 41 fits in a
+// `u8`, so the count is the status and no remainder operator is needed
+// (the language has none). A count above 255 could not be returned this way
+// and would need a comparison instead; that is a property of this fixture's
+// input, not of the reader.
+//
+// `octeti_numera` is private, so spec 4.1 rule 5 infers its row from its
+// body -- `l.lege_octeto()` draws the reader's own mark -- rather than
+// declaring one. tests/programs/lector's `lege` writes the `poscit sicut l`
+// form; between them both shapes are compiled.
+
+functio octeti_numera(l: Lector) -> mensura {
+    mutabilis n: mensura = 0;
+    mutabilis c: u16 = l.lege_octeto();
+    dum c ne 256 {
+        n = n + 1;
+        c = l.lege_octeto();
+    }
+    redde n;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma l = Lector.ab_introitu(a);
+    redde octeti_numera(l) sicut u8;
+}

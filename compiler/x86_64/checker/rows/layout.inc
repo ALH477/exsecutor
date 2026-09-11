@@ -166,7 +166,7 @@ proc __chk_lay_ty, chkl_wk, chkl_ty, chkl_dp
 	xor	edx, edx
 	return
   .prestruc:
-	; `Scriptor`, the one prelude struct. It has NO `AstDecl`
+	; A PRELUDE STRUCT -- `Scriptor` or `Lector`. Neither has an `AstDecl`
 	; (checker/types/prim.inc's `chk_ty_prelude_type` interns it as an
 	; `AST_TY_STRUCT` whose `a` is `CHK_TY_PRELUDE or k`), so the `.struc`
 	; arm above cannot lay it out: it used to hand the TAGGED value to
@@ -177,9 +177,25 @@ proc __chk_lay_ty, chkl_wk, chkl_ty, chkl_dp
 	; `lower/ty.inc`'s `.prestruct` reads for a `slot` and the prelude blob
 	; is assembled from, so the layout and the lowering cannot disagree.
 	; Order `:nativus`, as for every struct: a struct cannot carry one.
+	; One arm per prelude STRUCT row, keyed by the row index rather than by
+	; the one row that used to exist: `Lector` (`prelude/interface.inc` row
+	; 8) is the second, and a struct holding one lays out exactly as a
+	; struct holding a `Scriptor` does. A row that is not a struct is a
+	; checker bug, not a program error -- `chk_ty_prelude_type` interns only
+	; those two as `AST_TY_STRUCT` -- so it keeps the `rassert`
+	; (asm-conventions.md 1.3's channel for a violated internal contract).
+	; The sizes are `interface.inc`'s, the same constants `lower/ty.inc`'s
+	; `.prestruct` reads for a `slot` and the blob is assembled from, so
+	; layout and lowering cannot disagree.
 	and	r12d, CHK_TY_PRE_MASK
+	cmp	r12d, CHK_TY_PRE_LECTOR
+	je	.prelector
 	rassert	r12 eq CHK_TY_PRE_SCRIPTOR
 	mov	eax, EXS_IFACE_SCRIPTOR_SIZE * 8
+	xor	edx, edx
+	return
+  .prelector:
+	mov	eax, EXS_IFACE_LECTOR_SIZE * 8
 	xor	edx, edx
 	return
   .acies:

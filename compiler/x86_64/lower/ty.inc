@@ -335,12 +335,23 @@ proc lwr_ty_size, lwrsp, lwrt
 	mov	rax, rcx
 	return
   .prestruct:
-	; the only prelude struct is `Scriptor` (interface.inc row 0)
+	; A prelude struct: `Scriptor` (interface.inc row 0) or `Lector` (row
+	; 8), 1-based here as everywhere the tag is used. The size does not come
+	; from a second table -- it is the `extent` column of the row itself,
+	; which part B already carries and which `__lwr_pre_decl` already reads
+	; for every prelude call, so a third prelude struct needs no edit here
+	; at all. `rassert`ed to be a STRUCT row: anything else reaching this
+	; arm is a checker bug (asm-conventions.md 1.3), not a program error.
 	mov	eax, [lwrd]
 	and	eax, LWR_PRELUDE_MASK
-	rassert	eax eq 1
-	mov	rax, EXS_IFACE_SCRIPTOR_SIZE
-	mov	rdx, EXS_IFACE_SCRIPTOR_ALIGN
+	rassert	eax ge 1
+	mov	rdi, rax
+	call	__lwr_pre_decl
+	movzx	ecx, byte [rax]			; kind
+	rassert	ecx eq EXS_IFACE_K_STRUCT
+	mov	ecx, [rax + 32]			; align
+	mov	eax, [rax + 28]			; extent: the struct's byte size
+	mov	rdx, rcx
 	return
 endp
 
