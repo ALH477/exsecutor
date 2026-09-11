@@ -442,6 +442,8 @@ potestas Hospes = { alloc, archivum, horologium, ambitus }
 
 **Standard input, output and error belong to `ambitus`.** They are handed to a process by its environment, not found on a filesystem: a program that writes to its terminal has touched nothing under `archivum`, and borrowing that atom for it would over-grant in exactly the way §10.3's audit exists to expose. `examples/README.md` recorded this as `[OPEN]` when the companion program was written; it is closed by placing the streams, not by spending a root on a twelfth atom.
 
+**The streams' two prelude types.** Standard output is written through `Scriptor`, a capability-bearing `structura` with mark `{ambitus}`, obtained by `Scriptor.ad_exitum(a: ambitus) -> Scriptor` — an associated function with no receiver, total — and written one byte at a time by `s.scribe_octeto(b: u8) -> mensura` (`docs/design/wire-codec.md` D7; `tests/unit/prelude_scribe_octeto.asm`, `tests/programs/octeti/`) or as a `textus` by `s.scribe(t)` (§11). Standard input is read through **`Lector`**, the same record with the same mark, obtained by `Lector.ab_introitu(a: ambitus) -> Lector` and read one byte at a time by `l.lege_octeto() -> u16`: the byte, 0–255, or **256** at end of input and on a read error, the two undistinguished — provisional in exactly `scribe`'s way until `eventus` has syntax, when the call becomes `-> eventus<u8>`. `read(0)` is in `ambitus`'s admitted syscall set already; the compiler itself never issues it. `[UNTESTED]`: `docs/design/receptor.md` D1 is the design; no routine exists. The part after the `_` in both constructors is a noun the preposition governs, and neither `ad` nor `ab` decomposes under §3.1 — recorded there as an open question for the lexicon, not resolved here.
+
 ## 4.7 The entry point
 
 ```exsecutor
@@ -1015,7 +1017,7 @@ Xeon 2.10 GHz, gcc 13.3, `-O2`. Sources in `prototypes/stage0-bench/` — `[UNRE
 2. **Non-atomic refcounts where nothing crosses a thread boundary.** The difference between +46% and free. Load-bearing, not an optimization.
 3. **Parameters are borrowed by default** (`guaranteed` convention). Retaining on each visit costs +85%.
 4. **`structura` is a value type. Always.** No implicit boxing.
-5. **Arrays of value types are unboxed and contiguous.** `acies<f32>` is a flat buffer.
+5. **Arrays of value types are unboxed and contiguous.** `acies<f32>` is a flat buffer. An `acies` value comes from an array literal — `[e1, …, en]` or `[e; N]`, §8.6, `[UNTESTED]` — or from the byte view of a `@transitus` struct (§5.2); a binding declared without one is not zero-filled, and an element read or written before the binding is assigned is `EXS-E0307`.
 6. **Reference semantics are explicit**: `refero<T>`.
 
 ## 6.4 Reference types and FFI
@@ -1212,7 +1214,7 @@ All already in evidence in this document, recorded here rather than introduced.
 | `->` | result type | §4.2 |
 | `+` `+%` `+\|` | trapping, wrapping, saturating arithmetic | §5.4 |
 | `( )` | parameter lists, argument lists, grouping | §4.2 |
-| `[ ]` | indexing | §5.1 |
+| `[ ]` | indexing; array literals (§8.6, `[UNTESTED]`) | §5.1 |
 | `{ }` | blocks, capability rows, `ego` sections | §4.2, §10.1 |
 | `,` | separator | §4.2 |
 | `;` | statement terminator | §4.5 |
@@ -1567,7 +1569,9 @@ block for a short circuit to skip. Left-first evaluation and left
 associativity are both `[UNTESTED]` (§5.4; no fixture observes either).
 
 `&` and `*` are prefix in operand position and binary or type sigils
-elsewhere; the position decides, never the token. Logical negation is
+elsewhere; the position decides, never the token. So does `[`: after an
+operand it indexes (level 1), in operand position it opens an array
+literal (below, `[UNTESTED]`). Logical negation is
 `[OPEN]`: no §8.4 token exists for it, and a word cannot serve — prefix
 position *is* operand position, so `non(x)` would be a call. `et`, `vel`,
 `aut`, `sursum` and `deorsum` are contextual words like `lt` and have their
@@ -1607,9 +1611,46 @@ to close. **`ExprNS`** is the expression grammar with that suffix disabled,
 and is used in every position where a `{` block follows an expression:
 `si`, `sin`, `dum`, `terminus`, the `per`/`quisque` range, `discerne`, and
 the right-hand side of `sub` — so `si x {` is a condition and a block, and a
-literal in one of those positions is parenthesised. Array literals, tuples,
-slices, open-ended ranges, named arguments and compound assignment are
-`[OPEN]`; none of them needs a new peek.
+literal in one of those positions is parenthesised.
+
+**Array literals** — `[UNTESTED]`: specified here from
+`docs/design/receptor.md` D2, the HydraModem receiver's design, with no
+fixture yet; the transmitter's design (`docs/design/modem.md` D4) recorded
+the first evidence for them and deferred the decision to a program with
+the receiver's tables and buffers in hand. Two forms, both in **operand
+position** — a `[` after an operand is the index — and one token decides
+between them after `[ Expr`:
+
+- `[e1, e2, …, en]`, `n ≥ 1`, commas between, no trailing comma (as in
+  every other list here), of type `acies<T, n>`;
+- `[e; N]`, `N` an integer literal, `N ≥ 1`: `e` is evaluated **once** and
+  every element is a copy of its value; type `acies<T, N>`.
+
+The element type `T` is the expected type's element type when there is an
+expected type (a binding annotation, a parameter, a field initialiser);
+otherwise the type of the first element that is not a pending literal;
+pending literals then take it, as they take the other operand's type for
+`+`. Every element must have that type, or `EXS-E0303` at the first that
+does not. A list of pending literals alone, with no expected type, is
+`EXS-E0308`, as a lone pending literal is. **`N` is part of the type**, so
+`acies<u8, 17>` initialised by a sixteen-element list is `EXS-E0303`, not
+an arity fault. Element types admitted: the integers (`uN`, `iN`,
+`mensura`) and `@transitus` structs; any other element is `EXS-E0305`
+until a program needs it. `[]` is `EXS-E0201` and `[e; 0]` is
+`EXS-E0308`. Elements are evaluated in source order and stored at
+ascending indices. The literal is a **value**: binding it copies, as
+binding any aggregate does (§5.2), and `[1, 2][0] = 3` is `EXS-E0306`.
+**A binding declared without a literal is not zero-filled**: `mutabilis
+a: acies<u8, 40>;` written by element before any assignment stays
+`EXS-E0307` (as measured, `docs/design/modem.md` finding 6), and `[0; 40]`
+is how a program asks for zeros — the rule struct literals took above,
+for the same reason. A struct literal is re-admitted inside `[ ]` as
+already stated, so `[S { a: 1 }; 4]` is a literal of four structs. The
+literal is admitted in `ExprNS`: `[` cannot begin a block. A repeat form
+lowers to a loop, not to `N` stores. Whether a literal may initialise a
+module-level `firma` is admitted in principle (decision 5 makes one a
+constant) and untested. Tuples, slices, open-ended ranges, named arguments
+and compound assignment are `[OPEN]`; none of them needs a new peek.
 
 ### Types
 
@@ -1713,7 +1754,8 @@ Terminals are §8.4's tokens; `IDENT` `INT` `STRING` are the lexer's classes.
                     | StructLit                              (* after a path segment only; not in ExprNS; tests/unit/cst_structlit.asm *)
     StructLit     ::= '{' [FieldInit (',' FieldInit)*] '}'
     FieldInit     ::= IDENT ':' Expr
-    Primary       ::= Literal | '(' Expr ')' | Lambda | IDENT
+    Primary       ::= Literal | '(' Expr ')' | Lambda | IDENT | ArrayLit
+    ArrayLit      ::= '[' Expr (',' Expr)* ']' | '[' Expr ';' INT ']'   (* [UNTESTED]; docs/design/receptor.md D2 *)
     Lambda        ::= 'functio' ParamList ['->' Type] Block
     Literal       ::= INT | STRING                           (* INT: decimal or 0x hex, §8.4; the rest [OPEN] *)
     ArithOp       ::= '+' | '+%' | '+|' | '-' | '-%' | '-|' | '*'
@@ -1854,7 +1896,8 @@ refusing symbolic comparisons — is what makes that last one possible.
   is admitted only as a type suffix; annotation arguments;
   labelled `rumpe`/`perge`; a `sub` list form; `si`/`discerne` as expressions.
   Struct literals were on this list and are settled above
-  (`tests/unit/cst_structlit.asm`).
+  (`tests/unit/cst_structlit.asm`); array literals were on it and are
+  specified above, `[UNTESTED]`, with no fixture yet.
 - `[OPEN]` `sub` inside `per`/`quisque` bodies (§8.5).
 - `[OPEN]` Whether an unbounded `dum` is admitted outside the `certus` profile.
   The grammar makes `terminus` optional so that its absence is a CST fact the
@@ -2098,7 +2141,7 @@ A dependency that gains `rete` in a new version is a one-line diff in a checked-
 - Human formatting requires `sermo`, always.
 - Paths are an abstract type with `hostPlatform`-dependent semantics, not strings.
 - Time is a capability (`horologium`); time zones are data.
-- **I/O reports failure as `eventus`; a count is never silently short.** A closed descriptor is discovered at the write, which a bare `mensura` cannot report, so `Scriptor.scribe` returns `eventus<mensura>` (`docs/design/runtime.md`, finding 10); `examples/imprime.exsc` and §14 entry 12 write `-> mensura` and are `[OPEN]` until `eventus` has its syntax.
+- **I/O reports failure as `eventus`; a count is never silently short.** A closed descriptor is discovered at the write, which a bare `mensura` cannot report, so `Scriptor.scribe` returns `eventus<mensura>` (`docs/design/runtime.md`, finding 10); `examples/imprime.exsc` and §14 entry 12 write `-> mensura` and are `[OPEN]` until `eventus` has its syntax. `Lector.lege_octeto` (§4.6) is provisional the same way: its `-> u16` carries 256 for end of input and for an error alike, and becomes `-> eventus<u8>` when the syntax exists. `[UNTESTED]`
 - Grapheme segmentation ships in the core, not a third-party package. This was Rust's mistake.
 - **The Unicode data version is a content-addressed dependency** of every `ego` transitively using text. `plica_unicode` is stable only against a pinned table.
 
@@ -2147,7 +2190,7 @@ are the checker's computed capability closure of `initium` and its `numeri`
 are §5.4's defaults; `exsc ego --emitte` derives an ego from exactly those,
 so an ego-less build and the build of the ego it would emit are the same
 build (`docs/design/runtime.md`, finding 8). The prelude's own names
-(`Scriptor`, `Mundus`'s methods) are pre-seeded declarations in a scope
+(`Scriptor`, `Lector`, `Mundus`'s methods) are pre-seeded declarations in a scope
 *outside* the module's, and a module's own declaration shadows them rather
 than colliding — a conformance fixture that declares its own `Scriptor` is
 well-formed.
