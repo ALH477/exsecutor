@@ -268,11 +268,17 @@ floats stay `[OPEN]`.
 
 ### D7 Byte output
 
-One prelude call, `Scriptor.scribe_octetum(s, b: u8) -> mensura`, provisional
+One prelude call, `Scriptor.scribe_octeto(s, b: u8) -> mensura`, provisional
 (`EXS_IFACE_F_APERTUM`) exactly as `scribe` is (`prelude/interface.inc:368`).
 It sits inside the `ambitus` gate `Scriptor.ad_exitum` already enforces and
 adds no syscall: it is `write(1)` of one byte, and `write` is on the closed
 allowlist.
+
+The name was first written `scribe_octetum`. Spec §3.1 makes the part after
+`_` an ablative or a proper noun, as in `imprime_gutenbergio`, and `octetum` is
+an accusative. So the name is `scribe_octeto`, "write by a byte". The
+implementer found this while building the call. The name was changed before any
+program depended on it.
 
 Rejected: `scribe` of a `textus` built from the frame bytes — a `textus` is
 UTF-8 (§5.1) and a frame is arbitrary bytes, so no such `textus` can exist;
@@ -420,7 +426,7 @@ and is not presented as one.
 ## 6. The certificate stream
 
 `probatio.exsc` writes exactly **2,502 bytes** to standard output through
-`scribe_octetum`, in five sections. `entry23/expecta.py` (verification-only
+`scribe_octeto`, in five sections. `entry23/expecta.py` (verification-only
 Python, off the build path, per `prototypes/README.md`'s rule for tools that
 never ship) builds the same 2,502 bytes from the vendored JSON, and
 `tests/run.sh` compares section by section and names the first differing
@@ -590,15 +596,15 @@ The driver's two byte-emitting helpers, for the shape of D7 and section 2:
 
 functio scribe_quantum(s: Scriptor, f: DeModFrame) -> mensura poscit sicut s {
     firma b = f sicut acies<u8, 17>;
-    per i in 0..17 { s.scribe_octetum(b[i]); }
+    per i in 0..17 { s.scribe_octeto(b[i]); }
     redde 17;
 }
 
 functio scribe_u16(s: Scriptor, v: u16) -> mensura poscit sicut s {
     firma y = Syndroma { valor: v };
     firma b = y sicut acies<u8, 2>;
-    s.scribe_octetum(b[0]);
-    s.scribe_octetum(b[1]);
+    s.scribe_octeto(b[0]);
+    s.scribe_octeto(b[1]);
     redde 2;
 }
 ```
@@ -632,8 +638,8 @@ the cast paragraph: binding an aggregate value is by value).
 
 **What M6 checked of this section, and what it did not.** The `codex.exsc`
 block above, with the fixture's `DeModFrame`; the two `probatio.exsc`
-helpers with each `s.scribe_octetum(b[k])` replaced by an `aut` into a
-`u8` (`scribe_octetum` is M7's); the encode-basis walk; and an `initium`
+helpers with each `s.scribe_octeto(b[k])` replaced by an `aut` into a
+`u8` (`scribe_octeto` is M7's); the encode-basis walk; and an `initium`
 calling them, was compiled by the M6 compiler: it type-checks clean, and
 `lwr_module` lowers it to IR that `bfa_verify_func` accepts --
 `obsigna(f) sicut acies<u8, 17>` passing a fresh slot the call writes into,
@@ -706,7 +712,7 @@ one that was wrong, the amendment is in the same commit as this file.
 | byte order and bit fields in the emitter | M4 | hand-written IR encoder producing `d31312340001ffffdeadbeefab12cd24c0` |
 | D1 operators, D6 hex | M5 | program `redundantia`: `0x29B1`, `0x4EC3` |
 | D2 places, D3 literals, D4 the cast | M6 | program `forma`: literal → CRC through the view → decode |
-| D7 `scribe_octetum`; the stream; the mutants | M7 | entry 23 `status=run`, 246/246, anchors, laws, three mutants failing |
+| D7 `scribe_octeto`; the stream; the mutants | M7 | entry 23 `status=run`, 246/246, anchors, laws, three mutants failing |
 
 Until M7 passes, §14 entry 23 remains `status=deferred`, ADR 0011's status
 line remains "no Exsecutor implementation exists", and everything in this

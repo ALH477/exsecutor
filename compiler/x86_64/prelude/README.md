@@ -102,7 +102,7 @@ IR-callable (`bfausr_exsrt_…`), with the IR signature the lowering must emit:
 | `exsrt_mundus_ambitus` | `(ptr) -> ptr` | `m.ambitus()`. Total (spec 4.7), idempotent, no `eventus` |
 | `exsrt_scriptor_ad_exitum` | `(ptr ptr) -> void` | hidden return `ptr` first (IR 2.9), then `a`. Cannot fail |
 | `exsrt_scriptor_scribe` | `(ptr ptr) -> u64` | both aggregates by `ptr`; returns the count. `[OPEN]`: spec 11 as amended wants `eventus<mensura>` |
-| `exsrt_scriptor_scribe_octetum` | `(ptr u8) -> u64` | `s.scribe_octetum(b)`: ONE raw byte, `b`'s low 8 bits (wire-codec.md D7). Returns the count, 1 or 0 -- `scribe`'s convention and `scribe`'s `[OPEN]` |
+| `exsrt_scriptor_scribe_octeto` | `(ptr u8) -> u64` | `s.scribe_octeto(b)`: ONE raw byte, `b`'s low 8 bits (wire-codec.md D7). Returns the count, 1 or 0 -- `scribe`'s convention and `scribe`'s `[OPEN]` |
 | `exsrt_alloc_novum` | `(ptr u64) -> ptr` | `(Mundus, capacity) -> ExsArena*`. `[OPEN]` surface spelling |
 | `exsrt_alloc_da` | `(ptr u64 u64) -> ptr` | `(arena, n, align)`. `align` is a precondition: a power of two, at least 1 |
 | `exsrt_alloc_reconde` | `(ptr) -> void` | `cur = base` (spec 6.3 decision 1) |
@@ -186,7 +186,7 @@ audit a property of the artifact.
 | atom | syscalls | routines |
 |---|---|---|
 | core (always) | `exit_group(231)`; `write(1)` to fd 2 | `exsrt_start`, `exsrt_abort` |
-| `ambitus` | `write(1)`, `read(0)` | `exsrt_scriptor_scribe`, `exsrt_scriptor_scribe_octetum` (`read` is `[UNIMPLEMENTED]` — no reader exists yet) |
+| `ambitus` | `write(1)`, `read(0)` | `exsrt_scriptor_scribe`, `exsrt_scriptor_scribe_octeto` (`read` is `[UNIMPLEMENTED]` — no reader exists yet) |
 | `alloc` | `mmap(9)`, `munmap(11)` | `exsrt_alloc_novum`, `exsrt_alloc_dimitte` |
 | `archivum` `horologium` `fortuna` `rete` `Filum` `machina` `sermo` `Crudum` | `[OPEN]` | none |
 
@@ -194,8 +194,8 @@ Measured, not asserted — `tools/syscall-audit.sh` on each fixture binary:
 
 | fixture | atoms | syscall sites in the binary |
 |---|---|---|
-| `prelude_scribe` | Mundus, ambitus | `exit_group`, `write` ×3 (`scribe`, `scribe_octetum`, and `exsrt_abort`'s unreached path) |
-| `prelude_scribe_octetum` | Mundus, ambitus | the same three, plus the fixture's OWN `lseek` -- its instrument for stdout's offset, not a prelude syscall |
+| `prelude_scribe` | Mundus, ambitus | `exit_group`, `write` ×3 (`scribe`, `scribe_octeto`, and `exsrt_abort`'s unreached path) |
+| `prelude_scribe_octeto` | Mundus, ambitus | the same three, plus the fixture's OWN `lseek` -- its instrument for stdout's offset, not a prelude syscall |
 | `prelude_sine_ambitus` | Mundus | `exit_group`, `write` (abort only) |
 | `prelude_arc`, `prelude_arc_resurrectio`, `prelude_abortus_terminus`, `prelude_mxcsr*` | Mundus | `exit_group`, `write` (abort only) |
 | `prelude_arena`, `prelude_arena_exhausta` | Mundus, alloc | `exit_group`, `mmap`, `munmap`, `write` (abort only) |
@@ -229,7 +229,7 @@ hand-written `bfausr_initium` in place of an emitted one — the way
 | fixture | atoms | expects | proves |
 |---|---|---|---|
 | `prelude_scribe.asm` | Mundus, ambitus | `exit=101`, `audit=pass` | the entry stub, `m.ambitus()`, `Scriptor.ad_exitum`, `scribe` writing 101 bytes and **returning 101**; the literal byte-identical to `examples/saluta.expected`; `Scriptor.descriptor` read through `interface.inc`'s own offset (H4) |
-| `prelude_scribe_octetum.asm` | Mundus, ambitus | `exit=7`, `audit=pass` | `scribe_octetum` writes EXACTLY one byte per call -- stdout's file offset, read back with `lseek`, moves by one each time -- and returns 1, for 0x00 0x7f 0xff 0x80 0xd3 and two arguments with garbage above bit 7; returns 0 and writes nothing on a descriptor the kernel refuses; touches no callee-saved register. The byte VALUES are `tests/programs/octeti`'s, compared with `cmp` |
+| `prelude_scribe_octeto.asm` | Mundus, ambitus | `exit=7`, `audit=pass` | `scribe_octeto` writes EXACTLY one byte per call -- stdout's file offset, read back with `lseek`, moves by one each time -- and returns 1, for 0x00 0x7f 0xff 0x80 0xd3 and two arguments with garbage above bit 7; returns 0 and writes nothing on a descriptor the kernel refuses; touches no callee-saved register. The byte VALUES are `tests/programs/octeti`'s, compared with `cmp` |
 | `prelude_sine_ambitus.asm` | Mundus | `exit=0` | with `ambitus` at 0, none of the four `ambitus` routines nor `exsrt_ambitus` is assembled -- an assembly-time check, so a routine moved out of the gate fails here by name |
 | `prelude_arc.asm` | Mundus | `exit=132`, `abortus 2` | retain/release, the destructor running exactly once with `rc == 0`, the atomic pair, then saturation at 2⁶⁴−1 |
 | `prelude_arc_resurrectio.asm` | Mundus | `exit=132`, `abortus 3` | a retain from inside the destructor aborts |
@@ -285,13 +285,13 @@ growth; a size-class free list, so a released object's bytes come back only
 with `reconde` (runtime.md H3).
 
 `[UNTESTED]`: `scribe`'s partial-write loop and its `EINTR` retry, and
-`scribe_octetum`'s `EINTR` and zero-return retries. None can be produced
+`scribe_octeto`'s `EINTR` and zero-return retries. None can be produced
 without a second process, which `tests/run.sh` does not have.
 runtime.md 3 says so and this file repeats it rather than quietly implying
 coverage.
 
 `[OPEN]`: the eight atoms with no routine and their records; `m.alloc(n)`'s
-spelling and unit; `scribe`'s and `scribe_octetum`'s `eventus<mensura>`; `EAGAIN` on a non-blocking
+spelling and unit; `scribe`'s and `scribe_octeto`'s `eventus<mensura>`; `EAGAIN` on a non-blocking
 descriptor; `SIGPIPE`, which kills the process under the ambient disposition
 because `rt_sigaction` is on no allowlist; weak references and `dtor`
 conventions for fields; re-asserting MXCSR after an `externus` return

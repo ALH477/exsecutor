@@ -1,4 +1,4 @@
-# Raw bytes through Scriptor.scribe_octetum (wire-codec.md D7). octeti.exsc's
+# Raw bytes through Scriptor.scribe_octeto (wire-codec.md D7). octeti.exsc's
 # header lists the 26 bytes; exit 1 means some call returned a count other
 # than 1. expected.out is BINARY -- it holds 0x00, 0xff and bytes that are not
 # UTF-8 -- and tests/run.sh compares it with `cmp`, byte for byte (check_run).

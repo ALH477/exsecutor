@@ -33,7 +33,7 @@
 ;
 ; THIS FIXTURE: the closure is {Mundus} alone, and after the blob is
 ; assembled it ASSERTS that none of the gated labels exists -- the four
-; IR-callable `ambitus` routines, `Scriptor.scribe_octetum` among them
+; IR-callable `ambitus` routines, `Scriptor.scribe_octeto` among them
 ; (wire-codec.md D7 puts it inside this gate), and the ExsAmbitus record in
 ; the data blob. Moving any of them out of the gate is an assembly failure
 ; here, naming the label. The run itself is the entry stub and a `redde 0`.
@@ -84,8 +84,8 @@ end if
 if defined bfausr_exsrt_scriptor_scribe
 	err 'prelude: bfausr_exsrt_scriptor_scribe is assembled with EXS_POTESTAS_AMBITUS = 0 -- it is outside the ambitus gate'
 end if
-if defined bfausr_exsrt_scriptor_scribe_octetum
-	err 'prelude: bfausr_exsrt_scriptor_scribe_octetum is assembled with EXS_POTESTAS_AMBITUS = 0 -- it is outside the ambitus gate'
+if defined bfausr_exsrt_scriptor_scribe_octeto
+	err 'prelude: bfausr_exsrt_scriptor_scribe_octeto is assembled with EXS_POTESTAS_AMBITUS = 0 -- it is outside the ambitus gate'
 end if
 if defined exsrt_ambitus
 	err 'prelude_data: exsrt_ambitus is assembled with EXS_POTESTAS_AMBITUS = 0 -- it is outside the ambitus gate'

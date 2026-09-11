@@ -285,7 +285,7 @@ chk_ty_pre_names:
 	db 9,'ad_exitum'
 	db 6,'scribe'
 	db 5,'alloc'
-	db 14,'scribe_octetum'
+	db 13,'scribe_octeto'
 CHK_TY_PRE_NAMES_LEN = $ - chk_ty_pre_names
 assert CHK_TY_PRE_ALLOC = 7
 assert CHK_TY_PRE_SCRIBE_OCT = 8
@@ -1036,10 +1036,10 @@ proc chk_ty_prelude_type, chkt_wp, chkt_kp
 	return
 
   .fn_scribe_oct:
-	; functio scribe_octetum(s: Scriptor, b: u8) -> mensura
+	; functio scribe_octeto(s: Scriptor, b: u8) -> mensura
 	; `scribe`'s shape with `u8` where `textus` was, and `scribe`'s [OPEN]:
 	; prelude/interface.inc row 7 is APERTUM and returns the COUNT, and so
-	; does this. The same empty row as `scribe`, so `s.scribe_octetum(b)`
+	; does this. The same empty row as `scribe`, so `s.scribe_octeto(b)`
 	; draws exactly what `s.scribe(t)` draws -- `Scriptor`'s mark, through
 	; the receiver's type (spec 4.2) -- and a caller writes `poscit sicut s`
 	; for both. `u8` is `nativus`: a byte has no order.

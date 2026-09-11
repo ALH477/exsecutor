@@ -1,4 +1,4 @@
-// Raw bytes on stdout: `Scriptor.scribe_octetum` (docs/design/wire-codec.md
+// Raw bytes on stdout: `Scriptor.scribe_octeto` (docs/design/wire-codec.md
 // D7), the one writer whose argument is not a `textus`. Spec 5.1 makes a
 // `textus` UTF-8, so `scribe` cannot put 0xff, a lone continuation byte
 // 0x80 or a lone lead byte 0xd3 on a stream -- and a wire frame is exactly
@@ -22,7 +22,7 @@
 // else, exactly as for `s.scribe(t)`.
 
 functio emitte(s: Scriptor, b: u8) -> mensura poscit sicut s {
-    redde s.scribe_octetum(b);
+    redde s.scribe_octeto(b);
 }
 
 publica functio initium(m: Mundus) -> u8 {
@@ -31,18 +31,18 @@ publica functio initium(m: Mundus) -> u8 {
     firma s = Scriptor.ad_exitum(a);
     mutabilis n: mensura = 0;
 
-    si s.scribe_octetum(0xd3) eq 1 { n = n + 1; }
-    si s.scribe_octetum(0) eq 1 { n = n + 1; }
-    si s.scribe_octetum(0xff) eq 1 { n = n + 1; }
+    si s.scribe_octeto(0xd3) eq 1 { n = n + 1; }
+    si s.scribe_octeto(0) eq 1 { n = n + 1; }
+    si s.scribe_octeto(0xff) eq 1 { n = n + 1; }
     si emitte(s, 0x7f) eq 1 { n = n + 1; }
     si emitte(s, 0x80) eq 1 { n = n + 1; }
-    si s.scribe_octetum(10) eq 1 { n = n + 1; }
+    si s.scribe_octeto(10) eq 1 { n = n + 1; }
 
     // A range of two bare literals has no type to take (EXS-E0308), so the
     // bounds are typed bindings, as phi_loops' `0..n` is.
     firma sedecim: u64 = 16;
     per i in 0..sedecim {
-        si s.scribe_octetum((i * 17) sicut u8) eq 1 { n = n + 1; }
+        si s.scribe_octeto((i * 17) sicut u8) eq 1 { n = n + 1; }
     }
 
     firma quattuor: u64 = 4;

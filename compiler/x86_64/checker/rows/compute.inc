@@ -635,7 +635,7 @@ chk_row_pre_marks:
 	db 0			; 5 `functio ad_exitum(a: ambitus) -> Scriptor`
 	db 0			; 6 `functio scribe(s: Scriptor, t: textus)`
 	db 0			; 7 `functio alloc(m: Mundus, n: mensura)`
-	db 0			; 8 `functio scribe_octetum(s: Scriptor, b: u8)`
+	db 0			; 8 `functio scribe_octeto(s: Scriptor, b: u8)`
 assert $ - chk_row_pre_marks = CHK_TY_PRE_COUNT
 
 ; ---- spec §4.3: the atoms a TYPE bears -------------------------------------

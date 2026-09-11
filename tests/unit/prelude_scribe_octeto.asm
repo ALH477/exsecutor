@@ -1,4 +1,4 @@
-; tests/unit/prelude_scribe_octetum.asm
+; tests/unit/prelude_scribe_octeto.asm
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ; Copyright (C) 2026 The Exsecutor authors.
 ;
@@ -20,7 +20,7 @@
 ; Code produced by this compiler is not covered by the GPL --
 ; see Exception A in LICENSE.EXCEPTION.
 ; -----------------------------------------------------------------------------
-; `Scriptor.scribe_octetum` -- one raw byte to a Scriptor's descriptor
+; `Scriptor.scribe_octeto` -- one raw byte to a Scriptor's descriptor
 ; (docs/design/wire-codec.md D7) -- run from the prelude blob alone, with a
 ; hand-written `bfausr_initium`, exactly as prelude_scribe.asm runs `scribe`.
 ;
@@ -131,7 +131,7 @@ bfausr_initium:
   .proba:
 	lea	rdi, [rbp - 64]
 	mov	rsi, [exsfx_octeti + r14*8]	; all 64 bits, garbage included
-	call	bfausr_exsrt_scriptor_scribe_octetum
+	call	bfausr_exsrt_scriptor_scribe_octeto
 	cmp	rax, 1
 	jne	.numerus_malus
 	add	r13, rax
@@ -151,7 +151,7 @@ bfausr_initium:
 	mov	dword [rbp - 80 + EXS_IFACE_SCRIPTOR_DESCRIPTOR], -1
 	lea	rdi, [rbp - 80]
 	mov	esi, 0x41
-	call	bfausr_exsrt_scriptor_scribe_octetum
+	call	bfausr_exsrt_scriptor_scribe_octeto
 	test	rax, rax
 	jnz	.error_non_nullus
 	call	exsfx_positio

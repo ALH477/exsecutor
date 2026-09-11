@@ -348,8 +348,8 @@ bfausr_exsrt_scriptor_scribe:
 	pop	rbp
 	ret
 
-; bfausr_exsrt_scriptor_scribe_octetum(s: ptr, b: u8) -> u64
-;   `s.scribe_octetum(b)`. Writes exactly ONE byte -- the low 8 bits of `b`
+; bfausr_exsrt_scriptor_scribe_octeto(s: ptr, b: u8) -> u64
+;   `s.scribe_octeto(b)`. Writes exactly ONE byte -- the low 8 bits of `b`
 ;   -- to the Scriptor's descriptor. docs/design/wire-codec.md D7: `scribe`
 ;   takes a `textus`, which spec 5.1 makes UTF-8, so no `scribe` call can
 ;   put 0xFF or a lone 0x80 on a stream. A wire frame is arbitrary bytes and
@@ -381,7 +381,7 @@ bfausr_exsrt_scriptor_scribe:
 ;   `scribe` and issues `write(1)` with `edi` loaded from the Scriptor field,
 ;   which tools/syscall-audit.sh admits under `ambitus` and under nothing
 ;   else. No syscall is added to either closed set.
-bfausr_exsrt_scriptor_scribe_octetum:
+bfausr_exsrt_scriptor_scribe_octeto:
 	push	rbp
 	mov	rbp, rsp
 	sub	rsp, 16
