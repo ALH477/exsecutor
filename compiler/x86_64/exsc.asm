@@ -37,12 +37,20 @@
 ; that CST, and reports every diagnostic either half raised, in a human format
 ; or JSON. That is the whole of §16 Stage 1. It THEN runs as much of Stage 2
 ; (`docs/design/checker.md`, `compiler/x86_64/checker/`) as exists: passes 0
-; and 1 (atoms, resolve) always, and passes 3/4 (rows, packed layout) only
-; once a types pass -- not yet written -- sets `CHK_S_TYPES`. There is still
-; no type checker (Stage 2 pass 2) and no backend (Stage 3), so
-; `exsc aedifica ... -o OUT` finds out whether OUT *could* be built and then
-; says it cannot build it. Nine of the ten subcommands §12 names are refusals
-; that name themselves.
+; and 1 (atoms, resolve) always, then pass 2 (types, `chk_types`), which sets
+; `CHK_S_TYPES` and so un-gates passes 3 and 4 (rows, packed layout).
+;
+; GIVEN `-o OUT` AND A UNIT THE CHECKER ACCEPTS, IT THEN BUILDS THE PROGRAM:
+; `lwr_module` (`compiler/x86_64/lower/`) lowers the typed tree to the SSA IR
+; of `docs/design/ssa-ir.md`, and `bfa_emit_program`
+; (`compiler/x86_64/backend_fasmg/program.inc`) emits the whole fasmg source
+; file `docs/design/runtime.md` section 2.1 lays out. That file is what §12
+; means by OUT: EMITTED TEXT, which `exsc` writes and never assembles --
+; there is no `execve` on the syscall allowlist and locating an assembler by
+; `PATH` is exactly the ambient state §9.3 forbids. Turning OUT into a binary
+; is `fasmg OUT BIN`, the build's step. That is §16 Stage 3's reference
+; backend reached end to end. Nine of the ten subcommands §12 names are
+; refusals that name themselves.
 ;
 ;	exsc aedifica --hospes TRIPLE SOURCE... [-o OUT]
 ;	              [--env KEY=VALUE]... [--epoch N]
@@ -87,7 +95,8 @@
 ;      Measured both ways; the messages above are copied from the two runs.
 ;
 ;   3. cst/cst.inc, then ast/ast.inc, then checker/checker.inc, then
-;      driver/driver.inc -- and lexer/lexer.inc is NOT included here at all.
+;      lower/lower.inc, then driver/driver.inc -- and lexer/lexer.inc is NOT
+;      included here at all.
 ;      cst/cst.inc includes it itself (see that file's header), and fasmg has
 ;      one flat namespace, so including both would process every lexer `proc`
 ;      twice and fail on the second. The include graph is a strict CHAIN:
@@ -99,6 +108,31 @@
 ;      rt/sort.inc -- which IS a known diamond (rt/vec.inc's header) if pulled
 ;      in a second time. checker/ goes before driver/ because driver/run.inc
 ;      calls `chk_init`/`chk_set_source`/`chk_set_target`/`chk_run` directly.
+;
+;      lower/lower.inc GOES AFTER checker/checker.inc AND BRINGS THE WHOLE
+;      BACKEND WITH IT, so `backend_fasmg/` is NOT included here and must not
+;      be. Commit 02f217e made backend_fasmg/'s own graph one strict chain --
+;      program.inc -> emit.inc -> verify.inc -> print.inc -> parse.inc ->
+;      ir.inc -- and lower/ssa.inc takes it from the TOP; a second path to any
+;      of those six files processes a `proc`-emitting file twice and fails.
+;      lower/ also relies on the consumer for rt/, ast/ and
+;      prelude/interface.inc, exactly as every other module here relies on the
+;      consumer for rt/: cst/ brought rt/ at line one of this list, ast/ came
+;      next, and checker/types/prim.inc is the one path to
+;      prelude/interface.inc. All three are therefore in place by the time
+;      this line runs, and none of them may be repeated after it. MEASURED,
+;      both ways, at the moment this line was added and on a tree otherwise
+;      identical: without it `build/exsc` is 291,297 bytes in 5 passes, with
+;      it 397,177 in 6 -- 105,880 bytes, of which 31,071 is the two prelude
+;      blobs `backend_fasmg/program.inc` carries as `file` data and the rest
+;      is the lowering and the backend themselves. The binary is a little
+;      larger than that now; the difference is prose in driver/, not this
+;      line, and the A/B is not re-runnable without it because driver/run.inc
+;      now names `BfaModule`.
+;      The audit's nine syscalls are unchanged by all of it: the blobs are
+;      ASCII and contain no 0x0F byte, so the linear sweep cannot decode a
+;      `syscall` out of them (program.inc's own header says so and `make
+;      audit` is what checks it).
 ;   4. compiler/shared/unicode/tables/tables.inc EXACTLY ONCE, in a data
 ;      segment of this file's choosing. lexer/lexer.inc's header is explicit
 ;      that it does not include it: it emits ~120 KB of `file` data and
@@ -150,6 +184,8 @@ segment readable executable
 	mov	[r15 + DrvCtx.iarena], rax
 	lea	rax, [drv_scratch]
 	mov	[r15 + DrvCtx.scratch], rax
+	lea	rax, [drv_lwrscr]
+	mov	[r15 + DrvCtx.lwrscr], rax
 	lea	rax, [drv_interner]
 	mov	[r15 + DrvCtx.interner], rax
 	lea	rax, [drv_envmap]
@@ -204,6 +240,7 @@ segment readable executable
 include 'cst/cst.inc'
 include 'ast/ast.inc'
 include 'checker/checker.inc'
+include 'lower/lower.inc'
 include 'driver/driver.inc'
 
 segment readable
@@ -219,6 +256,16 @@ segment readable writeable
   drv_arena	rb sizeof.Arena	; the compilation -- sized in driver/io.inc
   drv_iarena	rb sizeof.Arena	; interner + env map -- never reset
   drv_scratch	rb sizeof.Arena	; reset once per --env key
+  drv_lwrscr	rb sizeof.Arena	; the lowering's per-function scratch, and the
+				; ONLY arena in this process anything resets
+				; repeatedly: `lwr_module` resets it at every
+				; function (docs/design/lowering.md 2.1). It is
+				; a FOURTH arena because it cannot be any of the
+				; other three -- `arena` holds the AST and the
+				; IR the lowering is building, and `scratch` is
+				; the checker's, whose records `.report` has not
+				; necessarily finished with. Created only on the
+				; `-o` path (driver/run.inc).
   drv_interner	rb sizeof.Interner
   drv_envmap	rb sizeof.Map
   drv_srcs	rb DRV_SOURCES_MAX * sizeof.DrvSrc	; the §12 compilation

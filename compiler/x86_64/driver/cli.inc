@@ -165,6 +165,14 @@ struct DrvCtx
 	field arena,     dq	; -> Arena, the compilation. Sized in io.inc.
 	field iarena,    dq	; -> Arena, interner + env map. Never reset.
 	field scratch,   dq	; -> Arena, reset once per --env key.
+	field lwrscr,    dq	; -> Arena, the LOWERING's per-function scratch.
+				; `lwr_module` resets it at every function
+				; (docs/design/lowering.md 2.1), which is why it
+				; cannot be any of the three above: `arena` holds
+				; the AST and the IR being built out of it, and
+				; `scratch` holds what the checker left behind.
+				; `arena_init`ed only on the `-o` path, so a run
+				; that asks for no artifact reserves nothing.
 	field interner,  dq	; -> Interner
 	field envmap,    dq	; -> Map, insertion-ordered (CLAUDE.md)
 	field vlx,       dq	; -> Lexer  }

@@ -37,9 +37,10 @@
 ;                 <- driver.inc  (this file)
 ;
 ; ORDERING OBLIGATION ON THE CONSUMER, stated because it cannot be enforced
-; from inside this chain. driver/ USES lexer/, diag/ and rt/ and INCLUDES
-; none of them: `compiler/x86_64/lexer/lexer.inc` already pulls in all three,
-; and pulling any of them in a second time from here would process a
+; from inside this chain. driver/ USES lexer/, diag/, rt/, cst/, ast/,
+; checker/, lower/ and backend_fasmg/ and INCLUDES none of them:
+; `compiler/x86_64/lexer/lexer.inc` already pulls in the first three, and
+; pulling any of them in a second time from here would process a
 ; `struct`/`proc`-emitting file twice and fail. So exsc.asm must include
 ; lexer/lexer.inc BEFORE this file. That is not a preference -- `macros/
 ; struct.inc`, which `struct DrvCtx` needs, is reached exactly once in this
@@ -73,17 +74,28 @@
 ;                             which already existed and were unreachable
 ;                             from a command line before this file's dump.inc
 ;
-; WHAT IT DOES NOT GIVE, deliberately: anything that writes an object file.
-; There is no backend (§9.2, §16 Stage 3); `aedifica` says so and exits 4
-; rather than producing something and calling it a build.
+; AND WHAT IT NOW ALSO GIVES: on `-o OUT`, after a clean check, it calls
+; `lwr_module` (compiler/x86_64/lower/) and `bfa_emit_program`
+; (compiler/x86_64/backend_fasmg/program.inc) and writes their bytes --
+;   drv_write_out       -- OUT, created/truncated 0644, a write loop, closed
+; That is the whole of the driver's half of §16 Stage 3. exsc.asm must
+; therefore include lower/lower.inc BEFORE this file; lower/ brings the entire
+; backend chain with it (program -> emit -> verify -> print -> parse -> ir),
+; so backend_fasmg/ must NOT be included separately.
+;
+; WHAT IT STILL DOES NOT GIVE, deliberately: an assembler. §12 makes OUT
+; EMITTED TEXT -- `fasmg OUT BIN` is the build's step, `execve` is not on the
+; allowlist, and locating a tool by `PATH` is the ambient state §9.3 forbids.
 ;
 ; SYSCALLS: openat, fstat, read, close, write -- five of the nine on the
 ; closed allowlist, every one of them through rt/sys.inc's wrappers, and
-; `exit_group` from exsc.asm itself. `--emitte`'s dump adds no syscall of its
-; own: `drv_say_out` is the same `write(1)` already on the allowlist, called
-; with a different fd literal than `drv_say`'s. No socket-family syscall
-; appears anywhere under driver/ (§9.3), and `make audit` checks the
-; assembled binary rather than taking this sentence's word for it.
+; `exit_group` from exsc.asm itself. THE SET IS UNCHANGED BY OUT: writing an
+; artifact reuses `openat`/`write`/`close`, with a different flag word and a
+; mode, and adds nothing. `--emitte`'s dump adds no syscall of its own either:
+; `drv_say_out` is the same `write(1)` already on the allowlist, called with a
+; different fd literal than `drv_say`'s. No socket-family syscall appears
+; anywhere under driver/ (§9.3), and `make audit` checks the assembled binary
+; rather than taking this sentence's word for it.
 ;
 ; Spec: docs/spec/exsecutor-spec-v0.4.md §8.1, §8.3, §9.1, §9.3, §9.5, §12,
 ; §18.2.

@@ -295,13 +295,16 @@ drv_s_usage:
 	db 'subcommands (spec 12):', 10
 	db '  aedifica proba forma lsp ego emenda documenta novum lexicon curre', 10
 	db '  Only `aedifica` does anything. Every other one exits 4 and says so.', 10
+	db '  `aedifica` runs the whole pipeline: spec 8.1 gate, tokenizer, parser,', 10
+	db '  typed AST, checker, and -- given -o -- the lowering and the reference', 10
+	db '  backend (spec 16 Stage 3).', 10
 	db 10
 	db 'options, all of them accepted only by `aedifica`:', 10
 	db '  --hospes TRIPLE      target triple. REQUIRED: spec 9.5 makes an absent', 10
 	db '                       --hospes an error. There is no default-to-build-platform.', 10
 	db '                       This build only targets x86_64-linux (exit 4 on any', 10
-	db '                       other triple): this assembly implementation has no', 10
-	db '                       backend for anything else.', 10
+	db '                       other triple): the reference backend is x86-64 fasmg', 10
+	db '                       text and there is no other backend to pick.', 10
 	db '  SOURCE               the file to compile. Positional, and REPEATABLE:', 10
 	db '                       spec 12 says the files named form one compilation', 10
 	db '                       unit -- one module, one artifact -- and that their', 10
@@ -309,9 +312,13 @@ drv_s_usage:
 	db '                       items, so it is part of the input and reordering', 10
 	db '                       them is a different build. The same path twice is', 10
 	db '                       an error; at most 256 files.', 10
-	db '  -o OUT               object to write. Optional here -- with it, aedifica', 10
-	db '                       reports that code generation is unimplemented (exit 4)', 10
-	db '                       and writes nothing; without it the front end runs alone.', 10
+	db '  -o OUT               the artifact to write, and it is TEXT: fasmg source', 10
+	db '                       for the reference backend (spec 12). exsc never', 10
+	db '                       assembles it -- run `fasmg OUT BIN` yourself, with', 10
+	db '                       vendor/fasmg-x86 on the INCLUDE path. Optional: with', 10
+	db '                       it a clean unit is compiled and written (exit 0);', 10
+	db '                       without it the front end and the checker run alone', 10
+	db '                       and no artifact is asked for or produced.', 10
 	db '  --env KEY=VALUE      supply a value (spec 9.3). Repeatable. A repeated KEY', 10
 	db '                       is an ERROR, not a last-wins, so --env order is not', 10
 	db '                       observable. exsc never reads the environment.', 10

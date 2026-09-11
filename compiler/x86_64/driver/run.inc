@@ -25,11 +25,13 @@
 ;
 ; WHAT `aedifica` ACTUALLY IS TODAY, said plainly because the exit statuses
 ; below depend on it: it reads the source, runs lexer/'s §8.1 gate and §8.4
-; tokenizer, parses under §8.6, builds §9.1's typed AST, runs as much of
-; Stage 2's checker as exists, and emits whatever diagnostics all of that
-; produced. There is no type checker and no backend (§16 Stages 2-3). So
-; `aedifica` can find that a file is not admissible Exsecutor source, and it
-; cannot yet turn an admissible one into anything.
+; tokenizer, parses under §8.6, builds §9.1's typed AST, runs Stage 2's
+; checker, and emits whatever diagnostics all of that produced. GIVEN `-o OUT`
+; AND NO DIAGNOSTIC, it then lowers the typed tree to the SSA IR (`lwr_module`,
+; compiler/x86_64/lower/) and writes §12's OUT: the whole fasmg source file
+; `bfa_emit_program` builds (compiler/x86_64/backend_fasmg/program.inc,
+; docs/design/runtime.md section 2.1). That is §16 Stage 3's reference backend,
+; end to end.
 ;
 ; SOURCE MAY BE REPEATED, AND THE FILES ARE ONE MODULE (§12): *"The files
 ; named form one compilation unit -- one module in §10's sense: one `ego`, one
@@ -63,20 +65,27 @@
 ; path and bytes the lexer already attached -- so a one-file invocation emits
 ; byte-for-byte what it emitted before any of this existed.
 ;
-; `-o OUT` IS THEREFORE OPTIONAL HERE, AND THAT IS A DECISION, NOT AN
-; OVERSIGHT. §12 pins *"the minimum build invocation"* as
-; `exsc aedifica --hospes TRIPLE SOURCE -o OUT`, and that whole command is
-; honoured: given `-o`, `aedifica` runs the front end and then says that code
-; generation is unimplemented, leaving OUT untouched and exiting 4. It never
-; reports success for work it did not do, and tools/publish-gate.sh's step 3
-; fails on exactly that, honestly, instead of on a missing binary.
+; `-o OUT` IS OPTIONAL HERE, AND THAT IS A DECISION, NOT AN OVERSIGHT. §12
+; pins *"the minimum build invocation"* as
+; `exsc aedifica --hospes TRIPLE SOURCE -o OUT`, and that whole command is now
+; honoured end to end: given `-o` and a unit the checker accepts, OUT is
+; written and the status is 0. Dropping `-o` asks for no artifact, so §12's
+; *minimum build* invocation is not the command being given, and the front end
+; running clean is the whole of the requested work: exit 0 as well, with a note
+; saying no object was requested. Two different jobs, both completed, both 0.
 ;
-; Dropping `-o` asks for no artifact, so §12's *minimum build* invocation is
-; not the command being given, and the front end running clean is the whole
-; of the requested work: exit 0. That is the only way exit 0 is reachable
-; today, and a status nothing can produce is a status nothing can test. If
-; the spec would rather `-o` were mandatory, this file is the one place that
-; changes -- and exit 0 becomes unreachable until a backend exists.
+; WHAT STILL EXITS NONZERO ON THE `-o` PATH, so that nothing reports success
+; for work it did not do: any diagnostic at all exits 1 and writes NOTHING --
+; the artifact is never opened, let alone truncated, because `.report` only
+; reaches the build on an empty diagnostic vector; a `--hospes` this build
+; cannot target exits 4 before the source is even opened; a failed
+; `openat`/`write`/`close` on OUT exits 3 and says which syscall and which
+; errno.
+;
+; §12: *"`OUT` is text, and `exsc` never assembles it."* This file writes
+; bytes to a file and stops. There is no `execve` on the syscall allowlist and
+; there will not be one: locating an assembler by `PATH` is exactly the
+; ambient state §9.3 exists to remove. `fasmg OUT BIN` is the build's step.
 ;
 ; §8.1 IS A GATE AND THIS FILE DOES NOT RE-IMPLEMENT IT. `lex_run` runs the
 ; source pass first and does not tokenize at all if it reported anything
@@ -111,6 +120,27 @@ DRV_DIAG_CAP = 65536
 ; from the file.
 DRV_IARENA_CAP  = 4 * 1024 * 1024
 DRV_SCRATCH_CAP = 1024 * 1024
+
+; The LOWERING's scratch arena (`lwr_module`'s fourth argument), created only
+; on the `-o` path. Fixed capacity, unlike the compilation arena, because what
+; it holds is bounded by ONE FUNCTION and not by the unit: `lwr_module` resets
+; it at every function (docs/design/lowering.md 2.1), so the high-water mark is
+; the largest single function's Braun state -- `defs`, `incomplete`, `vars`,
+; `scopes`, `loops` -- and not the sum over the module.
+;
+; 64 MiB against lowering.md section 4's "scratch per function well under 1 MiB
+; except for a pathological single function". That is 64x a figure that
+; document marks `[OPEN]` -- arithmetic on unmeasured estimates -- so the
+; headroom is deliberate and the number is not a measurement. MEASURED is only
+; this: after the hello world's last function, `Arena.cur - Arena.base` on this
+; arena is 13,416 bytes. That is ONE function's state and not the module's
+; maximum, because the reset already happened at every function boundary --
+; which is the property that makes the number worth having at all.
+; Over-running it is `arena_alloc`'s `rassert` -- SIGILL, exit 132 -- not
+; silent corruption, and the reservation is anonymous `mmap`, so the 64 MiB
+; costs address space and no pages (driver/io.inc's own argument for the same
+; trade).
+DRV_LWRSCR_CAP  = 64 * 1024 * 1024
 DRV_INTERN_BUCKETS = 256	; power of two -- map_init rassert's it
 DRV_ENVMAP_BUCKETS = 64
 
@@ -127,21 +157,27 @@ DRV_CST_BUCKETS = 8192		; power of two -- map_init rassert's it
 drv_s_empty  db 0
 drv_m_hint   db "run `exsc` with no arguments for usage",0
 drv_m_todo   db ': not implemented in this build',0
-drv_m_todo2  db 'only `aedifica` does anything today: it reads a source file, applies spec 8.1, lexes it under spec 8.4, parses it under spec 8.6 into the spec 9.1 CST, builds the spec 9.1 typed AST, and reports diagnostics. That is spec 16 Stage 1.',0
+drv_m_todo2  db 'only `aedifica` does anything: it reads the SOURCE files, applies spec 8.1, lexes them under spec 8.4, parses them under spec 8.6 into the spec 9.1 CST, builds the spec 9.1 typed AST, runs the checker, and -- given -o OUT -- lowers that tree and writes the fasmg source of the reference backend. Everything else here exits 4.',0
 drv_m_todolsp db '`lsp` is marked [OPEN] Deferred in spec 18.2 -- it needs the lossless CST, which does not exist.',0
 drv_m_nohospes db 'aedifica: --hospes TRIPLE is required. Spec 9.5: exsc with no --hospes is an error, and there is no default-to-build-platform.',0
 drv_m_emptyhospes db 'aedifica: --hospes: TRIPLE must not be empty',0
 ; The only triple this assembly implementation has anything to target --
 ; see the comment on drv_aedifica's third required-field check, above.
 drv_t_x86_64_linux db 'x86_64-linux',0
-drv_m_hospesunsup db 'aedifica: --hospes: this build only targets x86_64-linux (no backend exists for any triple, and spec 9.5 forbids guessing one), got: ',0
+drv_m_hospesunsup db 'aedifica: --hospes: this build only targets x86_64-linux (the reference backend emits x86-64 fasmg text and there is no second backend to pick; spec 9.5 forbids guessing one), got: ',0
 drv_m_nosrc  db 'aedifica: no SOURCE given',0
 drv_m_trunc  db 'a diagnostic did not fit its buffer and was truncated; the output above is incomplete. That is a limit of this compiler, not of the source.',0
 drv_m_okpfx  db 'aedifica: ',0
 drv_m_okbare db ': the front end accepts this source -- it lexes, parses, and builds a typed AST. No object was requested, so none was written.',0
-drv_m_okout  db ': the front end accepts this source, but code generation is not implemented, so no object was written. Spec 16 Stage 3.',0
+; The `-o` success note. It names OUT rather than the first SOURCE, because
+; OUT is the thing that now exists that did not before, and it says what OUT
+; is: spec 12's EMITTED TEXT, which `exsc` writes and never assembles. The
+; trailing number is `drv_msgu`'s, and is the byte count -- the one fact a
+; caller can check without opening the file.
+drv_m_wrote  db 'aedifica: wrote ',0
+drv_m_wrote2 db ' -- fasmg source, not a binary: assemble it with `fasmg OUT BIN` (spec 12, OUT is emitted text and exsc never assembles it). Bytes: ',0
+drv_m_lwrfail db 'aedifica: the lowering refused this module and no object was written. That is a compiler bug, not a fact about this source (spec 16 Stage 3).',0
 drv_m_okunit db ' and the other SOURCE files given with it: the front end accepts this compilation unit -- it lexes and parses all of it and builds ONE typed AST from it (spec 12: the files named form one module). No object was requested, so none was written. Files in the unit: ',0
-drv_m_okoutunit db ' and the other SOURCE files given with it: the front end accepts this compilation unit (spec 12: the files named form one module), but code generation is not implemented, so no object was written. Spec 16 Stage 3. Files in the unit: ',0
 drv_m_emitgate db ': --emitte was given, but this source failed the spec 8.1 source-hygiene gate, so it was never tokenized -- there is no token stream, no CST and no typed AST to dump. Nothing was written to stdout. See the diagnostic below.',0
 
 ; __drv_src_at(drs_off) -> rax = the `DrvSrc` whose bytes contain the unit
@@ -426,6 +462,271 @@ proc __drv_drop_eof
 	return
 endp
 
+; __drv_potestates(drp_t) -> rax = the eleven-bit capability mask
+; `bfa_emit_program` wants, bit `k-1` set for spec 4.6 ordinal `k`. That is the
+; SAME bit order as `BFA_POTESTAS_MUNDUS`..`BFA_POTESTAS_CRUDUM`
+; (backend_fasmg/program.inc) and as `chk_row_atoms`'s own mask
+; (checker/rows/intern.inc), and the three agreeing is not a coincidence: all
+; three are spec 4.6's list, in spec 4.6's order.
+;
+; THE CHECKER DOES NOT EXPOSE "THE CAPABILITY CLOSURE OF `initium`", AND THIS
+; IS NOT IT. Said first and plainly, because docs/design/runtime.md section 2.1
+; says the eleven constants come "from the checker's computed closure of
+; initium (spec 10.3)" and no such call exists. What the checker does expose,
+; and what was tried:
+;
+;   - `ChkCtx.mainid` is `initium`'s declaration and `Decl.ty` is its `fn`
+;     type, whose `AstType.b` is its row. THIS IS ALWAYS EMPTY AND CANNOT BE
+;     THE CLOSURE. Spec 4.7: the entry point "carries no `poscit` and there is
+;     nothing to declare"; `checker/rows/compute.inc`'s `__chk_row_seed` reads
+;     spec 4.1 rule 5 as "a function is DECLARED when it writes a `poscit`,
+;     when it is `publica`, or when it has no body", and `initium` is
+;     `publica`, and "declared rows do not grow". So pass 3 seeds `initium`'s
+;     row from a `poscit` that spec 4.7 forbids it to have and never widens it.
+;     Reading it gives 0 for every program, including one that opens a socket.
+;   - `chk_use_count`/`chk_use_at` is the capability-USE list, and it holds
+;     only the draws NO FRAME PROVIDED (`CHK_USE_DRAW`/`CHK_USE_CAPTURE`,
+;     resolve.inc). The hello world's `sub ambitus = a;` provides `ambitus` in
+;     `initium`'s own frame, so the draw it satisfies is not in the list, and
+;     the list is empty for exactly the program whose closure is `{Mundus,
+;     ambitus}`. It is the wrong list: it exists so pass 3 can raise
+;     `EXS-E0421`, not so anyone can enumerate authority.
+;   - Pass 3 DOES compute a per-function atom mask -- `ChkRowWork.wrat` -- and
+;     that is the closure, transitively, by the fixpoint spec 4.1 rule 5 asks
+;     for. It lives in the checker's scratch arena, is not written anywhere
+;     that outlives `chk_rows`, and has no accessor. REQUESTED, exactly:
+;
+;         chk_row_of_decl(chk_c, declid) -> rax = the eleven-bit atom mask
+;         pass 3 computed for declaration `declid`, or 0.
+;
+;     One `__chk_row_g4(wrat, declid)` behind a `proc`, plus somewhere for the
+;     vector to live past `chk_rows` -- the tree's arena, as `__chk_fix_text`
+;     already does for the same reason. With it, this whole routine becomes
+;     `chk_row_of_decl(chk, ChkCtx.mainid) or BFA_POTESTAS_MUNDUS`, and the
+;     over-approximation below goes away. checker/ is another agent's tree
+;     (CLAUDE.md, Scope); REPORTED, not done.
+;
+; WHAT THIS DOES INSTEAD, and it is an OVER-APPROXIMATION, said in the code
+; rather than in a report nobody reads: it unions every capability atom that
+; appears anywhere in the module's INTERNED TYPE TABLE. `Ast.types` is
+; interned by content and an entry exists only because something in this
+; module has that type, so an atom reaches this mask iff some value, some
+; parameter, some field or some function row in the module is of that atom's
+; capability type. For `examples/`'s hello world that is exactly `{Mundus,
+; ambitus}`: `m: Mundus`, `firma a = m.ambitus()`, `sub ambitus = a`, and
+; `Scriptor.a : ambitus`.
+;
+; It is an over-approximation in one direction and one direction only, which
+; is the direction that MATTERS for spec 10.3's audit and is why it is
+; flagged rather than shipped quietly: a module that mentions an atom in a
+; type without ever reaching it still grants it, so the audit could pass a
+; binary holding a routine the program cannot call. It CANNOT under-grant --
+; a call to a prelude routine is a call to a declaration whose parameter
+; carries the atom's type, so no reachable authority is missing from the
+; table -- so the emitted program never lacks a routine it needs, which is
+; the failure that would show up as a broken build rather than as a weakened
+; contract. `[UNTESTED]` beyond the hello world and the two fixtures below it.
+; __drv_cap_of_ty(drp_t2, drp_ty) -> rax = the eleven-bit mask ONE type id
+; contributes: a capability type contributes its own atom, an `fn` or `dyn`
+; type contributes its row's atoms, and everything else contributes nothing.
+; `drp_base` is `ast_cap_base`'s answer, passed in rather than re-derived per
+; type. Cannot fail; leaves CF clear.
+proc __drv_cap_of_ty, drp_t2, drp_ty, drp_base
+	uses	rbx
+	locals
+	endl
+	xor	eax, eax
+	mov	rcx, [drp_ty]
+	test	rcx, rcx
+	jz	.out			; untyped: Stage 2 fills every live node,
+					; so this is a node Stage 2 never reached
+	mov	rbx, [drp_t2]
+	mov	rdi, rbx
+	mov	rsi, rcx
+	call	ast_type_at
+	movzx	ecx, byte [rax + AstType.kind]
+	cmp	ecx, AST_TY_CAP
+	je	.cap
+	cmp	ecx, AST_TY_FN
+	je	.row
+	cmp	ecx, AST_TY_DYN
+	je	.row
+	xor	eax, eax
+	return
+  .cap:
+	; `AstType.a` is the atom's own declaration (ast/kinds.inc, AST_TY_CAP),
+	; and `ast_cap_base` + k - 1 IS that declaration for §4.6 ordinal k --
+	; so the subtraction is the ordinal, zero-based, which is the bit index.
+	mov	ecx, [rax + AstType.a]
+	sub	rcx, [drp_base]
+	cmp	rcx, 0
+	jl	.none
+	cmp	rcx, AST_CAP_COUNT
+	jge	.none
+	mov	rax, 1
+	shl	rax, cl
+	return
+  .row:
+	; An `fn` or `dyn` type carries a row id in `AstType.b`. Pass 3
+	; re-interned these (checker/rows/compute.inc's D1), so this reads what
+	; the fixpoint left rather than what the source wrote.
+	mov	ecx, [rax + AstType.b]
+	test	ecx, ecx
+	jz	.none
+	mov	rdi, rbx
+	mov	rsi, rcx
+	call	chk_row_atoms
+	return
+  .none:
+	xor	eax, eax
+  .out:
+	return
+endp
+
+; __drv_potestates(drp_t) -> rax = the eleven-bit capability mask
+; `bfa_emit_program` wants, bit `k-1` set for spec 4.6 ordinal `k`. That is the
+; SAME bit order as `BFA_POTESTAS_MUNDUS`..`BFA_POTESTAS_CRUDUM`
+; (backend_fasmg/program.inc) and as `chk_row_atoms`'s mask
+; (checker/rows/intern.inc), and the three agreeing is not a coincidence: all
+; three are §4.6's list in §4.6's order.
+;
+; THE CHECKER DOES NOT EXPOSE "THE CAPABILITY CLOSURE OF `initium`", AND THIS
+; IS NOT IT. Said first and plainly, because docs/design/runtime.md section 2.1
+; says the eleven constants come "from the checker's computed closure of
+; initium (spec §10.3)" and no such call exists. Three things were tried; two
+; of them are traps and are recorded so nobody re-finds them:
+;
+;   - `ChkCtx.mainid` is `initium`'s declaration and `Decl.ty` is its `fn`
+;     type, whose `AstType.b` is its row. THAT ROW IS ALWAYS EMPTY AND CANNOT
+;     BE THE CLOSURE. §4.7: the entry point "carries no `poscit` and there is
+;     nothing to declare"; `checker/rows/compute.inc`'s `__chk_row_seed` reads
+;     §4.1 rule 5 as "a function is DECLARED when it writes a `poscit`, when it
+;     is `publica`, or when it has no body", `initium` is `publica`, and
+;     "declared rows do not grow". So pass 3 seeds `initium`'s row from a
+;     `poscit` §4.7 forbids it to have and never widens it. Reading it answers
+;     0 for every program ever written, including one that opens a socket.
+;   - `chk_use_count`/`chk_use_at` is the capability-USE list, and it holds
+;     only the draws NO FRAME PROVIDED (`CHK_USE_DRAW`/`CHK_USE_CAPTURE`,
+;     checker/resolve/resolve.inc). The hello world's `sub ambitus = a;`
+;     provides `ambitus` in `initium`'s own frame, so the draw it satisfies is
+;     not in the list -- the list is empty for exactly the program whose
+;     closure is `{Mundus, ambitus}`. It is the wrong list: it exists so pass 3
+;     can raise `EXS-E0421`, not so anyone can enumerate authority.
+;   - Pass 3 DOES compute the closure -- a per-function atom mask, by the
+;     transitive fixpoint §4.1 rule 5 asks for, in `ChkRowWork.wrat`. It lives
+;     in the checker's scratch arena, is written nowhere that outlives
+;     `chk_rows`, and has no accessor. REQUESTED, exactly:
+;
+;         chk_row_of_decl(chk_c, declid) -> rax = the eleven-bit atom mask
+;         pass 3 computed for declaration `declid`, or 0 if it computed none.
+;
+;     One `__chk_row_g4(wrat, declid)` behind a `proc`, plus somewhere for that
+;     vector to outlive `chk_rows` -- the tree's arena, which
+;     `__chk_fix_text` already uses for the same reason. With it this routine
+;     becomes `chk_row_of_decl(chk, ChkCtx.mainid) or BFA_POTESTAS_MUNDUS` and
+;     the over-approximation below goes away. checker/ is another agent's tree
+;     (CLAUDE.md, Scope): REPORTED, not done.
+;
+; WHAT THIS DOES INSTEAD: it unions the capability atoms named by the type of
+; every DECLARATION and every NODE in the module -- `Decl.ty` and `Node.ty`,
+; both filled by Stage 2 pass 2 -- plus the row of every `fn`/`dyn` type
+; either of them carries. An atom therefore reaches this mask iff some value,
+; parameter, binding, field or function row IN THIS MODULE is of that atom's
+; capability type. For the hello world that is exactly `{Mundus, ambitus}`:
+; `m: Mundus`, `firma a = m.ambitus()`, `sub ambitus = a`, and the `Scriptor`
+; whose row is `{ambitus}`.
+;
+; THE ELEVEN ATOM DECLARATIONS THEMSELVES ARE SKIPPED, and that is not
+; tidiness -- it is the whole difference between this working and being
+; vacuous. `ast_cap_push` appends all eleven §4.6 atoms to EVERY tree, and
+; Stage 2 gives each one a capability type, so the interned type table
+; (`Ast.types`) holds all eleven capability types in every module ever
+; compiled. Scanning that table was the first version of this routine and it
+; emitted `EXS_POTESTAS_* = 1` eleven times for the hello world -- a mask that
+; grants everything, which would have made §10.3's audit meaningless while
+; looking like it worked. Measured, then fixed. `AST_D_CAPATOM` declarations
+; are the only ones skipped, and a program that actually uses an atom reaches
+; it through some OTHER declaration or node.
+;
+; IT IS STILL AN OVER-APPROXIMATION, in one direction, and the direction is
+; the one §10.3 cares about: a module that mentions an atom in a type without
+; ever reaching it still grants it, so the audit can pass a binary carrying a
+; routine the program cannot call. It cannot UNDER-grant -- reaching a prelude
+; routine means calling a declaration whose parameter carries the atom's type
+; -- so the emitted program never lacks a routine it needs. `[UNTESTED]`
+; beyond the hello world and `tests/unit/driver_emit.asm`.
+proc __drv_potestates, drp_t
+	uses	rbx, r12, r13
+	locals
+		slot drpbase, dq
+		slot drpmask, dq
+		slot drpn,    dq
+	endl
+	mov	qword [drpmask], 0
+	mov	rbx, [drp_t]
+	mov	rdi, rbx
+	call	ast_cap_base		; `Mundus`'s declaration id; atom `k` is
+					; `base + k - 1` (ast/build.inc)
+	mov	[drpbase], rax
+	test	rax, rax
+	jz	.done			; a tree with no atoms grants nothing
+
+	; ---- every declaration's type, except the atoms' own ----------------
+	mov	rdi, rbx
+	call	ast_decl_count
+	mov	[drpn], rax
+	mov	r12, 1
+  .dloop:
+	cmp	r12, [drpn]
+	ja	.ddone
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	ast_decl_at
+	movzx	ecx, byte [rax + AstDecl.kind]
+	cmp	ecx, AST_D_CAPATOM
+	je	.dnext			; see this proc's header: every tree has
+					; all eleven, so counting them grants all
+					; eleven
+	mov	r13d, [rax + AstDecl.ty]
+	mov	rdi, rbx
+	mov	rsi, r13
+	mov	rdx, [drpbase]
+	call	__drv_cap_of_ty
+	or	[drpmask], rax
+  .dnext:
+	inc	r12
+	jmp	.dloop
+  .ddone:
+
+	; ---- every node's type ----------------------------------------------
+	; A capability can reach an expression without reaching a declaration:
+	; `m.ambitus()`'s own `Call` node is of capability type before anything
+	; is bound to it, and a `sub` whose right-hand side is a call has the
+	; atom on the node rather than on a name.
+	mov	rdi, rbx
+	call	ast_node_count
+	mov	[drpn], rax
+	mov	r12, 1
+  .nloop:
+	cmp	r12, [drpn]
+	ja	.done
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	ast_node_at
+	mov	r13d, [rax + AstNode.ty]
+	mov	rdi, rbx
+	mov	rsi, r13
+	mov	rdx, [drpbase]
+	call	__drv_cap_of_ty
+	or	[drpmask], rax
+	inc	r12
+	jmp	.nloop
+
+  .done:
+	mov	rax, [drpmask]
+	return
+endp
+
 ; drv_stub(cmd) -> eax = DRV_EXIT_TODO, always. Names the subcommand, says it
 ; is not implemented, and says what is. Never silent: a tool that cannot tell
 ; "did nothing" from "did nothing and did not say so" has to guess.
@@ -494,6 +795,10 @@ proc drv_aedifica, argc, argv
 		slot drvt0,  dq		; DrvCtx.toks length before it
 		slot drvd0,  dq		; DrvCtx.diags length before it
 		slot drvent, dq		; -> its DrvSrc
+		slot drvmdl, dq		; -> BfaModule, the lowered IR (`-o` only)
+		slot drvpot, dq		; the eleven-bit capability mask
+		slot drvop,  dq		; -> OUT's bytes }  bfa_emit_program's
+		slot drvol,  dq		; ... and how many }  two return values
 	endl
 	; ---- the arenas that exist before the source does -------------------
 	mov	rdi, [r15 + DrvCtx.iarena]
@@ -904,26 +1209,109 @@ proc drv_aedifica, argc, argv
 	return
 
   .clean_out:
-	; An artifact WAS asked for. Saying so and exiting nonzero is the only
-	; honest answer while there is no backend; exiting 0 here would make
-	; tools/publish-gate.sh report a build that never happened.
-	cmp	dword [r15 + DrvCtx.nsrc], 1
-	ja	.clean_out_unit
-	lea	rdi, [drv_m_okpfx]
-	mov	rsi, [r15 + DrvCtx.srcpath]
-	mov	rdx, [r15 + DrvCtx.srcpathn]
-	lea	rcx, [drv_m_okout]
-	call	drv_msg
-	mov	eax, DRV_EXIT_TODO
-	return
-  .clean_out_unit:
-	lea	rdi, [drv_m_okpfx]
-	mov	rsi, [r15 + DrvCtx.srcpath]
-	mov	rdx, [r15 + DrvCtx.srcpathn]
-	lea	rcx, [drv_m_okoutunit]
-	mov	r8d, [r15 + DrvCtx.nsrc]
+	; ---- spec 16 Stage 3: an artifact WAS asked for, so build it ---------
+	; Reached only with ZERO diagnostics (`.report` jumps here off an empty
+	; `DrvCtx.diags`), which is `lwr_module`'s stated input invariant --
+	; CHK 2.5, "it runs only when Stage 2 emitted no diagnostic" -- and the
+	; reason this pass raises nothing and never gets an `EXS-E` code of its
+	; own. A diagnostic still exits 1 and writes nothing; `--hospes` other
+	; than `x86_64-linux` was refused with exit 4 long before the source was
+	; opened, let alone OUT.
+	;
+	; WHICH ARENA IS WHICH, because `lwr_module` takes two and the choice is
+	; not free (docs/design/lowering.md 2.1):
+	;   - the IR arena is `DrvCtx.arena`, the compilation arena, which
+	;     already holds the tree the IR is built from and is sized from the
+	;     unit (driver/io.inc; its factor went 256 -> 384 for this). The IR
+	;     must outlive `lwr_module` -- `bfa_emit_program` reads it next -- so
+	;     it cannot be an arena anything resets.
+	;   - the scratch arena is `DrvCtx.lwrscr`, a FOURTH arena, created here
+	;     and nowhere else. `lwr_module` RESETS it at every function, which
+	;     rules out all three of the others: `arena` holds the AST and the
+	;     IR, `iarena` backs a live interner (rt/intern.inc's own rule), and
+	;     `scratch` is the checker's -- checker/checker.inc says it "may be
+	;     reset once `.report` has finished rendering, and not before", and
+	;     while nothing is rendered on THIS path, borrowing an arena on the
+	;     strength of the branch we happen to be in is how that rule stops
+	;     holding the day the branch moves.
+	mov	rdi, [r15 + DrvCtx.lwrscr]
+	mov	rsi, DRV_LWRSCR_CAP
+	call	arena_init
+	jc	.no_memory
+
+	mov	rdi, [r15 + DrvCtx.arena]
+	mov	rsi, sizeof.BfaModule
+	call	arena_alloc
+	mov	[drvmdl], rax
+	mov	rdi, rax
+	mov	rsi, [r15 + DrvCtx.arena]
+	call	bfa_module_init
+
+	mov	rdi, [r15 + DrvCtx.ast]
+	mov	rsi, [drvmdl]
+	mov	rdx, [r15 + DrvCtx.arena]
+	mov	rcx, [r15 + DrvCtx.lwrscr]
+	call	lwr_module		; rax = 0 on success (lower/lower.inc)
+	test	rax, rax
+	jnz	.lower_refused
+
+	; ---- the eleven constants and the MXCSR image ------------------------
+	; `potestates` is spec 10.3's capability closure; `__drv_potestates`
+	; above says at length what it actually computes and what it asked the
+	; checker for. `mxcsr` is not a choice: `Ast.numeri` is all-zero -- the
+	; driver never sets it and `lwr_module` `rassert`s that it is 0, because
+	; docs/design/lowering.md finding 17 says no table maps a `numeri` byte
+	; to a spec 5.4 word -- so `initium`'s `numeri` is spec 5.4's defaults
+	; and the image for those is `BFA_MXCSR_AD_PAREM` (runtime.md 2.7).
+	; The day `--numeri` or an `ego` reader exists, this is where the other
+	; two `BFA_MXCSR_*` images get chosen from.
+	mov	rdi, [r15 + DrvCtx.ast]
+	call	__drv_potestates
+	mov	[drvpot], rax
+
+	mov	rdi, [drvmdl]
+	mov	rsi, [r15 + DrvCtx.arena]
+	mov	rdx, [drvpot]
+	mov	rcx, BFA_MXCSR_AD_PAREM
+	call	bfa_emit_program	; rax = the bytes, rdx = how many
+	mov	[drvop], rax
+	mov	[drvol], rdx
+
+	mov	rdi, [r15 + DrvCtx.outpath]
+	mov	rsi, [r15 + DrvCtx.outpathn]
+	mov	rdx, [drvop]
+	mov	rcx, [drvol]
+	call	drv_write_out
+	test	eax, eax
+	jz	.host			; drv_write_out has already said why
+
+	; The note names OUT and is suppressed in json mode for the reason this
+	; file's header gives: a plain-text line in a JSON Lines stream is a
+	; parse error for the tool it was meant to help.
+	cmp	dword [r15 + DrvCtx.diagmode], DIAG_MODE_JSON
+	je	.wrote_quiet
+	lea	rdi, [drv_m_wrote]
+	mov	rsi, [r15 + DrvCtx.outpath]
+	mov	rdx, [r15 + DrvCtx.outpathn]
+	lea	rcx, [drv_m_wrote2]
+	mov	r8, [drvol]
 	call	drv_msgu
-	mov	eax, DRV_EXIT_TODO
+  .wrote_quiet:
+	mov	eax, DRV_EXIT_OK
+	return
+
+  .lower_refused:
+	; `lwr_module` answers 0 or nothing at all -- every contract violation
+	; inside it is an `rassert` (SIGILL, exit 132), which is what
+	; docs/asm-conventions.md reserves for a compiler bug. A non-zero return
+	; is therefore a case that document's four channels do not cover, and
+	; the honest report is "no object was written", not an invented code.
+	lea	rdi, [drv_m_lwrfail]
+	xor	rsi, rsi
+	xor	rdx, rdx
+	xor	rcx, rcx
+	call	drv_msg
+	mov	eax, DRV_EXIT_HOST
 	return
 
   ; ---- the refusals --------------------------------------------------------

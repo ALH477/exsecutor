@@ -397,6 +397,14 @@ segment readable executable
 include '../../compiler/x86_64/cst/cst.inc'
 include '../../compiler/x86_64/ast/ast.inc'
 include '../../compiler/x86_64/checker/checker.inc'
+; driver/run.inc's `-o` path calls `lwr_module` and `bfa_emit_program`, so
+; every consumer of driver/ needs lower/ -- which brings the whole backend
+; chain (program -> emit -> verify -> print -> parse -> ir) and relies on the
+; consumer for rt/, ast/ and prelude/interface.inc: the first two above, the
+; third through checker/types/prim.inc. Exactly compiler/x86_64/exsc.asm's
+; order, for exactly its reasons, and backend_fasmg/ must NOT be included
+; separately.
+include '../../compiler/x86_64/lower/lower.inc'
 include '../../compiler/x86_64/driver/driver.inc'
 
 segment readable
