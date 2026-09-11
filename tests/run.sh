@@ -54,8 +54,8 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-142}"
 # The same guarantee for the two run phases below: tests/ir/*.ir fixtures,
 # and tests/programs/*/ directories. Same rule -- `found < floor` fails --
 # and the same reason. Raise each in the commit that adds a fixture.
-IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-8}"
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-4}"
+IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-12}"
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-5}"
 
 PASS=0
 FAIL=0

@@ -1,0 +1,127 @@
+// Loops, joins and reassignment: every construct here lowers to phis
+// (lower/ssa.inc, Braun's construction), and until the emitter lowered a phi
+// as an edge copy none of it compiled -- emit.inc refused any block with a
+// phi. Each function below checks one shape; `initium` returns the number of
+// the first one that is wrong, or 77 when all are right.
+//
+//   1 summa(10)       per, one loop-carried binding          0+...+9 = 45
+//   2 fibonacci(10)   dum, three reassigned bindings, one     F(10)   = 55
+//                     read after the loop
+//   3 supra(10)       si with no aliter in a loop: the join   5..9    = 5
+//                     takes its FALSE edge -> an `e1` stub
+//   4 intervalla(10)  et and vel short-circuits in conditions 3 + 20 = 23
+//                     (3,4,5 add 1; 0 and 9 add 10); vel's
+//                     join is its TRUE edge -> an `e0` stub
+//   5 primus(10)      rumpe out of a per                      0+...+6 = 21
+//   6 quaere(100)     rumpe out of a dum ... terminus, with   8 + 8   = 16
+//                     values at the exit that differ by path
+//                     (a real phi at the exit, reached by the
+//                     header's false edge through a stub)
+//   7 triangulum(10)  nested per, the inner bound a phi       45
+//
+// Everything is u64 until the `redde` of a u8 constant, for arithmetica's
+// reason: 64-bit integers only until milestone M3 (narrow integers), and no
+// `sicut` to narrow a computed u64 into initium's u8.
+
+functio summa(n: u64) -> u64 {
+    mutabilis s: u64 = 0;
+    per i in 0..n {
+        s = s + i;
+    }
+    redde s;
+}
+
+functio fibonacci(n: u64) -> u64 {
+    mutabilis a: u64 = 0;
+    mutabilis b: u64 = 1;
+    mutabilis k: u64 = 0;
+    dum k lt n {
+        firma t: u64 = a + b;
+        a = b;
+        b = t;
+        k = k + 1;
+    }
+    redde a;
+}
+
+functio supra(n: u64) -> u64 {
+    mutabilis c: u64 = 0;
+    per i in 0..n {
+        si i gt 4 {
+            c = c + 1;
+        }
+    }
+    redde c;
+}
+
+functio intervalla(n: u64) -> u64 {
+    mutabilis c: u64 = 0;
+    per i in 0..n {
+        si i gt 2 et i lt 6 {
+            c = c + 1;
+        }
+        si i eq 0 vel i eq 9 {
+            c = c + 10;
+        }
+    }
+    redde c;
+}
+
+functio primus(n: u64) -> u64 {
+    mutabilis s: u64 = 0;
+    per i in 0..n {
+        si i eq 7 {
+            rumpe;
+        }
+        s = s + i;
+    }
+    redde s;
+}
+
+functio quaere(n: u64) -> u64 {
+    mutabilis r: u64 = 0;
+    mutabilis k: u64 = 0;
+    dum k lt n terminus 100 {
+        k = k + 1;
+        si k * k gt 50 {
+            r = k;
+            rumpe;
+        }
+    }
+    redde r + k;
+}
+
+functio triangulum(n: u64) -> u64 {
+    mutabilis s: u64 = 0;
+    per i in 0..n {
+        per j in 0..i {
+            s = s + 1;
+        }
+    }
+    redde s;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    si summa(10) ne 45 {
+        redde 1;
+    }
+    si fibonacci(10) ne 55 {
+        redde 2;
+    }
+    si supra(10) ne 5 {
+        redde 3;
+    }
+    si intervalla(10) ne 23 {
+        redde 4;
+    }
+    si primus(10) ne 21 {
+        redde 5;
+    }
+    si quaere(100) ne 16 {
+        redde 6;
+    }
+    si triangulum(10) ne 45 {
+        redde 7;
+    }
+    redde 77;
+}

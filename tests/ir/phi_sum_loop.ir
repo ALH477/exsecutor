@@ -1,0 +1,34 @@
+; TEST: expect-exit=45
+;
+; The first phi to RUN: 0 + 1 + ... + 9, a loop whose header carries two phis
+; (the counter first, the sum second), filled by the parallel copy
+; emit.inc's "phi -- parallel copies on edges" puts before each `jmp` into
+; the header -- from the entry, and from the latch. Both `br` targets here
+; have no phis, so the `br` is the unchanged Tier-1 text; the stubs are
+; phi_lost_copy.ir's business.
+;
+; 45 needs both phis and both edges right: a copy that dropped the entry edge
+; reads uninitialised slots, one that swapped the two phis' destinations sums
+; the wrong thing, one that ran the latch's copy one step late gives 36.
+;
+; `@initium` is `-> u64`, not `-> u8`, for tier1_combo_lt.ir's reason (no
+; `trunc` until milestone M3); the exit status is the low byte of the result.
+
+functio @initium (ptr) -> u64 {
+b0:
+%0 = param ptr 0
+%1 = iconst u64 0
+%2 = iconst u64 10
+jmp b1
+b1:
+%3 = phi u64 b0 %1 b2 %7
+%4 = phi u64 b0 %1 b2 %6
+%5 = cmp.lt u64 %3 %2
+br %5 b2 b3
+b2:
+%6 = add u64 %4 %3
+%7 = addw u64 %3 1
+jmp b1
+b3:
+ret %4
+}

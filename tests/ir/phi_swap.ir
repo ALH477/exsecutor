@@ -1,0 +1,48 @@
+; TEST: expect-exit=53
+;
+; The PARALLEL in parallel copy. The header's first two phis name each other
+; on the back edge (`a = phi [b2: b]`, `b = phi [b2: a]`), so every trip round
+; the loop swaps them; three trips from a=3, b=5 leave a=5, b=3, and the exit
+; is a*10 + b = 53. Every wrong copy gives a different number:
+;
+;   correct parallel copy (read all, then write)    53
+;   sequential `mov`s in phi order (a=b; b=a)       55   both become 5
+;   an operand lookup that read the phi's own slot  35   nothing swaps
+;   push in phi order, pop in the SAME order         5   the pops reverse
+;                                                        the operands, so a
+;                                                        takes k's 0 and k
+;                                                        takes a's 3: the
+;                                                        loop never runs
+;
+; THE PHI ORDER AND THE TRIP COUNT ARE LOAD-BEARING. The first version of
+; this fixture put the counter phi first and ran three trips, and the
+; same-order-pop mutation still exited with the right answer -- a pop order
+; that reverses three operands happened to compose back to the correct swap
+; after the entry edge and three back edges. Found by running the mutation,
+; not by reading the fixture; the arrangement above was chosen so that each
+; row of the table differs, and each was run.
+;
+; `-> u64` for tier1_combo_lt.ir's reason.
+
+functio @initium (ptr) -> u64 {
+b0:
+%0 = param ptr 0
+%1 = iconst u64 3
+%2 = iconst u64 5
+%3 = iconst u64 0
+%4 = iconst u64 3
+jmp b1
+b1:
+%5 = phi u64 b0 %1 b2 %6
+%6 = phi u64 b0 %2 b2 %5
+%7 = phi u64 b0 %3 b2 %9
+%8 = cmp.lt u64 %7 %4
+br %8 b2 b3
+b2:
+%9 = addw u64 %7 1
+jmp b1
+b3:
+%10 = mulw u64 %5 10
+%11 = addw u64 %10 %6
+ret %11
+}

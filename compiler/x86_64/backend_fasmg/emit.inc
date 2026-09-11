@@ -51,11 +51,12 @@
 ; x86 ADD/SUB/IMUL/MUL already distinguish), `addw`/`subw`/`mulw` (wrapping,
 ; `i64`/`u64` only -- natural 64-bit wraparound, no check needed), `cmp.*`
 ; (`i64`/`u64` only, signed vs unsigned SETcc chosen from the type's own
-; sign bit), `jmp`, `br`, `ret`. Every other opcode this file's own
-; `__bfa_emit_die` refuses by name rather than emitting something wrong --
-; see the report for exactly what is not here and why (mainly: no floats,
-; no memory ops, no calls, no reduction, no ARC, no phi/parallel-copy, no
-; narrower-than-64-bit integer width). ADR 0012 already prices "a naive
+; sign bit), `jmp`, `br`, `ret`, and `phi` as a parallel copy on each
+; incoming edge (see "phi -- parallel copies on edges", below). Every other
+; opcode this file's own `__bfa_emit_die` refuses by name rather than
+; emitting something wrong -- see the report for exactly what is not here
+; and why (mainly: no floats, no memory ops, no calls, no reduction, no ARC,
+; no narrower-than-64-bit integer width). ADR 0012 already prices "a naive
 ; backend still needs an instruction selector for every IR op" as real,
 ; unscheduled engineering; this is the first slice of it, not all of it.
 ;
@@ -961,11 +962,237 @@ proc __bfa_emit_iconst, ctx, module, func, instid
 	return
 endp
 
+; ============================================================================
+; phi -- parallel copies on edges (docs/design/ssa-ir.md section 2.4)
+; ============================================================================
+;
+; A phi emits NO code in its own block: its stack slot is simply where every
+; incoming edge leaves the value. On an edge P -> B where B has phis, each
+; phi of B receives the operand its (bP %v) pair names for P, emitted as
+;
+;       push    qword [rbp-8*v1]        ; v_i = phi_i's operand for P,
+;       ...                             ;       in phi-list order
+;       push    qword [rbp-8*vn]
+;       pop     qword [rbp-8*phi_n]     ; then the phi slots, REVERSED
+;       ...
+;       pop     qword [rbp-8*phi_1]
+;
+; Every operand is read before any phi slot is written, so this is a
+; PARALLEL copy: a swap (`a = phi [P: b]`, `b = phi [P: a]`) and a phi that
+; names itself are both right with no cycle breaking, which a sequence of
+; `mov`s would need. It works only because nothing is live in a register
+; across an instruction boundary (this file's header) -- the stack is the
+; one scratch area -- and the pushes and pops balance before the edge's
+; `jmp`, so the `rsp` alignment `__bfa_emit_call` relies on is untouched.
+;
+; WHERE THE COPIES GO. After a `jmp` the edge is P's only way out, so they
+; precede the `jmp`. After a `br` they cannot precede it: the other edge
+; would run them too, which is the classic LOST COPY (a loop exit reading
+; the header's phi would see the next iteration's value). A `br` into a
+; block with phis therefore targets a per-edge STUB, emitted right after it:
+;
+;       <prefix><P>e0:  copies for P -> bT, jmp <prefix><bT>      true edge
+;       <prefix><P>e1:  copies for P -> bF, jmp <prefix><bF>      false edge
+;
+; A block id and an edge ordinal, so the name is a function of the IR and
+; never of an address (CLAUDE.md, determinism). A block label is `<prefix>`
+; plus digits and cannot contain the `e`, so a stub never collides with one.
+; A `br` neither of whose targets has phis emits exactly the text it always
+; did, and so does a `jmp` into a block without phis.
+
+; __bfa_phi_operand(func, phiv, pblk, skipn) -> eax = the value id phi
+; `phiv` receives on the edge from block `pblk`. The operands are (bP %v)
+; word pairs at extra[a .. a+b) -- ir.inc's BFA_SH_PHI; `b` is the WORD
+; count (lower/ssa.inc's __lwr_add_phi_ops says so too). `skipn` matching
+; pairs are passed over first: nonzero only for a `br` whose two targets are
+; the same block, which gives that block two edges from one predecessor and
+; each of its phis two pairs naming it, in edge order (the lowering never
+; builds one; tests/ir/phi_same_target.ir does). A phi with no pair
+; for `pblk` is refused -- that is verifier rule 3, and picking an operand
+; anyway would be a silent miscompile.
+proc __bfa_phi_operand, func, phiv, pblk, skipn
+	uses	rbx, r12
+	locals
+		slot eidx, dd
+		slot cnt, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [phiv]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[eidx], ecx
+	mov	ecx, [rax + BfaInst.b]
+	mov	[cnt], ecx
+	xor	ebx, ebx			; word offset of the current pair
+	mov	r12d, [skipn]
+  .loop:
+	cmp	ebx, [cnt]
+	jge	.none
+	mov	rdi, [func]
+	mov	esi, [eidx]
+	add	esi, ebx
+	call	bfa_extra_get			; the pair's predecessor block
+	cmp	eax, [pblk]
+	jne	.next
+	test	r12d, r12d
+	jz	.hit
+	dec	r12d
+  .next:
+	add	ebx, 2
+	jmp	.loop
+  .hit:
+	mov	rdi, [func]
+	mov	esi, [eidx]
+	add	esi, ebx
+	inc	esi
+	call	bfa_extra_get			; the pair's value
+	return
+  .none:
+	jmp	.after_msg
+  .msg db "phi: no operand for this predecessor (verifier rule 3)"
+  .after_msg:
+	lea	rdi, [.msg]
+	mov	rsi, .after_msg - .msg
+	call	__bfa_emit_die
+endp
+
+; __bfa_emit_edge_copies(ctx, func, pblk, tblk, skipn) -- the parallel copy
+; for the edge pblk -> tblk (see above). Emits NOTHING when tblk has no phis,
+; which is what keeps every phi-free function's text byte-identical. The
+; pops walk the phi list from its head once per phi -- O(n^2) in the phis of
+; one block, this backend's standing trade (spec section 9.2).
+proc __bfa_emit_edge_copies, ctx, func, pblk, tblk, skipn
+	locals
+		slot cur, dd
+		slot phiv, dd
+		slot nphi, dd
+		slot i, dd
+		slot j, dd
+	endl
+	mov	dword [nphi], 0
+	mov	rdi, [func]
+	mov	esi, [tblk]
+	call	bfa_block_ptr
+	mov	ecx, [rax + BfaBlock.first_phi]
+	mov	[cur], ecx
+  .pushloop:
+	cmp	dword [cur], 0
+	je	.pushdone
+	mov	rdi, [func]
+	mov	esi, [cur]
+	mov	edx, [pblk]
+	mov	ecx, [skipn]
+	call	__bfa_phi_operand
+	mov	[phiv], eax
+	mov	rdi, [ctx]
+	jmp	.after_push
+  .lit_push db "	push	qword "
+  .after_push:
+	lea	rsi, [.lit_push]
+	mov	rdx, .after_push - .lit_push
+	call	__bfa_out_lit
+	mov	rdi, [ctx]
+	mov	esi, [phiv]
+	call	__bfa_slot
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	mov	eax, [nphi]
+	inc	eax
+	mov	[nphi], eax
+	mov	rdi, [func]
+	mov	esi, [cur]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.nextp]
+	mov	[cur], ecx
+	jmp	.pushloop
+  .pushdone:
+	mov	eax, [nphi]
+	mov	[i], eax
+  .poploop:
+	cmp	dword [i], 0
+	je	.done
+	mov	eax, [i]
+	dec	eax
+	mov	[i], eax
+	; walk to the i'th phi (0-based)
+	mov	rdi, [func]
+	mov	esi, [tblk]
+	call	bfa_block_ptr
+	mov	ecx, [rax + BfaBlock.first_phi]
+	mov	[cur], ecx
+	mov	dword [j], 0
+  .walk:
+	mov	eax, [j]
+	cmp	eax, [i]
+	je	.found
+	mov	rdi, [func]
+	mov	esi, [cur]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.nextp]
+	mov	[cur], ecx
+	mov	eax, [j]
+	inc	eax
+	mov	[j], eax
+	jmp	.walk
+  .found:
+	mov	rdi, [ctx]
+	jmp	.after_pop
+  .lit_pop db "	pop	qword "
+  .after_pop:
+	lea	rsi, [.lit_pop]
+	mov	rdx, .after_pop - .lit_pop
+	call	__bfa_out_lit
+	mov	rdi, [ctx]
+	mov	esi, [cur]
+	call	__bfa_slot
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	jmp	.poploop
+  .done:
+	return
+endp
+
+; __bfa_emit_blklabel(ctx, lblptr, lbllen, blkid) -- `<prefix><blkid>`, no
+; newline: the one spelling of a block's label, for its header and every
+; branch to it.
+proc __bfa_emit_blklabel, ctx, lblptr, lbllen, blkid
+	locals
+	endl
+	mov	rdi, [ctx]
+	mov	rsi, [lblptr]
+	mov	rdx, [lbllen]
+	call	__bfa_out_lit
+	mov	rdi, [ctx]
+	mov	esi, [blkid]
+	call	__bfa_out_u64
+	return
+endp
+
+; __bfa_emit_stublabel(ctx, lblptr, lbllen, blkid, ord) -- `<prefix><blkid>e<ord>`,
+; no newline: the edge stub for the `ord`'th successor (0 true, 1 false) of
+; block `blkid`'s `br`.
+proc __bfa_emit_stublabel, ctx, lblptr, lbllen, blkid, ord
+	locals
+	endl
+	mov	rdi, [ctx]
+	mov	rsi, [lblptr]
+	mov	rdx, [lbllen]
+	mov	ecx, [blkid]
+	call	__bfa_emit_blklabel
+	mov	rdi, [ctx]
+	mov	esi, 'e'
+	call	__bfa_out_byte
+	mov	rdi, [ctx]
+	mov	esi, [ord]
+	call	__bfa_out_u64
+	return
+endp
+
 ; __bfa_emit_jmp(ctx, func, instid, lblptr, lbllen) -- `lblptr`/`lbllen` is
 ; this function's own emitted block-label PREFIX (see
 ; __bfa_emit_function): the label for internal block id K is
 ; `<prefix><K>`, always -- built once per function, reused by every
-; jmp/br it contains.
+; jmp/br it contains. A target with phis gets its parallel copy first.
 proc __bfa_emit_jmp, ctx, func, instid, lblptr, lbllen
 	locals
 		slot btgt, dd
@@ -975,6 +1202,14 @@ proc __bfa_emit_jmp, ctx, func, instid, lblptr, lbllen
 	call	bfa_inst_ptr
 	mov	ecx, [rax + BfaInst.a]
 	mov	[btgt], ecx
+
+	mov	rax, [ctx]
+	mov	edx, [rax + BfaPrintCtx.curblk]
+	mov	rdi, [ctx]
+	mov	rsi, [func]
+	mov	ecx, [btgt]
+	xor	r8d, r8d
+	call	__bfa_emit_edge_copies
 
 	mov	rdi, [ctx]
 	jmp	.after_lit
@@ -995,13 +1230,18 @@ proc __bfa_emit_jmp, ctx, func, instid, lblptr, lbllen
 	return
 endp
 
-; __bfa_emit_br(ctx, func, instid, lblptr, lbllen)
+; __bfa_emit_br(ctx, func, instid, lblptr, lbllen) -- a target with phis is
+; reached through its edge stub, emitted after the two jumps (see "phi --
+; parallel copies on edges", above); without phis the text is unchanged.
 proc __bfa_emit_br, ctx, func, instid, lblptr, lbllen
 	locals
 		slot cv, dd
 		slot btgt, dd
 		slot bf, dd
 		slot eidx, dd
+		slot pcur, dd
+		slot tphi, dd
+		slot fphi, dd
 	endl
 	mov	rdi, [func]
 	mov	esi, [instid]
@@ -1026,6 +1266,20 @@ proc __bfa_emit_br, ctx, func, instid, lblptr, lbllen
 	call	bfa_extra_get
 	mov	[bf], eax
 
+	mov	rax, [ctx]
+	mov	ecx, [rax + BfaPrintCtx.curblk]
+	mov	[pcur], ecx
+	mov	rdi, [func]
+	mov	esi, [btgt]
+	call	bfa_block_ptr
+	mov	ecx, [rax + BfaBlock.first_phi]
+	mov	[tphi], ecx
+	mov	rdi, [func]
+	mov	esi, [bf]
+	call	bfa_block_ptr
+	mov	ecx, [rax + BfaBlock.first_phi]
+	mov	[fphi], ecx
+
 	mov	rdi, [ctx]
 	mov	esi, [cv]
 	xor	edx, edx
@@ -1037,13 +1291,22 @@ proc __bfa_emit_br, ctx, func, instid, lblptr, lbllen
 	lea	rsi, [.lit_test]
 	mov	rdx, .after_test - .lit_test
 	call	__bfa_out_lit
+	cmp	dword [fphi], 0
+	jne	.jzstub
 	mov	rdi, [ctx]
 	mov	rsi, [lblptr]
 	mov	rdx, [lbllen]
-	call	__bfa_out_lit
+	mov	ecx, [bf]
+	call	__bfa_emit_blklabel
+	jmp	.jzdone
+  .jzstub:
 	mov	rdi, [ctx]
-	mov	esi, [bf]
-	call	__bfa_out_u64
+	mov	rsi, [lblptr]
+	mov	rdx, [lbllen]
+	mov	ecx, [pcur]
+	mov	r8d, 1
+	call	__bfa_emit_stublabel
+  .jzdone:
 	mov	rdi, [ctx]
 	call	__bfa_emit_nl
 
@@ -1054,15 +1317,98 @@ proc __bfa_emit_br, ctx, func, instid, lblptr, lbllen
 	lea	rsi, [.lit_jmp]
 	mov	rdx, .after_jmp - .lit_jmp
 	call	__bfa_out_lit
+	cmp	dword [tphi], 0
+	jne	.jmpstub
 	mov	rdi, [ctx]
 	mov	rsi, [lblptr]
 	mov	rdx, [lbllen]
-	call	__bfa_out_lit
+	mov	ecx, [btgt]
+	call	__bfa_emit_blklabel
+	jmp	.jmpdone
+  .jmpstub:
 	mov	rdi, [ctx]
-	mov	esi, [btgt]
-	call	__bfa_out_u64
+	mov	rsi, [lblptr]
+	mov	rdx, [lbllen]
+	mov	ecx, [pcur]
+	xor	r8d, r8d
+	call	__bfa_emit_stublabel
+  .jmpdone:
 	mov	rdi, [ctx]
 	call	__bfa_emit_nl
+
+	; the true edge's stub
+	cmp	dword [tphi], 0
+	je	.notstub
+	jmp	.after_colon
+  .lit_colon db ":", 10
+  .after_colon:
+	mov	rdi, [ctx]
+	mov	rsi, [lblptr]
+	mov	rdx, [lbllen]
+	mov	ecx, [pcur]
+	xor	r8d, r8d
+	call	__bfa_emit_stublabel
+	mov	rdi, [ctx]
+	lea	rsi, [.lit_colon]
+	mov	rdx, .after_colon - .lit_colon
+	call	__bfa_out_lit
+	mov	rdi, [ctx]
+	mov	rsi, [func]
+	mov	edx, [pcur]
+	mov	ecx, [btgt]
+	xor	r8d, r8d
+	call	__bfa_emit_edge_copies
+	mov	rdi, [ctx]
+	lea	rsi, [.lit_jmp]
+	mov	rdx, .after_jmp - .lit_jmp
+	call	__bfa_out_lit
+	mov	rdi, [ctx]
+	mov	rsi, [lblptr]
+	mov	rdx, [lbllen]
+	mov	ecx, [btgt]
+	call	__bfa_emit_blklabel
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+  .notstub:
+
+	; the false edge's stub. When both targets are one block, this is that
+	; block's SECOND edge from here, so its phis' second pair naming this
+	; block is the one read (__bfa_phi_operand's `skipn`).
+	cmp	dword [fphi], 0
+	je	.nofstub
+	mov	rdi, [ctx]
+	mov	rsi, [lblptr]
+	mov	rdx, [lbllen]
+	mov	ecx, [pcur]
+	mov	r8d, 1
+	call	__bfa_emit_stublabel
+	mov	rdi, [ctx]
+	lea	rsi, [.lit_colon]
+	mov	rdx, .after_colon - .lit_colon
+	call	__bfa_out_lit
+	xor	r8d, r8d
+	mov	eax, [bf]
+	cmp	eax, [btgt]
+	jne	.fskip
+	mov	r8d, 1
+  .fskip:
+	mov	rdi, [ctx]
+	mov	rsi, [func]
+	mov	edx, [pcur]
+	mov	ecx, [bf]
+	call	__bfa_emit_edge_copies
+	mov	rdi, [ctx]
+	lea	rsi, [.lit_jmp]
+	mov	rdx, .after_jmp - .lit_jmp
+	call	__bfa_out_lit
+	mov	rdi, [ctx]
+	mov	rsi, [lblptr]
+	mov	rdx, [lbllen]
+	mov	ecx, [bf]
+	call	__bfa_emit_blklabel
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+  .nofstub:
 	return
 endp
 
@@ -2159,19 +2505,14 @@ proc __bfa_emit_function, ctx, module, funcptr, arena
 	mov	rdx, .after_colon2 - .lit_colon2
 	call	__bfa_out_lit
 
-	mov	rdi, [func]
-	mov	esi, [blkid]
-	call	bfa_block_ptr
-	mov	ecx, [rax + BfaBlock.first_phi]
-	cmp	ecx, 0
-	je	.nophi
-	jmp	.after_phimsg
-  .phimsg db "phi is not implemented in the Tier-1 emitter (needs parallel-copy lowering)"
-  .after_phimsg:
-	lea	rdi, [.phimsg]
-	mov	rsi, .after_phimsg - .phimsg
-	call	__bfa_emit_die
-  .nophi:
+	; The block's phis emit nothing here: each is only a destination slot,
+	; filled by the parallel copy on every incoming edge, which the
+	; predecessor's `jmp`/`br` emits -- and to do that it has to know which
+	; predecessor it is, hence `curblk` ("phi -- parallel copies on edges",
+	; above). The body list never contains a phi (ir.inc: two lists).
+	mov	rax, [ctx]
+	mov	ecx, [blkid]
+	mov	[rax + BfaPrintCtx.curblk], ecx
 
 	mov	rdi, [func]
 	mov	esi, [blkid]

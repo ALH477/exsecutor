@@ -1,0 +1,36 @@
+; TEST: expect-exit=9
+;
+; The LOST COPY, the reason a `br` into a block with phis goes through an
+; edge stub. The latch b2 ends in `br` with two successors: back to the
+; header b1, whose phi `x` it must update, and out to b3, which returns
+; that same `x`. The copy x <- x+1 belongs on the b2 -> b1 edge only.
+;
+;   x runs 1, 2, ..., 9; at x = 9 the latch computes 10, 10 lt 10 is false,
+;   and the loop exits with x still 9.
+;
+;   copy in the stub (on the edge)                  9
+;   copy placed before the `br` (on both edges)    10   -- the exit edge
+;                                                         sees next x
+;
+; The back edge is the TRUE edge, so this is the `<prefix><P>e0` stub; the
+; false-edge stub (`e1`) runs in tests/programs/phi_loops/, where a `si`
+; with no `aliter` joins on its false edge.
+;
+; `-> u64` for tier1_combo_lt.ir's reason.
+
+functio @initium (ptr) -> u64 {
+b0:
+%0 = param ptr 0
+%1 = iconst u64 1
+%2 = iconst u64 10
+jmp b1
+b1:
+%3 = phi u64 b0 %1 b2 %4
+jmp b2
+b2:
+%4 = addw u64 %3 1
+%5 = cmp.lt u64 %4 %2
+br %5 b1 b3
+b3:
+ret %3
+}

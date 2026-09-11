@@ -132,6 +132,9 @@ struct BfaPrintCtx
 	field obuf,      dq	; -> Vec<db>
 	field blk_print, dq	; -> Vec<dd>, index = internal block id - 1
 	field val_print, dq	; -> Vec<dd>, index = internal value id - 1; -1 (0xFFFFFFFF) if void
+	field curblk,    dd	; emit.inc only: the internal id of the block being
+				; emitted, i.e. the PREDECESSOR a `jmp`/`br` edge
+				; leaves -- a phi's operand is chosen by it
 end struct
 
 ; ============================================================================

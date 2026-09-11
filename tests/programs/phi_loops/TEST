@@ -1,0 +1,2 @@
+# phi_loops.exsc's header lists the seven checks; 1-7 names the first wrong one.
+TEST: expect-exit=77

@@ -1,0 +1,30 @@
+; TEST: expect-exit=2
+;
+; A `br` whose two targets are ONE block with a phi. That gives b1 two edges
+; from b0, so its phi has two pairs naming b0 -- one per edge, in edge
+; order: the true edge first, then the false one (ssa-ir.md section 2.4).
+; Which pair an edge reads cannot be decided by the predecessor's block id
+; alone; emit.inc's `__bfa_phi_operand` takes a `skipn`, and the false
+; edge's stub passes 1 when both targets agree.
+;
+; 2 lt 1 is false, so the false edge runs and the phi must read its SECOND
+; b0 pair: 2. An emitter that matched only on the block id reads the first
+; pair on both edges and exits 1.
+;
+; The lowering never builds this shape -- every `br` it emits has two
+; distinct targets -- but the IR permits it and the verifier accepts it, so
+; the emitter must not get it wrong silently.
+;
+; `-> u64` for tier1_combo_lt.ir's reason.
+
+functio @initium (ptr) -> u64 {
+b0:
+%0 = param ptr 0
+%1 = iconst u64 1
+%2 = iconst u64 2
+%3 = cmp.lt u64 %2 %1
+br %3 b1 b1
+b1:
+%4 = phi u64 b0 %1 b0 %2
+ret %4
+}
