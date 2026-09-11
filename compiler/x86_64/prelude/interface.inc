@@ -242,7 +242,9 @@ EXS_IFACE_D_MUNDUS_AMBITUS	= 3
 EXS_IFACE_D_AD_EXITUM		= 4
 EXS_IFACE_D_SCRIBE		= 5
 EXS_IFACE_D_ALLOC_NOVUM		= 6
-EXS_IFACE_DECL_COUNT		= 7
+EXS_IFACE_D_SCRIBE_OCTETUM	= 7	; APPENDED, not inserted next to row 5:
+					; an insertion renumbers alloc (above)
+EXS_IFACE_DECL_COUNT		= 8
 
 if defined EXS_IFACE_EMIT_DECLS
 
@@ -271,6 +273,9 @@ exsrt_iface_nomina:
   .alloc		= $ - exsrt_iface_nomina
 	db 'alloc'
   .alloc_len		= $ - exsrt_iface_nomina - .alloc
+  .scribe_octetum	= $ - exsrt_iface_nomina
+	db 'scribe_octetum'
+  .scribe_octetum_len	= $ - exsrt_iface_nomina - .scribe_octetum
   ; ---- prelude symbols. The label in the blob carries emit.inc's `bfausr_`
   ; prefix (runtime.md 2.2); the IR names the short form, and the emitter
   ; prints the prefix. These are the SHORT forms.
@@ -286,6 +291,9 @@ exsrt_iface_nomina:
   .sym_alloc_novum	= $ - exsrt_iface_nomina
 	db 'exsrt_alloc_novum'
   .sym_alloc_novum_len	= $ - exsrt_iface_nomina - .sym_alloc_novum
+  .sym_scribe_octetum	= $ - exsrt_iface_nomina
+	db 'exsrt_scriptor_scribe_octetum'
+  .sym_scribe_octetum_len = $ - exsrt_iface_nomina - .sym_scribe_octetum
 EXS_IFACE_NOMINA_LEN = $ - exsrt_iface_nomina
 
 ; ---- signature pool ---------------------------------------------------------
@@ -306,6 +314,11 @@ exsrt_iface_signa:
 								; both aggregates by ptr
   .alloc_novum		= $ - exsrt_iface_signa
 	db 2, EXS_IFACE_T_PTR, EXS_IFACE_T_PTR, EXS_IFACE_T_U64	; (ptr u64) -> ptr
+  .scribe_octetum	= $ - exsrt_iface_signa
+	db 2, EXS_IFACE_T_U64, EXS_IFACE_T_PTR, EXS_IFACE_T_U8
+								; (ptr u8) -> u64:
+								; the Scriptor by ptr,
+								; the byte by value
 EXS_IFACE_SIGNA_LEN = $ - exsrt_iface_signa
 
 ; ---- the declarations -------------------------------------------------------
@@ -387,6 +400,21 @@ exsrt_iface_decls:
 	dd exsrt_iface_nomina.sym_alloc_novum, exsrt_iface_nomina.sym_alloc_novum_len
 	dd EXS_IFACE_NULLUS
 	dd exsrt_iface_signa.alloc_novum
+	dd 0, 0
+
+; 7: functio scribe_octetum(s: Scriptor, b: u8) -> mensura
+;    docs/design/wire-codec.md D7. One byte, the low 8 bits of `b`, to `s`'s
+;    descriptor -- the raw-byte writer a `textus` cannot be (spec 5.1: UTF-8).
+;    Provisional for exactly `scribe`'s reason, and marked the same way:
+;    APERTUM, returning the COUNT (1, or 0 on failure) until `eventus` has
+;    syntax. A method on `Scriptor` like row 5, not associated: `s` is the
+;    receiver, so the checker gives it `scribe`'s shape and its row.
+	db EXS_IFACE_K_FN, EXS_IFACE_F_PUBLICA or EXS_IFACE_F_APERTUM
+	db EXS_IFACE_CAP_NONE, 0
+	dd exsrt_iface_nomina.scribe_octetum, exsrt_iface_nomina.scribe_octetum_len
+	dd exsrt_iface_nomina.sym_scribe_octetum, exsrt_iface_nomina.sym_scribe_octetum_len
+	dd EXS_IFACE_D_SCRIPTOR
+	dd exsrt_iface_signa.scribe_octetum
 	dd 0, 0
 
 assert $ - exsrt_iface_decls = EXS_IFACE_DECL_COUNT * EXS_IFACE_DECL_SIZE

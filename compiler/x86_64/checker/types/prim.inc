@@ -88,7 +88,7 @@
 ; `docs/design/runtime.md` 2.2 and spec §12: the prelude's names are
 ; "pre-seeded declarations in a scope OUTSIDE the module", which a module's own
 ; declaration SHADOWS rather than colliding with. `prelude/interface.inc` part
-; B serializes seven of them and says its serialization "is the checker agent's
+; B serializes eight of them and says its serialization "is the checker agent's
 ; to accept or replace". It is ACCEPTED as the source of the facts (part A's
 ; offsets and part B's row order) and REPLACED as the storage: this file
 ; carries its own name pool and builds real `Ast.types` entries, because a
@@ -117,7 +117,7 @@
 ; WHY NOT PUSH `AstDecl` RECORDS. Because `ast_verify`'s "the atoms are the
 ; last eleven declarations" must survive, and `ast_cap_base` (ast/build.inc) is
 ; a BOUNDS CHECK on exactly that -- `decls.len - 11 + 1`, kind-checked -- not a
-; scan. Seven declarations appended after Stage 1 move the atoms off the end
+; scan. Eight declarations appended after Stage 1 move the atoms off the end
 ; and `ast_cap_base` answers 0, which silently turns every capability lookup,
 ; every row item and the whole of pass 3 into a no-op. Appending a second copy
 ; of the eleven atoms after them does not help either: pass 1's `RowItem.d` and
@@ -134,7 +134,7 @@
 ;   - `chk_verify`'s `__chk_v_path` asserts that a filled `d` names a
 ;     declaration that exists. One line was added there -- `btr r13, 31`,
 ;     immediately after the `jz .unresolved` -- which drops the tag and leaves
-;     the row index, a number in 1..7 that is always <= `ast_decl_count` (the
+;     the row index, a number in 1..8 that is always <= `ast_decl_count` (the
 ;     eleven atoms alone make the count >= 11). A one-segment `Path`'s
 ;     `rassert r14 eq r13` still compares two TAGGED values and is unaffected,
 ;     because it runs before that line. That edit is outside this agent's tree
@@ -173,6 +173,7 @@ CHK_TY_PRE_AMBITUS	= EXS_IFACE_D_MUNDUS_AMBITUS + 1
 CHK_TY_PRE_AD_EXITUM	= EXS_IFACE_D_AD_EXITUM + 1
 CHK_TY_PRE_SCRIBE	= EXS_IFACE_D_SCRIBE + 1
 CHK_TY_PRE_ALLOC	= EXS_IFACE_D_ALLOC_NOVUM + 1
+CHK_TY_PRE_SCRIBE_OCT	= EXS_IFACE_D_SCRIBE_OCTETUM + 1
 CHK_TY_PRE_COUNT	= EXS_IFACE_DECL_COUNT
 
 ; ---- primitive pool indices ------------------------------------------------
@@ -274,8 +275,8 @@ CHK_TY_PRIM_NAMES_LEN = $ - chk_ty_prim_names
 ; ---- the prelude name pool -------------------------------------------------
 ; SAME ORDER AS `prelude/interface.inc` PART B's rows, so the pool index IS
 ; `EXS_IFACE_D_* + 1` and a tagged `d` needs no second table to print. That
-; correspondence is asserted, not assumed: `CHK_TY_PRE_ALLOC` is the last row
-; and the pool has exactly that many entries.
+; correspondence is asserted, not assumed: `CHK_TY_PRE_SCRIBE_OCT` is the last
+; row and the pool has exactly that many entries.
 chk_ty_pre_names:
 	db 8,'Scriptor'
 	db 1,'a'
@@ -284,9 +285,11 @@ chk_ty_pre_names:
 	db 9,'ad_exitum'
 	db 6,'scribe'
 	db 5,'alloc'
+	db 14,'scribe_octetum'
 CHK_TY_PRE_NAMES_LEN = $ - chk_ty_pre_names
 assert CHK_TY_PRE_ALLOC = 7
-assert CHK_TY_PRE_COUNT = 7
+assert CHK_TY_PRE_SCRIBE_OCT = 8
+assert CHK_TY_PRE_COUNT = 8
 
 ; `arborea` and `ordinata` -- spec §5.4's two reduction shapes, §8.6's
 ; `['forma' IDENT [INT]]`. Not keywords (lexer/keywords.inc does not know
@@ -673,7 +676,7 @@ endp
 ; and that the table has no entry for spec §5.1's type names -- and both are
 ; answered here: the tag (this file's header) and the primitive table (part 1).
 ;
-; ONLY `Scriptor` IS IN MODULE SCOPE. The other six rows are members and
+; ONLY `Scriptor` IS IN MODULE SCOPE. The other seven rows are members and
 ; associated functions of it, reached through `Member` and resolved against a
 ; receiver's TYPE (`__chk_ty_member`, types.inc), never by a bare name; and
 ; `ambitus` and `alloc` are spec §4.6 capability ATOMS before they are anything
@@ -879,6 +882,8 @@ proc chk_ty_prelude_type, chkt_wp, chkt_kp
 	je	.fn_scribe
 	cmp	r12, CHK_TY_PRE_ALLOC
 	je	.fn_alloc
+	cmp	r12, CHK_TY_PRE_SCRIBE_OCT
+	je	.fn_scribe_oct
 	mov	rdi, rbx
 	call	__chk_ty_err
 	return
@@ -1017,6 +1022,46 @@ proc chk_ty_prelude_type, chkt_wp, chkt_kp
 	mov	rdi, rbx
 	mov	rsi, AST_CAP_ALLOC
 	call	__chk_ty_atom
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_np]
+	call	ast_list_emit
+	mov	[chkt_ep], rax
+	mov	rdi, rbx
+	mov	rsi, [chkt_ep]
+	mov	rdx, 2
+	call	__chk_ty_fn_empty
+	return
+
+  .fn_scribe_oct:
+	; functio scribe_octetum(s: Scriptor, b: u8) -> mensura
+	; `scribe`'s shape with `u8` where `textus` was, and `scribe`'s [OPEN]:
+	; prelude/interface.inc row 7 is APERTUM and returns the COUNT, and so
+	; does this. The same empty row as `scribe`, so `s.scribe_octetum(b)`
+	; draws exactly what `s.scribe(t)` draws -- `Scriptor`'s mark, through
+	; the receiver's type (spec 4.2) -- and a caller writes `poscit sicut s`
+	; for both. `u8` is `nativus`: a byte has no order.
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	call	ast_list_mark
+	mov	[chkt_np], rax
+	mov	rdi, rbx
+	mov	rsi, CHK_TY_PRE_SCRIPTOR
+	call	chk_ty_prelude_type
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, AST_SIGN_U
+	mov	rdx, 8
+	mov	rcx, AST_ORD_NATIVUS
+	call	ast_type_int
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, rbx
+	call	__chk_ty_mensura
 	mov	rdi, [rbx + ChkTyWork.wtre]
 	mov	rsi, rax
 	call	ast_list_push

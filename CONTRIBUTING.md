@@ -91,8 +91,10 @@ why `tests/run.sh` carries floors on how many fixtures it must discover.
 
 The repository holds itself to §8.1: UTF-8, no BOM, LF line endings, NFC. The
 tool that rejects CRLF should not ship with CRLF in it. The only exceptions
-are the two byte-exact directories `.gitattributes` names, `vendor/` and
-`tests/conformance/`, for the reasons written there.
+are the byte-exact paths `.gitattributes` names -- `vendor/`,
+`tests/conformance/`, and a program test's `expected.out`, which is a
+program's stdout rather than source and may be raw bytes -- for the reasons
+written there.
 
 ## Running the whole suite
 

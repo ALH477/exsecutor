@@ -35,7 +35,7 @@ calls):
    39 fixtures (`IR_FIXTURE_FLOOR`).
 4. **`tests/programs/`** — Exsecutor sources, RUN. Each directory is one
    program: `exsc aedifica --hospes x86_64-linux SRC... -o OUT`, `fasmg OUT
-   BIN`, run, check. 5 programs run (`PROGRAM_FIXTURE_FLOOR`) and 1 is
+   BIN`, run, check. 6 programs run (`PROGRAM_FIXTURE_FLOOR`) and 1 is
    deferred (`forma/`, type-checked only; see below).
 
 Phases 3 and 4 are the first in this script to execute code a compiler

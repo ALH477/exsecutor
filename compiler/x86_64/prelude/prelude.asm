@@ -348,6 +348,64 @@ bfausr_exsrt_scriptor_scribe:
 	pop	rbp
 	ret
 
+; bfausr_exsrt_scriptor_scribe_octetum(s: ptr, b: u8) -> u64
+;   `s.scribe_octetum(b)`. Writes exactly ONE byte -- the low 8 bits of `b`
+;   -- to the Scriptor's descriptor. docs/design/wire-codec.md D7: `scribe`
+;   takes a `textus`, which spec 5.1 makes UTF-8, so no `scribe` call can
+;   put 0xFF or a lone 0x80 on a stream. A wire frame is arbitrary bytes and
+;   this is how one reaches stdout. `s` is an aggregate and travels by
+;   pointer; `b` is a scalar and travels by value in `sil`.
+;
+;   THE BYTE IS `sil` AND NOTHING ABOVE IT. docs/design/ssa-ir.md 2.2 holds a
+;   `u8` zero-extended in its 64-bit slot and emit.inc passes that whole slot
+;   in `rsi`, so bits 8-63 are zero from emitted code -- but SysV leaves them
+;   unspecified for a narrow argument, and this routine does not need them
+;   to be anything: it stores one byte and never reads `rsi` wider.
+;
+;   Provisional exactly as `scribe` is (interface.inc marks the row
+;   EXS_IFACE_F_APERTUM): returns the COUNT written, 1 on success and 0 on
+;   failure, because spec 11 (as amended) wants `eventus<mensura>` and
+;   `eventus` has no syntax yet. SAME ERROR CONVENTION AS `scribe`: EINTR is
+;   retried, a zero-byte return is retried (it is `scribe`'s loop with
+;   `remaining` = 1, and `scribe` goes round again on 0), and any other
+;   -errno ends the call with nothing written. EAGAIN and SIGPIPE are
+;   `scribe`'s [OPEN] items, unchanged. The EINTR and zero-return paths need
+;   a second process to produce and are [UNTESTED], as `scribe`'s are.
+;
+;   The byte lives in the frame, not in a register, because `write` takes a
+;   buffer ADDRESS. `rdi`, `rsi` and `rdx` are syscall arguments and the
+;   kernel preserves them, so the retry re-issues the same call without
+;   reloading; nothing is held in `rcx` or `r11` (this file's header).
+;
+;   SAME GATE, SAME SYSCALL. It sits inside `if EXS_POTESTAS_AMBITUS` next to
+;   `scribe` and issues `write(1)` with `edi` loaded from the Scriptor field,
+;   which tools/syscall-audit.sh admits under `ambitus` and under nothing
+;   else. No syscall is added to either closed set.
+bfausr_exsrt_scriptor_scribe_octetum:
+	push	rbp
+	mov	rbp, rsp
+	sub	rsp, 16
+	mov	[rbp - 8], sil			; the byte: `b`'s low 8 bits only
+	mov	edi, [rdi + EXS_SCRIPTOR_DESCRIPTOR]
+	lea	rsi, [rbp - 8]
+	mov	edx, 1
+  .loop:
+	mov	eax, 1				; write
+	syscall
+	cmp	rax, -4096			; the Linux raw-syscall error range
+	ja	.err
+	test	rax, rax			; 0 bytes and no error: go again, as
+	jz	.loop				; `scribe`'s loop does with 1 remaining
+	jmp	.done				; rax = 1: the byte is written
+  .err:
+	cmp	eax, -4				; -EINTR: nothing was written, retry
+	je	.loop
+	xor	eax, eax			; any other -errno: 0 bytes written
+  .done:
+	mov	rsp, rbp
+	pop	rbp
+	ret
+
 end if	; EXS_POTESTAS_AMBITUS
 
 ; =============================================================================

@@ -1,0 +1,59 @@
+// Raw bytes on stdout: `Scriptor.scribe_octetum` (docs/design/wire-codec.md
+// D7), the one writer whose argument is not a `textus`. Spec 5.1 makes a
+// `textus` UTF-8, so `scribe` cannot put 0xff, a lone continuation byte
+// 0x80 or a lone lead byte 0xd3 on a stream -- and a wire frame is exactly
+// such bytes. expected.out is the 26 bytes below, compared with `cmp`, byte
+// for byte; a text comparison would be the wrong test for this program.
+//
+//    6 bytes  literals: d3 00 ff 7f 80 0a -- 0x00 and 0xff, and three bytes
+//             that are not UTF-8 on their own (d3, ff, 80)
+//   16 bytes  per i in 0..16: (i * 17) sicut u8 -- 00 11 22 ... ee ff, a
+//             computed byte narrowed from u64 (M3's trunc)
+//    4 bytes  a u8 carried round a loop phi with +%: fe ff 00 01, the wrap
+//             at the top of the byte
+//
+// Every call's result is counted only when it is exactly 1, so `initium`
+// returns 0 only if all 26 calls returned 1 -- `mensura`, the COUNT, as
+// `scribe` returns it (interface.inc marks both rows APERTUM). A byte
+// written twice shows in expected.out; a count other than 1 shows here.
+//
+// `emitte` is `imprime_gutenbergio`'s shape (examples/imprime.exsc): the
+// authority is the writer's, so its row is `poscit sicut s` and nothing
+// else, exactly as for `s.scribe(t)`.
+
+functio emitte(s: Scriptor, b: u8) -> mensura poscit sicut s {
+    redde s.scribe_octetum(b);
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma s = Scriptor.ad_exitum(a);
+    mutabilis n: mensura = 0;
+
+    si s.scribe_octetum(0xd3) eq 1 { n = n + 1; }
+    si s.scribe_octetum(0) eq 1 { n = n + 1; }
+    si s.scribe_octetum(0xff) eq 1 { n = n + 1; }
+    si emitte(s, 0x7f) eq 1 { n = n + 1; }
+    si emitte(s, 0x80) eq 1 { n = n + 1; }
+    si s.scribe_octetum(10) eq 1 { n = n + 1; }
+
+    // A range of two bare literals has no type to take (EXS-E0308), so the
+    // bounds are typed bindings, as phi_loops' `0..n` is.
+    firma sedecim: u64 = 16;
+    per i in 0..sedecim {
+        si s.scribe_octetum((i * 17) sicut u8) eq 1 { n = n + 1; }
+    }
+
+    firma quattuor: u64 = 4;
+    mutabilis b: u8 = 0xfe;
+    per k in 0..quattuor {
+        si emitte(s, b) eq 1 { n = n + 1; }
+        b = b +% 1;
+    }
+
+    si n ne 26 {
+        redde 1;
+    }
+    redde 0;
+}

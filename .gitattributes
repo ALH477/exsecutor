@@ -32,5 +32,15 @@ vendor/fasmg-x86/** -text
 # it and the entry had been testing nothing.
 tests/conformance/** -text
 
+# --- tests/programs/*/expected.out: a program's stdout, byte-exact ---
+#
+# tests/run.sh compares a program's stdout to this file with `cmp`. It is not
+# source and need not be text: tests/programs/octeti/expected.out holds 0x00,
+# 0xff and lone UTF-8 lead and continuation bytes, because that program writes
+# raw bytes (Scriptor.scribe_octetum). `text=auto` would detect that one as
+# binary by its NUL, but the next reference may hold a CR and no NUL, and
+# `eol=lf` would then rewrite the expectation instead of the program failing.
+tests/programs/*/expected.out -text
+
 # PROVENANCE.md is ours, not upstream's, and is excluded from the digest.
 vendor/fasmg-x86/PROVENANCE.md text eol=lf

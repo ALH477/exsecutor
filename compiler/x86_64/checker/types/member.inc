@@ -122,6 +122,8 @@ proc __chk_ty_pre_member, chkt_wPM, chkt_tPM, chkt_mPM
 	je	.yes
 	cmp	r13, CHK_TY_PRE_SCRIBE
 	je	.yes
+	cmp	r13, CHK_TY_PRE_SCRIBE_OCT
+	je	.yes
 	cmp	r13, CHK_TY_PRE_AD_EXITUM
 	je	.yes
 	jmp	.no
