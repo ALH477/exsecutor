@@ -559,23 +559,31 @@ endp
 ;     chk_row_subst(tree, callee_row, arg_rows, n) -> rax = row id
 ;
 ; `chkr_ar` points at `chkr_an` dwords, one per argument, each a row id -- the
-; row in that argument's TYPE (`AstType.b` of its `fn` or `dyn`), or 0 if its
-; type has none. Ordinal `k` in the callee's row is replaced by the ATOM items
-; of `arg_rows[k]`.
+; row CARRIED BY that argument's type. Spec §4.2 as amended defines that for
+; every type, not only for `fn` and `dyn`: a capability atom's row is that
+; atom, a capability-bearing type's row is its mark (§4.3), and anything else
+; carries the EMPTY row -- which is a real row with a non-zero id, so it is
+; not the same input as 0. `compute.inc`'s `__chk_row_tyrow` is what computes
+; it; this routine takes the answer. Ordinal `k` in the callee's row is
+; replaced by the ATOM items of `arg_rows[k]`.
 ;
 ; THREE CASES LEAVE THE ORDINAL IN PLACE, and all three are the same finding:
 ; the ordinal has no referent in the caller (spec §4.2's "name with no
 ; referent", checker.md section 2.1's table). They are
 ;
 ;   - `k >= n`            -- no such argument (an arity error, class D);
-;   - `arg_rows[k] == 0`  -- the argument's type carries no row at all;
+;   - `arg_rows[k] == 0`  -- NO TYPE WAS RECORDED for the argument at all.
+;     Since the amendment this no longer means "its type carries no row":
+;     such a type carries the empty row and the ordinal is DROPPED, which is
+;     what makes `poscit sicut s` over a plain `structura` mean something;
 ;   - `arg_rows[k]` itself carries an ordinal -- a higher-order function
 ;     passed to a `sicut` parameter, whose row names ITS OWN parameter, which
 ;     is not a parameter of anything at this call site.
 ;
 ; This routine does not diagnose: it has no sink, and the span belongs to the
 ; call. A caller checks `chk_row_ords` of the result and raises the class-L
-; code (`EXS-E0423`) against the argument. Returning the row rather than
+; code (`EXS-E0423`); `compute.inc`'s `__chk_row_e0421` now does exactly that,
+; having previously folded it into `E0421`. Returning the row rather than
 ; failing is what lets the caller point at the right node.
 proc chk_row_subst, chkr_tree, chkr_cr, chkr_ar, chkr_an
 	uses	rbx, r12

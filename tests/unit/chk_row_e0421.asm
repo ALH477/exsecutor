@@ -57,6 +57,29 @@
 ;      call and the declared caller infers `{alloc, rete}`, and the caller --
 ;      which names neither `rete` nor the function that needs it -- is the one
 ;      rejected. Two rounds; one walk of the tree sees nothing.
+;   7. Spec §4.2 AS AMENDED -- "what 'the row carried by a type' means, for
+;      every type that carries one". `poscit sicut s` with `s` a capability-
+;      BEARING `structura` substitutes that type's MARK, so a caller declaring
+;      nothing is `EXS-E0421`; and the twin, one dword different, points the
+;      same `sicut` at a struct that bears nothing, substitutes the EMPTY row,
+;      and is accepted. That pair is the whole amendment: before it both sides
+;      were rejected, because a struct's type carried no row at all and the
+;      ordinal survived.
+;   8. A leftover ordinal is `EXS-E0423`, not `E0421` (checker.md section
+;      2.4's class L: "a substituted row still carrying an ordinal"). Third
+;      twin of the same tree: the argument's type slot is cleared, so there is
+;      nothing to substitute FROM, and the code changes with it.
+;   9. A PRELUDE-TAGGED callee `d` -- bit 31 set, `checker/types/prim.inc`'s
+;      `CHK_TY_PRELUDE`, which is what `m.ambitus()` carries -- does not reach
+;      `ast_decl_at`. Before the test for that bit, this fixture trapped
+;      (exit 132) rather than failing a check.
+;  10. The same tag in a `struct` TYPE's `a`: the prelude's `Scriptor` has no
+;      `AstDecl`, so the §4.3 fixpoint computes no mark for it and `wbear` has
+;      no entry to read -- yet `sicut s` over it must still substitute
+;      `{ambitus}`. Without the tagged-`a` arm this check traps too; with the
+;      arm and an empty mark it silently ACCEPTS, which is what
+;      `examples/initium.exsc` cannot tell apart (that file provides `ambitus`
+;      with a `sub`, so both answers compile clean).
 ;
 ; `[UNTESTED]` on real source: pass 3 reads `Decl.ty` and `Node.ty`, which the
 ; types pass fills, and `Path.d`, which the resolve pass fills. Neither
@@ -196,6 +219,88 @@ segment readable executable
 	test	rax, rax
 	jnz	.fail6
 
+	; ===== 7: spec §4.2 as amended -- the row carried by a BEARING type ==
+	;     publica functio imprime(s: Portans) poscit sicut s     (no body)
+	;     publica functio vocans() { imprime(s); }               (poscit {})
+	;
+	; `Portans` is `structura { sock: rete }`, so its mark is `{rete}`
+	; (§4.3) and `sicut s` substitutes exactly that. `vocans` declares
+	; nothing, so the call is `EXS-E0421` at the call.
+	call	fx_build_mark
+	call	fx_run
+	cmp	qword [fx_ndiag], 1
+	jne	.fail7
+	xor	rsi, rsi
+	call	fx_diag
+	cmp	rax, 421
+	jne	.fail7
+	cmp	rdx, 7171
+	jne	.fail7
+
+	; the twin: the same `sicut`, over a struct that bears NOTHING. Its
+	; row is the EMPTY row -- a real row, not "no row" -- so the ordinal
+	; is substituted away and there is nothing to report. One dword.
+	lea	rdi, [fx_tree]
+	mov	rsi, [fx_arg0]
+	mov	rdx, [fx_ty_plain]
+	call	ast_node_ty
+	call	fx_run
+	cmp	qword [fx_ndiag], 0
+	jne	.fail7
+
+	; ===== 8: a leftover ordinal is EXS-E0423 ==========================
+	; Clear the argument's type slot outright -- "pass 2 recorded no type
+	; here", the ONE input for which the amended rule still leaves the
+	; ordinal in place. checker.md class L, not `E0421`'s "undeclared
+	; capability": there is no capability to name.
+	lea	rdi, [fx_tree]
+	mov	rsi, [fx_arg0]
+	xor	rdx, rdx
+	call	ast_node_ty
+	call	fx_run
+	cmp	qword [fx_ndiag], 1
+	jne	.fail8
+	xor	rsi, rsi
+	call	fx_diag
+	cmp	rax, 423
+	jne	.fail8
+	cmp	rdx, 7171
+	jne	.fail8
+
+	; ===== 9: a prelude-tagged callee `d` ==============================
+	call	fx_build_pre
+	call	fx_run
+	cmp	qword [fx_ndiag], 1
+	jne	.fail9
+	xor	rsi, rsi
+	call	fx_diag
+	cmp	rax, 421
+	jne	.fail9
+	cmp	rdx, 9191
+	jne	.fail9
+
+	; ===== 10: the mark of a PRELUDE struct ============================
+	; `structura Scriptor { a: ambitus, descriptor: i32 }` has no
+	; `AstDecl` -- its nominal type carries a TAGGED prelude row index in
+	; `a` -- so the §4.3 fixpoint never sees its fields and `wbear` has no
+	; entry to read. `sicut s` over it must still substitute `{ambitus}`,
+	; which is what `examples/imprime.exsc` is for. Same tree, same call,
+	; argument 0 retyped.
+	call	fx_build_mark
+	lea	rdi, [fx_tree]
+	mov	rsi, [fx_arg0]
+	mov	rdx, [fx_ty_pre]
+	call	ast_node_ty
+	call	fx_run
+	cmp	qword [fx_ndiag], 1
+	jne	.fail10
+	xor	rsi, rsi
+	call	fx_diag
+	cmp	rax, 421
+	jne	.fail10
+	cmp	rdx, 7171
+	jne	.fail10
+
 	xor	edi, edi
 	call	sys_exit_group
   .fail0:
@@ -218,6 +323,18 @@ segment readable executable
 	call	sys_exit_group
   .fail6:
 	mov	rdi, 16
+	call	sys_exit_group
+  .fail7:
+	mov	rdi, 17
+	call	sys_exit_group
+  .fail8:
+	mov	rdi, 18
+	call	sys_exit_group
+  .fail9:
+	mov	rdi, 19
+	call	sys_exit_group
+  .fail10:
+	mov	rdi, 20
 	call	sys_exit_group
 
 ; ---------------------------------------------------------------------------
@@ -1160,6 +1277,367 @@ segment readable executable
 	pop	rbp
 	ret
 
+; ---------------------------------------------------------------------------
+; Spec §4.2 as amended -- the row carried by a CAPABILITY-BEARING type.
+;
+;     structura Portans { sock: rete }                  // mark {rete}
+;     structura Simplex { n:    u32 }                   // mark {}
+;     publica functio imprime(s: Portans) poscit sicut s      (1, no body)
+;     publica functio vocans() { imprime(s); }               (6, poscit {})
+;
+; `vocans` is `publica` with no `poscit`, so its row is DECLARED and empty
+; (checker.md section 2.1 rule 3) -- it can absorb nothing, which is what makes
+; the substituted atom visible as a diagnostic instead of as an inferred row.
+; Only argument 0's TYPE differs between the three runs, and the three answers
+; are `E0421` / clean / `E0423`.
+  fx_build_mark:
+	push	rbp
+	lea	rdi, [fx_arena]
+	call	arena_reset
+	lea	rdi, [fx_tree]
+	lea	rsi, [fx_arena]
+	lea	rdx, [fx_names]
+	call	ast_init
+	lea	rdi, [fx_span]
+	mov	rcx, sizeof.Span
+	xor	eax, eax
+	cld
+	rep	stosb
+
+	lea	rdi, [fx_tree]
+	mov	rsi, AST_D_FN
+	xor	rdx, rdx
+	mov	rcx, 1
+	xor	r8, r8
+	lea	r9, [fx_span]
+	call	ast_decl			; 1 imprime
+	lea	rdi, [fx_tree]
+	mov	rsi, AST_D_STRUCT
+	xor	rdx, rdx
+	mov	rcx, 1
+	xor	r8, r8
+	lea	r9, [fx_span]
+	call	ast_decl			; 2 Portans
+	lea	rdi, [fx_tree]
+	mov	rsi, AST_D_STRUCT
+	xor	rdx, rdx
+	mov	rcx, 1
+	xor	r8, r8
+	lea	r9, [fx_span]
+	call	ast_decl			; 3 Simplex
+	lea	rdi, [fx_tree]
+	mov	rsi, AST_D_FIELD
+	xor	rdx, rdx
+	mov	rcx, 1
+	mov	r8, 2
+	lea	r9, [fx_span]
+	call	ast_decl			; 4 Portans.sock
+	lea	rdi, [fx_tree]
+	mov	rsi, AST_D_FIELD
+	xor	rdx, rdx
+	mov	rcx, 1
+	mov	r8, 3
+	lea	r9, [fx_span]
+	call	ast_decl			; 5 Simplex.n
+	lea	rdi, [fx_tree]
+	mov	rsi, AST_D_FN
+	xor	rdx, rdx
+	mov	rcx, 1
+	xor	r8, r8
+	lea	r9, [fx_span]
+	call	ast_decl			; 6 vocans
+	lea	rdi, [fx_tree]
+	call	ast_cap_push
+	mov	[fx_base], rax
+
+	; ---- types ----
+	mov	rax, [fx_base]
+	add	rax, AST_CAP_RETE - 1
+	lea	rdi, [fx_tree]
+	mov	rsi, AST_TY_CAP
+	mov	rdx, rax
+	xor	rcx, rcx
+	call	ast_type_una
+	mov	[fx_t1], rax			; the type `rete`
+	lea	rdi, [fx_tree]
+	mov	rsi, AST_SIGN_U
+	mov	rdx, 32
+	mov	rcx, AST_ORD_NATIVUS
+	call	ast_type_int
+	mov	[fx_t2], rax
+	lea	rdi, [fx_tree]
+	mov	rsi, AST_TY_STRUCT
+	mov	rdx, 2
+	xor	rcx, rcx
+	call	ast_type_una
+	mov	[fx_ty_bad], rax		; `Portans`
+	lea	rdi, [fx_tree]
+	mov	rsi, AST_TY_STRUCT
+	mov	rdx, 3
+	xor	rcx, rcx
+	call	ast_type_una
+	mov	[fx_ty_plain], rax		; `Simplex`
+	lea	rdi, [fx_tree]
+	mov	rsi, AST_TY_STRUCT
+	mov	edx, CHK_TY_PRELUDE or CHK_TY_PRE_SCRIPTOR
+	xor	rcx, rcx
+	call	ast_type_una
+	mov	[fx_ty_pre], rax		; the prelude's `Scriptor` --
+						; `a` is a TAGGED row index, not
+						; a declaration (prim.inc)
+	lea	rdi, [fx_tree]
+	mov	rsi, 4
+	mov	rdx, [fx_t1]
+	call	ast_decl_ty
+	lea	rdi, [fx_tree]
+	mov	rsi, 5
+	mov	rdx, [fx_t2]
+	call	ast_decl_ty
+
+	mov	rcx, 4
+	call	fx_struct			; Portans, holding field decl 4
+	lea	rdi, [fx_tree]
+	mov	rsi, 2
+	mov	rdx, rax
+	call	ast_decl_node
+	mov	rcx, 5
+	call	fx_struct			; Simplex
+	lea	rdi, [fx_tree]
+	mov	rsi, 3
+	mov	rdx, rax
+	call	ast_decl_node
+
+	; ---- imprime (1): `poscit sicut s`, parameter 0, no body ----
+	lea	rdi, [fx_tree]
+	call	ast_list_mark
+	mov	[fx_t5], rax
+	xor	rcx, rcx			; `sicut s` -- parameter 0
+	call	fx_ri_ord
+	lea	rdi, [fx_tree]
+	mov	rsi, [fx_t5]
+	call	ast_list_emit
+	mov	rsi, AST_ROW
+	xor	rdx, rdx
+	mov	rcx, rax
+	mov	r8, 1
+	call	fx_node
+	mov	[fx_arow], rax
+	mov	rsi, AST_SIG
+	xor	rdx, rdx
+	xor	rcx, rcx
+	xor	r8, r8
+	call	fx_node
+	mov	[fx_t5], rax
+	mov	rsi, rax
+	xor	rdx, rdx
+	mov	rcx, [fx_arow]
+	call	fx_setcd
+	mov	rsi, AST_FN
+	mov	rdx, AST_FN_PUBLICA
+	mov	rcx, [fx_t5]
+	xor	r8, r8
+	call	fx_node
+	mov	[fx_t6], rax
+	mov	rsi, rax
+	xor	rdx, rdx
+	mov	rcx, 1
+	call	fx_setcd
+	lea	rdi, [fx_tree]
+	mov	rsi, 1
+	mov	rdx, [fx_t6]
+	call	ast_decl_node
+
+	; ---- vocans (6): `publica`, no `poscit`, one call ----
+	mov	rsi, AST_SIG
+	xor	rdx, rdx
+	xor	rcx, rcx
+	xor	r8, r8
+	call	fx_node
+	mov	[fx_esig], rax
+	xor	rcx, rcx
+	inc	rcx				; the callee: `imprime`
+	call	fx_path
+	mov	[fx_callee], rax
+	xor	rcx, rcx
+	call	fx_path
+	mov	[fx_arg0], rax
+	lea	rdi, [fx_tree]
+	mov	rsi, rax
+	mov	rdx, [fx_ty_bad]		; `s: Portans`
+	call	ast_node_ty
+	lea	rdi, [fx_tree]
+	call	ast_list_mark
+	mov	[fx_t5], rax
+	lea	rdi, [fx_tree]
+	mov	rsi, [fx_arg0]
+	call	ast_list_push
+	lea	rdi, [fx_tree]
+	mov	rsi, [fx_t5]
+	call	ast_list_emit
+	mov	[fx_t6], rax
+	mov	dword [fx_span + Span.start], 7171
+	mov	rsi, AST_CALL
+	xor	rdx, rdx
+	mov	rcx, [fx_callee]
+	mov	r8, [fx_t6]
+	call	fx_node
+	mov	[fx_call], rax
+	mov	dword [fx_span + Span.start], 0
+	mov	rsi, [fx_call]
+	mov	rdx, 1				; ONE argument
+	xor	rcx, rcx
+	call	fx_setcd
+	xor	rcx, rcx
+	call	fx_wrap
+	mov	rsi, AST_FN
+	mov	rdx, AST_FN_PUBLICA
+	mov	rcx, [fx_esig]
+	mov	r8, rax
+	call	fx_node
+	mov	[fx_t6], rax
+	mov	rsi, rax
+	xor	rdx, rdx
+	mov	rcx, 6
+	call	fx_setcd
+	lea	rdi, [fx_tree]
+	mov	rsi, 6
+	mov	rdx, [fx_t6]
+	call	ast_decl_node
+	pop	rbp
+	ret
+
+; ---------------------------------------------------------------------------
+; A callee whose `d` is PRELUDE-TAGGED, which is what `m.ambitus()` carries
+; once `checker/types/` stops keeping `Member.d` at 0 (prim.inc's note: the
+; tag is `CHK_TY_PRELUDE or CHK_TY_PRE_*`, and `0x80000004` is `Mundus.ambitus`).
+; It names a row of `prelude/interface.inc`, never an `AstDecl`, so pass 3 must
+; not hand it to `ast_decl_at`.
+;
+;     publica functio caller() { m.ambitus(); }
+;
+; The `Member`'s TYPE carries `poscit {rete}` -- artificial, and deliberately
+; not `ambitus`: it makes the `.indirect` path's answer VISIBLE as one
+; `EXS-E0421`, so this fixture distinguishes "did not trap" from "took the
+; branch and read the type". `caller` declares nothing, so the atom is
+; undeclared.
+  fx_build_pre:
+	push	rbp
+	lea	rdi, [fx_arena]
+	call	arena_reset
+	lea	rdi, [fx_tree]
+	lea	rsi, [fx_arena]
+	lea	rdx, [fx_names]
+	call	ast_init
+	lea	rdi, [fx_span]
+	mov	rcx, sizeof.Span
+	xor	eax, eax
+	cld
+	rep	stosb
+
+	lea	rdi, [fx_tree]
+	mov	rsi, AST_D_FN
+	xor	rdx, rdx
+	mov	rcx, 1
+	xor	r8, r8
+	lea	r9, [fx_span]
+	call	ast_decl			; 1 caller
+	lea	rdi, [fx_tree]
+	call	ast_cap_push
+	mov	[fx_base], rax
+
+	lea	rdi, [fx_tree]
+	mov	rsi, 32
+	call	ast_type_float
+	mov	[fx_t1], rax
+	lea	rdi, [fx_tree]
+	mov	rsi, rax
+	call	ast_extra_push
+	mov	[fx_t2], rax
+	lea	rdi, [fx_tree]
+	mov	rsi, [fx_t1]
+	call	ast_extra_push
+	mov	rax, [fx_base]
+	mov	dword [fx_items + 0], CHK_ROW_ATOM
+	add	rax, AST_CAP_RETE - 1
+	mov	[fx_items + 4], eax
+	lea	rdi, [fx_tree]
+	lea	rsi, [fx_items]
+	mov	rdx, 1
+	call	chk_row_intern
+	mov	[fx_t3], rax
+	lea	rdi, [fx_tree]
+	mov	rsi, [fx_t2]
+	mov	rdx, 1
+	mov	rcx, [fx_t3]
+	call	ast_type_fn			; `... poscit {rete}`
+	mov	[fx_ty_bad], rax
+
+	mov	rsi, AST_SIG
+	xor	rdx, rdx
+	xor	rcx, rcx
+	xor	r8, r8
+	call	fx_node
+	mov	[fx_esig], rax
+	xor	rcx, rcx
+	call	fx_path				; the receiver `m`
+	mov	[fx_t4], rax
+	mov	rsi, AST_MEMBER
+	xor	rdx, rdx
+	mov	rcx, [fx_t4]
+	mov	r8, 1				; the member's name id
+	call	fx_node
+	mov	[fx_callee], rax
+	lea	rdi, [fx_tree]
+	mov	rsi, rax
+	mov	rdx, [fx_ty_bad]
+	call	ast_node_ty
+	mov	rsi, [fx_callee]
+	mov	edx, CHK_TY_PRELUDE or CHK_TY_PRE_AMBITUS
+	call	fx_setd_raw
+	mov	dword [fx_span + Span.start], 9191
+	mov	rsi, AST_CALL
+	xor	rdx, rdx
+	mov	rcx, [fx_callee]
+	xor	r8, r8
+	call	fx_node
+	mov	[fx_call], rax
+	mov	dword [fx_span + Span.start], 0
+	mov	rsi, [fx_call]
+	xor	rdx, rdx
+	xor	rcx, rcx
+	call	fx_setcd
+	xor	rcx, rcx
+	call	fx_wrap
+	mov	rsi, AST_FN
+	mov	rdx, AST_FN_PUBLICA
+	mov	rcx, [fx_esig]
+	mov	r8, rax
+	call	fx_node
+	mov	[fx_t6], rax
+	mov	rsi, rax
+	xor	rdx, rdx
+	mov	rcx, 1
+	call	fx_setcd
+	lea	rdi, [fx_tree]
+	mov	rsi, 1
+	mov	rdx, [fx_t6]
+	call	ast_decl_node
+	pop	rbp
+	ret
+
+; Write a node's `d` DIRECTLY. `ast_node_cd` cannot: `Member.d` is
+; `AST_R_DECL`, and `__ast_slot_check` bounds it against `Ast.decls.len` --
+; which a tagged value exceeds by construction. rsi = node, rdx = the value.
+  fx_setd_raw:
+	push	rbp
+	mov	[fx_t7], rdx
+	lea	rdi, [fx_tree]
+	call	ast_node_at
+	mov	rcx, [fx_t7]
+	mov	[rax + AstNode.d], ecx
+	pop	rbp
+	ret
+
 include '../../compiler/x86_64/cst/cst.inc'
 include '../../compiler/x86_64/ast/ast.inc'
 include '../../compiler/x86_64/checker/rows/rows.inc'
@@ -1188,6 +1666,7 @@ segment readable writeable
   fx_ty_bad:	rq 1
   fx_ty_ok:	rq 1
   fx_ty_plain:	rq 1
+  fx_ty_pre:	rq 1
   fx_t1:	rq 1
   fx_t2:	rq 1
   fx_t3:	rq 1

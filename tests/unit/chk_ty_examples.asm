@@ -102,17 +102,21 @@ segment readable executable
 	test	rax, rax
 	jnz	.fail2
 
-	; ---- 3: all three together -- exactly one `EXS-E0421`, and it is a
-	;         FINDING against the example, not a pass. See the header.
+	; ---- 3: all three together -- CLEAN. This check asserted "exactly one
+	;         EXS-E0421" and called it a finding against the example, which
+	;         it was: spec §4.2 defined a row only for function types, so
+	;         `poscit sicut s` with `s: Scriptor` -- a capability-bearing
+	;         structura -- had nothing to substitute. §4.2 was amended
+	;         (6a80204) to give every carrying type a row, a
+	;         capability-bearing type's being its §4.3 mark, and
+	;         checker/rows/ now substitutes it. The example was right and
+	;         the spec was short. Changing this check is the deliberate act
+	;         this fixture's header asked for.
 	lea	rdi, [fx_ex3]
 	mov	rsi, FX_EX3_LEN
 	call	fx_run
-	cmp	rax, 1
-	jne	.fail3
-	xor	rdi, rdi
-	call	fx_code
-	cmp	rax, 421
-	jne	.fail3
+	test	rax, rax
+	jnz	.fail3
 
 	; ---- 4: the same three with `poscit ambitus` -- CLEAN, all six passes --
 	lea	rdi, [fx_ex4]

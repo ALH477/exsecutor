@@ -42,7 +42,20 @@
 ;   one-round fixpoint gets the wrong answer), the capability-bearing
 ;   fixpoint through a struct field, `EXS-E0501` restricted to module level,
 ;   the ceiling at an impl head, at an impl method and at a `sicut dyn` cast,
-;   and the generic-operand case that consults the ceiling instead of an impl.
+;   the generic-operand case that consults the ceiling instead of an impl,
+;   spec §4.2's amended table -- a `sicut` over a capability-BEARING struct
+;   substituting its mark, the twin bearing nothing substituting the EMPTY
+;   row, and the leftover ordinal that is `EXS-E0423` -- a PRELUDE-tagged
+;   struct type's mark, and a PRELUDE-tagged callee `d` reaching `.indirect`
+;   instead of `ast_decl_at` (both of the last two trapped before the bit-31
+;   tests, and their mutants still do).
+;
+;   NO LONGER `[UNTESTED]` ON REAL SOURCE FOR ONE PATH. `examples/saluta.exsc
+;   examples/imprime.exsc examples/initium.exsc` now type-checks clean through
+;   `exsc aedifica`, and deleting `sub ambitus = a;` from `initium` makes it
+;   `EXS-E0421` -- so the substituted mark is `{ambitus}` and the `sub` is
+;   what satisfies it, measured rather than argued. Everything else below
+;   stands.
 ;
 ;   NOT COVERED: `__chk_row_seed_draws` (it reads `ChkCtx.draws`, which only
 ;   `chk_resolve` fills, and these fixtures do not run pass 1 -- their trees
@@ -116,7 +129,8 @@
 include 'intern.inc'
 
 ; ---- what this module raises, and through what -------------------------------
-; Five codes -- `E0421` `E0501` `E0510` (pass 3), `E0321` `E0322` (pass 4) --
+; Six codes -- `E0421` `E0423` `E0501` `E0510` (pass 3), `E0321` `E0322`
+; (pass 4) --
 ; all through `chk_raise` / `chk_raise_span` (checker/resolve/resolve.inc), so
 ; that `chk_flush` can put them in checker.md section 4's order: pass number
 ; first, node index second. Nothing here writes to an fd, formats a message or
@@ -591,6 +605,38 @@ proc __chk_row_encmap, chkw_wk
 	return
 endp
 
+; ---- spec §4.3: the mark of each PRELUDE row -------------------------------
+; One byte per row of `prelude/interface.inc` part B, indexed by
+; `CHK_TY_PRE_* - 1`: the §4.6 ordinal (`AST_CAP_*`) of the atom that row's
+; type bears, or 0 for none. Only a row that names a STRUCT is ever read --
+; `__chk_row_tyatoms`'s `.pre` arm is the one consumer -- but the table covers
+; every row so that adding a prelude struct is an edit here and nowhere else.
+;
+; THIS RESTATES A FACT IT CANNOT READ, and that is a defect, not a design.
+; `interface.inc` part B row `EXS_IFACE_D_SCRIPTOR_A` declares
+; `Scriptor.a : ambitus` with `EXS_IFACE_CAP_AMBITUS` in its `atom` byte, and
+; row `EXS_IFACE_D_SCRIPTOR` carries `EXS_IFACE_F_CAPBEARING` -- but part B is
+; emitted ONLY when the includer defines `EXS_IFACE_EMIT_DECLS`, which the
+; compiler does not (checker/types/prim.inc takes that file for its constants
+; alone). So the bytes are not in `exsc` to walk, and the mark has to be
+; written down a second time. `interface.inc` itself asserts
+; `EXS_IFACE_CAP_AMBITUS = AST_CAP_AMBITUS`, so the two spellings cannot drift
+; apart silently; that the FACT can drift is reported, with the ask: a
+; `chk_ty_prelude_mark(k)` in `checker/types/` would delete this table.
+;
+; Between two `proc` bodies and never fallen into -- the placement
+; checker/types/prim.inc, diag/render.inc and ast/kinds.inc all use.
+chk_row_pre_marks:
+	db AST_CAP_AMBITUS	; 1 `structura Scriptor` -- mark {ambitus},
+				;   through its field `a` (spec §4.3)
+	db AST_CAP_AMBITUS	; 2 `Scriptor.a : ambitus`
+	db 0			; 3 `Scriptor.descriptor : i32`
+	db 0			; 4 `functio ambitus(m: Mundus) -> ambitus`
+	db 0			; 5 `functio ad_exitum(a: ambitus) -> Scriptor`
+	db 0			; 6 `functio scribe(s: Scriptor, t: textus)`
+	db 0			; 7 `functio alloc(m: Mundus, n: mensura)`
+assert $ - chk_row_pre_marks = CHK_TY_PRE_COUNT
+
 ; ---- spec §4.3: the atoms a TYPE bears -------------------------------------
 ; rax = the atom mask type `chkw_ty` bears. A struct's contribution is read
 ; from `wbear`, which is the fixpoint variable -- so this routine never
@@ -657,12 +703,33 @@ proc __chk_row_tyatoms, chkw_wk, chkw_ty, chkw_dp
 	shl	rax, cl
 	return
   .struc:
-	mov	esi, [rax + AstType.a]		; the struct's DECLARATION
+	mov	esi, [rax + AstType.a]		; the struct's DECLARATION -- or,
+						; bit 31 set, a PRELUDE reference
+	bt	rsi, 31
+	jc	.pre
 	mov	rax, [r13 + Ast.decls.len]
 	rassert	rsi le rax
 	mov	rdi, rbx
 	add	rdi, ChkRowWork.wbear
 	call	__chk_row_g4
+	return
+  .pre:
+	; A prelude struct has no `AstDecl` (checker/types/prim.inc's
+	; `chk_ty_prelude_type`: "`Scriptor` HAS NO `AstDecl`, so its nominal
+	; `struct` type cannot carry a declaration id in `a`"), so `wbear` has
+	; no entry for it and the fixpoint above never saw its fields. Its mark
+	; comes from the table below instead.
+	and	esi, CHK_TY_PRE_MASK
+	rassert	rsi ge 1
+	mov	rax, CHK_TY_PRE_COUNT
+	rassert	rsi le rax
+	lea	rax, [chk_row_pre_marks]
+	movzx	ecx, byte [rax + rsi - 1]
+	test	ecx, ecx
+	jz	.none
+	dec	ecx
+	mov	rax, 1
+	shl	rax, cl
 	return
   .row:
 	mov	esi, [rax + AstType.b]
@@ -1272,6 +1339,17 @@ proc __chk_row_contrib, chkw_wk, chkw_ui
 	mov	r13d, [rax + AstNode.d]
 	test	r13, r13
 	jz	.indirect
+	bt	r13, 31
+	jc	.indirect			; a PRELUDE-tagged `d`
+						; (checker/types/prim.inc's
+						; `CHK_TY_PRELUDE`) names a row
+						; of `prelude/interface.inc`,
+						; NOT an `AstDecl` -- handing it
+						; to `ast_decl_at` trapped its
+						; bounds `rassert` on
+						; `0x80000004` for `m.ambitus()`.
+						; `.indirect` reads the callee's
+						; TYPE and reaches the same row.
 	mov	rdi, r14
 	mov	rsi, r13
 	call	ast_decl_at
@@ -1351,7 +1429,8 @@ proc __chk_row_contrib, chkw_wk, chkw_ui
 	call	ast_node_at
 	mov	esi, [rax + AstNode.ty]
 	mov	rdi, rbx
-	call	__chk_row_rowofty
+	call	__chk_row_tyrow			; spec §4.2 as amended: EVERY
+						; type's row, not just `fn`/`dyn`
 	lea	rcx, [chkw_ab]
 	mov	[rcx + r12*4], eax
 	inc	r12
@@ -1408,6 +1487,72 @@ proc __chk_row_rowofty, chkw_wk, chkw_t2
 	return
   .have:
 	mov	eax, [rax + AstType.b]
+	return
+endp
+
+; rax = THE ROW CARRIED BY TYPE `chkw_t4`, spec §4.2's table as amended --
+; "what 'the row carried by a type' means, for every type that carries one":
+;
+;   `functio(A) -> B poscit {R}`   -> `{R}`, i.e. `AstType.b`
+;   `dyn X poscit {P}`             -> `{P}`, i.e. `AstType.b`
+;   a capability atom              -> that atom alone
+;   a capability-BEARING type      -> its mark (§4.3)
+;   anything else                  -> the EMPTY row
+;
+; The last four cases are one line, because `__chk_row_tyatoms` is already
+; exactly that function: it answers the atom bit for an `AST_TY_CAP`, `wbear`
+; for a struct, and recurses through `ptr`/`ref`/`refc`/`borrow`/`acies`/
+; `eventus`/`red`, returning 0 for everything else. A mask of 0 interns as the
+; empty row, which is a REAL row with a non-zero id (rowdefs.inc) -- so
+; "anything else substitutes empty" and "the argument has no type at all" stay
+; distinguishable, and only the second keeps the ordinal.
+;
+; 0 IS RETURNED FOR ONE INPUT ONLY: type id 0, which is "pass 2 recorded no
+; type here". That is what `chk_row_subst`'s second leave-it-in-place case now
+; means, and nothing else reaches it.
+;
+; WHERE THE MARK COMES FROM, since this is the question the amendment raises:
+; nowhere new. The capability-bearing fixpoint (`__chk_row_bear`, which runs
+; before the row fixpoint) already leaves the mask of every struct declaration
+; in `wbear`, and `__chk_row_tyatoms` already reads it. No type-indexed table
+; is built. The cost is that the mask is RECOMPUTED per argument per call per
+; fixpoint round -- a walk of at most `CHK_ROW_DEPTH_MAX` type records ending
+; in one `vec_get` -- plus one `chk_row_of_masks`, whose intern is a linear
+; scan of `Ast.rows` (intern.inc: "rows are FEW"). Both are `[UNTESTED]` as
+; costs; nothing has profiled pass 3.
+proc __chk_row_tyrow, chkw_wk4, chkw_t4
+	uses	rbx, r12, r13
+	locals
+	endl
+	mov	rbx, [chkw_wk4]
+	mov	r13, [rbx + ChkRowWork.wtree]
+	mov	r12, [chkw_t4]
+	test	r12, r12
+	jz	.none
+	mov	rax, [r13 + Ast.types.len]
+	rassert	r12 le rax
+	mov	rdi, r13
+	mov	rsi, r12
+	call	ast_type_at
+	movzx	ecx, byte [rax + AstType.kind]
+	cmp	ecx, AST_TY_FN
+	je	.written
+	cmp	ecx, AST_TY_DYN
+	je	.written
+	mov	rdi, rbx
+	mov	rsi, r12
+	xor	rdx, rdx
+	call	__chk_row_tyatoms
+	mov	rdi, r13
+	mov	rsi, rax
+	xor	rdx, rdx
+	call	chk_row_of_masks
+	return
+  .written:
+	mov	eax, [rax + AstType.b]
+	return
+  .none:
+	xor	eax, eax
 	return
 endp
 
@@ -1528,18 +1673,42 @@ proc __chk_row_fix, chkw_wk
 	return
 endp
 
-; ---- EXS-E0421 -------------------------------------------------------------
+; ---- EXS-E0421, and EXS-E0423 ----------------------------------------------
 ; "A draw with no provider in a declared function", spec §4.1-§4.2, AFTER the
 ; fixpoint (checker.md section 2.3) -- before it, a callee's inferred row is
 ; still incomplete and the diagnostic would depend on visiting order, which
 ; is exactly what the fixpoint exists to prevent. The span is the DRAWING
 ; node, so `applica(v, nocens)` is reported at the call, not at `nocens`.
 ;
-; An ordinal that survived substitution is reported here too, under the same
-; code: it is a draw whose provider cannot be named. checker.md section 2.4
-; puts the malformed-row case in class L (`EXS-E0423`), which is the TYPES
-; pass's to raise at the argument; this one is the caller's undeclared
-; authority and `E0421` is what §14 entry 10 expects.
+; AN ORDINAL THAT SURVIVED SUBSTITUTION IS `EXS-E0423`, NOT `E0421`. This is a
+; reversal, and the reason it was wrong before is that the two codes mean
+; different things in spec §13: `E0421` is "undeclared capability (atom or
+; row)" and `E0423` is "capability row item malformed". checker.md section
+; 2.4's class L lists BOTH "`sicut` on a parameter whose type has no row" AND
+; "a substituted row still carrying an ordinal" -- so the leftover ordinal is
+; class L by name, and `intern.inc`'s `chk_row_subst` header, which always said
+; the caller raises `E0423` for it, was the half of the tree that was right.
+;
+; §4.2 as amended is what makes the distinction real rather than pedantic.
+; Before it, the common case of a leftover ordinal was `poscit sicut s` with
+; `s` a capability-bearing `structura` -- a clause that meant something the
+; checker could not compute, so folding it into "undeclared capability" was at
+; least reporting a real loss of authority. Now that case SUBSTITUTES (§4.2's
+; table, `__chk_row_tyrow`), and what is left over is only: an ordinal with no
+; argument at that position (an arity error, class D, already reported), an
+; argument on which pass 2 recorded no type at all, or an argument whose own
+; row still names one of ITS parameters. None of the three is a capability the
+; caller failed to declare; all three are a row item that cannot be resolved.
+; `E0421`'s meaning would have to stretch to cover them, and §14 entry 10 --
+; the laundering case, which is an ATOM after substitution -- is untouched
+; either way.
+;
+; The two are raised INDEPENDENTLY: a use can leak an atom and an ordinal at
+; once, and suppressing one behind the other would hide a finding to keep a
+; count down. The span of both is the drawing node; checker.md section 2.4's
+; span table has a row for `E0421` and none for `E0423`, and class L would
+; rather point at the ARGUMENT -- derivable here for the `k < n` case only.
+; `[OPEN]`, and recorded rather than guessed at.
 proc __chk_row_e0421, chkw_wk
 	uses	rbx, r12, r13, r14
 	locals
@@ -1595,13 +1764,19 @@ proc __chk_row_e0421, chkw_wk
 	call	__chk_row_g8
 	not	rax
 	and	[chkw_eo], rax
-	mov	rax, [chkw_ea]
-	or	rax, [chkw_eo]
-	test	rax, rax
-	jz	.next
+	cmp	qword [chkw_ea], 0
+	je	.ords
 	mov	rdi, rbx
 	mov	rsi, CHK_P_ROWS
 	mov	rdx, 421
+	mov	rcx, [chkw_nd]
+	call	__chk_row_at
+  .ords:
+	cmp	qword [chkw_eo], 0
+	je	.next
+	mov	rdi, rbx
+	mov	rsi, CHK_P_ROWS
+	mov	rdx, 423
 	mov	rcx, [chkw_nd]
 	call	__chk_row_at
   .next:
