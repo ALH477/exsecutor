@@ -1,6 +1,6 @@
 # Exsecutor
 
-<img src="logo/exsecutor-logo.png" alt="The Exsecutor mark: two crossed arrows forming an X, one ascending in dark navy, one descending in crimson" width="180" align="right">
+<img src="logo/exsecutor-logo.gif" alt="The Exsecutor mark: two crossed arrows forming an X, one ascending in dark navy, one descending in crimson" width="180" align="right">
 
 A systems language whose thesis is one line:
 
