@@ -33,8 +33,9 @@
 ;
 ;   1. NO NODE PER PRECEDENCE LEVEL WHEN THE LEVEL DID NOT APPLY. Read
 ;      literally, `Or ::= And ('vel' And)*` makes every atom in the language
-;      ten nodes deep (Or > And > Cmp > Range > Add > Mul > Cast > Unary >
-;      Postfix > Primary) before it reaches an identifier. The kinds below are
+;      twelve nodes deep (Or > And > Cmp > Range > Xor > Shift > Add > Mul >
+;      Cast > Unary > Postfix > Primary) before it reaches an identifier --
+;      ten before spec §8.6 gained levels 5a and 5b. The kinds below are
 ;      §8.6's own names, one per level, but a level emits its node ONLY when
 ;      it actually consumed an operator; otherwise it passes its single child
 ;      through. This is what every red-green tree does (rust-analyzer's
@@ -133,31 +134,33 @@ CST_OR_EXPR         = 53
 CST_AND_EXPR        = 54
 CST_CMP_EXPR        = 55
 CST_RANGE_EXPR      = 56
-CST_ADD_EXPR        = 57
-CST_MUL_EXPR        = 58
-CST_CAST_EXPR       = 59
-CST_UNARY_EXPR      = 60
-CST_POSTFIX_EXPR    = 61
-CST_FIELD_SUFFIX    = 62
-CST_CALL_SUFFIX     = 63
-CST_INDEX_SUFFIX    = 64
-CST_TRY_SUFFIX      = 65
-CST_PAREN_EXPR      = 66
-CST_LITERAL         = 67
-CST_NAME_EXPR       = 68
-CST_LAMBDA          = 69
-CST_TYPE            = 70
-CST_BIT_TYPE        = 71
-CST_DYN_TYPE        = 72
-CST_FN_TYPE         = 73
-CST_PAREN_TYPE      = 74
-CST_GENERIC_ARGS    = 75
-CST_TYPE_ARG        = 76
-CST_ORDER_SUFFIX    = 77
-CST_PLACE_SUFFIX    = 78
-CST_PATH            = 79
-CST_ERROR           = 80
-CST_KIND_COUNT = 80
+CST_XOR_EXPR        = 57
+CST_SHIFT_EXPR      = 58
+CST_ADD_EXPR        = 59
+CST_MUL_EXPR        = 60
+CST_CAST_EXPR       = 61
+CST_UNARY_EXPR      = 62
+CST_POSTFIX_EXPR    = 63
+CST_FIELD_SUFFIX    = 64
+CST_CALL_SUFFIX     = 65
+CST_INDEX_SUFFIX    = 66
+CST_TRY_SUFFIX      = 67
+CST_PAREN_EXPR      = 68
+CST_LITERAL         = 69
+CST_NAME_EXPR       = 70
+CST_LAMBDA          = 71
+CST_TYPE            = 72
+CST_BIT_TYPE        = 73
+CST_DYN_TYPE        = 74
+CST_FN_TYPE         = 75
+CST_PAREN_TYPE      = 76
+CST_GENERIC_ARGS    = 77
+CST_TYPE_ARG        = 78
+CST_ORDER_SUFFIX    = 79
+CST_PLACE_SUFFIX    = 80
+CST_PATH            = 81
+CST_ERROR           = 82
+CST_KIND_COUNT = 82
 
 ; ---- kind names ------------------------------------------------------------
 ; For `cst_dump` (cst/red.inc) and for fixtures. Not output: no rendered
@@ -222,30 +225,32 @@ cst_kind_text:
   cst_kn_54:	db	'AND_EXPR'
   cst_kn_55:	db	'CMP_EXPR'
   cst_kn_56:	db	'RANGE_EXPR'
-  cst_kn_57:	db	'ADD_EXPR'
-  cst_kn_58:	db	'MUL_EXPR'
-  cst_kn_59:	db	'CAST_EXPR'
-  cst_kn_60:	db	'UNARY_EXPR'
-  cst_kn_61:	db	'POSTFIX_EXPR'
-  cst_kn_62:	db	'FIELD_SUFFIX'
-  cst_kn_63:	db	'CALL_SUFFIX'
-  cst_kn_64:	db	'INDEX_SUFFIX'
-  cst_kn_65:	db	'TRY_SUFFIX'
-  cst_kn_66:	db	'PAREN_EXPR'
-  cst_kn_67:	db	'LITERAL'
-  cst_kn_68:	db	'NAME_EXPR'
-  cst_kn_69:	db	'LAMBDA'
-  cst_kn_70:	db	'TYPE'
-  cst_kn_71:	db	'BIT_TYPE'
-  cst_kn_72:	db	'DYN_TYPE'
-  cst_kn_73:	db	'FN_TYPE'
-  cst_kn_74:	db	'PAREN_TYPE'
-  cst_kn_75:	db	'GENERIC_ARGS'
-  cst_kn_76:	db	'TYPE_ARG'
-  cst_kn_77:	db	'ORDER_SUFFIX'
-  cst_kn_78:	db	'PLACE_SUFFIX'
-  cst_kn_79:	db	'PATH'
-  cst_kn_80:	db	'ERROR'
+  cst_kn_57:	db	'XOR_EXPR'
+  cst_kn_58:	db	'SHIFT_EXPR'
+  cst_kn_59:	db	'ADD_EXPR'
+  cst_kn_60:	db	'MUL_EXPR'
+  cst_kn_61:	db	'CAST_EXPR'
+  cst_kn_62:	db	'UNARY_EXPR'
+  cst_kn_63:	db	'POSTFIX_EXPR'
+  cst_kn_64:	db	'FIELD_SUFFIX'
+  cst_kn_65:	db	'CALL_SUFFIX'
+  cst_kn_66:	db	'INDEX_SUFFIX'
+  cst_kn_67:	db	'TRY_SUFFIX'
+  cst_kn_68:	db	'PAREN_EXPR'
+  cst_kn_69:	db	'LITERAL'
+  cst_kn_70:	db	'NAME_EXPR'
+  cst_kn_71:	db	'LAMBDA'
+  cst_kn_72:	db	'TYPE'
+  cst_kn_73:	db	'BIT_TYPE'
+  cst_kn_74:	db	'DYN_TYPE'
+  cst_kn_75:	db	'FN_TYPE'
+  cst_kn_76:	db	'PAREN_TYPE'
+  cst_kn_77:	db	'GENERIC_ARGS'
+  cst_kn_78:	db	'TYPE_ARG'
+  cst_kn_79:	db	'ORDER_SUFFIX'
+  cst_kn_80:	db	'PLACE_SUFFIX'
+  cst_kn_81:	db	'PATH'
+  cst_kn_82:	db	'ERROR'
   cst_kn_end:
 
 cst_kind_off:
@@ -329,6 +334,8 @@ cst_kind_off:
 	dd	cst_kn_78 - cst_kind_text
 	dd	cst_kn_79 - cst_kind_text
 	dd	cst_kn_80 - cst_kind_text
+	dd	cst_kn_81 - cst_kind_text
+	dd	cst_kn_82 - cst_kind_text
 	dd	cst_kn_end - cst_kind_text
 
 ; cst_kind_name(kind) -> rax = pointer to the name's bytes, rdx = its length.

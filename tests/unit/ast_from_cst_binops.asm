@@ -40,12 +40,20 @@
 ; `*%`/`*|` are NOT covered here: spec §8.4 says outright, in the same
 ; sentence that closes the comparison-word discussion, "the `*%`/`*|`
 ; families remain `[OPEN]`" -- there is no `PUN_STARPCT`/`PUN_STARBAR`
-; token, no `AST_OP_MULW`/`AST_OP_MULS` constant (`AST_OP_MAX` is
-; `AST_OP_MUL`, the last one defined), and asserting an op that cannot be
-; produced would not be testing anything.
+; token, no `AST_OP_MULW`/`AST_OP_MULS` constant (the multiplicative family
+; ends at `AST_OP_MUL`; the three after it are the 5a/5b words below), and
+; asserting an op that cannot be produced would not be testing anything.
+;
+; SINCE SPEC §8.6 GAINED LEVELS 5a AND 5b it also checks the three contextual
+; operator WORDS `aut` `sursum` `deorsum` -> `AST_OP_AUT` `AST_OP_SURSUM`
+; `AST_OP_DEORSUM`. Those reach `__ast_w_op` as `TK_IDENT` leaves under the
+; new `XOR_EXPR`/`SHIFT_EXPR` nodes and are mapped by POSITION in the word
+; table, so a table whose three new spellings were in the wrong order -- or a
+; walker that did not route the two new node kinds to the binary fold at all
+; -- fails check 3 here rather than in a later pass.
 ;
 ; The source declares two bindings and then one binary expression per
-; operator, each assigned to its own binding, so the tree has exactly four
+; operator, each assigned to its own binding, so the tree has exactly seven
 ; `AST_BINARY` nodes and postorder puts them in this exact source order
 ; (each `BindingStmt`'s initializer is fully built, `AST_BINARY` included,
 ; before the next statement in the block is even started):
@@ -57,6 +65,9 @@
 ;		firma q: u32 = a -| b;
 ;		firma r: u32 = a +% b;
 ;		firma s: u32 = a +| b;
+;		firma t: u32 = a aut b;
+;		firma u: u32 = a sursum b;
+;		firma v: u32 = a deorsum b;
 ;		redde p;
 ;	}
 ;
@@ -171,9 +182,9 @@ segment readable executable
 	call	sys_write
 
 	; ---- check 3: every AST_BINARY node's aux, in node-index (= source)
-	; order, is exactly the four wrapping/saturating additive ops in the
-	; order they appear in the source above -- no fewer, no more, no
-	; substitutions. `fx_expect` is that sequence; `fx_found` counts how
+	; order, is exactly the four wrapping/saturating additive ops and the
+	; three bit operators, in the order they appear in the source above --
+	; no fewer, no more, no substitutions. `fx_expect` is that sequence; `fx_found` counts how
 	; many have matched so far and doubles as the next expected slot.
 	xor	r13, r13		; fx_found
 	mov	r14, 1			; node id, 1-based
@@ -188,9 +199,9 @@ segment readable executable
 	movzx	ecx, word [rax + AstNode.kind]
 	cmp	ecx, AST_BINARY
 	jne	.next
-	mov	rdx, 4
+	mov	rdx, FX_NEXPECT
 	cmp	r13, rdx
-	jae	.fail3			; a fifth AST_BINARY: not expected
+	jae	.fail3			; one AST_BINARY too many
 	movzx	edx, word [rax + AstNode.aux]
 	lea	rbx, [fx_expect]
 	mov	ecx, [rbx + r13 * 4]
@@ -201,9 +212,9 @@ segment readable executable
 	inc	r14
 	jmp	.scan
   .scandone:
-	mov	rdx, 4
+	mov	rdx, FX_NEXPECT
 	cmp	r13, rdx
-	jne	.fail3			; fewer than four: some op was never built
+	jne	.fail3			; too few: some op was never built
 
 	xor	edi, edi
 	call	sys_exit_group
@@ -240,10 +251,15 @@ segment readable writeable
 		db 9, 'firma q: u32 = a -| b;', 10
 		db 9, 'firma r: u32 = a +% b;', 10
 		db 9, 'firma s: u32 = a +| b;', 10
+		db 9, 'firma t: u32 = a aut b;', 10
+		db 9, 'firma u: u32 = a sursum b;', 10
+		db 9, 'firma v: u32 = a deorsum b;', 10
 		db 9, 'redde p;', 10
 		db '}', 10
   FX_SRC_LEN = $ - fx_src
   fx_expect:	dd AST_OP_SUBW, AST_OP_SUBS, AST_OP_ADDW, AST_OP_ADDS
+		dd AST_OP_AUT, AST_OP_SURSUM, AST_OP_DEORSUM
+  FX_NEXPECT = ($ - fx_expect) / 4
   fx_root:	rq 1
   fx_arena:	rb sizeof.Arena
   fx_names:	rb sizeof.Interner

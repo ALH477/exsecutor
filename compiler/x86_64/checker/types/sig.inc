@@ -828,6 +828,19 @@ endp
 ; else answers "not a value", which becomes `EXS-E0308` at the literal.
 ; Overflow past 64 bits is a failure, not a wrap.
 ;
+; HEXADECIMAL IS THE ONE BASE §8.4 NOW SETTLES (`[UNTESTED]`,
+; docs/design/wire-codec.md D6): `0x` then one or more of `0-9 a-f A-F`, and
+; nothing else -- no `0X` (the lexer's `EXS-E0210`; here it would simply fail
+; to be a digit), no `_` inside a hex run (D6 admits none, and the decimal
+; path's `_` is a recorded finding, wire-codec.md section 9 item 6, not a
+; precedent), and more than sixteen significant digits is past 64 bits and
+; answers "not a value" exactly as a too-long decimal does. The TOKEN is the
+; lexer's; this routine reads whatever bytes the `INT` literal's text holds,
+; so it is testable before the lexer emits `0x…` as one token
+; (tests/unit/chk_ty_hexlit.asm rewrites a literal's text to do so). Too
+; wide for the TYPE it lands in is `__chk_ty_fits`'s `EXS-E0308`, as for
+; decimal: the value is computed here, the width is checked there.
+;
 ; A LITERAL WHOSE TEXT THE INTERNER DOES NOT HAVE READS AS ZERO, and that is
 ; the second half of `__chk_ty_bytes`'s bargain. Such an id cannot arise in a
 ; real compilation -- the lexer interned every literal's text before the
@@ -862,6 +875,12 @@ proc chk_ty_litval, chkt_wl, chkt_nl
 	mov	qword [chkt_vl], 0
 	xor	r14, r14
 	xor	ecx, ecx		; digits actually seen
+	cmp	r13, 2
+	jb	.digit
+	cmp	byte [r12], '0'
+	jne	.digit
+	cmp	byte [r12 + 1], 'x'
+	je	.hex
   .digit:
 	cmp	r14, r13
 	jae	.done
@@ -891,6 +910,45 @@ proc chk_ty_litval, chkt_wl, chkt_nl
 	mov	rax, [chkt_vl]
 	mov	rdx, 1
 	return
+
+  .hex:
+	; `0x` + hex digits. The value accumulates in rax; a digit arriving
+	; when the top nibble is already occupied would shift a set bit out
+	; past bit 63, and that is "beyond 64 bits", not a wrap.
+	mov	r14, 2
+	xor	eax, eax
+  .hdigit:
+	cmp	r14, r13
+	jae	.done_hex
+	movzx	edx, byte [r12 + r14]
+	cmp	dl, '0'
+	jb	.no
+	cmp	dl, '9'
+	jbe	.hdec
+	or	dl, 0x20		; 'A'-'F' -> 'a'-'f'; nothing else lands there
+	cmp	dl, 'a'
+	jb	.no
+	cmp	dl, 'f'
+	ja	.no
+	sub	dl, 'a' - 10
+	jmp	.hacc
+  .hdec:
+	sub	dl, '0'
+  .hacc:
+	mov	r8, rax
+	shr	r8, 60
+	jnz	.no			; more than 64 bits is not a wrap
+	shl	rax, 4
+	or	rax, rdx
+	inc	rcx
+	inc	r14
+	jmp	.hdigit
+  .done_hex:
+	test	rcx, rcx
+	jz	.no			; `0x` with no digit
+	mov	rdx, 1
+	return
+
   .unknown:
 	xor	eax, eax
 	mov	rdx, 1

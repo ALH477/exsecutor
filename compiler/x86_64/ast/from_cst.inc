@@ -137,12 +137,26 @@ AST_W_MINUS	= 25
 AST_W_MINUSPCT	= 26
 AST_W_MINUSBAR	= 27
 AST_W_STAR	= 28
-AST_W_AMP	= 29
-AST_W_COLON	= 30
-AST_W_EQUALS	= 31
-AST_W_ARROW	= 32
-AST_W_ABI	= 33
-AST_W_COUNT	= 33
+AST_W_AUT	= 29	; spec §8.6 level 5b -- see the assert below
+AST_W_SURSUM	= 30	; level 5a
+AST_W_DEORSUM	= 31	; level 5a
+AST_W_AMP	= 32
+AST_W_COLON	= 33
+AST_W_EQUALS	= 34
+AST_W_ARROW	= 35
+AST_W_ABI	= 36
+AST_W_COUNT	= 36
+
+; `__ast_w_op` maps a word to an operator by DISTANCE: the operator words run
+; `AST_W_VEL`..`AST_W_DEORSUM` in exactly the order `AST_OP_VEL`..
+; `AST_OP_DEORSUM` do in ast/kinds.inc, and the n-th word is the n-th op. The
+; three spec §8.6 5a/5b words were appended to BOTH lists after `*` rather
+; than interleaved at their precedence, so the ops already numbered did not
+; move. Two lists kept in step by hand are checked here, not trusted.
+assert AST_W_STAR - AST_W_VEL = AST_OP_MUL - AST_OP_VEL
+assert AST_W_AUT - AST_W_VEL = AST_OP_AUT - AST_OP_VEL
+assert AST_W_SURSUM - AST_W_VEL = AST_OP_SURSUM - AST_OP_VEL
+assert AST_W_DEORSUM - AST_W_VEL = AST_OP_DEORSUM - AST_OP_VEL
 
 ast_w_words:
 	db 7,'publica'
@@ -173,6 +187,9 @@ ast_w_words:
 	db 2,'-%'
 	db 2,'-|'
 	db 1,'*'
+	db 3,'aut'
+	db 6,'sursum'
+	db 7,'deorsum'
 	db 1,'&'
 	db 1,':'
 	db 1,'='
@@ -1092,10 +1109,10 @@ proc __ast_w_mks, w, sp, kind, aux, a, b
 endp
 
 ; ---- operators -------------------------------------------------------------
-; rax = the AST_OP_* for this operator leaf, or 0. Spec §8.6 spells comparison
-; and the two logical operators as contextual WORDS, so an operator is a
-; `TK_IDENT` at three precedence levels and a `TK_PUNCT` at the other three;
-; this routine does not care which, it compares bytes.
+; rax = the AST_OP_* for this operator leaf, or 0. Spec §8.6 spells comparison,
+; the two logical operators, exclusive or and the shifts as contextual WORDS,
+; so an operator is a `TK_IDENT` at five precedence levels and a `TK_PUNCT` at
+; the other three; this routine does not care which, it compares bytes.
 proc __ast_w_op, w, red
 	uses	rbx, r12, r13
 	locals
@@ -1112,7 +1129,7 @@ proc __ast_w_op, w, red
 	jnz	.hit
 	inc	r12
 	inc	r13
-	mov	rcx, AST_W_STAR
+	mov	rcx, AST_W_DEORSUM
 	cmp	r12, rcx
 	jle	.try
 	xor	eax, eax
@@ -1123,11 +1140,13 @@ proc __ast_w_op, w, red
 endp
 
 ; ---- n-ary left-associative folds -----------------------------------------
-; `OR_EXPR` `AND_EXPR` `CMP_EXPR` `RANGE_EXPR` `ADD_EXPR` `MUL_EXPR` are all
-; FLAT in the CST -- `1 + 2 * 3 - 4` is one `ADD_EXPR` with three operands and
-; two operator leaves -- and all left-associative, so one routine folds them
-; all. `AST_BINARY.aux` is the operator; ssa-ir.md 2.3 turns `+` `+%` `+|`
-; into three opcodes, never a flag on one.
+; `OR_EXPR` `AND_EXPR` `CMP_EXPR` `RANGE_EXPR` `XOR_EXPR` `SHIFT_EXPR`
+; `ADD_EXPR` `MUL_EXPR` are all FLAT in the CST -- `1 + 2 * 3 - 4` is one
+; `ADD_EXPR` with three operands and two operator leaves -- and all
+; left-associative, so one routine folds them all. The three NON-associative
+; ones (`CMP_EXPR` `RANGE_EXPR` `SHIFT_EXPR`) never hold more than one operator,
+; so the fold is the identity on them. `AST_BINARY.aux` is the operator;
+; ssa-ir.md 2.3 turns `+` `+%` `+|` into three opcodes, never a flag on one.
 proc __ast_w_binary, w, red
 	uses	rbx, r12, r13, r14
 	locals
@@ -4281,6 +4300,10 @@ proc __ast_w_node, w, red
 	cmp	r13, CST_CMP_EXPR
 	je	.binary
 	cmp	r13, CST_RANGE_EXPR
+	je	.binary
+	cmp	r13, CST_XOR_EXPR
+	je	.binary
+	cmp	r13, CST_SHIFT_EXPR
 	je	.binary
 	cmp	r13, CST_ADD_EXPR
 	je	.binary

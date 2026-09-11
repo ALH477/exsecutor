@@ -460,6 +460,30 @@ proc __chk_ty_expect, chkt_wX, chkt_nX, chkt_tX
 	mov	r13d, [rax + AstNode.a]
 	mov	ecx, [rax + AstNode.b]
 	mov	[chkt_bX], rcx
+	; A PENDING `aut`/`sursum`/`deorsum` has two pending operands
+	; (`__chk_ty_binary`'s `.bitop`, rule 3), and the expectation arriving
+	; here is the type BOTH will get. So admissibility is judged now, once,
+	; on that type: `firma y: i8 = 1 aut 2;` is `EXS-E0305` -- at the
+	; operator's node, since neither literal is wrong on its own -- and the
+	; operands then carry the error type rather than `i8`.
+	movzx	ecx, word [rax + AstNode.aux]
+	cmp	ecx, AST_OP_AUT
+	jb	.bin_push
+	cmp	ecx, AST_OP_DEORSUM
+	ja	.bin_push
+	mov	rdi, rbx
+	mov	rsi, [chkt_tX]
+	call	__chk_ty_unsigned
+	test	eax, eax
+	jnz	.bin_push
+	mov	rdi, rbx
+	mov	rsi, 305
+	mov	rdx, r12
+	call	__chk_ty_raise
+	mov	rdi, rbx
+	call	__chk_ty_err
+	mov	[chkt_tX], rax
+  .bin_push:
 	mov	rdi, rbx
 	mov	rsi, r13
 	mov	rdx, [chkt_tX]
@@ -867,6 +891,83 @@ proc __chk_ty_index, chkt_wN, chkt_nN
 	return
 endp
 
+; __chk_ty_unsigned(w, t) -> eax = 1 if type `t` may be an operand of `aut`,
+; `sursum` or `deorsum`: an UNSIGNED INTEGER (spec §5.4, "Unsigned operands
+; only. An `iN`, a float, or anything else on either side is `EXS-E0305`").
+;
+; WHICH TYPES THAT IS, and the one reading it took:
+;   - `uN` at every admitted width, `u1` included -- `AST_TY_INT` with
+;     `AST_SIGN_U`. A byte-ordered `u16:maior` is still an unsigned integer
+;     and is admitted here; whether a VALUE can carry an order at all is
+;     spec §5.2's (D2: "no value has one"), and mixing it with a plain `u16`
+;     is `EXS-E0303` by id inequality like any other pairing.
+;   - `mensura`. Spec §5.2 calls it "`mensura` (`usize`)" -- an unsigned
+;     integer of the target's width -- and nothing in §5.4 carves it out.
+;     It keeps its own kind (prim.inc, `__chk_ty_mensura`), so admitting it
+;     is a separate line and not a consequence of the `uN` test; and because
+;     it is its own id, `n sursum 1` types the `1` as `mensura` and
+;     `n aut x` with `x: u64` is `EXS-E0303`, which is §5.2's "explicit
+;     widening that names the target assumption" doing its job.
+;   - the ERROR type, so that one failure does not cascade (typed-ast.md
+;     section 2.2).
+; Everything else -- `iN`, `f32`/`f64`, `textus`, pointers, aggregates,
+; `unit` -- answers 0.
+proc __chk_ty_unsigned, chkt_wU2, chkt_tU2
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [chkt_wU2]
+	mov	r12, [chkt_tU2]
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_MENSURA
+	je	.yes
+	cmp	rax, AST_TY_ERROR
+	je	.yes
+	cmp	rax, AST_TY_INT
+	jne	.no
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_signkind
+	test	eax, eax
+	jnz	.no
+  .yes:
+	mov	eax, 1
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
+; __chk_ty_bitadm(w, t, n) -> eax = 1 if `EXS-E0305` was raised at `n`.
+; One operand's ADMISSIBILITY, judged on the type it has ON ITS OWN. A pending
+; literal (`t` = 0) has no type of its own yet and is not judged here: it will
+; take the other side's, and blaming it for that would put a second
+; diagnostic on an expression spec §5.4 says gets one.
+proc __chk_ty_bitadm, chkt_wQ2, chkt_tQ2, chkt_nQ2
+	uses	rbx
+	locals
+	endl
+	mov	rbx, [chkt_wQ2]
+	cmp	qword [chkt_tQ2], 0
+	je	.ok
+	mov	rdi, rbx
+	mov	rsi, [chkt_tQ2]
+	call	__chk_ty_unsigned
+	test	eax, eax
+	jnz	.ok
+	mov	rdi, rbx
+	mov	rsi, 305
+	mov	rdx, [chkt_nQ2]
+	call	__chk_ty_raise
+	mov	eax, 1
+	return
+  .ok:
+	xor	eax, eax
+	return
+endp
+
 ; __chk_ty_binary(w, n) -> rax = the type of a binary operator application.
 proc __chk_ty_binary, chkt_wB, chkt_nB
 	uses	rbx, r12, r13, r14
@@ -876,6 +977,7 @@ proc __chk_ty_binary, chkt_wB, chkt_nB
 		slot chkt_oB, dq
 		slot chkt_lB, dq
 		slot chkt_rB, dq
+		slot chkt_xB, dq
 	endl
 	mov	rbx, [chkt_wB]
 	mov	r12, [chkt_nB]
@@ -897,6 +999,17 @@ proc __chk_ty_binary, chkt_wB, chkt_nB
 	mov	rsi, [chkt_bB]
 	call	__chk_ty_expr
 	mov	[chkt_rB], rax
+
+	; `aut` `sursum` `deorsum` have rules of their own and are checked in
+	; their own arm, BEFORE a pending literal adopts anything -- see `.bitop`.
+	; They used to fall through to `.arith` below because they did not exist;
+	; an op this routine does not name must never land there by default.
+	mov	rcx, [chkt_oB]
+	cmp	rcx, AST_OP_AUT
+	jb	.not_bitop
+	cmp	rcx, AST_OP_DEORSUM
+	jbe	.bitop
+  .not_bitop:
 
 	; one side pending, the other settled: the settled one is the expectation
 	cmp	qword [chkt_lB], 0
@@ -963,6 +1076,10 @@ proc __chk_ty_binary, chkt_wB, chkt_nB
 	jbe	.relational
 	cmp	rcx, AST_OP_RANGE
 	je	.range
+	; `.bitop` took 17..19 before anything here ran, so what is left is
+	; exactly the arithmetic block of ast/kinds.inc -- and an op appended
+	; after it traps here instead of being typed as `+`.
+	rassert	rcx le AST_OP_MUL
   .arith:
 	; `+ +% +| - -% -| *` -- the operand type, unchanged
 	mov	rax, r13
@@ -978,8 +1095,9 @@ proc __chk_ty_binary, chkt_wB, chkt_nB
 	return
 
   .logical:
-	; spec §8.6 level 4/5: `vel` and `et` are over `u1`, which spec §5.1
-	; makes the boolean.
+	; spec §8.6 levels 9 and 8: `vel` and `et` are over `u1`, which spec
+	; §5.1 makes the boolean. (This said "level 4/5", which is where
+	; multiplication and addition are.)
 	mov	rdi, rbx
 	call	__chk_ty_u1
 	mov	r13, rax
@@ -991,6 +1109,96 @@ proc __chk_ty_binary, chkt_wB, chkt_nB
 	mov	rsi, [chkt_bB]
 	mov	rdx, r13
 	call	__chk_ty_wantty
+	mov	rax, r13
+	return
+
+  .bitop:
+	; `a aut b`, `a sursum n`, `a deorsum n` -- spec §5.4, Integers, and
+	; docs/design/wire-codec.md D1. `[UNTESTED]` in the spec; exercised by
+	; tests/unit/chk_ty_bitops.asm. Four rules, IN THIS ORDER:
+	;
+	;   1. ADMISSIBILITY, per operand, on the type it has on its own:
+	;      anything but an unsigned integer is `EXS-E0305` AT THAT OPERAND
+	;      (`__chk_ty_bitadm`). Both operands are judged, so `x aut y` with
+	;      two `i8`s is two diagnostics, one at each thing that is wrong on
+	;      its own; `u8 aut i8` is one, at the `i8`.
+	;   2. If either failed, STOP: no pairing check (spec §5.4 -- "`u8 aut
+	;      i8` is `EXS-E0305` at the `i8`, not `EXS-E0303`"), a pending side
+	;      is quietly given the error type so nothing inside it is left
+	;      untyped, and the result is the error type.
+	;   3. A pending literal takes the other side's type, as for `+` --
+	;      `c sursum 1` with `c: u16` types the `1` as `u16`. Both pending
+	;      stays pending, and `__chk_ty_expect`'s `.bin` arm judges the
+	;      expectation that settles it, since that is the type both sides
+	;      will then have.
+	;   4. PAIRING: the two operands are ONE type, the shift count included,
+	;      else `EXS-E0303` at the right operand (`__chk_ty_same`, as for
+	;      every other binary). The result is the left operand's type.
+	;
+	; A literal count >= the width is NOT diagnosed: it traps at run time
+	; like `255 + 1` in `u8` (wire-codec.md section 7 -- IR 6 lists the
+	; constant-folded trap as open and unnumbered, and no §13 code exists).
+	mov	qword [chkt_xB], 0
+	mov	rdi, rbx
+	mov	rsi, [chkt_lB]
+	mov	rdx, [chkt_aB]
+	call	__chk_ty_bitadm
+	or	[chkt_xB], rax
+	mov	rdi, rbx
+	mov	rsi, [chkt_rB]
+	mov	rdx, [chkt_bB]
+	call	__chk_ty_bitadm
+	or	[chkt_xB], rax
+	cmp	qword [chkt_xB], 0
+	jne	.bit_bad
+
+	cmp	qword [chkt_lB], 0
+	jne	.bit_l
+	cmp	qword [chkt_rB], 0
+	jne	.bit_ladopt
+	xor	eax, eax		; both pending: so is the result
+	return
+  .bit_ladopt:
+	mov	rdi, rbx
+	mov	rsi, [chkt_aB]
+	mov	rdx, [chkt_rB]
+	call	__chk_ty_expect
+	mov	[chkt_lB], rax
+  .bit_l:
+	cmp	qword [chkt_rB], 0
+	jne	.bit_pair
+	mov	rdi, rbx
+	mov	rsi, [chkt_bB]
+	mov	rdx, [chkt_lB]
+	call	__chk_ty_expect
+	mov	[chkt_rB], rax
+  .bit_pair:
+	mov	rdi, rbx
+	mov	rsi, [chkt_rB]
+	mov	rdx, [chkt_lB]
+	mov	rcx, [chkt_bB]
+	call	__chk_ty_same
+	mov	rax, [chkt_lB]
+	return
+
+  .bit_bad:
+	mov	rdi, rbx
+	call	__chk_ty_err
+	mov	r13, rax
+	cmp	qword [chkt_lB], 0
+	jne	.bit_bad_r
+	mov	rdi, rbx
+	mov	rsi, [chkt_aB]
+	mov	rdx, r13
+	call	__chk_ty_expect
+  .bit_bad_r:
+	cmp	qword [chkt_rB], 0
+	jne	.bit_bad_out
+	mov	rdi, rbx
+	mov	rsi, [chkt_bB]
+	mov	rdx, r13
+	call	__chk_ty_expect
+  .bit_bad_out:
 	mov	rax, r13
 	return
 endp

@@ -205,6 +205,16 @@ AST_ABI_COUNT		= 3
 ; `Binary.aux`, in spec §8.6's precedence-table order (level 9 down to level
 ; 4), then `Unary.aux`. `Contrahe.aux` is an `ArithOp`, which spec §8.6
 ; defines as a subset of these same binary numbers -- one numbering, not two.
+;
+; EXCEPT THE LAST THREE. Spec §8.6's levels 5a (`sursum` `deorsum`) and 5b
+; (`aut`) sit between `..` and `+` by precedence, and are APPENDED here after
+; `*` rather than inserted there, so that no operator already numbered moves:
+; `AST_OP_RANGE`..`AST_OP_MUL` are compared by value in checker/types/ and
+; lower/, and a renumbering would be a silent change to every one of those
+; comparisons. So precedence order holds for 1..16 and not across the whole
+; list; nothing reads precedence off these numbers (the CST already decided
+; the grouping), and ast/from_cst.inc asserts the one ordering that IS read --
+; the word table and this list advancing in step.
 AST_OP_VEL	= 1
 AST_OP_ET	= 2
 AST_OP_LT	= 3
@@ -221,7 +231,10 @@ AST_OP_SUB	= 13	; `-`
 AST_OP_SUBW	= 14	; `-%`
 AST_OP_SUBS	= 15	; `-|`
 AST_OP_MUL	= 16	; `*`
-AST_OP_MAX	= 16
+AST_OP_AUT	= 17	; `aut`     -- exclusive or, level 5b (spec §5.4)
+AST_OP_SURSUM	= 18	; `sursum`  -- shift toward more significance, 5a
+AST_OP_DEORSUM	= 19	; `deorsum` -- shift toward less significance, 5a
+AST_OP_MAX	= 19
 
 AST_U_NEG	= 1	; `-`
 AST_U_ADDR	= 2	; `&`

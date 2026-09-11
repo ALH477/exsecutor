@@ -61,7 +61,7 @@
 ;      that loses least. §8.6 owes either a multi-edit fix payload or a weaker
 ;      claim.
 ;   4. NO NODE PER PRECEDENCE LEVEL WHEN THE LEVEL DID NOT APPLY -- see
-;      cst/kinds.inc's header, departure 1. Ten nested nodes per atom is what
+;      cst/kinds.inc's header, departure 1. Twelve nested nodes per atom is what
 ;      a literal reading produces.
 ;   5. `ExprNS` IS TODAY EXACTLY `Expr`. §8.6 defines `ExprNS` as "the
 ;      expression grammar with that suffix disabled", where the suffix is the
@@ -168,9 +168,14 @@ CST_SYNC_CASUS  = 5	; `casus`, `aliter`
 
 ; The two-byte contextual operator words (§8.4 tier 2, §8.6 decision 6),
 ; compared as one 16-bit load rather than through a string table: all six
-; comparisons and `et` are exactly two bytes, and `vel` is the only three-byte
-; one. Written as explicit shifts because a two-character literal's byte order
-; is an assembler convention, and this file should not depend on one.
+; comparisons and `et` are exactly two bytes. Written as explicit shifts
+; because a two-character literal's byte order is an assembler convention,
+; and this file should not depend on one. The words of any OTHER length --
+; `vel`, and since spec §8.6 gained levels 5a/5b `aut`, `sursum`, `deorsum` --
+; go through `__cst_word` and the spellings in `cst_w_*` below. This comment
+; used to say `vel` was "the only three-byte one", and `__cst_vel` hard-coded
+; three bytes: true when written, and exactly the assumption a six- and a
+; seven-byte word would have broken.
 CST_W_LT = 'l' + ('t' shl 8)
 CST_W_LE = 'l' + ('e' shl 8)
 CST_W_GT = 'g' + ('t' shl 8)
@@ -390,34 +395,109 @@ proc __cst_word2, p, n
 	return
 endp
 
-; __cst_vel(p) -> eax = 1 if the current token is the identifier `vel`, the one
-; contextual operator word that is not two bytes long.
+; The contextual operator words that are not two bytes long. Each is its bytes
+; and nothing else; the length is taken from the label distance, so a spelling
+; and its length cannot disagree.
+cst_w_vel:	db	'vel'
+CST_WL_VEL = $ - cst_w_vel
+cst_w_aut:	db	'aut'
+CST_WL_AUT = $ - cst_w_aut
+cst_w_sursum:	db	'sursum'
+CST_WL_SURSUM = $ - cst_w_sursum
+cst_w_deorsum:	db	'deorsum'
+CST_WL_DEORSUM = $ - cst_w_deorsum
+
+; __cst_word(p, n, cwptr, cwlen) -> eax = 1 if the token `n` ahead is an
+; IDENTIFIER whose bytes are exactly `cwptr[0..cwlen)`.
+;
+; Only a `TOK_IDENT` can match. That is the whole of what makes these words
+; contextual (§8.4 tier 2): the parser asks this question only in OPERATOR
+; position, and in operand position the same bytes are an ordinary name --
+; `firma aut = 1;` binds a variable called `aut`, and `aut aut aut` is an
+; exclusive or of it with itself. A byte compare, not an interner lookup,
+; because the lexer's interner ids are the lexer's, and asking it to intern
+; four operator spellings up front would be a second place for the words to
+; be listed.
+proc __cst_word, p, n, cwptr, cwlen
+	uses	rbx
+	locals
+	endl
+	mov	rbx, [p]
+	mov	rdi, rbx
+	mov	rsi, [n]
+	call	__cst_tokp
+	cmp	dword [rax + Tok.kind], TOK_IDENT
+	jne	.no
+	mov	ecx, [rax + Tok.span.len]
+	cmp	rcx, [cwlen]
+	jne	.no
+	mov	rdx, [rbx + CstParser.lx]
+	mov	rdx, [rdx + Lexer.src_ptr]
+	mov	eax, [rax + Tok.span.start]
+	add	rdx, rax		; -> the token's first byte
+	mov	rsi, [cwptr]
+	xor	eax, eax
+  .each:
+	cmp	rax, rcx
+	jae	.yes
+	mov	r8b, [rdx + rax]
+	cmp	r8b, [rsi + rax]
+	jne	.no
+	inc	rax
+	jmp	.each
+  .yes:
+	mov	eax, 1
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
+; __cst_vel(p) -> eax = 1 if the current token is the identifier `vel`.
 proc __cst_vel, p
+	locals
+	endl
+	mov	rdi, [p]
+	xor	esi, esi
+	lea	rdx, [cst_w_vel]
+	mov	ecx, CST_WL_VEL
+	call	__cst_word
+	return
+endp
+
+; __cst_aut(p) -> eax = 1 if the current token is the identifier `aut`
+; (spec §8.6 level 5b, exclusive or).
+proc __cst_aut, p
+	locals
+	endl
+	mov	rdi, [p]
+	xor	esi, esi
+	lea	rdx, [cst_w_aut]
+	mov	ecx, CST_WL_AUT
+	call	__cst_word
+	return
+endp
+
+; __cst_is_shiftop(p) -> eax = 1 at `sursum` or `deorsum` (spec §8.6 level
+; 5a, `ShiftOp`).
+proc __cst_is_shiftop, p
 	uses	rbx
 	locals
 	endl
 	mov	rbx, [p]
 	mov	rdi, rbx
 	xor	esi, esi
-	call	__cst_tokp
-	cmp	dword [rax + Tok.kind], TOK_IDENT
-	jne	.no
-	cmp	dword [rax + Tok.span.len], 3
-	jne	.no
-	mov	rcx, [rbx + CstParser.lx]
-	mov	rcx, [rcx + Lexer.src_ptr]
-	mov	edx, [rax + Tok.span.start]
-	add	rcx, rdx
-	cmp	byte [rcx], 'v'
-	jne	.no
-	cmp	byte [rcx + 1], 'e'
-	jne	.no
-	cmp	byte [rcx + 2], 'l'
-	jne	.no
-	mov	eax, 1
-	return
-  .no:
-	xor	eax, eax
+	lea	rdx, [cst_w_sursum]
+	mov	ecx, CST_WL_SURSUM
+	call	__cst_word
+	test	eax, eax
+	jnz	.out
+	mov	rdi, rbx
+	xor	esi, esi
+	lea	rdx, [cst_w_deorsum]
+	mov	ecx, CST_WL_DEORSUM
+	call	__cst_word
+  .out:
 	return
 endp
 
@@ -2890,8 +2970,15 @@ proc __cst_add, p
 	return
 endp
 
-; __cst_range(p) -- level 6: `Add ['..' Add]`, NON-associative, so exactly one.
-proc __cst_range, p
+; __cst_shift(p) -- level 5a: `Shift ::= Add [ShiftOp Add]`, NON-associative,
+; so exactly one operator, like `..` and the comparisons. `a sursum 1 sursum 2`
+; is therefore not a special case anywhere: this production returns after the
+; first `sursum 1`, no lower level takes `sursum`, and the statement that asked
+; for `;` meets an identifier instead -- `EXS-E0201` at the second word, by
+; the same path that rejects `a lt b lt c` (spec §8.6, "Shifts are
+; non-associative like comparison"). `[UNTESTED]` in the spec; exercised by
+; tests/unit/cst_shift_xor.asm.
+proc __cst_shift, p
 	uses	rbx, r12
 	locals
 	endl
@@ -2902,6 +2989,79 @@ proc __cst_range, p
 	mov	rdi, rbx
 	call	__cst_add
 	mov	rdi, rbx
+	call	__cst_is_shiftop
+	test	eax, eax
+	jz	.cancel
+	mov	rdi, rbx
+	call	__cst_bump
+	mov	rdi, rbx
+	call	__cst_add
+	mov	rdi, [rbx + CstParser.tree]
+	mov	esi, CST_SHIFT_EXPR
+	mov	rdx, r12
+	call	cst_close
+	return
+  .cancel:
+	mov	rdi, [rbx + CstParser.tree]
+	mov	rsi, r12
+	call	cst_cancel
+	return
+endp
+
+; __cst_xor(p) -- level 5b: `Xor ::= Shift ('aut' Shift)*`, left-associative
+; and FLAT like every other repeated level here (cst/kinds.inc, departure 1):
+; `a aut b aut c` is one `XOR_EXPR` with three operands, and
+; ast/from_cst.inc's fold makes it `(a aut b) aut c`.
+proc __cst_xor, p
+	uses	rbx, r12, r13
+	locals
+	endl
+	mov	rbx, [p]
+	mov	rdi, [rbx + CstParser.tree]
+	call	cst_open
+	mov	r12, rax
+	xor	r13d, r13d
+	mov	rdi, rbx
+	call	__cst_shift
+  .more:
+	mov	rdi, rbx
+	call	__cst_aut
+	test	eax, eax
+	jz	.done
+	mov	rdi, rbx
+	call	__cst_bump
+	mov	rdi, rbx
+	call	__cst_shift
+	mov	r13d, 1
+	jmp	.more
+  .done:
+	test	r13d, r13d
+	jz	.cancel
+	mov	rdi, [rbx + CstParser.tree]
+	mov	esi, CST_XOR_EXPR
+	mov	rdx, r12
+	call	cst_close
+	return
+  .cancel:
+	mov	rdi, [rbx + CstParser.tree]
+	mov	rsi, r12
+	call	cst_cancel
+	return
+endp
+
+; __cst_range(p) -- level 6: `Xor ['..' Xor]`, NON-associative, so exactly one.
+; It read `Add ['..' Add]` until spec §8.6 put levels 5a and 5b between them.
+proc __cst_range, p
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [p]
+	mov	rdi, [rbx + CstParser.tree]
+	call	cst_open
+	mov	r12, rax
+	mov	rdi, rbx
+	call	__cst_xor
+	mov	rdi, rbx
 	mov	esi, PUN_DOTDOT
 	call	__cst_pun
 	test	eax, eax
@@ -2909,7 +3069,7 @@ proc __cst_range, p
 	mov	rdi, rbx
 	call	__cst_bump
 	mov	rdi, rbx
-	call	__cst_add
+	call	__cst_xor
 	mov	rdi, [rbx + CstParser.tree]
 	mov	esi, CST_RANGE_EXPR
 	mov	rdx, r12

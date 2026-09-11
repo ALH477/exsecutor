@@ -730,6 +730,12 @@ proc __lwr_arith_op, lwrsp, lwrao, lwrt
 	je	.adds
 	cmp	eax, AST_OP_SUBS
 	je	.subs
+	cmp	eax, AST_OP_AUT
+	je	.aut
+	cmp	eax, AST_OP_SURSUM
+	je	.sursum
+	cmp	eax, AST_OP_DEORSUM
+	je	.deorsum
 	rassert	eax eq 0
   .add:
 	mov	eax, BFA_OP_ADD
@@ -760,6 +766,22 @@ proc __lwr_arith_op, lwrsp, lwrao, lwrt
 	jmp	.out
   .subs:
 	mov	eax, BFA_OP_SUBS
+	jmp	.out
+  ; spec §5.4's exclusive or and the two shifts, one IR opcode each
+  ; (ssa-ir.md 2.3's bitwise row). The checker admits only unsigned integer
+  ; operands of one type (checker/types/types.inc, `.bitop`), so there is no
+  ; float form and `shr` is always the logical one; significance, not
+  ; direction, is the language's word, and on the IR's integer values "more
+  ; significant" IS `shl`. A count >= the width is the IR's trap, not this
+  ; pass's (ssa-ir.md 2.3: `shl`/`shr` are side-effecting for that reason).
+  .aut:
+	mov	eax, BFA_OP_XOR
+	jmp	.out
+  .sursum:
+	mov	eax, BFA_OP_SHL
+	jmp	.out
+  .deorsum:
+	mov	eax, BFA_OP_SHR
   .out:
 	return
 endp
