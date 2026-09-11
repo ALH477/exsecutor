@@ -305,12 +305,14 @@
 
       # vendor/hydramodem-tx: three WAVs rendered by HydraModem's own reference
       # transmitter (frame_tx, reference DSP, default profile) for the three
-      # frames vendor/hydramodem-tx/PROVENANCE.md names. Program OUTPUT vendored
+      # frames vendor/hydramodem-tx/PROVENANCE.md names, and symbola_basis.bin,
+      # the symbol streams of 137 further renders (the modem design's D9
+      # basis) reduced by the rule PROVENANCE.md prints. Program OUTPUT vendored
       # as a test certificate, not code -- nothing here links into exsc, and the
       # files keep their upstream LGPL-3.0-only identifier. Same digest
       # discipline as fasmg-x86 and hydramesh-wire above: PROVENANCE.md
       # excluded, LC_ALL=C pinned.
-      modemVendorDigest = "5ce6a3d11d10b0a3d7143a011963300c96ccadab239a1479a320de07ba45a3f2"; # LC_ALL=C
+      modemVendorDigest = "51cca6f0c60f287f06a523aaaf2bfaca737edbbda75090343d79d3b61e72e1da"; # LC_ALL=C
     in
     {
       packages.${system} = {
@@ -541,9 +543,9 @@
             # vendor/hydramesh-wire/golden_vectors.json); without it here the
             # cert branch would have nothing to compare against.
             cp -r --no-preserve=mode -- ${./vendor/hydramesh-wire} repo/vendor/hydramesh-wire
-            # The next milestone's program tests compare stdout against these
-            # reference WAVs (stdout=vendor/hydramodem-tx/<name>.wav); without
-            # it here that branch would have nothing to compare against.
+            # tests/programs/hydramodem_*/ compare stdout against these
+            # reference files (stdout=vendor/hydramodem-tx/<name>); without
+            # them here those tests would have nothing to compare against.
             cp -r --no-preserve=mode -- ${./vendor/hydramodem-tx} repo/vendor/hydramodem-tx
             chmod +x repo/tests/run.sh repo/tools/*.sh
             # The sandbox has no /usr/bin/env, and tests/run.sh invokes the

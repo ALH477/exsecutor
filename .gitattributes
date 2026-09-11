@@ -15,9 +15,9 @@
 # conversion in both directions.
 vendor/fasmg-x86/** -text
 
-# vendor/hydramodem-tx/ is HydraModem's reference-transmitter WAV output,
-# vendored verbatim as a test certificate (see
-# vendor/hydramodem-tx/PROVENANCE.md). Binary audio, not source -- `-text`
+# vendor/hydramodem-tx/ is HydraModem's reference-transmitter WAV output and
+# the symbol streams reduced from it, vendored as a test certificate (see
+# vendor/hydramodem-tx/PROVENANCE.md). Binary, not source -- `-text`
 # disables git's EOL conversion and diffing so the bytes (and therefore the
 # recorded per-file and tree sha256 digests) never move on checkout, the same
 # reason vendor/fasmg-x86/** is pinned above.
