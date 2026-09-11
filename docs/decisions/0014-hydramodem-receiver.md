@@ -1,11 +1,17 @@
 # 0014 — The HydraModem receiver: certified by decode success against HydraModem's own verdicts, not by internal bit identity
 
-**Status:** Accepted, 2026-09-11. **Design only; nothing implemented.**
+**Status:** Accepted, 2026-09-11. **R2 implemented and running; R3 not.**
 `docs/design/receptor.md` is the design; a scratch integer model of it
 decodes the three vendored WAVs, 137 further reference renders, and every
 noise- and frequency-impaired input HydraModem's receiver decodes (177
-inputs, section 11 there). The Exsecutor program, the reader, the array
-literal and the vendored impaired set are all `[UNTESTED]`.
+inputs, section 11 there). Since R2 the Exsecutor program exists:
+`examples/hydramodem/{receptor,recipe,circuitus}.exsc`, certified by
+`tests/programs/receptio_*` — the three WAVs decode, 140 words round-trip,
+and all nine mutants of section 6 behave as predicted (section 12 there).
+The reader and the array literal ran before it. Decision 1's **impaired
+set** and decision 2's `vendor/hydramodem-rx/` remain `[UNTESTED]` and are
+R3's. Decision 1's `Praefixa` did not survive the emitter — four arrays
+instead, receptor.md finding 20 — which changes no verdict and no bound.
 **Relates to:** ADR 0011 (the first external certificate), ADR 0013 (the
 transmitter, the second); spec §3.1, §4.6, §5.4, §6.3, §8.6, §11, §12;
 `vendor/hydramodem-tx/`; the proposed `vendor/hydramodem-rx/`.
@@ -135,10 +141,15 @@ ablative it asks for. The lexicon pass is disabled; the question is
   under R3's clock-offset vectors and one (the table one-off) never.
 - A fourth vendored tree, 1.33 MB, to digest-check and to re-vendor when
   upstream moves. Pinned to the same commit as the transmitter's.
-- Nothing runs. The reader, the literal, the 640 KB struct of prefix
-  sums, an index store through a field, `i64` multiplication from source,
-  two `[OPEN]` casts the design leans on (finding 13) and the harness's
-  `stdin=` key are each somebody's work before R2 can be measured.
+- ~~Nothing runs.~~ The reader, the literal, an index store through a field,
+  `i64` multiplication from source, the two casts of finding 13 and the
+  harness's `stdin=` key all run as of R2. **The 640 KB struct of prefix
+  sums does not and cannot**: a struct literal's aggregate field is `copy`d
+  and the emitter unrolls a `copy n` into n/8 instructions, so the
+  compilation arena traps (receptor.md finding 20, with the sweep). Four
+  arrays passed one per parameter cost nothing — no call needs more than six
+  words — and the finding is reported for the backend's owner rather than
+  worked around in the emitter.
 - R3's timing loop wants a signed division by a power of two, which is a
   signed shift (`[OPEN]`) or a sign-and-magnitude workaround; decided at
   R3 with the vectors, not here.
@@ -154,8 +165,9 @@ ablative it asks for. The lexicon pass is disabled; the question is
 
 ## Open
 
-- **Everything is unimplemented.** R2's tests, the prelude fixture, the
-  three array-literal fixtures and `vendor/hydramodem-rx/` do not exist.
+- ~~**Everything is unimplemented.**~~ R2's five test directories, the
+  prelude fixture and the array-literal fixtures exist and run;
+  `vendor/hydramodem-rx/` and everything R3 does not.
 - **The soft-metric argument** (`receptor.md` D7) is an argument; the
   sweep found no input on which the difference and the ratio disagree,
   which is consistent with it and not a test of it.

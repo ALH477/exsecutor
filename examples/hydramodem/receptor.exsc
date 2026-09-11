@@ -1,0 +1,383 @@
+// examples/hydramodem/receptor.exsc -- HydraModem's receiver, default
+// profile, as pure functions: given the four prefix sums of a down-converted
+// WAV, the frame's seventeen bytes and its CRC. No `poscit` anywhere and no
+// capability-bearing parameter: every function here is pure in spec §4.1
+// rule 6's sense, and nothing in this file can reach the host. recipe.exsc
+// reads the WAV and builds the prefix sums; circuitus.exsc builds them from
+// the transmitter's own `sona`. Neither decides a byte of the frame; this
+// file decides them all.
+//
+// The design is docs/design/receptor.md, milestone R2 -- D3 through D9, with
+// every arithmetic bound proved there and re-derived before this was written.
+// The reference is HydraMesh's hydramodem/ at fce2813 (hydra_modem.c's rx
+// path, hydra_conv.c's soft Viterbi, hydra_interleave.c, hydra_frame.c) and
+// the certificate is DECODE SUCCESS, not bit identity: ADR 0014 records why,
+// and section 6 there records the four negative controls that buys.
+//
+// WHAT IS NOT USED, AND IS NOT NEEDED. No division, no remainder (the
+// deinterleaver is a walk, as the transmitter's interleaver is), no floating
+// point, no bitwise and or or, no signed shift. The reference is `double`
+// throughout; every quantity here is an integer whose bound is proved in D5
+// from |x| <= 32768 and |T7| <= 127, and the trapping arithmetic of spec §5.4
+// is what makes those bounds load-bearing: a receiver that overflowed would
+// abort, not decode wrongly.
+//
+// FOUR ARRAYS, NOT ONE `Praefixa` STRUCT. D3 put the four prefix sums in one
+// `structura` so a function could take them in one word. It cannot be built:
+// `Praefixa { i0: [0; 20481], ... }` lowers to one `copy` per field and
+// `__bfa_emit_copy` (backend_fasmg/emit.inc:3828) unrolls a `copy n` into n/8
+// emitted instructions, so a 163,848-byte field is ~1 MB of fasmg text per
+// field and the compilation arena `rassert`s -- SIGILL, exit 132. MEASURED:
+// a struct field of `acies<i64, 17000>` compiles (999,057 bytes of asm), one
+// of `acies<i64, 18000>` traps. A plain local `acies<i64, 20481>` is a LOOP
+// (`LWR_ARRAY_UNROLL`, lower/expr.inc:2268) and costs 40,577 bytes of asm at
+// any size. So the arrays are four locals, passed one per parameter, and the
+// six-word call limit D3's finding 12 was worried about is met by never
+// asking for more than five: `vis` takes one tone's I and Q, `acquire` takes
+// four arrays and a count, `mollia` four arrays and an origin plus the hidden
+// result pointer. Reported as receptor.md finding 20.
+
+// ---- the table (D4) --------------------------------------------------------
+
+// T7[m] = round(127 cos(2 pi m / 48)), half away from zero. Thirteen values
+// and the two quarter-wave identities T7[24 - m] = -T7[m], T7[48 - m] =
+// T7[m], written out so the table IS the specification and not a
+// computation. receptor.md finding 10: a table computed by floating point is
+// not this table -- 127 cos(2 pi / 3) is -63.4999... in binary64 and rounds
+// to -63 where the identity gives -64 (re-measured, index 16, the only one of
+// the 48 that differs). |entry| <= 127, which is what makes the products fit
+// without a scaling shift.
+publica functio tabula() -> acies<i64, 48> {
+    redde [127, 126, 123, 117, 110, 101, 90, 77, 64, 49, 33, 17, 0,
+           -17, -33, -49, -64, -77, -90, -101, -110, -117, -123, -126,
+           -127, -126, -123, -117, -110, -101, -90, -77, -64, -49, -33, -17,
+           0, 17, 33, 49, 64, 77, 90, 101, 110, 117, 123, 126];
+}
+
+// The signed sample the two little-endian bytes carry (D4): the transmitter's
+// own `Exemplum` view reads them as a u16, and 32768.. is the negative half.
+// The two's-complement reading of an int16 with no signed shift and no
+// narrowing cast -- the mirror of the transmitter's `0 -% v`.
+publica functio signatum(b0: u8, b1: u8) -> i64 {
+    firma e = [b0, b1] sicut Exemplum;
+    mutabilis v: i64 = e.valor sicut i64;
+    si v ge 32768 {
+        v = v - 65536;
+    }
+    redde v;
+}
+
+// ---- the energy (D5) -------------------------------------------------------
+
+// E_k(a) over the 48-sample window at `a`, from tone k's two prefix sums:
+// two subtractions, two products, one sum. D5's bounds, re-derived:
+// |x T7| <= 32768 x 127 = 4,161,536 < 2^22; a window sum is 48 of them,
+// |I| <= 199,753,728 < 2^28; so E = I^2 + Q^2 <= 2 x 199,753,728^2 =
+// 7.98 x 10^16 < 2^57. No scaling shift is needed before squaring, which is
+// what a Q7 table buys.
+publica functio vis(pi: acies<i64, 20481>, pq: acies<i64, 20481>,
+                    a: mensura) -> i64 {
+    firma i = pi[a + 48] - pi[a];
+    firma q = pq[a + 48] - pq[a];
+    redde i * i + q * q;
+}
+
+// ---- acquisition (D6) ------------------------------------------------------
+
+// The 40 known symbols: 24 preamble symbols alternating 0, 1, then the 16
+// bits of the sync word 0x2DD4, MSB first (hydra_modem.c:216-224).
+//
+// THE SYNC WORD IS THE RECEIVER'S OWN and not `modulator.exsc`'s
+// `synchronia`, although the two hold the same sixteen bits. A receiver that
+// borrowed the transmitter's known prefix could not be mutation-tested by the
+// loopback at all: changing one constant would change both sides and the
+// round trip would still close. receptor.md section 6 predicts a verdict for
+// a sync mutant on BOTH certificates, and that prediction needs two copies.
+publica functio nota() -> acies<u8, 40> {
+    mutabilis nt: acies<u8, 40> = [0; 40];
+    per k in 0..24 {
+        nt[k] = (k - ((k deorsum 1) sursum 1)) sicut u8;
+    }
+    mutabilis w: u16 = 0x2dd4;
+    per k in 0..16 {
+        mutabilis b: u8 = 0;
+        si w ge 0x8000 {
+            b = 1;
+        }
+        nt[24 + k] = b;
+        w = w sursum 1;
+    }
+    redde nt;
+}
+
+// The refined frame origin, or `n` when the best score is below 37. `n` is
+// never an origin -- the last one is n - 17088 -- so a `mensura` that cannot
+// be an origin is a complete answer and no aggregate return is spent on a
+// flag (D6, and WC finding 8's hidden pointer).
+//
+// hydra_modem.c:237-278 transcribed, with `mensura` indices where the
+// reference has `long` and i64 energies where it has `double`:
+//
+//   * every origin o in 0 .. n - 17088 scores the 40 known symbols by whether
+//     the argmax energy (ties to tone 0, so tone 1 iff E_1 > E_0) is the
+//     known tone;
+//   * the best score's FIRST and LAST origins bound a plateau and the centre
+//     is `(first + last) deorsum 1` -- unsigned, so the shift is the
+//     reference's `/ 2` exactly;
+//   * then the +/-24 refinement maximises the summed energy of the 40 known
+//     tones at their own windows, first maximum kept;
+//   * reject below 37 of 40.
+//
+// The plateau's first origin is 0 and its last 0 before the loop runs, which
+// is what the reference's `best_score = -1` buys it at o = 0: a first origin
+// scoring 0 leaves first = last = 0 either way.
+//
+// THE REFINEMENT SKIPS A BASE WHOSE LAST FRAME WINDOW WOULD EXCEED n, where
+// the reference checks only the 40 prefix windows (hydra_modem.c:256) and
+// leaves the data loop to fail. D6 states the stricter guard and this takes
+// it: past n the prefix arrays hold zeros that were never written, and an
+// energy computed from them is not a measurement. On every input of R2's
+// certificate the guard is not binding (n = 19008, centre = 959, and the last
+// admissible base is 1920).
+publica functio acquire(i0: acies<i64, 20481>, q0: acies<i64, 20481>,
+                        i1: acies<i64, 20481>, q1: acies<i64, 20481>,
+                        n: mensura) -> mensura {
+    firma nt = nota();
+    firma hi = n - 17088;
+    mutabilis best: mensura = 0;
+    mutabilis prima: mensura = 0;
+    mutabilis ultima: mensura = 0;
+    per o in 0..(hi + 1) {
+        mutabilis sc: mensura = 0;
+        mutabilis a: mensura = o;
+        per k in 0..40 {
+            mutabilis t: mensura = 0;
+            si vis(i1, q1, a) gt vis(i0, q0, a) {
+                t = 1;
+            }
+            si t eq (nt[k] sicut mensura) {
+                sc = sc + 1;
+            }
+            a = a + 48;
+        }
+        si sc gt best {
+            best = sc;
+            prima = o;
+            ultima = o;
+        } aliter {
+            si sc eq best {
+                ultima = o;
+            }
+        }
+    }
+    firma medium = (prima + ultima) deorsum 1;
+    mutabilis optimum: mensura = medium;
+    mutabilis maxima: i64 = -1;
+    per d in 0..49 {
+        si (medium + d) ge 24 {
+            firma basis = medium + d - 24;
+            si (basis + 17088) le n {
+                mutabilis e: i64 = 0;
+                mutabilis a: mensura = basis;
+                per k in 0..40 {
+                    si nt[k] eq 0 {
+                        e = e + vis(i0, q0, a);
+                    } aliter {
+                        e = e + vis(i1, q1, a);
+                    }
+                    a = a + 48;
+                }
+                si e gt maxima {
+                    maxima = e;
+                    optimum = basis;
+                }
+            }
+        }
+    }
+    si best lt 37 {
+        redde n;
+    }
+    redde optimum;
+}
+
+// ---- the soft bits (D7) and the deinterleave (D9) --------------------------
+
+// The 316 data symbols' soft bits, scaled by one shift for the whole frame
+// and scattered back into code order.
+//
+// THE METRIC IS THE UN-NORMALISED DIFFERENCE E_1 - E_0. The reference divides
+// by E_1 + E_0 (hydra_modem.c:173-184); D7 argues the difference is the
+// sounder branch metric -- the sign is the same hard decision, a stationary
+// channel makes the two one positive scale factor apart and a Viterbi argmax
+// is invariant under that, and where they differ the difference weighs a
+// faded symbol less, as the max-log likelihood ratio for non-coherent FSK
+// does and the normalised form does not.
+//
+// THE SCALING IS ONE SHIFT FOR THE FRAME. |E_1 - E_0| < 2^57 and 316 of them
+// summed overflow i64, so the largest magnitude M is found, the smallest k
+// with M deorsum k <= 2^20 is found by a `dum` on a u64, and every soft bit
+// is its magnitude shifted by that k with its sign put back. One k for the
+// frame, not one per bit, so the relative weights of the 316 bits -- the
+// thing D7's third property is about -- survive to one part in 2^20. The
+// path-metric bound of D5 follows: |pm| <= 316 x 2^20 < 2^29.
+//
+// THE DEINTERLEAVE IS THE TRANSMITTER'S WALK RUN BACKWARDS. The transmitter
+// gathers out[i] = in[(19 i) mod 316]; the receiver scatters
+// lin[(19 i) mod 316] = soft[i] (hydra_interleave.c:38), and the index is
+// walked 19 at a time with one subtraction, so there is no multiplication and
+// no remainder. 19 is coprime to 316, so the walk writes every index once --
+// a stride that is not would leave zeros behind and the CRC would see them.
+publica functio mollia(i0: acies<i64, 20481>, q0: acies<i64, 20481>,
+                       i1: acies<i64, 20481>, q1: acies<i64, 20481>,
+                       o: mensura) -> acies<i64, 316> {
+    mutabilis s: acies<i64, 316> = [0; 316];
+    mutabilis maxima: u64 = 0;
+    mutabilis a: mensura = o + 1920;
+    per j in 0..316 {
+        firma d = vis(i1, q1, a) - vis(i0, q0, a);
+        s[j] = d;
+        mutabilis mag: u64 = 0;
+        si d ge 0 {
+            mag = d sicut u64;
+        } aliter {
+            mag = (0 - d) sicut u64;
+        }
+        si mag gt maxima {
+            maxima = mag;
+        }
+        a = a + 48;
+    }
+    mutabilis w: u64 = maxima;
+    mutabilis k: u64 = 0;
+    dum w gt 1048576 terminus 64 {
+        w = w deorsum 1;
+        k = k + 1;
+    }
+    mutabilis lin: acies<i64, 316> = [0; 316];
+    mutabilis j: mensura = 0;
+    per i in 0..316 {
+        firma d = s[i];
+        mutabilis v: i64 = 0;
+        si d ge 0 {
+            v = ((d sicut u64) deorsum k) sicut i64;
+        } aliter {
+            v = 0 - ((((0 - d) sicut u64) deorsum k) sicut i64);
+        }
+        lin[j] = v;
+        j = j + 19;
+        si j ge 316 {
+            j = j - 316;
+        }
+    }
+    redde lin;
+}
+
+// ---- the Viterbi (D8) ------------------------------------------------------
+
+// 64 states, i64 metrics, one decision BIT per (step, state), the output bit
+// read off the state. hydra_conv.c:50-117's trellis is reg = (b << 6) | s and
+// next = reg >> 1, so with s = s5..s0
+//
+//     o0 = b aut s5 aut s4 aut s3 aut s0        // G0 = 0x79 = 1111001
+//     o1 = b aut s4 aut s3 aut s1 aut s0        // G1 = 0x5B = 1011011
+//     next = (b sursum 5) + (s deorsum 1)
+//
+// and the bits of s are read as the transmitter reads bits: shift, then the
+// low bit as y - ((y deorsum 1) sursum 1). No parity instruction, no mask.
+//
+// THE DECISION BUFFER IS ONE BIT WIDE. Since next = (b << 5) | (s >> 1), the
+// next state already carries b and the top five bits of s; only s0 is lost,
+// so that is what the survivor keeps. 158 x 64 bytes, half of the reference's
+// two-byte (prev, bit) pair. Traceback from state 0: the data bit is
+// `st deorsum 5` and the predecessor is
+// ((st - ((st deorsum 5) sursum 5)) sursum 1) + decisio[t] -- the `& 31` as a
+// subtraction of the shifted-out part. Termination in state 0 is the
+// reference's and is sound because the transmitter's six tail bits are zero.
+//
+// The dead metric is -2^62, the reference's -1e30, and a state is live only
+// strictly above it, so no addition is ever made to a dead metric and D5's
+// bound is what keeps the trapping adds silent. Survivors are taken on strict
+// `gt` with states ascending and b = 0 before b = 1, so ties resolve exactly
+// as the reference resolves them.
+publica functio decodifica(s: acies<i64, 316>) -> acies<u8, 19> {
+    mutabilis pm: acies<i64, 64> = [-4611686018427387904; 64];
+    mutabilis npm: acies<i64, 64> = [-4611686018427387904; 64];
+    mutabilis decisio: acies<u8, 10112> = [0; 10112];
+    pm[0] = 0;
+    per t in 0..158 {
+        firma s0 = s[t sursum 1];
+        firma s1 = s[(t sursum 1) + 1];
+        per st in 0..64 {
+            npm[st] = -4611686018427387904;
+        }
+        per st in 0..64 {
+            firma fundus = pm[st];
+            si fundus gt -4611686018427387904 {
+                firma b5 = (st deorsum 5) - (((st deorsum 5) deorsum 1) sursum 1);
+                firma b4 = (st deorsum 4) - (((st deorsum 4) deorsum 1) sursum 1);
+                firma b3 = (st deorsum 3) - (((st deorsum 3) deorsum 1) sursum 1);
+                firma b1 = (st deorsum 1) - (((st deorsum 1) deorsum 1) sursum 1);
+                firma b0 = st - ((st deorsum 1) sursum 1);
+                per b in 0..2 {
+                    firma o0 = b aut b5 aut b4 aut b3 aut b0;
+                    firma o1 = b aut b4 aut b3 aut b1 aut b0;
+                    mutabilis bm: i64 = 0;
+                    si o0 eq 1 {
+                        bm = bm + s0;
+                    } aliter {
+                        bm = bm - s0;
+                    }
+                    si o1 eq 1 {
+                        bm = bm + s1;
+                    } aliter {
+                        bm = bm - s1;
+                    }
+                    firma cand = fundus + bm;
+                    firma proximus = (b sursum 5) + (st deorsum 1);
+                    si cand gt npm[proximus] {
+                        npm[proximus] = cand;
+                        decisio[t * 64 + proximus] = b0 sicut u8;
+                    }
+                }
+            }
+        }
+        per st in 0..64 {
+            pm[st] = npm[st];
+        }
+    }
+    mutabilis st: mensura = 0;
+    mutabilis bits: acies<u8, 158> = [0; 158];
+    per u in 0..158 {
+        firma t = 157 - u;
+        bits[t] = (st deorsum 5) sicut u8;
+        st = ((st - ((st deorsum 5) sursum 5)) sursum 1)
+           + (decisio[t * 64 + st] sicut mensura);
+    }
+    mutabilis exitus: acies<u8, 19> = [0; 19];
+    per i in 0..152 {
+        exitus[i deorsum 3] = (exitus[i deorsum 3] sursum 1) + bits[i];
+    }
+    redde exitus;
+}
+
+// ---- the check (D9) --------------------------------------------------------
+
+// CRC-16/CCITT-FALSE over all NINETEEN decoded bytes. The 19 are f || crc(f),
+// and this CRC over a word followed by its own CRC is always 0 -- the same
+// identity `quantum.exsc` records one level up -- so the check is a residue
+// and not a comparison of two bytes with a recomputed value. `redundantia`
+// cannot be reused: it is declared `acies<u8, 17>` and there is no generic N.
+publica functio residuum(b: acies<u8, 19>) -> u16 {
+    mutabilis c: u16 = 0xffff;
+    per i in 0..19 {
+        c = c aut ((b[i] sicut u16) sursum 8);
+        per k in 0..8 {
+            si c ge 0x8000 {
+                c = (c sursum 1) aut 0x1021;
+            } aliter {
+                c = c sursum 1;
+            }
+        }
+    }
+    redde c;
+}

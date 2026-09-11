@@ -1,0 +1,120 @@
+// examples/hydramodem/recipe.exsc -- the stdin driver: the WAV HydraModem's
+// transmitter writes, read from standard input, and the 17-byte DeModFrame it
+// carries written to standard output. The only file of its unit that names
+// `Mundus`, `Lector` and `Scriptor`.
+//
+// Exit 0 and seventeen bytes on success; 1 no sync, 2 CRC, 3 a WAV this
+// program will not accept (docs/design/receptor.md D3, section 4: these are
+// values a program returns, not §13 codes). NOTHING IS WRITTEN ON ANY
+// FAILURE: the receiver never writes a frame it has not checked.
+//
+// THE HEADER IS VERIFIED, NOT TRUSTED. 44 bytes into a buffer, the buffer
+// read through the transmitter's own `Caput` -- the direction wire-codec.md
+// D4 calls "the way a received buffer becomes a frame" -- and then every
+// field compared with what `caput()` writes. This is stricter than
+// HydraModem's reader, which walks chunks, takes channel 0 of any channel
+// count and IGNORES THE SAMPLE RATE (wav.c:45-91; receptor.md finding 3), so
+// a 44.1 kHz recording of a 48 kHz frame would be decoded at the wrong tone
+// frequencies and fail by CRC rather than by a format check. Deliberate: the
+// certified input is exactly what HydraModem's transmitter writes, and a
+// reader for other WAVs is a different program.
+//
+// SAMPLES ARE NOT STORED. Each one is signed as it arrives, multiplied by the
+// four oscillator values for its index and accumulated into four running
+// prefix sums -- index n + 1 holding the sum over samples < n + 1, index 0
+// holding 0, the reference's own layout (hydra_modem.c:127-148). That is the
+// receiver's whole large state, 4 x 20,481 x 8 = 655,392 bytes of frame, and
+// the samples' only other use would be to build it again.
+//
+// The accumulate loop lives here and not in `receptor.exsc` because a
+// function cannot fill an array it was handed: a parameter is borrowed
+// (spec §6.3 decision 3) and returning 640 KB per sample is not an option.
+// receptor.md finding 11 records that as the language gap it is;
+// `circuitus.exsc` carries the second copy of this loop for the same reason.
+//
+// m0 walks 2 per sample and m1 walks 3 -- tone k is 2000 + 1000 k Hz, which
+// is c = 2 or 3 whole cycles per 48-sample symbol -- and the sine is the
+// cosine 36 further on, since sin x = cos(x - pi/2) and -12 is 36 mod 48.
+// The reference's oscillator uses its phase BEFORE the increment on the rx
+// side (hydra_dsp_ref.c:99-101), where the tx side uses it after; the two
+// differ by a constant rotation of I and Q, and an energy is invariant under
+// one, which is the whole reason a non-coherent detector can be built out of
+// a 7-bit table at all.
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma l = Lector.ab_introitu(a);
+    firma s = Scriptor.ad_exitum(a);
+
+    // ---- the header (D3) ------------------------------------------------
+    mutabilis h: acies<u8, 44> = [0; 44];
+    per i in 0..44 {
+        firma b = l.lege_octeto();
+        si b ge 256 {
+            redde 3;
+        }
+        h[i] = b sicut u8;
+    }
+    firma c = h sicut Caput;
+    si c.riff ne 0x52494646 { redde 3; }
+    si c.wave ne 0x57415645 { redde 3; }
+    si c.fmt ne 0x666d7420 { redde 3; }
+    si c.fmt_longitudo ne 16 { redde 3; }
+    si c.codex ne 1 { redde 3; }
+    si c.canales ne 1 { redde 3; }
+    si c.frequentia ne 48000 { redde 3; }
+    si c.octeti_secundo ne 96000 { redde 3; }
+    si c.passus ne 2 { redde 3; }
+    si c.latitudo ne 16 { redde 3; }
+    si c.data ne 0x64617461 { redde 3; }
+    si c.longitudo lt 34176 { redde 3; }
+    si c.longitudo gt 40960 { redde 3; }
+    si c.longitudo ne ((c.longitudo deorsum 1) sursum 1) { redde 3; }
+    si c.magnitudo ne (c.longitudo + 36) { redde 3; }
+    firma n: mensura = (c.longitudo deorsum 1) sicut mensura;
+
+    // ---- the samples, straight into the prefix sums (D3, D4, D5) --------
+    firma t = tabula();
+    mutabilis i0: acies<i64, 20481> = [0; 20481];
+    mutabilis q0: acies<i64, 20481> = [0; 20481];
+    mutabilis i1: acies<i64, 20481> = [0; 20481];
+    mutabilis q1: acies<i64, 20481> = [0; 20481];
+    mutabilis m0: mensura = 0;
+    mutabilis m1: mensura = 0;
+    per i in 0..n {
+        firma b0 = l.lege_octeto();
+        firma b1 = l.lege_octeto();
+        si b0 ge 256 { redde 3; }
+        si b1 ge 256 { redde 3; }
+        firma x = signatum(b0 sicut u8, b1 sicut u8);
+        mutabilis s0: mensura = m0 + 36;
+        si s0 ge 48 { s0 = s0 - 48; }
+        mutabilis s1: mensura = m1 + 36;
+        si s1 ge 48 { s1 = s1 - 48; }
+        i0[i + 1] = i0[i] + x * t[m0];
+        q0[i + 1] = q0[i] + x * t[s0];
+        i1[i + 1] = i1[i] + x * t[m1];
+        q1[i + 1] = q1[i] + x * t[s1];
+        m0 = m0 + 2;
+        si m0 ge 48 { m0 = m0 - 48; }
+        m1 = m1 + 3;
+        si m1 ge 48 { m1 = m1 - 48; }
+    }
+
+    // ---- the verdict (D6, D7, D8, D9) -----------------------------------
+    firma o = acquire(i0, q0, i1, q1, n);
+    si o eq n {
+        redde 1;
+    }
+    firma d = decodifica(mollia(i0, q0, i1, q1, o));
+    si residuum(d) ne 0 {
+        redde 2;
+    }
+    per i in 0..17 {
+        si s.scribe_octeto(d[i]) ne 1 {
+            redde 4;
+        }
+    }
+    redde 0;
+}

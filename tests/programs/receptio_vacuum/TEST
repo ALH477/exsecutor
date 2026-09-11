@@ -1,0 +1,7 @@
+# The receiver against the WAV frame_tx rendered for the sealed all-zero
+# body, d310000000000000000000000000005b80. The frame whose payload is
+# nothing is the one whose symbol stream has the longest runs of a single
+# tone, which is where the prefix sums grow largest: the observed maximum
+# |prefix| over the three vendored WAVs, 2.61 x 10^10, is this one's.
+# receptio_loopback/TEST's header says the rest; only the frame differs.
+TEST: expect-exit=0 stdin=vendor/hydramodem-tx/d310000000000000000000000000005b80.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/receptor.exsc,examples/hydramodem/recipe.exsc

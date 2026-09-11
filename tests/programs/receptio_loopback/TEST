@@ -1,0 +1,19 @@
+# The receiver, against the WAV HydraModem's own frame_tx rendered for
+# dcf_loopback's frame -- vendor/hydramodem-tx/, provenance and digests in
+# PROVENANCE.md there. stdin is that WAV, 38,060 bytes; stdout must be the
+# seventeen bytes of the frame it carries, and expected.out holds exactly
+# those (d3 10 12 34 00 a1 ff ff de ad be ef 0a 1b 2c a9 61), compared by
+# `cmp`.
+#
+# This is the other direction of tests/programs/hydramodem_loopback/, which
+# renders the same frame to the same bytes: out through one Exsecutor program
+# and back through another. The two share examples/hydramodem/modulator.exsc
+# -- the receiver reuses its `Caput` and `Exemplum` -- and share nothing that
+# decides a tone or a bit.
+#
+# Exit 0 is the only passing status. 1 would be no sync, 2 a CRC failure, 3 a
+# header this program refuses; on any of them nothing is written, and
+# check_run's "wrote nothing, expected 17 bytes" is the second half of the
+# assertion. docs/design/receptor.md D11 is the certificate; ADR 0014 is why
+# it is decode success and not bit identity.
+TEST: expect-exit=0 stdin=vendor/hydramodem-tx/d310123400a1ffffdeadbeef0a1b2ca961.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/receptor.exsc,examples/hydramodem/recipe.exsc

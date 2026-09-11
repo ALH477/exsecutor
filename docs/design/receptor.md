@@ -1,15 +1,24 @@
 # The HydraModem receiver — design for the modem program, R2 and R3 (modem.md's M3)
 
-Status: **design only; nothing implemented.** Nothing below has been lexed,
-parsed, checked, lowered or run by `exsc`. What *has* run is a scratch
-integer model of exactly this design (section 11: Python, never shipped,
+Status: **R2 is implemented and runs; R3 is not.** `examples/hydramodem/
+receptor.exsc`, `recipe.exsc` and `circuitus.exsc` are compiled, run and
+tested by `tests/programs/receptio_{loopback,exemplum,vacuum,caput,
+circuitus}/`: the three vendored WAVs decode to their frames, 140 words
+round-trip through the transmitter's own `sona`, and all nine mutants of
+section 6 behave as predicted. Section 12 records what was measured on the
+Exsecutor program; **D3's `Praefixa` struct is the one decision that did not
+survive contact with the emitter** (finding 20), and one figure of section 11
+does not reproduce (finding 21). Everything R3 — the timing loop, the
+impaired vectors, `vendor/hydramodem-rx/` — is still design only.
+
+Before that, what had run was a scratch integer model of exactly this design
+(section 11: Python, never shipped,
 `prototypes/README.md`'s rule), which decodes the three vendored WAVs and
 137 further `frame_tx` renders, and which, on 177 impaired inputs, decodes
 every noise- and frequency-impaired WAV HydraModem's own receiver decodes
 and never writes a wrong frame (the clock-offset inputs are R3's: without
-a timing loop it fails one of seven). Every claim about the
-Exsecutor program is `[UNTESTED]`; every claim about the arithmetic is
-either proved in section 3 or measured in section 11. `spec §N` cites
+a timing loop it fails one of seven). Every claim about the arithmetic is
+either proved in section 3 or measured in section 11 or 12. `spec §N` cites
 `docs/spec/exsecutor-spec-v0.4.md` as amended in the same commit as this
 file; `modem.md §n`, `modem.md Dn` cite `docs/design/modem.md`; `WC Dn`
 cites `docs/design/wire-codec.md`; ADR 0014 is
@@ -334,6 +343,23 @@ of `acies` type is laid out by the checker (spec §5.2 forbids it only in
 `@transitus` types); a 640 KB local and an index store through a field
 place, `p.i0[k] = v`, are `[UNTESTED]` (findings 16, 11).
 
+**`Praefixa` CANNOT BE BUILT, and R2 keeps four arrays instead.** A struct
+literal's aggregate field is lowered into a temporary and then `copy`d, and
+`__bfa_emit_copy` (`compiler/x86_64/backend_fasmg/emit.inc:3828`) unrolls a
+`copy n` into n/8 emitted instructions — so one 163,848-byte field is about a
+megabyte of fasmg text and the compilation arena `rassert`s: SIGILL, exit 132,
+no diagnostic. Measured: a field of `acies<i64, 17000>` compiles (999,057
+bytes of asm), `acies<i64, 18000>` traps. A **plain local** `acies<i64,
+20481>` is a *loop* past `LWR_ARRAY_UNROLL` (`lower/expr.inc:2268`) and costs
+40,577 bytes of asm at any size, which is why `tests/programs/acies/` runs
+20,000 elements and this does not. Finding 20 has the sweep. R2 therefore
+passes four `acies<i64, 20481>` locals one per parameter, and the seven-word
+problem this decision was taken for never arises, because no function needs
+all four *and* a count *and* an origin: `vis` takes one tone's I and Q and an
+origin (three words), `acquire` the four arrays and a count (five), `mollia`
+the four arrays and an origin plus the hidden result pointer (six). The
+prefix layout, the accumulate loop and every bound below are unchanged.
+
 **Capacity 20,480 samples**, not 19,008: R3's clock-offset vectors are
 resampled and a −2000 ppm file has 19,046 samples; +3000 ppm has 18,951.
 20,480 is 19,008 plus 7.7 % and a round number; a longer file is exit 3,
@@ -395,7 +421,8 @@ table by 2 and tone 1 by 3, so their harmonic sets are `{2(2a + 1)}` and
 and the sum of products over a full period of two sequences with disjoint
 harmonics is zero. Measured on the three clean WAVs at origins 959 and
 960: the wrong tone's energy is 0 at every one of the 356 windows, and the
-largest `|I|` or `|Q|` is 86,994,364 (section 11). So the Q7 table costs
+largest `|I|` or `|Q|` is 86,994,364 (section 11, re-measured and
+reproduced at R2 — section 12). So the Q7 table costs
 nothing on a clean channel; what it costs on a misaligned one is the
 −40 dB above, beneath any noise the R3 vectors carry. Rejected: Q15 (the
 products would need the scaling shifts D5 avoids: 32768 · 32767 · 48
@@ -415,12 +442,19 @@ Let `x[n]` be a sample, `|x| ≤ 32768`; `T7` the table, `|T7| ≤ 127`;
   = 199,753,728 < 2²⁸.` On the vendored WAVs the largest is 8.99 × 10⁷
   (the amplitude is 0.9 · 32767 and `Σ cos²` over a period is 24).
 - **A prefix sum:** `|PI_k[n]| ≤ N · 4,161,536 = 85,228,257,280 < 2³⁷.`
-  Measured maximum 7.0 × 10⁹. `i64` holds it with 26 bits to spare; `i32`
-  does not, which is why the arrays are `i64`.
+  Measured maximum **2.61 × 10¹⁰**, on the all-zero frame, whose symbol
+  stream has the longest runs of one tone and whose `I_0` therefore ramps
+  (the product of a tone with its own quadrature carrier has a DC term that
+  a prefix sum integrates). Section 11's 7.0 × 10⁹ does not reproduce —
+  finding 21. `i64` holds the bound with 26 bits to spare; `i32` does not,
+  which is why the arrays are `i64`.
 - **An energy:** `I² ≤ (2²⁸)² = 2⁵⁶`, so `E = I² + Q² < 2⁵⁷ ≈ 1.44 × 10¹⁷`.
   The exact bound is `2 · 199,753,728² = 7.98 × 10¹⁶`. Measured maximum
-  8.11 × 10¹⁵ — the amplitude and the `cos²` mean again. No scaling shift
-  is needed before squaring, which is what a Q7 table buys.
+  8.11 × 10¹⁵ over the 356 frame windows, 8.39 × 10¹⁵ over every window the
+  acquisition scan touches — the amplitude and the `cos²` mean again, plus
+  leakage on the misaligned windows. The bound must cover the scan's, and
+  does. No scaling shift is needed before squaring, which is what a Q7 table
+  buys.
 - **The acquisition sum** of 40 known-tone energies: `< 40 · 2⁵⁷ < 2⁶³`
   (`40 · 7.98 × 10¹⁶ = 3.19 × 10¹⁸ < 9.22 × 10¹⁸`). Measured 3.24 × 10¹⁷.
 - **A total energy** across both tones (R3's discriminator): `< 2⁵⁸`; the
@@ -795,24 +829,32 @@ drivers as it did to `emitte.exsc`: helpers write no `poscit`.
 ## 6. The certificates and the mutants
 
 **R2 must pass:** the three WAV tests, byte-exact 17 bytes and exit 0;
-`hydramodem_circuitus`, 140 zero bytes. **Each mutant below** is applied
+`receptio_circuitus`, 140 zero bytes. **Each mutant below** is applied
 mechanically to a temporary copy of `examples/hydramodem/` (CONTRIBUTING's
 rule) and must produce the verdict predicted — including the ones that
 must **pass**, which are the certificate's stated blind spots. Predicted
 in the scratch model of section 11, which implements this design; the
-harness must see the same.
+harness must see the same. **It did: nine of nine, observed at R2**, with
+the sed applied to a copy of `examples/hydramodem/` and both drivers rebuilt
+each time (section 12).
 
-| mutant | what it breaks | predicted, three WAVs | predicted, loopback | seen in the model |
-|---|---|---|---|---|
-| `G0` and `G1` taps swapped in `decodifica` | the trellis | exit 2 on all three (a wrong 19 bytes, CRC fails) | 140 × 1 | exit 2 ×3, wrong bytes on every frame |
-| stride 19 → 17 in `mollia`'s walk | the deinterleaver | exit 2 ×3 | 140 × 1 | exit 2 ×3 |
-| sync word `0x2dd4` → `0xd22b` (complement) | the known prefix | exit 1 ×3: the best score is 31–34 at some origin, below 37 | 140 × 1 | exit 1 ×3, score 31 |
-| tone-1 oscillator with `c = 2` (both LOs on tone 0) | the down-conversion | exit 1 ×3: score 20 (only the tone-0 symbols match) | 140 × 1 | exit 1 ×3, score 20 |
-| threshold 37 → 41 (`nknown + 1`) | acquisition rejects everything | exit 1 ×3 | 140 × 1 | exit 1 ×3 |
-| **sync word `0x2dd4` → `0xadd4` (one bit)** | one known symbol | **passes**: score 39 ≥ 37 — the reference's three-miss tolerance | passes | passes ×3, score 39 |
-| **threshold 37 → 36** | one more miss tolerated | **passes**: every clean score is 40 | passes | passes |
-| **plateau centre → first origin** | the sampling phase, 21 samples early | **passes**: 27 of 48 samples of each symbol suffice on a clean channel | passes | passes, and still at −6 dB AWGN |
-| **`T7[0]` 127 → 126** | one table entry | **passes** | passes | passes |
+| mutant | what it breaks | predicted, three WAVs | predicted, loopback | seen in the model | **observed, R2** |
+|---|---|---|---|---|---|
+| `G0` and `G1` taps swapped in `decodifica` | the trellis | exit 2 on all three (a wrong 19 bytes, CRC fails) | 140 × 1 | exit 2 ×3, wrong bytes on every frame | exit 2 ×3, no output; loopback 140 × 1 |
+| stride 19 → 17 in `mollia`'s walk | the deinterleaver | exit 2 ×3 | 140 × 1 | exit 2 ×3 | exit 2 ×3, no output; loopback 140 × 1 |
+| sync word `0x2dd4` → `0xd22b` (complement) | the known prefix | exit 1 ×3: the best score is 31–34 at some origin, below 37 | 140 × 1 | exit 1 ×3, score 31 | exit 1 ×3, no output; loopback 140 × 1 |
+| tone-1 oscillator with `c = 2` (both LOs on tone 0) | the down-conversion | exit 1 ×3: score 20 (only the tone-0 symbols match) | 140 × 1 | exit 1 ×3, score 20 | exit 1 ×3, no output; loopback 140 × 1 |
+| threshold 37 → 41 (`nknown + 1`) | acquisition rejects everything | exit 1 ×3 | 140 × 1 | exit 1 ×3 | exit 1 ×3, no output; loopback 140 × 1 |
+| **sync word `0x2dd4` → `0xadd4` (one bit)** | one known symbol | **passes**: score 39 ≥ 37 — the reference's three-miss tolerance | passes | passes ×3, score 39 | **passes**: 17/17 bytes ×3, loopback 140 × 0 |
+| **threshold 37 → 36** | one more miss tolerated | **passes**: every clean score is 40 | passes | passes | **passes**: 17/17 bytes ×3, loopback 140 × 0 |
+| **plateau centre → first origin** | the sampling phase, 21 samples early | **passes**: 27 of 48 samples of each symbol suffice on a clean channel | passes | passes, and still at −6 dB AWGN | **passes**: 17/17 bytes ×3, loopback 140 × 0 |
+| **`T7[0]` 127 → 126** | one table entry | **passes** | passes | passes | **passes**: 17/17 bytes ×3, loopback 140 × 0 |
+
+The receiver keeps its **own** sync word rather than reading
+`modulator.exsc`'s `synchronia`, which is what makes rows 3 and 6 mean
+anything on the loopback: a constant shared by both halves would change both
+and the round trip would close regardless. It is the one place the two
+halves deliberately hold the same number twice.
 
 The four bold rows are negative controls: a harness on which one *fails*
 has a bug. They say precisely what decode success cannot see — a table
@@ -1139,12 +1181,25 @@ Numbered; each names the document and the line.
     relative like `stdout=`, in `parse_run_keys` and the Python runner —
     the conformance/harness owner's tree. Reported; without it the three
     WAV tests cannot be written and only `hydramodem_circuitus` runs.
+    **Retired before R2 started**: the key exists, `tests/README.md`
+    documents it, and `tests/programs/lector/` was the first to use it.
 16. **A 640 KB local is `[UNTESTED]`.** The Tier-1 emitter keeps every
     value in a stack slot; nothing in the tree has a slot above a few
     kilobytes, and the default stack is 8 MB. If the slot allocator
     refuses, the fallback is four separate 160 KB arrays and the
     `Praefixa` trick is replaced by passing the struct's *address* — which
     needs finding 11's `&T`.
+    **Retired, and the fallback is what R2 took** — for finding 20's reason,
+    not this one. The frames that run are `sub rsp, 661344` in
+    `recipe.exsc`'s `initium` (four prefix arrays and the rest) and
+    `sub rsp, 812224` in `circuitus.exsc`'s `circui` (those plus the 19,008
+    synthesised samples), the largest in the tree by two orders of
+    magnitude, 9.7 % of the 8 MiB default `RLIMIT_STACK`. There is still no
+    stack probe and no frame bound — `compiler/x86_64/lower/expr.inc:2259`
+    says so in as many words ("WHAT BOUNDS AN ARRAY IS THE STACK, AND
+    NOTHING SAYS SO"; `[0; 1000000]` builds and runs, `[0; 2000000]` is a
+    SIGSEGV with no diagnostic). 812 KB works because it was measured, not
+    because anything checks it.
 17. **Other trees the implementer must touch, reported here:**
     `prelude/README.md`'s per-atom table ("`read` is `[UNIMPLEMENTED]`")
     and "What is not here"; `tools/syscall-audit.sh`'s `ambitus` comment;
@@ -1163,6 +1218,71 @@ Numbered; each names the document and the line.
 19. **RECEIVER.md's "~11k candidate origins"** is the streaming buffer's
     (`frame_len + margin`); a `frame_tx` WAV has 1,921. Not an error —
     a different input — and the reason the scan is cheap here.
+
+The four below were found by implementing R2 and are numbered after it.
+
+20. **A struct literal's big array field cannot be compiled, and that is
+    what killed `Praefixa`.** `mutabilis p = P { f1: [0; N] };` lowers the
+    field into a temporary and `copy`s it, and
+    `compiler/x86_64/backend_fasmg/emit.inc:3828` unrolls a `copy n` at
+    compile time into n/8 emitted `mov` pairs — "Never `rep movsb`, which
+    would need rdi and rsi", which is a defensible choice for the aggregates
+    the tree had. At 8 bytes an instruction and ~59 bytes of text an
+    instruction it is 7.35 bytes of fasmg per byte of array, and the
+    compilation arena (`DRV_ARENA_FLOOR + 384 ×` the source, `driver/io.inc:
+    217-219`) runs out. **Measured**, one field of `acies<i64, N>`, the rest
+    of the program six lines: N = 16,384 compiles to 963,329 bytes of asm;
+    N = 17,000 to 999,057; N = 18,000 traps; and so does every larger one,
+    with `arena_alloc`'s `rassert` — SIGILL, exit 132, `exsc` printing
+    nothing at all. The threshold is the arena's, not the struct's: it moves
+    with the source's own length. A **plain local** `acies<i64, N>` takes the
+    repeat form's *loop* (`lower/expr.inc:2268`, `LWR_ARRAY_UNROLL = 8`) and
+    is 40,577 bytes of asm at N = 20,481 and at N = 200,000 alike.
+    Not fixed here, and the fix is not obvious: a `copy` above some size
+    wants a loop, which needs a counter register the emitter's three-scratch
+    contract does not have spare, and a struct literal that lowered its
+    fields straight into the destination would change the aliasing
+    semantics D2 was careful about (`a = [a[1], a[0]]`). Reported for the
+    backend's owner. The workaround costs the receiver nothing: four
+    parameters instead of one, and no call needs more than six words.
+21. **One of section 11's figures does not reproduce.** "prefix sums
+    ≤ 7.0 × 10⁹" is wrong by 3.7×: the maximum over the three clean WAVs
+    is **2.61 × 10¹⁰** (the all-zero frame; 1.53 × 10¹⁰ and 1.67 × 10¹⁰ for
+    the other two), re-measured by an independent model that decodes all
+    three. The other clean-frame figures reproduce **exactly** —
+    |I|, |Q| ≤ 86,994,364 and E ≤ 8.111 × 10¹⁵ over the 356 frame windows at
+    origins 959 and 960, the wrong tone's energy 0 at every one of them,
+    known-prefix energy 3.238 × 10¹⁷, path metrics ≤ 2.98 × 10⁸, plateau
+    938–981, score 40, refinement 0, shift 33 — which is what makes the one
+    outlier worth reporting rather than shrugging at. It was checked against
+    the other candidate explanation and is not one: rebuilding the prefix
+    sums with the *transmitter's* phase convention (`(n+1)c mod 48` rather
+    than `n c mod 48`) gives 2.70 × 10¹⁰, not 7.0 × 10⁹, and decodes all
+    three either way — which incidentally confirms D4's claim that the
+    detector does not care about a constant rotation. **Nothing is wrong
+    with the design**: the proved bound is 8.52 × 10¹⁰ and `i64` holds it
+    with 26 bits to spare whichever figure is right. The figure is `[UNREPRODUCED]`
+    and the arithmetic is untouched.
+22. **`mixtio` was never written.** Section 5's table gives the receiver a
+    `mixtio(t, k, n, q) -> i64`, "the oscillator value for tone `k` at
+    absolute sample `n`, walked not multiplied" — but a walk from sample 0
+    to sample `n` is O(n) per sample and 19,008 samples would be 1.8 × 10⁸
+    steps for the same four numbers the driver already has. Section 7's own
+    worked example does not call it either: it carries `m0` and `m1` across
+    the read loop, which is what both drivers do. The function is dropped;
+    the walk is the design, and it lives where the loop that needs it does.
+23. **The refinement's guard is the frame's last window, not the prefix's.**
+    D6 says "skipping bases below 0 or whose last window exceeds `n`" and
+    this takes it literally, testing `base + 17088 ≤ n`. The reference tests
+    only the 40 known windows (`hydra_modem.c:256`, `a + L > nsamp`) and
+    lets the data loop fail later with `HYDRA_ERR_NO_SYNC`. Here the
+    difference matters for a reason it does not there: past `n` the prefix
+    arrays hold zeros that were never written, so an energy computed from
+    them is not a measurement of anything. On every input of R2's
+    certificate the guard is slack by three orders of magnitude (n = 19,008,
+    centre = 959, last admissible base 1,920), so it changes no verdict that
+    has been observed; it is a difference from the reference and is recorded
+    as one.
 
 ## 9. Later milestones
 
@@ -1217,16 +1337,18 @@ second form rather than a second construct.
 
 | decision or claim | milestone | the test as planned | what retires it |
 |---|---|---|---|
-| D1 `Lector`, `ab_introitu`, `lege_octeto` `[UNTESTED]`; the 256 sentinel | prelude, then R2 | `tests/unit/prelude_lege_octeto.asm`; `tests/programs/lector/` | — |
-| D2 array literals `[UNTESTED]`, both forms, typing, the six codes | checker, then R2 | `cst_arraylit.asm`, `chk_ty_arraylit.asm`, `lwr_arraylit.asm`, `tests/programs/acies/` | — |
-| D3 header check; D4 the table; D5 the bounds; D6 acquisition; D7 the metric; D8 the trellis; D9 the residue | R2 | `tests/programs/hydramodem_rx_{loopback,exemplum,vacuum}/`, `hydramodem_circuitus/` (140/140), `hydramodem_rx_caput/`, `hydramodem_rx_plenus/` | — |
-| section 6's five failing mutants and four negative controls | R2 | the mutation run over a copy of `examples/hydramodem/` | — |
+| D1 `Lector`, `ab_introitu`, `lege_octeto` `[UNTESTED]`; the 256 sentinel | prelude, then R2 | `tests/unit/prelude_lege_octeto.asm`; `tests/programs/lector/` | **retired**: those fixtures run, and R2's four stdin tests read 38,060 bytes apiece through them |
+| D2 array literals `[UNTESTED]`, both forms, typing, the six codes | checker, then R2 | `cst_arraylit.asm`, `chk_ty_arraylit.asm`, `lwr_arraylit.asm`, `tests/programs/acies/` | **retired**: those run, and `receptor.exsc` is written in both forms — the 48-entry signed table, `[0; 20481]`, `[0; 10112]`, `[-4611686018427387904; 64]` |
+| D3 header check; D4 the table; D5 the bounds; D6 acquisition; D7 the metric; D8 the trellis; D9 the residue | R2 | `tests/programs/receptio_{loopback,exemplum,vacuum}/`, `receptio_circuitus/` (140/140), `receptio_caput/` | **retired** by those five directories, all green. D3's `Praefixa` is *not* what shipped (finding 20); D5's `hydramodem_rx_plenus/`, a full-scale synthetic input, is **not written** — the bounds are exercised at 0.9 of full scale and no higher |
+| section 6's five failing mutants and four negative controls | R2 | the mutation run over a copy of `examples/hydramodem/` | **retired**: 9 of 9 observed as predicted, section 12 |
 | D7's argument (the difference is the sounder metric) | never fully | R3's vectors are consistent with it; a proof is not a test | stays an argument, as D9's affinity does |
 | D10 the timing loop; finding 6's prediction | R3 | the eight clock-offset vectors; the plateau-edge mutant failing on them | — |
 | D11 R3: 35 vectors against the reference's verdicts | R3 | one directory per vector | — |
 | finding 7 (+300 Hz: reference fails by timing, receiver decodes) | R3 | the `+300` vector with `expect-exit=0` — the receiver decodes it, or the loop makes it fail as the reference does; either is recorded, neither certified | — |
 | finding 13 (two casts the spec left `[OPEN]`) | the follow-up commit after `bd316cd` | — | **retired** as a spec question: §5.4 defines both as truncation; the source-level directions no program writes stay `[UNTESTED]` there |
-| findings 11, 15, 16 (in-place mutation; `stdin=`; a 640 KB local) | the implementer's trees | — | — |
+| findings 11, 15, 16 (in-place mutation; `stdin=`; a 640 KB local) | the implementer's trees | — | 15 and 16 **retired** (the key exists; the frames are 661,344 and 812,224 bytes and run). 11 stands: the accumulate loop is still written twice, once per driver |
+| finding 14 (`*` on `i64` from source `[UNTESTED]`) | R2 | — | **retired**: `x * t[m0]` runs 4 × 19,008 times a decode and `i * i + q * q` ~150,000 times, on every one of the five directories |
+| section 5's function table (`mixtio`; `Praefixa` in five signatures) | R2 | — | **superseded** by findings 20 and 22; section 5 is the design's plan and `examples/hydramodem/receptor.exsc` is what runs |
 | M4's per-profile tables and the scaled acquisition sum; M5's byte-identity | M4, M5 | `cmp` on the M1 WAVs and the M2 basis after M5 | — |
 
 ## 11. What was measured for this document
@@ -1290,3 +1412,68 @@ every figure re-measurable by the recipe named.
   the cost of the loopback driver; the timing loop of D10 in any form;
   the plateau-edge mutant on clock-offset vectors; any toolchain but the
   one recorded.
+
+## 12. What R2 measured, on the program that runs
+
+Everything here is `tests/run.sh`'s own output or a command run beside it in
+a clean worktree at the commit that added `examples/hydramodem/receptor.exsc`.
+Section 11's figures are the scratch model's and stand as they are, except
+where finding 21 says otherwise.
+
+- **The three vendored WAVs decode.** `receptio_loopback/`,
+  `receptio_exemplum/`, `receptio_vacuum/`: exit 0 and 17 bytes each,
+  `cmp`ed against a committed `expected.out` — `d310123400a1ffffdeadbeef0a1b2ca961`,
+  `d31312340001ffffdeadbeefab12cd24c0`, `d310000000000000000000000000005b80`.
+  **3 of 3, first run, no iteration on the algorithm.**
+- **The loopback: 140 of 140.** `receptio_circuitus/` writes 140 zero bytes
+  and exits 0. The zero word, the 136 one-hot words, and the three frames,
+  each synthesised in-process from `modulator.exsc`'s own `sona` through
+  `Exemplum`'s two bytes and `signatum`, and each decoded back to its own
+  seventeen bytes. No pipe, no second binary, no WAV.
+- **The header check refuses what the reference would mis-decode.**
+  `receptio_caput/` feeds 44 bytes that differ from `caput()`'s only in the
+  sample rate (44,100 for 48,000) and gets exit 3 with no output. Its own
+  `TEST` records what it does *not* prove, measured: with the rate check
+  deleted the same fixture still exits 3, on truncation, so the directory
+  certifies "the header path rejects and writes nothing" and not the rate
+  field in particular. D3's field-by-field sweep is not written.
+- **The nine mutants: 9 of 9 as predicted** (section 6's table, the
+  `observed, R2` column). Five fail, four decode. The four that decode do so
+  byte for byte on all three WAVs *and* 140 of 140 on the loopback, which is
+  the strongest form of "this certificate cannot see it".
+- **Timing.** One WAV decode: **25 ms** wall, of which 13 ms is system time —
+  38,060 one-byte `read` syscalls, D1's stated cost. The 140-word loopback,
+  which reads nothing: **1.17 s**, 8.4 ms a word for modulation, 19,008
+  samples of down-conversion, a 1,921-origin acquisition scan and a 158-step
+  trellis. Both are far inside the harness's 20-second limit, and no
+  buffered reader is needed to keep them there. `tests/run.sh` end to end:
+  694 checks, 0 failures, 21 program directories.
+- **Frames.** `sub rsp, 812224` in `circuitus.exsc`'s `circui` is the largest
+  in the tree; `recipe.exsc`'s `initium` is 661,344. 9.7 % of the default
+  8 MiB stack, with no probe and no bound checking it (finding 16).
+- **The bounds, re-derived before the code was written, and every one holds.**
+  `|x·T7| ≤ 4,161,536 < 2²²`; a window sum `≤ 199,753,728 < 2²⁸`; a prefix
+  sum `≤ 85,228,257,280 < 2³⁷`; an energy `< 2·199,753,728² = 7.98 × 10¹⁶
+  < 2⁵⁷`; the acquisition sum of 40 `< 3.19 × 10¹⁸ < 2⁶³`; a scaled soft bit
+  `≤ 2²⁰` and a path metric `≤ 316 · 2²⁰ < 2²⁹`. Observed, by the
+  re-derived model on the three clean WAVs: prefix ≤ 2.61 × 10¹⁰
+  (finding 21), |I|,|Q| ≤ 88,966,905 over the whole acquisition scan and
+  86,994,364 over the frame's own windows, E ≤ 8.39 × 10¹⁵ / 8.11 × 10¹⁵,
+  acquisition sum 3.238 × 10¹⁷, path metrics ≤ 2.98 × 10⁸, shift 33,
+  plateau 938–981, score 40, refinement 0, origin **959**. **No arithmetic
+  trap fired anywhere**: 3 WAVs and 140 loopback words on the shipped
+  receiver, and 3 + 140 again on each of the nine mutants — 1,430 decodes,
+  every exit status 0, 1, 2 or 3 and never a SIGILL. That is the bounds' real
+  test, since every `+`, `-` and `*` above is the trapping kind.
+- **The wrong tone's energy is exactly 0** at all 356 frame windows of all
+  three WAVs, at origins 959 and 960 alike — D4's orthogonality argument,
+  re-measured and reproduced.
+- **The table.** `T7` re-derived from the thirteen values and the two
+  identities, then compared entry by entry with `round(127·cos(2πm/48))`
+  computed in binary64: they differ at **exactly one** index, 16, where the
+  identity gives −64 and `libm` gives −63. Finding 10, reproduced.
+- **Not measured at R2:** anything impaired (that is R3); a full-scale input
+  (`hydramodem_rx_plenus/` is not written, so the bounds are exercised at
+  0.9 of full scale); the timing loop in any form; `Praefixa` working, since
+  it does not compile; the per-field header sweep D3 asks for, of which
+  `receptio_caput/` is one field.

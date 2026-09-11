@@ -1,0 +1,151 @@
+// examples/hydramodem/circuitus.exsc -- the loopback certificate: milestone
+// R2's second half (docs/design/receptor.md D11), and the only file of its
+// unit that names `Mundus`. It reads nothing. For each of 140 words it
+// synthesises the transmitter's 19,008 samples IN MEMORY with the
+// transmitter's own `sona` -- M1's, unchanged, the one-copy rule of
+// modem.md D8 -- runs them through the receiver's whole pipeline, and writes
+// one byte: 0 if the seventeen bytes came back equal, 1 otherwise.
+// tests/programs/receptio_circuitus/ expects 140 zero bytes.
+//
+// `tx | rx` is what this test IS, with the pipe replaced by the language's
+// own array: no process pipe, no second binary, no WAV. What it certifies is
+// the modem and not the frame -- EVERY word round-trips, valid DeModFrame or
+// not, because the modem CRC covers all seventeen bytes and DCF validity is a
+// layer above and not the modem's to judge.
+//
+// The 140: word 0 is seventeen zero bytes, words 1..136 have exactly one wire
+// bit set (byte j under the mask 0x80 deorsum k, MSB first across the wire,
+// the numbering basis.exsc walks for the transmitter's own certificate), and
+// words 137..139 are the three frames the vendored WAVs carry. Over the
+// 137 basis words the transmitter's symbol stream is affine, which is the
+// argument basis.exsc's header makes; here the claim is weaker and simpler --
+// each of the 140 decodes to itself -- and it is 140 x 158 trellis steps, so
+// every edge of D8's trellis is taken somewhere.
+//
+// THE SAMPLES GO THROUGH THE BYTE VIEW. `Exemplum { valor: sona(k, i) }` cast
+// to two bytes and read back by `signatum` is exactly the path a WAV's two
+// little-endian bytes take in recipe.exsc, so the loopback exercises D4's
+// signing rather than stepping around it.
+//
+// The accumulate loop is the second copy of recipe.exsc's, for the reason
+// receptor.md finding 11 gives: a function cannot fill an array it was
+// handed, so each driver writes its own.
+
+// One word, out through the transmitter and back through the receiver.
+// 0 when the seventeen bytes came back; 1 on no sync, on a CRC failure, or on
+// any byte that differs. Private, so spec §4.1 rule 5 infers its row from a
+// body that touches nothing.
+functio circui(w: acies<u8, 17>, t: acies<i64, 48>) -> u8 {
+    firma c: u16 = redundantia(w, 17);
+
+    // 20 ms of silence, 356 symbols of 48 samples, 20 ms of silence: the
+    // layout modulator.exsc defines and emitte.exsc writes. The silence is
+    // the `[0; 19008]` the buffer starts as.
+    mutabilis exempla: acies<i64, 19008> = [0; 19008];
+    mutabilis p: mensura = silentium;
+    per y in 0..symbola {
+        firma k: mensura = tonus(w, c, y);
+        per i in 0..exempla_symboli {
+            firma b = Exemplum { valor: sona(k, i) } sicut acies<u8, 2>;
+            exempla[p] = signatum(b[0], b[1]);
+            p = p + 1;
+        }
+    }
+
+    mutabilis i0: acies<i64, 20481> = [0; 20481];
+    mutabilis q0: acies<i64, 20481> = [0; 20481];
+    mutabilis i1: acies<i64, 20481> = [0; 20481];
+    mutabilis q1: acies<i64, 20481> = [0; 20481];
+    mutabilis m0: mensura = 0;
+    mutabilis m1: mensura = 0;
+    per i in 0..19008 {
+        firma x = exempla[i];
+        mutabilis s0: mensura = m0 + 36;
+        si s0 ge 48 { s0 = s0 - 48; }
+        mutabilis s1: mensura = m1 + 36;
+        si s1 ge 48 { s1 = s1 - 48; }
+        i0[i + 1] = i0[i] + x * t[m0];
+        q0[i + 1] = q0[i] + x * t[s0];
+        i1[i + 1] = i1[i] + x * t[m1];
+        q1[i + 1] = q1[i] + x * t[s1];
+        m0 = m0 + 2;
+        si m0 ge 48 { m0 = m0 - 48; }
+        m1 = m1 + 3;
+        si m1 ge 48 { m1 = m1 - 48; }
+    }
+
+    firma o = acquire(i0, q0, i1, q1, 19008);
+    si o eq 19008 {
+        redde 1;
+    }
+    firma d = decodifica(mollia(i0, q0, i1, q1, o));
+    si residuum(d) ne 0 {
+        redde 1;
+    }
+    per i in 0..17 {
+        si d[i] ne w[i] {
+            redde 1;
+        }
+    }
+    redde 0;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma s = Scriptor.ad_exitum(a);
+    firma t = tabula();
+
+    // Seventeen zero bytes: every field of the frame 0, `signum` included.
+    firma nihil = DeModFrame {
+        signum: 0,
+        versio: 0,
+        genus: 0,
+        numerus: 0,
+        fons: 0,
+        meta: 0,
+        onus: 0,
+        tempus: 0,
+        cursus: 0
+    } sicut acies<u8, 17>;
+
+    mutabilis n: mensura = s.scribe_octeto(circui(nihil, t));   // word 0
+
+    mutabilis w = nihil;                                        // words 1..136
+    per j in 0..17 {
+        mutabilis masca: u8 = 0x80;
+        per k in 0..8 {
+            w[j] = w[j] aut masca;
+            n = n + s.scribe_octeto(circui(w, t));
+            w[j] = w[j] aut masca;
+            masca = masca deorsum 1;
+        }
+    }
+
+    // The three frames vendor/hydramodem-tx/ holds WAVs for, so that the
+    // loopback and the three stdin tests decode the same seventeen bytes by
+    // two different routes.
+    firma unus = DeModFrame {
+        signum: 0xd3, versio: 1, genus: 0,
+        numerus: 0x1234, fons: 0x00a1, meta: 0xffff,
+        onus: 0xdeadbeef, tempus: 0x0a1b2c, cursus: 0xa961
+    } sicut acies<u8, 17>;
+    firma duo = DeModFrame {
+        signum: 0xd3, versio: 1, genus: 3,
+        numerus: 0x1234, fons: 0x0001, meta: 0xffff,
+        onus: 0xdeadbeef, tempus: 0xab12cd, cursus: 0x24c0
+    } sicut acies<u8, 17>;
+    firma tres = DeModFrame {
+        signum: 0xd3, versio: 1, genus: 0,
+        numerus: 0, fons: 0, meta: 0,
+        onus: 0, tempus: 0, cursus: 0x5b80
+    } sicut acies<u8, 17>;
+    n = n + s.scribe_octeto(circui(unus, t));
+    n = n + s.scribe_octeto(circui(duo, t));
+    n = n + s.scribe_octeto(circui(tres, t));
+
+    si n ne 140 {
+        redde 1;
+    }
+    redde 0;
+}

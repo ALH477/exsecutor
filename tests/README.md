@@ -71,13 +71,25 @@ calls):
    48 fixtures (`IR_FIXTURE_FLOOR`).
 4. **`tests/programs/`** — Exsecutor sources, RUN. Each directory is one
    program: `exsc aedifica --hospes x86_64-linux SRC... -o OUT`, `fasmg OUT
-   BIN`, run, check. 14 programs run (`PROGRAM_FIXTURE_FLOOR`); none is
+   BIN`, run, check. 21 programs run (`PROGRAM_FIXTURE_FLOOR`); none is
    deferred (the `status=deferred` mechanism below stays for the next one).
    Four are HydraModem's transmitter, `examples/hydramodem/`: three WAVs
    (`hydramodem_{loopback,exemplum,vacuum}/`) and the 137-word symbol-stream
    basis (`hydramodem_basis/`, `docs/design/modem.md` D9), each `cmp`ed
    against `vendor/hydramodem-tx/`; the basis TEST says how a failing byte
    names its word and symbol.
+
+   Five more are its **receiver** (`docs/design/receptor.md`, milestone R2).
+   `receptio_{loopback,exemplum,vacuum}/` are the transmitter's three tests
+   turned round: `stdin=` is the vendored WAV and `expected.out` is the 17
+   bytes the frame carries. `receptio_caput/` feeds a 44-byte header whose
+   only fault is a 44,100 Hz sample rate — which HydraModem's own reader
+   ignores — and expects exit 3 with no output. `receptio_circuitus/` is the
+   loopback: 140 words out through the transmitter's `sona` and back through
+   the receiver in one process, one byte a word, 140 zeros expected, so a
+   failing word names itself by its offset. It is the slowest directory in
+   the suite at 1.2 s; one WAV decode is 25 ms, most of it 38,060 one-byte
+   `read` syscalls.
 
 Phases 3 and 4 are the first in this script to execute code a compiler
 *emitted*. Until them a `tests/unit/` fixture could only compare emitted

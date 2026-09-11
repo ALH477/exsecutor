@@ -1,0 +1,21 @@
+# The loopback certificate: 140 words out through the transmitter's own
+# `sona` and back through the receiver, in one process, with no WAV and no
+# pipe. One byte a word, 0 when the seventeen bytes came back equal;
+# expected.out is 140 zero bytes, so a single wrong word names itself by its
+# offset (word 0 is the zero word, words 1..136 have wire bit i = word - 1
+# set, words 137..139 are the three frames vendor/hydramodem-tx/ holds WAVs
+# for).
+#
+# It reads nothing: the binary audits to `write` and `exit_group` (plus the
+# `read` the `ambitus` gate carries), where receptio_loopback/'s also reads.
+#
+# This is the test the four blind spots of docs/design/receptor.md section 6
+# are stated against, and the one that takes every edge of D8's trellis: 140
+# words x 158 steps, with the zero word's tail and 136 one-hot words between
+# them.
+#
+# Cost: 1.2 s measured at the commit that added it -- 140 decodes of 19,008
+# samples each, acquisition scan included -- against the harness's 20-second
+# limit. If a future change pushes it past that, the directory splits in two
+# rather than the certificate shrinking.
+TEST: expect-exit=0 sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/receptor.exsc,examples/hydramodem/circuitus.exsc

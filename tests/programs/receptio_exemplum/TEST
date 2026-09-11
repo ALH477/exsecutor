@@ -1,0 +1,5 @@
+# The receiver against the WAV frame_tx rendered for §14 entry 23's anchor
+# frame, d31312340001ffffdeadbeefab12cd24c0 -- many bits set in every field,
+# which is why the wire codec picked it. receptio_loopback/TEST's header says
+# the rest; only the frame differs.
+TEST: expect-exit=0 stdin=vendor/hydramodem-tx/d31312340001ffffdeadbeefab12cd24c0.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/receptor.exsc,examples/hydramodem/recipe.exsc

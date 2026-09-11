@@ -1,0 +1,26 @@
+# The header is VERIFIED, not trusted (docs/design/receptor.md D3).
+# tests/data/receptio_caput_xliv.bin is the 44 bytes HydraModem's own WAV
+# writer emits for this profile with ONE field changed: 44,100 samples a
+# second instead of 48,000 (and its 88,200 bytes a second to match). Nothing
+# follows the header.
+#
+# HydraModem's reader would accept it. hydra_wav_read returns the rate and
+# frame_rx never compares it with the profile's (wav.c:45-91; receptor.md
+# finding 3), so the reference would demodulate a 44.1 kHz recording at the
+# wrong tone frequencies and reject it by CRC -- a wrong answer to the wrong
+# question. This receiver exits 3, "not a WAV I will decode", and writes
+# nothing: check_run's "wrote to stdout, expected nothing" is half the
+# assertion and the status is the other half.
+#
+# WHAT IT DOES NOT PROVE, measured rather than guessed: the file stops after
+# 44 bytes, so a receiver that accepted the rate would read 256 at the first
+# sample and exit 3 anyway. Checked -- with `si c.frequentia ne 48000` and its
+# `octeti_secundo` companion deleted from recipe.exsc, this fixture still
+# exits 3 (and the real WAV still decodes to its 17 bytes). So this directory
+# proves the header path REJECTS and writes nothing; it does not single out
+# the rate field. Separating them needs a full-length 44.1 kHz WAV, which is
+# 38,060 bytes of test data that would be the vendored loopback WAV with two
+# fields changed, and D3's field-by-field sweep needs fifteen such files or a
+# driver of its own. Neither is written; this is what is here instead, and it
+# says so.
+TEST: expect-exit=3 stdin=tests/data/receptio_caput_xliv.bin sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/receptor.exsc,examples/hydramodem/recipe.exsc
