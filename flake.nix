@@ -305,14 +305,16 @@
 
       # vendor/hydramodem-tx: three WAVs rendered by HydraModem's own reference
       # transmitter (frame_tx, reference DSP, default profile) for the three
-      # frames vendor/hydramodem-tx/PROVENANCE.md names, and symbola_basis.bin,
+      # frames vendor/hydramodem-tx/PROVENANCE.md names, symbola_basis.bin,
       # the symbol streams of 137 further renders (the modem design's D9
-      # basis) reduced by the rule PROVENANCE.md prints. Program OUTPUT vendored
-      # as a test certificate, not code -- nothing here links into exsc, and the
-      # files keep their upstream LGPL-3.0-only identifier. Same digest
-      # discipline as fasmg-x86 and hydramesh-wire above: PROVENANCE.md
-      # excluded, LC_ALL=C pinned.
-      modemVendorDigest = "51cca6f0c60f287f06a523aaaf2bfaca737edbbda75090343d79d3b61e72e1da"; # LC_ALL=C
+      # basis) reduced by the rule PROVENANCE.md prints, and profiles/, the
+      # M4 renders of the same three frames under the aux-cable-cli, 4-FSK,
+      # 8-FSK and 125-baud profiles (PROVENANCE.md's "Profiles (M4)"
+      # section). Program OUTPUT vendored as a test certificate, not code --
+      # nothing here links into exsc, and the files keep their upstream
+      # LGPL-3.0-only identifier. Same digest discipline as fasmg-x86 and
+      # hydramesh-wire above: PROVENANCE.md excluded, LC_ALL=C pinned.
+      modemVendorDigest = "f3d58691816242e1e0de86d60ef2defb7a323a6c85551c12a2e3f96f721c6ac2"; # LC_ALL=C
     in
     {
       packages.${system} = {

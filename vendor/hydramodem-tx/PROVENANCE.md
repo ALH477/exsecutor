@@ -1,13 +1,16 @@
 # HydraModem reference-transmitter output — vendored as a certificate
 
-Four files, never edited. They are **program output vendored as test data**,
-not code and not the program that produced them. Three are WAVs, copied
-verbatim, each the reference HydraModem TX chain's rendering of one 17-byte
-DeModFrame. The fourth, `symbola_basis.bin`, is the symbol streams of 137
-further renders — the 137-word basis of `docs/design/modem.md` D9 — reduced
-from the WAVs by one exact rule whose script is printed below: program
-output passed through a stated, checkable function, not a re-derivation of
-what the program would have written.
+Sixteen files, never edited. They are **program output vendored as test
+data**, not code and not the program that produced them. Three are WAVs,
+copied verbatim, each the reference HydraModem TX chain's rendering of one
+17-byte DeModFrame at the default profile. The fourth, `symbola_basis.bin`,
+is the symbol streams of 137 further default-profile renders — the 137-word
+basis of `docs/design/modem.md` D9 — reduced from the WAVs by one exact rule
+whose script is printed below: program output passed through a stated,
+checkable function, not a re-derivation of what the program would have
+written. The remaining twelve, under `profiles/`, are the same three frames
+rendered under four of `docs/design/modem.md` M4's other profiles (section
+"Profiles (M4)", below).
 
 | file | input (hex) | bytes | sha256 |
 |---|---|---|---|
@@ -19,16 +22,20 @@ what the program would have written.
 The WAVs' filenames are the frame's 17 bytes as 34 lowercase hex characters
 (the input frame is stored big-endian; case is normalised to lowercase for
 the filename only — the WAV bytes themselves are untouched program output).
+`profiles/<profile>/<frame>.wav` follows the same filename convention; see
+below for the twelve files' own table.
 
 Tree digest, `find . -type f ! -name PROVENANCE.md | sort | xargs sha256sum |
 sha256sum` under `LC_ALL=C`:
 
 ```
-51cca6f0c60f287f06a523aaaf2bfaca737edbbda75090343d79d3b61e72e1da
+f3d58691816242e1e0de86d60ef2defb7a323a6c85551c12a2e3f96f721c6ac2
 ```
 
 (It was `5ce6a3d11d10b0a3d7143a011963300c96ccadab239a1479a320de07ba45a3f2`
-over the three WAVs alone, before `symbola_basis.bin` was added.)
+over the three WAVs alone, before `symbola_basis.bin` was added, then
+`51cca6f0c60f287f06a523aaaf2bfaca737edbbda75090343d79d3b61e72e1da` with
+`symbola_basis.bin` and before `profiles/` was added.)
 
 Computed **from the repository root**, not from inside this directory — same
 convention as `vendor/fasmg-x86/` and `vendor/hydramesh-wire/`; `flake.nix`'s
@@ -454,6 +461,145 @@ render's sha256 — so a re-render can be checked render by render:
   a proof of it: affinity is argued from the reference's source
   (`docs/design/modem.md` D9).
 
+## Profiles (M4)
+
+`docs/design/modem.md` M4 names four other-profile targets it certifies
+against later: aux-cable, 4-FSK, 8-FSK, and 125 baud. Vendored 2026-09-11,
+from the same `fce2813` archive and the same build as the WAVs above (`cc
+-std=gnu11 -O2 -Wall -Wextra`, `gcc (GCC) 14.3.0`, same ten reference-DSP
+sources linked into `frame_tx`/`frame_rx`) — re-verified first: the three
+default-profile WAVs above were re-rendered from a fresh build and matched
+their vendored sha256s exactly before anything else was built. `frame_tx`
+and `frame_rx` take no profile flags beyond `dcf-tools/frame_profile.h`'s
+`frame_profile_args`: `--none|--rep3|--conv`, `--base-freq HZ`,
+`--tone-spacing HZ`, `--baud HZ`, `--n-tones N` — applied onto a profile
+`frame_tx.c`/`frame_rx.c` always initialise with `hydra_profile_default`,
+never `hydra_profile_aux_cable`. There is no `--preamble` flag and no way
+to select `hydra_profile_aux_cable` from either CLI tool at all.
+
+**aux-cable is not fully expressible via the CLI.** `hydra_profile_aux_cable`
+(`hydramodem/src/hydra_profile.c:22-39`) is 1200 baud, tones 1200/2400 Hz,
+16-symbol preamble, `HYDRA_FEC_CONV`, gain 0.9 — every field but the
+preamble length reachable by `--baud 1200 --base-freq 1200 --tone-spacing
+1200` on top of the default profile's own preamble (24 symbols), FEC
+(conv, unchanged), interleave (on, unchanged) and gain (0.9, unchanged).
+The preamble length is compiled into `hydra_profile_aux_cable` and is not a
+CLI parameter of `frame_profile_args`, so the true 16-symbol aux-cable
+preamble cannot be rendered by these tools; only the closest expressible
+profile can, and it differs from the real aux-cable profile in exactly one
+field. Rendered anyway, under the clearly-distinguishing name
+`aux-cable-cli`, because it is meaningful on its own terms: it is the only
+profile here with a spp that is neither 48 nor 384, so it certifies a
+third table size and a `c_k` pair other than `{2,3}`.
+
+4-FSK and 8-FSK hold every default-profile field except `--n-tones`; 125
+baud holds every field except `--baud`. For 125 baud, the requirement
+(`hydra_profile_init`, `hydra_profile.c:89-94`) is that `base_freq` and
+`tone_spacing` are each an integer multiple of `baud`: at the default
+`base_freq`/`tone_spacing` (2000 Hz / 1000 Hz), `2000/125 = 16` and
+`1000/125 = 8`, both exact integers, so the default base/spacing need no
+override. (HydraMesh's own `tests/test_channel.c` `reverb_rate()` uses
+`base_freq=1000, tone_spacing=500` for baud ≤ 250 instead — also integer
+multiples of 125 — but since the plain defaults already satisfy the
+requirement, there was no need to switch to the test's flags.)
+
+| profile | flags (beyond the default profile) | expressible | baud | n_tones | base_freq | tone_spacing | preamble_syms | spp | bits/symbol | `c_k` | total_syms |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `aux-cable-cli` | `--baud 1200 --base-freq 1200 --tone-spacing 1200` | partially — preamble stays 24, not the real profile's 16 (no CLI field for it) | 1200 | 2 | 1200 | 1200 | 24 | 40 | 1 | `{1, 2}` | 356 |
+| `4fsk` | `--n-tones 4` | yes | 1000 | 4 | 2000 | 1000 | 24 | 48 | 2 | `{2, 3, 4, 5}` | 190 |
+| `8fsk` | `--n-tones 8` | yes | 1000 | 8 | 2000 | 1000 | 24 | 48 | 3 | `{2, 3, ..., 9}` | 136 |
+| `125baud` | `--baud 125` | yes | 125 | 2 | 2000 | 1000 | 24 | 384 | 1 | `{16, 24}` | 356 |
+
+Rendered exactly as the default-profile WAVs were, for the same three
+frames, e.g.:
+
+```sh
+./frame_tx D310123400A1FFFFDEADBEEF0A1B2CA961 \
+  profiles/aux-cable-cli/d310123400a1ffffdeadbeef0a1b2ca961.wav \
+  --baud 1200 --base-freq 1200 --tone-spacing 1200
+./frame_tx D310123400A1FFFFDEADBEEF0A1B2CA961 \
+  profiles/4fsk/d310123400a1ffffdeadbeef0a1b2ca961.wav --n-tones 4
+./frame_tx D310123400A1FFFFDEADBEEF0A1B2CA961 \
+  profiles/8fsk/d310123400a1ffffdeadbeef0a1b2ca961.wav --n-tones 8
+./frame_tx D310123400A1FFFFDEADBEEF0A1B2CA961 \
+  profiles/125baud/d310123400a1ffffdeadbeef0a1b2ca961.wav --baud 125
+```
+
+and identically for the other two frames (`D31312340001FFFFDEADBEEFAB12CD24C0`,
+`D310000000000000000000000000005B80`).
+
+| file | bytes | sha256 |
+|---|---|---|
+| `profiles/aux-cable-cli/d310123400a1ffffdeadbeef0a1b2ca961.wav` | 32364 | `d9e98870b8776030bf560d16a864eb173937d7ba0fc6df941abafe397313d11e` |
+| `profiles/aux-cable-cli/d31312340001ffffdeadbeefab12cd24c0.wav` | 32364 | `bb8840b4793582ee50614f9a6ec028e69c9670108c77fb90865add0fd7af34b2` |
+| `profiles/aux-cable-cli/d310000000000000000000000000005b80.wav` | 32364 | `5bfe45a6feea52fe335525452af7cd6e6b96c6d168ec1ba856f50adc7622e077` |
+| `profiles/4fsk/d310123400a1ffffdeadbeef0a1b2ca961.wav` | 22124 | `4f3d894a4db39d8a0f39200a3530cd64450cc1fe55f8676e1a5866cc194f067e` |
+| `profiles/4fsk/d31312340001ffffdeadbeefab12cd24c0.wav` | 22124 | `d595c8c63091ad37fc64289aae34fa4306059cbee334cfa6e05092857fbbe923` |
+| `profiles/4fsk/d310000000000000000000000000005b80.wav` | 22124 | `785cd18e7017c7fe8106092633965190fb36983f7d9c2f50b49ad58cbf1d4bc1` |
+| `profiles/8fsk/d310123400a1ffffdeadbeef0a1b2ca961.wav` | 16940 | `02c57686a8cbe8e2691adace5a8a9d199b3d54363b5b0e76c4495a446dc422ec` |
+| `profiles/8fsk/d31312340001ffffdeadbeefab12cd24c0.wav` | 16940 | `e9de4bc6eb663adec6551283318e7fac432572e52214030b8525544561559310` |
+| `profiles/8fsk/d310000000000000000000000000005b80.wav` | 16940 | `f0028b5de549526dda1c3a6870e66f81edeac33d048475cf00f98dd53c951b22` |
+| `profiles/125baud/d310123400a1ffffdeadbeef0a1b2ca961.wav` | 277292 | `6c3d00634ad4bee983fdf323cf0147c97bb6ac25854fc61f02d4b4a2354585af` |
+| `profiles/125baud/d31312340001ffffdeadbeefab12cd24c0.wav` | 277292 | `95f5a7536b87c6dba5445997a67a430b5f58cc2eb1fa81eddee4d3ec146ba8a0` |
+| `profiles/125baud/d310000000000000000000000000005b80.wav` | 277292 | `858a56c07160e7a2761f903f82db64779e6766d6cd12f89a6034edd887a0fd61` |
+
+**Optimisation level.** All twelve renders reproduced identically at `-O0`
+and `-O3` against their `-O2` bytes (36 renders total, all matching): the
+same finding as the default profile's, now measured at three more sample
+rates (40, 48, 384) and three more tone counts (2 at 1200 baud, 4, 8).
+
+**`frame_rx` round trip.** Each of the twelve WAVs decoded by `frame_rx`
+built the same way, with the same profile flags as its `frame_tx` render,
+recovered its own 17-byte frame exactly, 12/12.
+
+**The integer-exactness premise (D3), checked per profile.** A
+verification-only Python model (`numpy` for correctly-rounded `float32`
+casts matching C's, nothing else non-stdlib) re-implements, generalised
+over `(baud, n_tones, base_freq, tone_spacing)`: CRC-16/CCITT-FALSE, the
+K=7 r=1/2 convolutional encoder (`G0=0x79`, `G1=0x5B`), the gather
+interleaver (stride from the same coprime-search `hydra_interleave.c`
+runs — 19, unchanged, since `coded_bits` is 316 regardless of profile),
+MSB-first bit-to-symbol grouping with zero-padding, the alternating
+preamble and the sync word, and two independent renderers:
+
+1. a **continuous** model — the exact per-sample double-precision phase
+   accumulator `hydra_dsp_ref.c:42-50` runs across the whole symbol body
+   (not reset per symbol; nothing in the model assumes the per-symbol
+   table shortcut), the `float` gain multiply, and the WAV writer's
+   `lround`/clamp chain;
+2. the **integer-table shortcut** `docs/design/modem.md` D3 describes:
+   build `T_spp[m]` once (`spp` entries) and read `T_spp[((i+1)·c_k) mod
+   spp]` per sample, `c_k` computed from the profile's own `base_freq`,
+   `tone_spacing` and `baud`.
+
+For every one of the four profiles, all `c_k` were exact integers
+(`aux-cable-cli`: `{1,2}`; `4fsk`: `{2,3,4,5}`; `8fsk`: `{2,...,9}`;
+`125baud`: `{16,24}`), the continuous model matched the table shortcut
+sample-for-sample, and both matched the actual `frame_tx` render
+byte-for-byte, for all three frames of all four profiles (12/12). **The
+integer-exactness premise holds on every profile rendered here; none
+failed it.** The model also extracted each render's tone-index symbol
+stream by the block-map rule (each symbol's audio block matched against
+the canonical per-tone block built from the same table — the generalised
+form of `symbola_basis.bin`'s two-tone rule, extended to `n_tones` tones
+and to multi-bit symbols by comparing the whole block rather than sample
+0 alone) and compared it against the stream the bit pipeline predicts:
+equal on all 12 renders, at every symbol. (Model script, not vendored,
+nothing in the tree runs it — same convention as `extrahe.py` above.)
+
+**Size.** 12 files, 1,046,160 bytes total (bytes 44 + 2·(1920 + spp·total_syms)
+of each; `aux-cable-cli` and the default profile share `total_syms=356` but
+differ in `spp`; `125baud`'s `spp=384` against the default's `48` makes
+each of its three files 277,292 bytes — about 7.3× the default profile's
+38,060, short of the 8× `spp` ratio because the 1,920-byte lead/tail is
+fixed regardless of `spp` — under the ~400 KB single-file budget named for
+this vendoring, so no size exception is needed.
+
+**Not vendored:** a `symbola_basis.bin` analogue per profile (the 137-word
+basis under each profile's own bit-to-symbol mapping) — deferred, per this
+vendoring's scope; M4's certification design decides later whether and how
+each profile needs one.
+
 ## Licensing
 
 `LGPL-3.0-only`, © DeMoD LLC (`hydramodem/LICENSE`, `hydramodem/NOTICE`) — the
@@ -491,3 +637,9 @@ exactly (`tests/programs/hydramodem_basis/`, milestone M2 of
 `docs/design/modem.md`), in the commit after the one that vendored it.
 The functions that decide those bytes are M1's, unchanged; the driver
 only derives the words and writes.
+
+`profiles/` is vendored only, not yet certified: no Exsecutor program
+renders any of the twelve M4 files. Their status is program output verified
+against the reference tools and a Python model (section "Profiles (M4)"
+above) — the same evidentiary standing the three WAVs had before M1, and
+`symbola_basis.bin` before M2.
