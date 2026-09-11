@@ -90,8 +90,13 @@ result — the wrapping group, `shl`, `trunc` — with `shl 64−N` then `shr`
 (`sar` for `iN`); `and`, `or`, `xor`, `shr` and the compares preserve
 canonical form on canonical inputs and need nothing. A trapping op computes
 in 64 bits, normalises, and traps if the normalised value differs from the
-raw one — one rule for every width up to 32; for 33–63 the same rule, and at
-64 the flags. Spec §5.4 states only that a `uN` value is an integer in
+raw one — complete for `add`/`sub` at every width below 64 and for `mul` at
+widths up to 32, where the 64-bit product is exact. **Not complete for `mul`
+at widths 33–63**: in `u40`, 2^32 × 2^32 = 2^64 has raw result 0, which
+normalises to 0 and would not trap. So `mul` traps *also* on the 64-bit
+`mul`/`imul` overflow flag, and at width 64 `add`/`sub`/`mul` use the flags
+alone, as today. (`wire-codec.md`'s review, M2; the M3 tests include a
+`u40` product at and just below 2^64.) Spec §5.4 states only that a `uN` value is an integer in
 [0, 2^N); this paragraph is the reference backend's way of holding one, and
 the C backend may hold it differently as long as ADR 0012's differential test
 cannot tell.
@@ -153,8 +158,9 @@ correct with no cycle analysis and no scratch register. A `jmp` emits the
 copies before the jump. A `br` has two targets whose copies differ, so each
 edge from a `br` into a block with phis goes through a **per-edge stub** —
 `jcc stub_T; jmp stub_F`, each stub doing its copies and jumping on. A block
-with no phis produces exactly the text it produces today, so the fixtures
-that pin emitted text stay byte-identical through the change.
+with no phis **must** produce exactly the text it produces today: the
+fixtures that pin emitted text are a requirement on the change, and a diff
+in one is a defect in the change rather than a fixture to update.
 
 ### 2.5 Construction on `rt/`: Braun's structures, mapped
 

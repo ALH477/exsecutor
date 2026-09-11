@@ -128,6 +128,15 @@ exactly a `u24` in a program. Whether `:o` on a non-field place (a binding,
 a parameter) means anything is not decided here; nothing in the codec writes
 one. `[OPEN]`
 
+**`&` of a `@transitus` field is `EXS-E0305`.** The review asked what
+`&f.numerus` is: prefix `&` exists and `&u16:maior` is a legal type, so the
+sentence "no expression has an ordered type" was false as written. The
+smaller commitment consistent with D2 is to refuse it — a sub-byte field
+has no address at all, and an ordered field's address would be a value
+carrying an order — and say "no *value* has one". Take `&` of the struct or
+use D4's byte view. Admitting `&T:o` later, with dereference as a place
+read in that order, is `[OPEN]` and would be an extension, not a reversal.
+
 `[UNTESTED]` — retired by **M6** (`forma`: build the example frame from a
 literal, take its CRC through the byte view, decode it back).
 
@@ -161,19 +170,52 @@ the literal.
 ### D4 The one aggregate `sicut`
 
 `sicut` is admitted between a `@transitus` struct `S` and `acies<u8, N>`
-where `N` is `S`'s declared size, in **both** directions. Nothing else
-aggregate casts: any other aggregate `sicut`, including one whose `N` is not
-`S`'s size, is `EXS-E0305`, which is `types.inc:305`'s existing class-E
-answer to "are these two related". The size equality is checked where sizes
-are known, pass 4 (`checker/types/layout.inc`).
+where `N` is `S`'s declared size, in **both** directions, **on the explicit
+condition that every field of `S` is an unsigned integer** (`u1`–`u7`, or a
+whole-byte width with its order). Nothing else aggregate casts: any other
+aggregate `sicut`, including one whose `N` is not `S`'s size or whose `S`
+fails the field condition, is `EXS-E0305`, which is `types.inc:305`'s
+existing class-E answer to "are these two related". The size equality is
+checked where sizes are known, pass 4 (`checker/rows/layout.inc`).
 
-It is **total**, which is why it can be a cast and not an `eventus`: a
-`@transitus` layout is packed (§5.2), every multi-byte field carries an
-order, `:nativus` is rejected, there is no padding, and every field is an
-unsigned integer of the declared width — so every byte pattern of length `N`
-is a valid `S`, and every `S` is exactly `N` bytes. Both directions are
-bijections on bytes. It is a **pointer passthrough**: the same bytes, no
-copy; `w sicut DeModFrame` and `w` alias.
+**The field condition is the load-bearing part, and §5.2 had not stated
+it.** §5.2 said a field *may* declare any admitted `uN` and never said a
+field must be one; `checker/rows/layout.inc:264` lays out an aggregate
+field it is handed. Had a `@transitus` struct been allowed to hold a
+`refero`, a `textus` or a capability-bearing struct, `acies<u8, N> sicut S`
+would forge one from bytes — the cast would be the disclosure class in
+reverse. §5.2 now states the restriction (integers only; no nested
+`@transitus` structs, which is `[OPEN]` rather than decided against, since
+admitting them makes this condition recursive and needs rule 2's byte
+alignment for the nested struct), and the cast checks it **itself** rather
+than trusting the layout pass. Enforcement of the restriction on the
+declaration reuses existing codes: an unannotated non-integer field is
+`:nativus` by rule 3 and already `EXS-E0321` at `layout.inc:235`; an order
+annotation on a non-integer type (`textus:maior`) is `EXS-E0309`, an
+annotation not applicable to the type — the latter `[UNTESTED]`, since
+`sig.inc:251` re-interns any type with an order byte today.
+
+Under that condition it is **total**, which is why it can be a cast and not
+an `eventus`: a `@transitus` layout is packed (§5.2), every multi-byte field
+carries an order, `:nativus` is rejected, there is no padding, and every
+field is an unsigned integer of the declared width — so every byte pattern
+of length `N` is a valid `S`, and every `S` is exactly `N` bytes. Both
+directions are bijections on bytes.
+
+**The result is a value, not a place.** It cannot be assigned through
+(`(f sicut acies<u8, 17>)[0] = 1` is `EXS-E0306`), and binding it copies:
+`firma b = f sicut acies<u8, 17>` has its own seventeen bytes, as binding
+any aggregate value does, and a later write to `f` is not seen in `b`. The
+first draft said "pointer passthrough … `w sicut DeModFrame` and `w`
+alias", which left aliasing observable and undefined. A backend may still
+implement it as a passthrough — the same bytes, no copy — exactly where no
+write can observe the difference; that is an implementation, and ADR 0012's
+differential test is what keeps it one. The codec never writes through a
+cast: `syndroma` and `lege` read through `w sicut DeModFrame`, section 2 of
+the stream reads through `Syndroma { valor: y } sicut acies<u8, 2>`, and
+the bit-flip loop writes to a `mutabilis` `acies` binding of its own.
+`obsigna`'s `mutabilis g = f` relies on the same by-value rule for a
+struct binding, which the spec text now carries.
 
 Rejected: a method (`f.octeti()`) — it would need a prelude entry per struct
 or a generic the prelude has no dictionary for; and an implicit view (an
@@ -191,15 +233,22 @@ as amended says `uN` is zero-extended in 64 bits, `iN` sign-extended, `u1`
 is 0 or 1, and the emitter normalises after every wrapping or converting
 operation with `shl 64−N` then `shr` (or `sar`). A trapping op computes in
 64 bits, normalises, and traps if the normalised value differs from the raw
-one — one rule for every width up to 32, and for widths 33–63 the same rule
-with the carry flag deciding the 64-bit case.
+one — a complete rule for `add`/`sub` at every width below 64 and for `mul`
+at widths up to 32, where the 64-bit product is exact. **It is not complete
+for `mul` at widths 33–63**: in `u40`, 2^32 × 2^32 = 2^64 has raw 64-bit
+result 0, which normalises to 0 and would not trap. So `mul` also traps on
+the 64-bit `mul`/`imul` overflow flag, and at width 64 `add`/`sub`/`mul`
+use the flags alone, as the emitter does today. The review found the gap
+(M2); the first draft's "the carry flag deciding the 64-bit case" had
+covered add/sub and not the product.
 
 Reason: one canonical form means every instruction may assume its inputs
 are canonical and the verifier has nothing to check; the alternative
 (masking on read) puts the mask at every use instead of every definition,
 and a use is more common than a definition.
 
-`[UNTESTED]` — retired by **M3** (wrap and trap at `u4 u8 u24 u32 i8`, the
+`[UNTESTED]` — retired by **M3** (wrap and trap at `u4 u8 u24 u32 i8`, a
+`u40` multiply whose product is exactly 2^64 and one just below it, the
 constant `3735928559`, shift by `N`, `chk` out of bounds).
 
 ### D6 Hex literals
@@ -245,8 +294,9 @@ no cycle analysis and no scratch register. A `jmp` into a block with phis
 emits the copies before the jump. A `br` has two targets whose copies
 differ, so each edge into a block with phis goes through a **per-edge
 stub**: `jcc stub_T; jmp stub_F`, each stub doing its copies and jumping on.
-When the target has no phi the emitted text is **unchanged**, byte for byte,
-so every existing fixture stays green through M2.
+When the target has no phi the emitted text **must be unchanged**, byte for
+byte: the fixtures that pin emitted text are a requirement on M2, and a
+diff in one of them is a defect in the change, not a fixture to update.
 
 Rejected: Boissinot-style sequentialisation with one spare register —
 shorter code and a real algorithm to get wrong, in a Tier-1 emitter whose
@@ -348,9 +398,19 @@ theorem in `golden_vectors.json` is conditional: *any implementation that is
 bit-placement + CRC (hence affine) and matches the basis equals the
 reference everywhere*. Passing 246 vectors proves agreement on the basis;
 the extension to 2^108 frames rests on the implementation being affine,
-which is a property of its **structure**: `obsigna` places bits into fields
-(GF(2)-linear) and computes a CRC (GF(2)-affine), and nothing in it adds,
-multiplies or branches on data. That is an argument from reading the code.
+which is a property of its **structure**. The criterion, stated so it can be
+checked by reading: **every data-dependent operation in the encode is
+GF(2)-linear, and no carrying arithmetic touches data.** Bit placement into
+fields is linear; `aut` is addition in GF(2); a shift by a constant is
+linear; and the CRC's conditional — `si c ge 0x8000 { c = (c sursum 1) aut
+0x1021 } aliter { c = c sursum 1 }` — *is* a branch on data, but the two
+arms differ by a constant xor, so the whole is `(c sursum 1) aut
+(top_bit(c) · 0x1021)`, which is linear in `c`. The init `0xFFFF` is the
+affine offset. What would break affinity is `+`, `*`, a comparison used as
+a value, or a mask applied to a signed path — and `redundantia`, `obsigna`
+and the field stores contain none of those. That is an argument from
+reading the code; the first draft said "nothing branches on data", which
+was false of the CRC and did not need to be true.
 The example frame — `d31312340001ffffdeadbeefab12cd24c0`, with many bits
 set across every field — is one non-basis point at which the argument is
 spot-checked: a carry, a wrong mask or a field written through a signed
@@ -507,7 +567,7 @@ publica functio vacuum() -> DeModFrame {
         meta: 0,
         onus: 0,
         tempus: 0,
-        cursus: 0,
+        cursus: 0
     };
 }
 
@@ -559,10 +619,16 @@ is avoided:
 
 Things this example leans on that are settled elsewhere and are also
 `[UNTESTED]`: `per i in 0..n` binds `i: mensura` (the range partner's type;
-`__chk_ty_index` wants `mensura` for `acies`); `b[i] sicut u16` is §5.2's
-explicit widening; a literal takes the other operand's type
-(`types.inc:57`); assignment through an index `x[b] = …` is an lvalue
-(§8.6, lvalue check semantic).
+`__chk_ty_index` wants `mensura` for `acies`); **`per k in 0..8`, `0..16`,
+`0..17` — a range of two pending literals — binds `mensura` by the §8.5
+rule added for it** (today `__chk_ty_for` → `__chk_ty_settled` makes every
+such loop `EXS-E0308`, the review's M4; the rule is in the spec rather than
+the loops rewritten with a typed bound, because `per i in 0..17` is what
+anyone writes over an array); `b[i] sicut u16` is §5.2's explicit widening;
+a literal takes the other operand's type (`types.inc:57`); assignment
+through an index `x[b] = …` on a `mutabilis` `acies` binding is an lvalue
+(§8.6, lvalue check semantic); `mutabilis g = f` copies the struct (§5.2,
+the cast paragraph: binding an aggregate value is by value).
 
 ## 9. Findings
 
@@ -618,7 +684,7 @@ one that was wrong, the amendment is in the same commit as this file.
 | decision | milestone | the test |
 |---|---|---|
 | D8 phi | M2 | IR: sum loop, swap, lost copy; program `phi_loops` |
-| D5 canonical form; IR 2.3's shift trap | M3 | IR: wrap and trap at `u4 u8 u24 u32 i8`, `3735928559`, shift by `N`, `chk` |
+| D5 canonical form; IR 2.3's shift trap | M3 | IR: wrap and trap at `u4 u8 u24 u32 i8`, `u40` multiply at and just below 2^64, `3735928559`, shift by `N`, `chk` |
 | byte order and bit fields in the emitter | M4 | hand-written IR encoder producing `d31312340001ffffdeadbeefab12cd24c0` |
 | D1 operators, D6 hex | M5 | program `redundantia`: `0x29B1`, `0x4EC3` |
 | D2 places, D3 literals, D4 the cast | M6 | program `forma`: literal → CRC through the view → decode |

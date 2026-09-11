@@ -105,13 +105,15 @@ it is equivalent to agreeing with the reference on all 2^108 frames.
 - The `certus` profile (ADR 0010) forbids `rete` outright. A DeModFrame *codec*
   is pure and profile-clean; a *transport* is not. That boundary looks like a
   good worked example for the profile and has not been written.
-- **Appended 2026-09-11.** The in-memory question two bullets up has an
-  answer on paper, `[UNTESTED]`: `docs/design/wire-codec.md` D2 and D5, now
-  in spec §5.2 and §5.4. Byte order belongs to the *place*, so a read of
-  `tempus: u24:maior` yields a `u24` — an integer in [0, 2^24) — and the
-  reference backend holds every `uN` zero-extended in 64 bits
-  (`docs/design/ssa-ir.md` §2.2). Exactly three bytes on the wire, exactly a
-  `u24` in the program, and no expression ever has a byte-ordered type. The
-  `[OPEN]` above stays until that design's M6 reads one back through a
-  compiled program; nothing is implemented, and the status line is
-  unchanged.
+- **Appended 2026-09-11.** The in-memory question three bullets up is
+  **answered in the spec as `[UNTESTED]`** — settled as text, unverified:
+  `docs/design/wire-codec.md` D2 and D5, now in spec §5.2 and §5.4. Byte
+  order belongs to the *place*, so a read of `tempus: u24:maior` yields a
+  `u24` — an integer in [0, 2^24) — and the reference backend holds every
+  `uN` zero-extended in 64 bits (`docs/design/ssa-ir.md` §2.2). Exactly
+  three bytes on the wire, exactly a `u24` in the program, and no value has
+  a byte-ordered type (`&` of a `@transitus` field is refused, so no address
+  carries one either). The bullet above keeps its `[OPEN]` marker as the
+  record of the question; what retires it is that design's M6 reading a
+  `u24` back through a compiled program. Nothing is implemented, and the
+  status line is unchanged.

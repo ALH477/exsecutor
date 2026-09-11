@@ -572,30 +572,66 @@ conversion *is* the field access: on the `DeModFrame` above, `f.numerus` is
 the big-endian 16-bit load and has type `u16`; `f.numerus = n` with
 `n: u16` is the big-endian store. The declaration's type is still
 `u16:maior` — that is what `EXS-E0321` and the layout rules are stated
-over — but a value in a register has no byte order, so no expression ever
-has a type carrying one. The alternative, an explicit `sicut` at every
+over — but a value in a register has no byte order, so **no value has a
+type carrying one**. The alternative, an explicit `sicut` at every
 access, would bury a codec in casts that repeat what the declaration
 already says. Whether `:o` on a place that is not a field — a binding, a
 parameter — means anything is `[OPEN]`; nothing yet writes one.
 
-This also settles the in-memory form ADR 0011 left `[OPEN]`: a read of
-`tempus: u24:maior` yields a `u24`, an integer in [0, 2^24), exactly three
-bytes on the wire and exactly a `u24` in the program. How a `u24` is held in
+**`&` is not taken of a field of a `@transitus` type**: it is `EXS-E0305`.
+A sub-byte field has no address at all, and the address of an ordered
+field would have to be a `&u16:maior` — a value carrying an order, which
+the sentence above rules out. Take `&` of the struct, or use the byte view
+below. Admitting `&T:o` later, with a dereference defined as a place read in
+that order, is `[OPEN]`; this is the smaller commitment. `[UNTESTED]`
+
+This also answers, as text and `[UNTESTED]`, the in-memory question ADR
+0011 left `[OPEN]`: a read of `tempus: u24:maior` yields a `u24`, an
+integer in [0, 2^24), exactly three bytes on the wire and exactly a `u24`
+in the program. How a `u24` is held in
 a register is the backend's (§5.4, *Integers*; `docs/design/ssa-ir.md` §2.2).
 
 ### The one aggregate cast
 
 `[UNTESTED]` — `docs/design/wire-codec.md` D4; retired by its M6.
 
+**What a `@transitus` field may be.** Every field of a `@transitus` type is
+an unsigned integer: `u1`–`u7`, or a whole-byte width `u8`–`u64` with its
+order. Nothing else — no `textus`, no `refero`, no capability-bearing
+type, no `acies`, and no nested struct. The rules above already say this
+for widths (rule 2 lists the admitted `uN`) and never said it for kinds;
+`checker/rows/layout.inc` lays out any field it is given, so the sentence
+was missing, not merely implicit. Enforcement, `[UNTESTED]`: an unannotated
+non-integer field is `:nativus` by rule 3 and is `EXS-E0321` — which
+`layout.inc:235` already raises for any multi-byte `nativus` field; an
+order annotation on a type that is not an integer (`textus:maior`) is
+`EXS-E0309`, an annotation not applicable to the type. Nested `@transitus`
+structs are **not** admitted by this text; whether to admit them — the cast
+condition below then becomes recursive, and a nested struct would need
+rule 2's byte alignment — is `[OPEN]`.
+
 `sicut` is admitted between a `@transitus` struct `S` and `acies<u8, N>`,
-where `N` is `S`'s size in bytes, in **both** directions. It is **total**,
-which is why it is a cast and not an `eventus`: the layout is packed, every
-multi-byte field carries an order, `:nativus` is rejected, there is no
-padding, and every field is an unsigned integer of its declared width — so
-every `N`-byte pattern is a valid `S` and every `S` is exactly `N` bytes. It
-is a **pointer passthrough**: the same bytes, no copy; `w sicut DeModFrame`
-aliases `w`. It is the byte view a checksum is computed over
+where `N` is `S`'s size in bytes, in **both** directions, **on the explicit
+condition that every field of `S` is an unsigned integer as just stated** —
+a condition the cast checks itself (`EXS-E0305` when it fails) rather than
+inheriting from the layout pass, because the cast is where a byte pattern
+becomes a value, and a struct that could hold a reference or a capability
+would let `acies<u8, N> sicut S` forge one from bytes. Under that condition
+it is **total**, which is why it is a cast and not an `eventus`: the layout
+is packed, every multi-byte field carries an order, `:nativus` is rejected,
+there is no padding, and every field is an unsigned integer of its declared
+width — so every `N`-byte pattern is a valid `S` and every `S` is exactly
+`N` bytes. It is the byte view a checksum is computed over
 (`f sicut acies<u8, 17>`) and the way a received buffer becomes a frame.
+
+**The cast's result is a value, not a place.** It cannot be assigned
+through: `(f sicut acies<u8, 17>)[0] = 1` is `EXS-E0306`, a non-lvalue
+target. Binding it copies — `firma b = f sicut acies<u8, 17>` has its own
+seventeen bytes, as binding any aggregate value does — and a later write to
+`f` is not visible in `b`. A backend may implement the cast as a pointer
+passthrough, the same bytes with no copy, exactly where no write can
+observe the difference; that is an implementation, not a semantics, and
+the differential test (ADR 0012) is what keeps it honest. `[UNTESTED]`
 
 No other aggregate `sicut` exists. Any other — between two structs, to an
 `acies` of the wrong length, from a struct that is not `@transitus` — is
@@ -741,7 +777,10 @@ performance and never changes the value.
     no program here has needed either; they stay `[OPEN]`.
   - **Both operands have the same type, including the shift count**, or
     `EXS-E0303`. The result has that type. A literal on either side takes
-    the other side's type, as it does for `+`.
+    the other side's type, as it does for `+`. The two checks run in that
+    order — each operand's admissibility first, then the pairing — so
+    `u8 aut i8` is `EXS-E0305` at the `i8`, not `EXS-E0303`; one
+    diagnostic, at the operand that is wrong on its own.
   - **Bits shifted beyond the width are discarded.** That is the
     definition, not an overflow, so there is no `sursum%` or `sursum|`.
   - **A count ≥ the width traps**, as `+` traps on overflow. The hardware's
@@ -1207,6 +1246,14 @@ quisque i in 0..n { … }          // independent: order unspecified
 `per` and `quisque` differ in **one declared claim**: whether iterations observe
 one another. That single bit is what everything downstream consumes.
 
+The loop variable takes the range's element type — the type of `a..b`,
+which is its operands' — or an `acies`'s element type. **A range both of
+whose bounds are pending literals (`per i in 0..17`) types them, and the
+variable, as `mensura`** — the index type, and what anyone writes over an
+array. `[UNTESTED]` — `docs/design/wire-codec.md` (M4 of its review); today
+`__chk_ty_settled` makes that loop `EXS-E0308`, because nothing supplied
+the literals a width.
+
 ```exsecutor
 quisque i in 0..n
     contrahe summa: +
@@ -1279,8 +1326,9 @@ claiming a clean pattern over them would be reading one in.
   from morpheme-table roots. §3.8 and §15 #4 stay `[UNTESTED]`; `norma.algebra`
   is still the coinage process's first real test.
 - It spends root-space. Fourteen words here can never be roots (§8.4).
-- Numeric literal grammar and `sub`'s interaction with
-  loop scopes are unsettled and deliberately not invented.
+- Numeric literal grammar beyond decimal and hexadecimal (§8.4 — binary,
+  separators, floats), and `sub`'s interaction with loop scopes, are
+  unsettled and deliberately not invented.
 
 ## 8.6 Phrase grammar
 
@@ -1385,7 +1433,7 @@ Precedence climbing over a fixed table, one-token peek per step.
 
 | level | operators | assoc |
 |---|---|---|
-| 1 postfix | `.f` `(…)` `[…]` `?` `<…>` | left |
+| 1 postfix | `.f` `(…)` `[…]` `?` `<…>` `{…}` (struct literal, `[UNTESTED]`; not in `ExprNS`) | left |
 | 2 prefix | `-` `&` `*` | — |
 | 3 cast | `sicut Type` | left |
 | 4 multiplicative | `*` — `/`, remainder, and the `*%` `*\|` overflow forms are `[OPEN]` | left |
@@ -1640,7 +1688,7 @@ partial one that would not compile; and recovery described error tokens that
 
 Two were implementation latitude this section does not constrain and should
 not. **A node per precedence level is not required where the level matched no
-operator** — read literally, ten levels would make every atom ten nodes deep;
+operator** — read literally, eleven levels would make every atom eleven nodes deep;
 the parser emits a level's node only when that level consumed an operator.
 And **`ExprNS` was exactly `Expr`** when the parser was built, because struct
 literals were `[OPEN]` and they are the only thing it excludes; it stayed a
@@ -1656,9 +1704,11 @@ refusing symbolic comparisons — is what makes that last one possible.
 
 ### Not settled here
 
-- `[OPEN]` Numeric literal grammar (§8.4) — blocks the `..`/float rule above
-  and the `HASH` token: `sha256-1a2b…` is neither identifier nor literal under
-  any settled rule, so `fontes` cannot yet be lexed.
+- `[OPEN]` Numeric literal grammar beyond decimal and hexadecimal (§8.4:
+  binary, separators and floats are open; hex is settled, `[UNTESTED]`) —
+  blocks the `..`/float rule above and the `HASH` token: `sha256-1a2b…` is
+  neither identifier nor literal under any settled rule, so `fontes` cannot
+  yet be lexed.
 - `[OPEN]` Sum types and constructor patterns; `discerne`'s exhaustiveness
   presupposes an enumeration the language does not yet declare. The natural
   home is `typus` — keyword-led, LL(1)-harmless — but it is not decided.
@@ -2184,7 +2234,7 @@ a referenced list is the same mistake as renumbering an error code (§8.3).
 6. **Generator model coverage** (§9.4). "No build scripts" may not survive real FFI binding generation.
 7. **Generated-C debug info** (§9.2). If stepping through Exsecutor is unusable, QBE moves earlier.
 8. **Ecosystem bootstrapping.** Unaddressed by anything in this document, and the actual reason languages die.
-9. **Phrase grammar.** `[UNTESTED]` §8.6 now states it as normative — items, statements, the expression precedence table, types, `poscit` attachment, the lambda, `sub`'s two forms, `interfacies … in …` and the `sicut` cast, the `ego` entry point, every peek and every synchronisation set. That closes what this item originally recorded: there *is* a grammar, and it is the one the CST is built against. It does not close the item. Nothing has parsed anything — §9.1's CST does not exist, so the LL(1) claim and the recovery design are unexercised. §8.6's own list is still open: numeric literals and the `HASH` token, sum types and constructor patterns, brand syntax, generic implementation heads, the operators §8.4 lacks, and `sub` inside loop bodies. It also found three contradictions it did not paper over, all since fixed: §4.2's and §5.1's illustrative blocks and `examples/saluta.exsc` omitted the `;` §8.6 requires; §8.4 still marked the comparison words `[OPEN]` and lacked their tier-2 entries; and §4.4 wrote `dyn Trait poscit P` bare, which is not a form that parses. The canonical program gaining a semicolon is the useful one — `tests/unit/lexer_tokens.asm` pins its token count precisely so a change there is a deliberate edit, and the assert caught it. Position in this list is chronological, per the note above. Later, the DeModFrame codec design (`docs/design/wire-codec.md`, M0) settled four of the open items — hexadecimal literals, shifts, exclusive or, and struct literals — all `[UNTESTED]`; `/`, remainder, negation, bitwise and/or, and the rest of the numeric grammar remain open.
+9. **Phrase grammar.** `[UNTESTED]` §8.6 now states it as normative — items, statements, the expression precedence table, types, `poscit` attachment, the lambda, `sub`'s two forms, `interfacies … in …` and the `sicut` cast, the `ego` entry point, every peek and every synchronisation set. That closes what this item originally recorded: there *is* a grammar, and it is the one the CST is built against. It does not close the item. Nothing has parsed anything — §9.1's CST does not exist, so the LL(1) claim and the recovery design are unexercised. §8.6's own list is still open: numeric literals and the `HASH` token, sum types and constructor patterns, brand syntax, generic implementation heads, the operators §8.4 lacks, and `sub` inside loop bodies. It also found three contradictions it did not paper over, all since fixed: §4.2's and §5.1's illustrative blocks and `examples/saluta.exsc` omitted the `;` §8.6 requires; §8.4 still marked the comparison words `[OPEN]` and lacked their tier-2 entries; and §4.4 wrote `dyn Trait poscit P` bare, which is not a form that parses. The canonical program gaining a semicolon is the useful one — `tests/unit/lexer_tokens.asm` pins its token count precisely so a change there is a deliberate edit, and the assert caught it. Position in this list is chronological, per the note above. Later, the DeModFrame codec design (`docs/design/wire-codec.md`, M0) settled three items from that list — hexadecimal literals, shifts, and struct literals — and added exclusive or, all `[UNTESTED]`; `/`, remainder, negation, the `*%`/`*|` family, bitwise and/or, and the rest of the numeric grammar remain open.
 
 ---
 
