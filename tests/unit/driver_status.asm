@@ -48,7 +48,7 @@
 ; that passes for the wrong reason. Those two statuses are exercised
 ; end-to-end against examples/ instead. What IS here is every status reachable
 ; without touching a file that has to exist: 2, 3 and 4, plus the two
-; `drv_slurp` refusals that produce 3.
+; `drv_slurp_unit` refusals that produce 3.
 ;
 ; Exit 0 = every check passed. Otherwise:
 ;   50  argc < 2 (no subcommand) did not give DRV_EXIT_USAGE
@@ -57,8 +57,8 @@
 ;       DRV_EXIT_TODO -- its index is added
 ;   70  a missing --hospes did not give DRV_EXIT_USAGE (§9.5)
 ;   71  an unreadable SOURCE did not give DRV_EXIT_HOST
-;   72  drv_slurp returned a buffer for a path that does not exist
-;   73  drv_slurp returned a buffer for a directory
+;   72  drv_slurp_unit returned a buffer for a path that does not exist
+;   73  drv_slurp_unit returned a buffer for a directory
 ;   99  setup failed
 ;
 ; Spec: docs/spec/exsecutor-spec-v0.4.md §9.3, §9.5, §12, §14.
@@ -127,16 +127,21 @@ segment readable executable
 	cmp	eax, DRV_EXIT_HOST
 	jne	.f71
 
-	; ---- 72/73: drv_slurp's own refusals --------------------------------
+	; ---- 72/73: drv_slurp_unit's own refusals ---------------------------
 	; Its sentinel is a 0 RETURN, not CF -- a successful mmap-backed
 	; allocation is never address 0. Both paths must also have said why,
 	; which tests/run.sh shows in the runlog when this fixture fails.
+	;
+	; A ONE-ENTRY UNIT, built by hand: `drv_slurp_unit` reads
+	; `DrvCtx.srcs`/`nsrc` rather than taking a path, because §12's unit is
+	; N files and the arena has to be sized from all of them at once.
 	call	ds_arenas
 	mov	qword [ds_len], 0xDEAD
 	lea	rdi, [ds_s_nofile]
 	mov	rsi, DS_NOFILE_LEN
-	lea	rdx, [ds_len]
-	call	drv_slurp
+	call	ds_one_source
+	lea	rdi, [ds_len]
+	call	drv_slurp_unit
 	test	rax, rax
 	jnz	.f72
 	cmp	qword [ds_len], 0xDEAD	; a refusal writes no length either
@@ -145,8 +150,9 @@ segment readable executable
 	mov	qword [ds_len], 0xDEAD
 	lea	rdi, [ds_s_root]
 	mov	rsi, DS_ROOT_LEN
-	lea	rdx, [ds_len]
-	call	drv_slurp
+	call	ds_one_source
+	lea	rdi, [ds_len]
+	call	drv_slurp_unit
 	test	rax, rax
 	jnz	.f73
 	cmp	qword [ds_len], 0xDEAD
@@ -190,6 +196,8 @@ segment readable executable
 	mov	[r15 + DrvCtx.interner], rax
 	lea	rax, [ds_envmap]
 	mov	[r15 + DrvCtx.envmap], rax
+	lea	rax, [ds_srcs]
+	mov	[r15 + DrvCtx.srcs], rax	; the §12 SOURCE table (driver/cli.inc)
 	lea	rax, [ds_vlx]
 	mov	[r15 + DrvCtx.vlx], rax
 	lea	rax, [ds_vtoks]
@@ -204,7 +212,31 @@ segment readable executable
 	mov	[r15 + DrvCtx.diags], rax
 	ret
 
-; ds_arenas -- the interner arena `drv_slurp` allocates its C-string path
+; ds_one_source(rdi = path, rsi = its length) -- make `DrvCtx.srcs` name
+; exactly that one file, the way `drv_parse` would have. `drv_ctx_reset`
+; clears `nsrc` so each call starts from an empty unit rather than appending
+; to the previous one -- and appending the same path twice would be refused
+; by `drv_src_add` anyway, which is the point of that check.
+; Three pushes, not two: `call` needs rsp 16-byte aligned immediately before
+; it and entry leaves it 8 off, so an ODD number of 8-byte pushes is what puts
+; it back (docs/asm-conventions.md, "2. Register discipline"). `ds_arenas`,
+; just below, does the same with one.
+  ds_one_source:
+	push	rbx
+	push	r12
+	push	rax
+	mov	rbx, rdi
+	mov	r12, rsi
+	call	drv_ctx_reset
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	drv_src_add
+	pop	rax
+	pop	r12
+	pop	rbx
+	ret
+
+; ds_arenas -- the interner arena `drv_slurp_unit` allocates its C-string path
 ; out of, for the two calls below that do not go through drv_main.
   ds_arenas:
 	push	rbx
@@ -264,6 +296,7 @@ segment readable writeable
   ds_scratch	rb sizeof.Arena
   ds_interner	rb sizeof.Interner
   ds_envmap	rb sizeof.Map
+  ds_srcs	rb DRV_SOURCES_MAX * sizeof.DrvSrc
   ds_vlx	rb sizeof.Lexer
   ds_vtoks	rb sizeof.Vec
   ds_vdiags	rb sizeof.Vec

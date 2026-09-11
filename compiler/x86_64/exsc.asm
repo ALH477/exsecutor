@@ -25,8 +25,14 @@
 ; `include` (docs/asm-conventions.md, "7. How to add a module", step 3;
 ; spec §18.1's "build closure is exactly one tool").
 ;
-; WHAT IT CAN DO TODAY, so that nobody has to run it to find out: it reads a
-; source file, applies §8.1, tokenizes it under §8.4, PARSES it under §8.6
+; SOURCE MAY BE REPEATED, and the files named are ONE module (§12): each is
+; gate-checked and lexed on its own, into one token stream in command-line
+; order, which one `cst_parse` and one `ast_from_cst` then turn into one tree.
+; driver/cli.inc's `DrvSrc` and driver/run.inc's `__drv_localize` are where
+; that composition lives.
+;
+; WHAT IT CAN DO TODAY, so that nobody has to run it to find out: it reads the
+; source, applies §8.1, tokenizes it under §8.4, PARSES it under §8.6
 ; into the lossless CST of §9.1, builds the typed AST of §9.1 Stage 1 from
 ; that CST, and reports every diagnostic either half raised, in a human format
 ; or JSON. That is the whole of §16 Stage 1. It THEN runs as much of Stage 2
@@ -38,7 +44,7 @@
 ; says it cannot build it. Nine of the ten subcommands §12 names are refusals
 ; that name themselves.
 ;
-;	exsc aedifica --hospes TRIPLE SOURCE [-o OUT]
+;	exsc aedifica --hospes TRIPLE SOURCE... [-o OUT]
 ;	              [--env KEY=VALUE]... [--epoch N]
 ;	              [--diagnostica textus|json]
 ;	              [--emitte tokens|cst|ast]
@@ -148,6 +154,8 @@ segment readable executable
 	mov	[r15 + DrvCtx.interner], rax
 	lea	rax, [drv_envmap]
 	mov	[r15 + DrvCtx.envmap], rax
+	lea	rax, [drv_srcs]
+	mov	[r15 + DrvCtx.srcs], rax
 	lea	rax, [drv_vlx]
 	mov	[r15 + DrvCtx.vlx], rax
 	lea	rax, [drv_vtoks]
@@ -213,6 +221,9 @@ segment readable writeable
   drv_scratch	rb sizeof.Arena	; reset once per --env key
   drv_interner	rb sizeof.Interner
   drv_envmap	rb sizeof.Map
+  drv_srcs	rb DRV_SOURCES_MAX * sizeof.DrvSrc	; the §12 compilation
+				; unit: one DrvSrc per SOURCE, in command-line
+				; order (driver/cli.inc)
   drv_vlx	rb sizeof.Lexer	; }
   drv_vtoks	rb sizeof.Vec	; } --env key validation only
   drv_vdiags	rb sizeof.Vec	; }

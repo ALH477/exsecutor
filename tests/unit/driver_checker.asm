@@ -218,6 +218,8 @@ segment readable executable
 	mov	[r15 + DrvCtx.interner], rax
 	lea	rax, [dc_envmap]
 	mov	[r15 + DrvCtx.envmap], rax
+	lea	rax, [dc_srcs]
+	mov	[r15 + DrvCtx.srcs], rax	; the §12 SOURCE table (driver/cli.inc)
 	lea	rax, [dc_vlx]
 	mov	[r15 + DrvCtx.vlx], rax
 	lea	rax, [dc_vtoks]
@@ -501,6 +503,7 @@ segment readable writeable
   dc_scratch	rb sizeof.Arena
   dc_interner	rb sizeof.Interner
   dc_envmap	rb sizeof.Map
+  dc_srcs	rb DRV_SOURCES_MAX * sizeof.DrvSrc
   dc_vlx	rb sizeof.Lexer
   dc_vtoks	rb sizeof.Vec
   dc_vdiags	rb sizeof.Vec

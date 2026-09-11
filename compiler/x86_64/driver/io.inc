@@ -20,11 +20,36 @@
 ; Code produced by this compiler is not covered by the GPL --
 ; see Exception A in LICENSE.EXCEPTION.
 ; -----------------------------------------------------------------------------
-; Reading one source file, and nothing else. Four syscalls, all of them
-; already on the closed allowlist and all of them reached through
-; rt/sys.inc's wrappers: `openat(257)`, `fstat(5)`, `read(0)`, `close(3)`.
-; This file adds nothing to the allowlist and emits no raw `syscall`
-; (docs/asm-conventions.md, "6. Syscall discipline").
+; Reading the §12 compilation unit -- one file or many -- and nothing else.
+; Four syscalls, all of them already on the closed allowlist and all of them
+; reached through rt/sys.inc's wrappers: `openat(257)`, `fstat(5)`, `read(0)`,
+; `close(3)`. This file adds nothing to the allowlist and emits no raw
+; `syscall` (docs/asm-conventions.md, "6. Syscall discipline").
+;
+; THE UNIT IS ONE CONTIGUOUS BUFFER, AND THAT IS FORCED, NOT PREFERRED. §12:
+; *"The files named form one compilation unit -- one module."* `cst_parse`
+; reads `Lexer.src_ptr` for every leaf's text and for every byte of trivia
+; between two tokens, so the token stream it parses must index ONE buffer;
+; `ast_from_cst` and `chk_set_source` each take one source as well. So the
+; unit's files are read BACK TO BACK into a single allocation, in command-line
+; order, and driver/run.inc rewrites each file's token spans into offsets
+; within it. Nothing is inserted between two files: the buffer is the exact
+; concatenation of their bytes, so no byte the CST holds came from anywhere
+; but a source file.
+;
+; TWO PASSES, ONE DESCRIPTOR AT A TIME. `arena_init` needs the unit's total
+; size before a single byte can be stored, and the only way to learn a file's
+; size here is `fstat` on an open descriptor (`stat` is not on the allowlist).
+; So every file is opened, `fstat`ed and closed in pass 1, then opened, read
+; and closed in pass 2. The alternative -- holding all N descriptors open
+; between the passes -- saves one `openat` per file and costs a hard
+; dependency on RLIMIT_NOFILE being larger than the unit, which is exactly the
+; kind of ambient host fact §9.3 exists to keep out of the result. The cost is
+; a window in which a file can change: one that SHRANK yields what is actually
+; there (the read loop stops at EOF and the following file starts at the
+; running cursor, so the concatenation has no hole), and one that GREW is
+; truncated to its pass-1 size -- the same two outcomes the single-file path
+; already had between its own `fstat` and its own `read`.
 ;
 ; NO SOCKET SYSCALL APPEARS IN THIS FILE OR ANYWHERE ELSE UNDER driver/.
 ; §9.3: *"No network access, ever, at any phase."* `make audit` checks the
@@ -38,7 +63,7 @@
 ; is a property of the invocation, not ambient state §9.3 forbids, and it is
 ; the same directory the path was written for.
 ;
-; THE ARENA IS SIZED FROM THE FILE, WHICH IS WHY IT IS CREATED HERE.
+; THE ARENA IS SIZED FROM THE UNIT, WHICH IS WHY IT IS CREATED HERE.
 ; rt/arena.inc is deliberately fixed-capacity: *"`arena_alloc` past the
 ; capacity given to `arena_init` `rassert`s ... rather than transparently
 ; mapping more"*, and `[UNIMPLEMENTED]: auto-growth / chunked arenas`. A
@@ -129,6 +154,9 @@ DRV_ST_SIZE_OFF = 48
 DRV_S_IFMT      = 0xF000
 DRV_S_IFREG     = 0x8000
 
+; A bound on ONE file and, separately, on the whole unit: the arena is
+; DRV_ARENA_FACTOR times the unit's bytes, so a unit of 256 maximum-size files
+; would ask for a terabyte. Both refusals name the number they hit.
 DRV_SRC_MAX      = 16 * 1024 * 1024
 DRV_ARENA_FLOOR  = 4 * 1024 * 1024
 DRV_ARENA_FACTOR = 256
@@ -139,6 +167,7 @@ drv_m_read   db 'cannot read: ',0
 drv_m_notreg db 'not a regular file: ',0
 drv_m_close  db 'cannot close: ',0
 drv_m_toobig db 'source is larger than this build accepts: ',0
+drv_m_bigunit db 'the SOURCE files given add up to more than this build accepts in one compilation unit, bytes ',0
 drv_m_bytes  db ', bytes ',0
 drv_m_nomem  db 'cannot reserve memory for the compilation, errno ',0
 drv_m_errno  db ', errno ',0
@@ -173,43 +202,31 @@ proc drv_cstr_dup, arena, ptr, len
 	return
 endp
 
-; drv_slurp(ptr, len, n) -> rax = a pointer to the file's bytes, with [n] set
-; to how many there are; or rax = 0, having ALREADY said what went wrong.
-; `ptr`/`len` name the file. On success `DrvCtx.arena` at `r15` has been
-; `arena_init`ed and owns the buffer.
+; __drv_stat_size(drs_p, drs_n, drs_szo) -> eax = 1 with [drs_szo] set to the
+; file's size in bytes, or eax = 0 having ALREADY said what went wrong. Opens,
+; `fstat`s, checks that it is a regular file of an admissible size, and closes
+; again -- pass 1 of drv_slurp_unit holds no descriptor across another file's
+; open (see this file's header).
 ;
-; THE 0 RETURN IS THE SENTINEL CHANNEL, not a fourth meaning for `CF`/`eax`.
-; docs/asm-conventions.md's "1.3 Error protocol" lists four failure channels
-; and this is the third of them ("an expected 'absent' result ... a sentinel;
-; `CF` is not meaningful"): a successful `mmap`-backed allocation is never
-; address 0, so 0 is unambiguous. It is NOT the errno channel, because this
-; routine reports its own failure rather than handing an errno up: it is the
-; only place that knows which of four syscalls failed and on which path, and
-; a caller reconstructing that from a bare `-errno` would be guessing. What
-; it does hand up is the decision -- the caller chooses the exit status.
-;
-; An empty file is a success with [n] = 0, not a failure. §8.1 has nothing to
-; say against a zero-byte source and the lexer tokenizes it to a single
-; `TOK_EOF`; refusing it here would be this file inventing a rule.
-proc drv_slurp, ptr, len, n
-	uses	rbx, r12, r13, r14
+; A PREDICATE, deliberately, not the CF/eax channel: the failure has already
+; been reported here, and what the caller needs back is the decision, not the
+; errno. Same reasoning `drv_slurp_unit`'s 0 return carries.
+proc __drv_stat_size, drs_p, drs_n, drs_szo
+	uses	rbx, r12
 	locals
-		slot st,   DRV_STAT_SIZE
+		slot st,    DRV_STAT_SIZE
 		slot cpath, dq
 		slot fsize, dq
-		slot got,  dq
-		slot erno, dd
-		slot pad0, dd
+		slot erno,  dd
+		slot pad0,  dd
 	endl
-	mov	qword [got], 0
-
 	; A NUL-terminated copy for the kernel, out of the interner's arena
 	; (never reset). argv's own bytes already carry a NUL, but this routine
 	; takes a pointer and a length and must not assume one byte past the
 	; length is readable, let alone zero.
 	mov	rdi, [r15 + DrvCtx.iarena]
-	mov	rsi, [ptr]
-	mov	rdx, [len]
+	mov	rsi, [drs_p]
+	mov	rdx, [drs_n]
 	call	drv_cstr_dup
 	mov	[cpath], rax
 
@@ -219,7 +236,7 @@ proc drv_slurp, ptr, len, n
 	xor	rcx, rcx
 	call	sys_openat
 	jc	.open_failed
-	mov	rbx, rax		; fd, live until .close
+	mov	rbx, rax		; fd, live until one of the exits below
 
 	mov	rdi, rbx
 	lea	rsi, [st]
@@ -231,63 +248,18 @@ proc drv_slurp, ptr, len, n
 	cmp	eax, DRV_S_IFREG
 	jne	.not_regular
 
-	mov	r13, [st + DRV_ST_SIZE_OFF]
-	mov	[fsize], r13
-	cmp	r13, DRV_SRC_MAX
+	mov	r12, [st + DRV_ST_SIZE_OFF]
+	mov	[fsize], r12
+	cmp	r12, DRV_SRC_MAX
 	ja	.too_big
-
-	; ---- the arena, sized from the file --------------------------------
-	mov	rax, r13
-	mov	rcx, DRV_ARENA_FACTOR
-	mul	rcx			; rdx:rax; r13 <= DRV_SRC_MAX so rdx = 0
-	add	rax, DRV_ARENA_FLOOR
-	mov	rdi, [r15 + DrvCtx.arena]
-	mov	rsi, rax
-	call	arena_init
-	jc	.no_memory
-
-	; A zero-length file still gets a one-byte allocation, so the buffer
-	; pointer is a real address and never collides with this routine's own
-	; 0-means-failure sentinel.
-	mov	rdi, [r15 + DrvCtx.arena]
-	mov	rsi, r13
-	test	rsi, rsi
-	jnz	.have_size
-	mov	rsi, 1
-  .have_size:
-	call	arena_alloc
-	mov	r12, rax		; the buffer
-
-	; ---- read to EOF ---------------------------------------------------
-	; A loop, not one `read`: a short read is legal and this compiler has
-	; no libc stdio to hide that. It stops on 0 (EOF) rather than on
-	; having read st_size bytes, so a file that shrank between `fstat` and
-	; here yields what is actually there instead of trailing garbage.
-	xor	r14, r14		; bytes read so far
-  .read:
-	cmp	r14, r13
-	jae	.read_done
-	mov	rdi, rbx
-	lea	rsi, [r12 + r14]
-	mov	rdx, r13
-	sub	rdx, r14
-	call	sys_read
-	jc	.read_failed
-	test	rax, rax
-	jz	.read_done		; EOF
-	add	r14, rax
-	jmp	.read
-  .read_done:
-	mov	[got], r14
 
 	mov	rdi, rbx
 	call	sys_close
 	jc	.close_failed
 
-	mov	rax, [n]
-	mov	rcx, [got]
-	mov	[rax], rcx
-	mov	rax, r12
+	mov	rax, [drs_szo]
+	mov	[rax], r12
+	mov	eax, 1
 	return
 
   ; ---- the refusals -------------------------------------------------------
@@ -305,8 +277,8 @@ proc drv_slurp, ptr, len, n
 	neg	eax
 	mov	[erno], eax
 	lea	rdi, [drv_m_open]
-	mov	rsi, [ptr]
-	mov	rdx, [len]
+	mov	rsi, [drs_p]
+	mov	rdx, [drs_n]
 	lea	rcx, [drv_m_errno]
 	mov	r8d, [erno]
 	call	drv_msgu
@@ -319,8 +291,114 @@ proc drv_slurp, ptr, len, n
 	mov	rdi, rbx
 	call	sys_close
 	lea	rdi, [drv_m_stat]
-	mov	rsi, [ptr]
-	mov	rdx, [len]
+	mov	rsi, [drs_p]
+	mov	rdx, [drs_n]
+	lea	rcx, [drv_m_errno]
+	mov	r8d, [erno]
+	call	drv_msgu
+	xor	eax, eax
+	return
+
+  .close_failed:
+	neg	eax
+	mov	[erno], eax
+	lea	rdi, [drv_m_close]
+	mov	rsi, [drs_p]
+	mov	rdx, [drs_n]
+	lea	rcx, [drv_m_errno]
+	mov	r8d, [erno]
+	call	drv_msgu
+	xor	eax, eax
+	return
+
+  .not_regular:
+	mov	rdi, rbx
+	call	sys_close
+	lea	rdi, [drv_m_notreg]
+	mov	rsi, [drs_p]
+	mov	rdx, [drs_n]
+	xor	rcx, rcx
+	call	drv_msg
+	xor	eax, eax
+	return
+
+  .too_big:
+	mov	rdi, rbx
+	call	sys_close
+	lea	rdi, [drv_m_toobig]
+	mov	rsi, [drs_p]
+	mov	rdx, [drs_n]
+	lea	rcx, [drv_m_bytes]
+	mov	r8, [fsize]
+	call	drv_msgu
+	xor	eax, eax
+	return
+endp
+
+; __drv_read_file(drs_p, drs_n, drs_dst, drs_cap, drs_got) -> eax = 1 with
+; [drs_got] set to how many bytes were actually read, or eax = 0 having
+; already said why. Opens the file named by `drs_p`/`drs_n`, reads at most
+; `drs_cap` bytes into `drs_dst`, and closes.
+;
+; A LOOP, NOT ONE `read`: a short read is legal and this compiler has no libc
+; stdio to hide that. It stops on 0 (EOF) rather than on having read `drs_cap`
+; bytes, so a file that shrank since pass 1 yields what is actually there
+; instead of trailing garbage -- and the caller advances its cursor by what
+; came back, so the unit buffer stays an exact concatenation with no hole.
+proc __drv_read_file, drs_p, drs_n, drs_dst, drs_cap, drs_got
+	uses	rbx, r12, r13, r14
+	locals
+		slot cpath, dq
+		slot erno,  dd
+		slot pad0,  dd
+	endl
+	mov	rdi, [r15 + DrvCtx.iarena]
+	mov	rsi, [drs_p]
+	mov	rdx, [drs_n]
+	call	drv_cstr_dup
+	mov	[cpath], rax
+
+	mov	rdi, DRV_AT_FDCWD
+	mov	rsi, [cpath]
+	mov	rdx, DRV_O_RDONLY
+	xor	rcx, rcx
+	call	sys_openat
+	jc	.open_failed
+	mov	rbx, rax		; fd
+
+	mov	r12, [drs_dst]
+	mov	r13, [drs_cap]
+	xor	r14, r14		; bytes read so far
+  .read:
+	cmp	r14, r13
+	jae	.read_done
+	mov	rdi, rbx
+	lea	rsi, [r12 + r14]
+	mov	rdx, r13
+	sub	rdx, r14
+	call	sys_read
+	jc	.read_failed
+	test	rax, rax
+	jz	.read_done		; EOF
+	add	r14, rax
+	jmp	.read
+  .read_done:
+
+	mov	rdi, rbx
+	call	sys_close
+	jc	.close_failed
+
+	mov	rax, [drs_got]
+	mov	[rax], r14
+	mov	eax, 1
+	return
+
+  .open_failed:
+	neg	eax
+	mov	[erno], eax
+	lea	rdi, [drv_m_open]
+	mov	rsi, [drs_p]
+	mov	rdx, [drs_n]
 	lea	rcx, [drv_m_errno]
 	mov	r8d, [erno]
 	call	drv_msgu
@@ -333,8 +411,8 @@ proc drv_slurp, ptr, len, n
 	mov	rdi, rbx
 	call	sys_close
 	lea	rdi, [drv_m_read]
-	mov	rsi, [ptr]
-	mov	rdx, [len]
+	mov	rsi, [drs_p]
+	mov	rdx, [drs_n]
 	lea	rcx, [drv_m_errno]
 	mov	r8d, [erno]
 	call	drv_msgu
@@ -345,10 +423,146 @@ proc drv_slurp, ptr, len, n
 	neg	eax
 	mov	[erno], eax
 	lea	rdi, [drv_m_close]
-	mov	rsi, [ptr]
-	mov	rdx, [len]
+	mov	rsi, [drs_p]
+	mov	rdx, [drs_n]
 	lea	rcx, [drv_m_errno]
 	mov	r8d, [erno]
+	call	drv_msgu
+	xor	eax, eax
+	return
+endp
+
+; drv_slurp_unit(drs_tot) -> rax = a pointer to the WHOLE unit's bytes, with
+; [drs_tot] set to how many there are; or rax = 0, having ALREADY said what
+; went wrong. Reads every `DrvCtx.srcs` entry, in command-line order, into one
+; contiguous buffer, and fills in each entry's `sptr`, `slen` and `sbase`.
+; On success `DrvCtx.arena` at `r15` has been `arena_init`ed and owns it.
+;
+; THE 0 RETURN IS THE SENTINEL CHANNEL, not a fourth meaning for `CF`/`eax`.
+; docs/asm-conventions.md's "1.3 Error protocol" lists four failure channels
+; and this is the third of them ("an expected 'absent' result ... a sentinel;
+; `CF` is not meaningful"): a successful `mmap`-backed allocation is never
+; address 0, so 0 is unambiguous. It is NOT the errno channel, because this
+; routine reports its own failure rather than handing an errno up: it is the
+; only place that knows which of four syscalls failed, on which file, and on
+; which pass, and a caller reconstructing that from a bare `-errno` would be
+; guessing. What it does hand up is the decision -- the caller chooses the
+; exit status.
+;
+; An empty file is a success contributing 0 bytes, not a failure; a unit whose
+; files are all empty is a success with [drs_tot] = 0. §8.1 has nothing to say
+; against a zero-byte source and the lexer tokenizes it to a single `TOK_EOF`;
+; refusing it here would be this file inventing a rule.
+;
+; `rassert`s that at least one SOURCE was given: `drv_aedifica` checks
+; `DrvCtx.nsrc` and reports §12's own message long before this call, so
+; reaching here with an empty unit is an internal contract violation.
+proc drv_slurp_unit, drs_tot
+	uses	rbx, r12, r13, r14
+	locals
+		slot sz,    dq
+		slot tot,   dq
+		slot cur,   dq
+		slot buf,   dq
+		slot erno,  dd
+		slot pad0,  dd
+	endl
+	mov	eax, [r15 + DrvCtx.nsrc]
+	rassert	eax gt 0
+	mov	qword [tot], 0
+
+	; ---- pass 1: how many bytes is this unit? ---------------------------
+	xor	rbx, rbx
+  .sizes:
+	cmp	ebx, [r15 + DrvCtx.nsrc]
+	jae	.sized
+	mov	rdi, rbx
+	call	drv_src_ptr
+	mov	r12, rax
+	mov	rdi, [r12 + DrvSrc.spath]
+	mov	rsi, [r12 + DrvSrc.spathn]
+	lea	rdx, [sz]
+	call	__drv_stat_size
+	test	eax, eax
+	jz	.refused		; it has already said why
+	mov	rax, [sz]
+	mov	[r12 + DrvSrc.slen], rax	; provisional -- pass 2 replaces
+						; it with what was actually read
+	add	[tot], rax
+	mov	rax, [tot]
+	cmp	rax, DRV_SRC_MAX
+	ja	.unit_too_big
+	inc	rbx
+	jmp	.sizes
+  .sized:
+
+	; ---- the arena, sized from the unit ---------------------------------
+	mov	rax, [tot]
+	mov	rcx, DRV_ARENA_FACTOR
+	mul	rcx			; rdx:rax; tot <= DRV_SRC_MAX so rdx = 0
+	add	rax, DRV_ARENA_FLOOR
+	mov	rdi, [r15 + DrvCtx.arena]
+	mov	rsi, rax
+	call	arena_init
+	jc	.no_memory
+
+	; An empty unit still gets a one-byte allocation, so the buffer pointer
+	; is a real address and never collides with this routine's own
+	; 0-means-failure sentinel.
+	mov	rdi, [r15 + DrvCtx.arena]
+	mov	rsi, [tot]
+	test	rsi, rsi
+	jnz	.have_size
+	mov	rsi, 1
+  .have_size:
+	call	arena_alloc
+	mov	[buf], rax
+
+	; ---- pass 2: read them back to back ---------------------------------
+	mov	qword [cur], 0
+	xor	rbx, rbx
+  .reads:
+	cmp	ebx, [r15 + DrvCtx.nsrc]
+	jae	.done
+	mov	rdi, rbx
+	call	drv_src_ptr
+	mov	r12, rax
+	mov	r13, [buf]
+	add	r13, [cur]
+	mov	[r12 + DrvSrc.sptr], r13
+	mov	rax, [cur]
+	mov	[r12 + DrvSrc.sbase], rax
+	mov	rdi, [r12 + DrvSrc.spath]
+	mov	rsi, [r12 + DrvSrc.spathn]
+	mov	rdx, r13
+	mov	rcx, [r12 + DrvSrc.slen]
+	lea	r8,  [sz]
+	call	__drv_read_file
+	test	eax, eax
+	jz	.refused
+	mov	rax, [sz]
+	mov	[r12 + DrvSrc.slen], rax
+	add	[cur], rax
+	inc	rbx
+	jmp	.reads
+
+  .done:
+	mov	rax, [drs_tot]
+	mov	rcx, [cur]
+	mov	[rax], rcx
+	mov	rax, [buf]
+	return
+
+  .refused:
+	xor	eax, eax
+	return
+
+  .unit_too_big:
+	lea	rdi, [drv_m_bigunit]
+	xor	rsi, rsi
+	xor	rdx, rdx
+	xor	rcx, rcx
+	mov	r8, [tot]
 	call	drv_msgu
 	xor	eax, eax
 	return
@@ -356,36 +570,11 @@ proc drv_slurp, ptr, len, n
   .no_memory:
 	neg	eax
 	mov	[erno], eax
-	mov	rdi, rbx
-	call	sys_close
 	lea	rdi, [drv_m_nomem]
 	xor	rsi, rsi
 	xor	rdx, rdx
 	xor	rcx, rcx
 	mov	r8d, [erno]
-	call	drv_msgu
-	xor	eax, eax
-	return
-
-  .not_regular:
-	mov	rdi, rbx
-	call	sys_close
-	lea	rdi, [drv_m_notreg]
-	mov	rsi, [ptr]
-	mov	rdx, [len]
-	xor	rcx, rcx
-	call	drv_msg
-	xor	eax, eax
-	return
-
-  .too_big:
-	mov	rdi, rbx
-	call	sys_close
-	lea	rdi, [drv_m_toobig]
-	mov	rsi, [ptr]
-	mov	rdx, [len]
-	lea	rcx, [drv_m_bytes]
-	mov	r8, [fsize]
 	call	drv_msgu
 	xor	eax, eax
 	return

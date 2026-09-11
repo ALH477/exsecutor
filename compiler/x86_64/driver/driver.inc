@@ -31,7 +31,7 @@
 ;
 ;   msg.inc      exit statuses, escaping, the usage text
 ;     <- cli.inc      DrvCtx, the subcommand table, the flag parser
-;        <- io.inc       reading one source file
+;        <- io.inc       reading the §12 unit's files into one buffer
 ;           <- dump.inc     `--emitte tokens|cst|ast` (spec 18.2)
 ;              <- run.inc      the subcommands, and drv_main
 ;                 <- driver.inc  (this file)
@@ -59,7 +59,10 @@
 ;   drv_parse / drv_env_add / drv_u64_parse / drv_ident_ok
 ;                          -- the command line, addressable by a fixture
 ;                             without going through a process boundary
-;   drv_slurp              -- one source file into the compilation arena
+;   drv_slurp_unit         -- every SOURCE of the §12 compilation unit, back
+;                             to back, into one buffer in the compilation arena
+;   drv_src_add / drv_src_ptr / DrvSrc / DRV_SOURCES_MAX
+;                          -- the SOURCE list, in command-line order (§12)
 ;   drv_emit_diag          -- one Diag onto stderr, text or JSON Lines
 ;   drv_msg / drv_msgu / drv_say / drv_say_out / drv_usage
 ;                          -- the driver's prose, all of it escaped

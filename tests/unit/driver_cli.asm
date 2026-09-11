@@ -51,6 +51,8 @@
 ;   14  drv_u64_parse
 ;   20  a command line that must be ACCEPTED was refused
 ;   21+N  accepted, but DrvCtx field N disagreed
+;   27  the §12 multi-SOURCE case: two distinct SOURCEs were not accepted in
+;       order, or the same two in the other order came out the same
 ;   30  a command line that must be REFUSED was accepted, or with the wrong
 ;       status -- the refusal table's row index is added
 ;   99  setup (arena_init) failed
@@ -196,6 +198,71 @@ segment readable executable
 	cmp	dword [r15 + DrvCtx.nenv], 2
 	jne	.f26
 
+	; ---- 27: TWO SOURCEs, in order (§12) --------------------------------
+	; *"`SOURCE` may be repeated. The files named form one compilation unit
+	; ... Their order on the command line is the order of their items and is
+	; part of the input."* So this must be ACCEPTED, both files must be
+	; recorded, and the FIRST one must still be what `DrvCtx.srcpath` names
+	; -- every message that speaks of "the source" uses that field, and a
+	; one-file invocation must keep saying exactly what it said before.
+	call	dt_reset
+	mov	rdi, 4
+	lea	rsi, [dt_av_twosrc]
+	call	drv_parse
+	test	eax, eax
+	jnz	.f27
+	cmp	dword [r15 + DrvCtx.nsrc], 2
+	jne	.f27
+	mov	rdi, [r15 + DrvCtx.srcpath]
+	mov	rsi, [r15 + DrvCtx.srcpathn]
+	lea	rdx, [dt_s_src]
+	call	drv_arg_is
+	test	eax, eax
+	jz	.f27
+	mov	rdi, 0
+	call	drv_src_ptr
+	mov	rdi, [rax + DrvSrc.spath]
+	mov	rsi, [rax + DrvSrc.spathn]
+	lea	rdx, [dt_s_src]
+	call	drv_arg_is
+	test	eax, eax
+	jz	.f27
+	mov	rdi, 1
+	call	drv_src_ptr
+	mov	rdi, [rax + DrvSrc.spath]
+	mov	rsi, [rax + DrvSrc.spathn]
+	lea	rdx, [dt_s_src2]
+	call	drv_arg_is
+	test	eax, eax
+	jz	.f27
+
+	; The same two files in the OTHER order is a DIFFERENT input, not the
+	; same one spelled differently: entry 0 must now be the other file.
+	; Nothing in this parser sorts, and this is what says so.
+	call	dt_reset
+	mov	rdi, 4
+	lea	rsi, [dt_av_twosrc_rev]
+	call	drv_parse
+	test	eax, eax
+	jnz	.f27
+	mov	rdi, 0
+	call	drv_src_ptr
+	mov	rdi, [rax + DrvSrc.spath]
+	mov	rsi, [rax + DrvSrc.spathn]
+	lea	rdx, [dt_s_src2]
+	call	drv_arg_is
+	test	eax, eax
+	jz	.f27
+
+	; Put the accepted full command line back, so the checks below still
+	; see the context they were written against.
+	call	dt_reset
+	mov	rdi, DT_FULL_N
+	lea	rsi, [dt_av_full]
+	call	drv_parse
+	test	eax, eax
+	jnz	.f27
+
 	; ---- the minimum invocation §12 pins, and its defaults --------------
 	; exsc aedifica --hospes x86_64-linux src.exsc
 	call	dt_reset
@@ -264,6 +331,8 @@ segment readable executable
 	jmp	dt_die
   .f26:	mov	edi, 26
 	jmp	dt_die
+  .f27:	mov	edi, 27
+	jmp	dt_die
   .f30:	lea	rdi, [rbx + 30]
 	jmp	dt_die
 
@@ -287,6 +356,8 @@ segment readable executable
 	mov	[r15 + DrvCtx.interner], rax
 	lea	rax, [dt_envmap]
 	mov	[r15 + DrvCtx.envmap], rax
+	lea	rax, [dt_srcs]
+	mov	[r15 + DrvCtx.srcs], rax	; the §12 SOURCE table (driver/cli.inc)
 	lea	rax, [dt_vlx]
 	mov	[r15 + DrvCtx.vlx], rax
 	lea	rax, [dt_vtoks]
@@ -430,8 +501,13 @@ dt_av_dup_diagn:
 	dq dt_s_exsc, dt_s_aedifica, dt_s_diagn, dt_s_json, dt_s_diagn, dt_s_json
 dt_av_unknown:
 	dq dt_s_exsc, dt_s_aedifica, dt_s_frob
+; §12 admits N SOURCEs; the same one twice is still refused (driver/cli.inc).
+dt_av_dupsrc:
+	dq dt_s_exsc, dt_s_aedifica, dt_s_src, dt_s_src
 dt_av_twosrc:
 	dq dt_s_exsc, dt_s_aedifica, dt_s_src, dt_s_src2
+dt_av_twosrc_rev:
+	dq dt_s_exsc, dt_s_aedifica, dt_s_src2, dt_s_src
 dt_av_noval:
 	dq dt_s_exsc, dt_s_aedifica, dt_s_hospes
 dt_av_badepoch:
@@ -448,7 +524,7 @@ dt_bad_tab:
 	dq 6, dt_av_dup_epoch,  DRV_EXIT_USAGE
 	dq 6, dt_av_dup_diagn,  DRV_EXIT_USAGE
 	dq 3, dt_av_unknown,    DRV_EXIT_USAGE
-	dq 4, dt_av_twosrc,     DRV_EXIT_USAGE
+	dq 4, dt_av_dupsrc,     DRV_EXIT_USAGE	; §12 repeats SOURCE; it does not repeat A FILE
 	dq 3, dt_av_noval,      DRV_EXIT_USAGE
 	dq 4, dt_av_badepoch,   DRV_EXIT_USAGE
 	dq 4, dt_av_baddiagn,   DRV_EXIT_USAGE
@@ -465,6 +541,7 @@ segment readable writeable
   dt_scratch	rb sizeof.Arena
   dt_interner	rb sizeof.Interner
   dt_envmap	rb sizeof.Map
+  dt_srcs	rb DRV_SOURCES_MAX * sizeof.DrvSrc
   dt_vlx	rb sizeof.Lexer
   dt_vtoks	rb sizeof.Vec
   dt_vdiags	rb sizeof.Vec

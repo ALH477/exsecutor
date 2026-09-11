@@ -288,9 +288,9 @@ endp
 ; is (§12), which subcommands exist and which one works, what each option
 ; means and which spec rule forces it, and what each exit status means.
 drv_s_usage:
-	db 'usage: exsc SUBCOMMAND [OPTION]... SOURCE', 10
+	db 'usage: exsc SUBCOMMAND [OPTION]... SOURCE...', 10
 	db 10
-	db '  exsc aedifica --hospes TRIPLE SOURCE -o OUT        (spec 12)', 10
+	db '  exsc aedifica --hospes TRIPLE SOURCE... -o OUT     (spec 12)', 10
 	db 10
 	db 'subcommands (spec 12):', 10
 	db '  aedifica proba forma lsp ego emenda documenta novum lexicon curre', 10
@@ -302,7 +302,13 @@ drv_s_usage:
 	db '                       This build only targets x86_64-linux (exit 4 on any', 10
 	db '                       other triple): this assembly implementation has no', 10
 	db '                       backend for anything else.', 10
-	db '  SOURCE               the file to compile. Exactly one, positional.', 10
+	db '  SOURCE               the file to compile. Positional, and REPEATABLE:', 10
+	db '                       spec 12 says the files named form one compilation', 10
+	db '                       unit -- one module, one artifact -- and that their', 10
+	db '                       order on the command line is the order of their', 10
+	db '                       items, so it is part of the input and reordering', 10
+	db '                       them is a different build. The same path twice is', 10
+	db '                       an error; at most 256 files.', 10
 	db '  -o OUT               object to write. Optional here -- with it, aedifica', 10
 	db '                       reports that code generation is unimplemented (exit 4)', 10
 	db '                       and writes nothing; without it the front end runs alone.', 10

@@ -40,10 +40,32 @@
 ; reason: *"A repeated `KEY` is an error, not a last-wins. Last-wins makes the
 ; result depend on argument order, which is exactly the class this section
 ; removes."* That reason is not specific to `--env`, so it is applied to
-; `--hospes`, `-o`, `--epoch` and `--diagnostica` as well, and to a second
-; positional SOURCE. RECORDED AS AN INFERENCE, not as spec text: §9.3 says it
-; about `--env` only, and if the spec ever wants last-wins for the others,
-; this file is the one place that changes.
+; `--hospes`, `-o`, `--epoch` and `--diagnostica` as well. RECORDED AS AN
+; INFERENCE, not as spec text: §9.3 says it about `--env` only, and if the
+; spec ever wants last-wins for the others, this file is the one place that
+; changes.
+;
+; SOURCE IS NOT ONE OF THEM: §12 SAYS IT MAY BE REPEATED. *"The files named
+; form one compilation unit -- one module in §10's sense: one `ego`, one
+; interface hash, one artifact. Their order on the command line is the order
+; of their items and is part of the input, so §9.3's byte-identity holds for
+; the same command and need not survive a reordering."* So this parser
+; accepts 1..DRV_SOURCES_MAX positionals and RECORDS THEIR ORDER; nothing
+; here sorts them, and `A.exsc B.exsc` and `B.exsc A.exsc` are two different
+; inputs, not two spellings of one.
+;
+; THE SAME PATH TWICE IS STILL AN ERROR, and it is the §9.3 argument above,
+; not a §12 one: naming a file twice would put its items in the module twice,
+; and the resulting duplicate-declaration diagnostics would be about the
+; command line rather than about the source. It is a usage error -- exit
+; DRV_EXIT_USAGE (2), no `EXS-E` code, exactly as a repeated `--env KEY` is
+; -- and the comparison is BYTE EQUALITY OF THE PATH, nothing more.
+; `A.exsc` and `./A.exsc` therefore both get through. Catching that would
+; mean comparing (st_dev, st_ino), which is a host fact this parser has no
+; file descriptor to ask for and which `drv_slurp_unit` would have to report
+; from three syscalls deeper; the cheap check catches the mistake people
+; actually make (a shell glob expanded twice) and is honest about the rest.
+; `[UNIMPLEMENTED]`, stated rather than buried.
 ;
 ; `--env KEY` IS VALIDATED BY THE LEXER, NOT BY A SECOND IDENTIFIER RULE.
 ; §9.3 says *"`KEY` matches an identifier (§8.2)"*, and §8.2 is 30 lines of
@@ -81,20 +103,63 @@ include 'msg.inc'
 ; backing a live interner."* `scratch` is reset once per `--env` key;
 ; `iarena` never is; `arena` is not even created until the source file's size
 ; is known, so it can be sized from it (see driver/io.inc).
+; ---- one SOURCE of the §12 compilation unit ---------------------------------
+; The files a `exsc aedifica` command names are ONE module (§12), and this is
+; the driver's whole record of one of them. It exists because three separate
+; consumers need to get back from a byte offset to a file, and none of them
+; can:
+;
+;   - `lex_set_source` takes ONE buffer and ONE path per call, so every file
+;     is lexed on its own (its §8.1 gate is its own, its `Span.file_id` is its
+;     own) but into ONE token vector;
+;   - `cst_parse` reads `Lexer.src_ptr` for every leaf's text and for every
+;     byte of trivia between two tokens, so the tokens it parses must index
+;     ONE contiguous buffer -- which is why driver/io.inc reads the unit's
+;     files back-to-back into one allocation and driver/run.inc rewrites each
+;     file's token spans to offsets into THAT;
+;   - `ast_from_cst` stamps ONE `file_id` on every node it builds, and
+;     `chk_set_source` takes ONE source buffer, so a diagnostic raised past
+;     the parser knows its offset in the unit and nothing else about which
+;     file that offset is in.
+;
+; So the driver keeps the mapping and applies it at the last possible moment,
+; in `drv_emit_diag`: a global offset picks the entry whose [sbase, sbase+slen)
+; contains it, and that entry's path and bytes are what the diagnostic is
+; rendered against. The alternative -- teaching cst/, ast/ and checker/ about
+; a file table -- is three other agents' trees (CLAUDE.md, Scope) and is
+; REPORTED, not done; see driver/run.inc's `drv_emit_diag`.
+struct DrvSrc
+	field spath,  dq	; borrowed argv bytes, never copied
+	field spathn, dq
+	field sptr,   dq	; -> this file's bytes inside the unit buffer
+	field slen,   dq	; ... and how many were actually read
+	field sbase,  dq	; its byte offset within the unit buffer
+	field sfid,   dd	; intern id of `spath` -- what `Span.file_id` holds
+	field spad0,  dd
+end struct
+
+; How many files one `aedifica` may name. A fixed table, in BSS, bound through
+; `DrvCtx.srcs` exactly as every other mutable object in this process is
+; (compiler/x86_64/exsc.asm) -- driver/ allocates nothing statically. 256 x 56
+; bytes is 12 KiB of address space and no file bytes; exceeding it is a usage
+; error that says the limit rather than a truncation that does not.
+DRV_SOURCES_MAX = 256
+
 struct DrvCtx
 	field cmd,       dd	; DRV_CMD_*
 	field diagmode,  dd	; DIAG_MODE_TEXT | DIAG_MODE_JSON
 	field dmset,     dd	; 1 once --diagnostica has been given
 	field epochset,  dd	; 1 once --epoch has been given
 	field nenv,      dd	; --env bindings accepted so far
-	field pad0,      dd
+	field nsrc,      dd	; SOURCE positionals accepted so far (§12)
 	field emitte,    dd	; DRV_EMIT_* -- spec 18.2's stage-dump mitigation
 	field emitteset, dd	; 1 once --emitte has been given
 	field epoch,     dq	; §9.3: decimal seconds, default 0
 	field hospes,    dq	; borrowed argv bytes, never copied
 	field hospesn,   dq
-	field srcpath,   dq
-	field srcpathn,  dq
+	field srcpath,   dq	; the FIRST source's borrowed argv bytes -- see
+	field srcpathn,  dq	; `DrvSrc`, below, for the other N-1
+	field srcs,      dq	; -> DrvSrc[DRV_SOURCES_MAX], the §12 unit
 	field outpath,   dq
 	field outpathn,  dq
 	field arena,     dq	; -> Arena, the compilation. Sized in io.inc.
@@ -199,7 +264,9 @@ drv_m_unkcmd   db 'unknown subcommand: ',0
 drv_m_unkopt   db 'unknown option: ',0
 drv_m_needval  db 'option requires a value: ',0
 drv_m_repeat   db 'given more than once, which would make argument order observable: ',0
-drv_m_twosrc   db 'more than one SOURCE; the second is: ',0
+drv_m_dupsrc   db 'the same SOURCE twice, which would put its items in the module twice: ',0
+drv_m_maxsrc   db 'more SOURCE files than this build accepts in one compilation unit: ',0
+drv_m_maxsrc2  db ', limit ',0
 drv_m_envform  db '--env: expected KEY=VALUE, got: ',0
 drv_m_envkey   db '--env: KEY does not spell an identifier (spec 8.2): ',0
 drv_m_envdup   db '--env: a repeated KEY is an error, not a last-wins (spec 9.3): ',0
@@ -522,6 +589,132 @@ proc drv_env_add, ptr, len
 	return
 endp
 
+; ---- the SOURCE list -------------------------------------------------------
+
+; __drv_path_eq(drs_ap, drs_an, drs_bp, drs_bn) -> eax = 1 if the two byte
+; runs are equal, else 0. Byte equality of the PATH AS WRITTEN and nothing
+; more -- no normalisation, no `.`/`..` collapsing, no symlink resolution.
+; See this file's header for why that is the check and what it therefore
+; misses. Cannot fail; leaves CF clear.
+proc __drv_path_eq, drs_ap, drs_an, drs_bp, drs_bn
+	locals
+	endl
+	mov	rax, [drs_an]
+	cmp	rax, [drs_bn]
+	jne	.no
+	mov	rsi, [drs_ap]
+	mov	rdi, [drs_bp]
+	xor	rcx, rcx
+  .loop:
+	cmp	rcx, rax
+	jae	.yes
+	movzx	edx, byte [rsi + rcx]
+	movzx	r8d, byte [rdi + rcx]
+	cmp	edx, r8d
+	jne	.no
+	inc	rcx
+	jmp	.loop
+  .yes:
+	mov	eax, 1
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
+; drv_src_ptr(drs_k) -> rax = &DrvCtx.srcs[drs_k]. `rassert`s an index past
+; `nsrc`: reaching for a file the command line did not name is an internal
+; contract violation, not a fact about the invocation.
+proc drv_src_ptr, drs_k
+	locals
+	endl
+	mov	rax, [drs_k]
+	mov	ecx, [r15 + DrvCtx.nsrc]
+	rassert	rax lt rcx
+	mov	rdx, sizeof.DrvSrc
+	mul	rdx			; rdx:rax; k < 256 and sizeof is 56
+	add	rax, [r15 + DrvCtx.srcs]
+	return
+endp
+
+; drv_src_add(drs_p, drs_n) -> eax = 0 if this SOURCE was accepted, else the
+; DRV_EXIT_* status to leave with, having already said why. Appends ONE
+; positional to the unit, IN COMMAND-LINE ORDER (§12): nothing here sorts, and
+; the index this entry lands at is the index its items will have in the
+; module.
+;
+; The first source is also mirrored into `DrvCtx.srcpath`/`srcpathn`, which is
+; what every message that names "the source" still uses -- so a one-file
+; invocation produces byte-identical output to the one this driver produced
+; before it could take more than one.
+proc drv_src_add, drs_p, drs_n
+	uses	rbx, r12, r13
+	locals
+	endl
+	mov	r12, [drs_p]
+	mov	r13, [drs_n]
+
+	; ---- the same path twice (this file's header) -----------------------
+	xor	rbx, rbx
+  .dup:
+	cmp	ebx, [r15 + DrvCtx.nsrc]
+	jae	.fresh
+	mov	rdi, rbx
+	call	drv_src_ptr
+	mov	rdi, [rax + DrvSrc.spath]
+	mov	rsi, [rax + DrvSrc.spathn]
+	mov	rdx, r12
+	mov	rcx, r13
+	call	__drv_path_eq
+	test	eax, eax
+	jnz	.duplicate
+	inc	rbx
+	jmp	.dup
+
+  .fresh:
+	cmp	dword [r15 + DrvCtx.nsrc], DRV_SOURCES_MAX
+	jae	.too_many
+
+	mov	eax, [r15 + DrvCtx.nsrc]
+	mov	rdx, sizeof.DrvSrc
+	mul	rdx
+	add	rax, [r15 + DrvCtx.srcs]
+	mov	[rax + DrvSrc.spath],  r12
+	mov	[rax + DrvSrc.spathn], r13
+	mov	qword [rax + DrvSrc.sptr],  0
+	mov	qword [rax + DrvSrc.slen],  0
+	mov	qword [rax + DrvSrc.sbase], 0
+	mov	dword [rax + DrvSrc.sfid],  0
+	mov	dword [rax + DrvSrc.spad0], 0
+
+	cmp	dword [r15 + DrvCtx.nsrc], 0
+	jne	.not_first
+	mov	[r15 + DrvCtx.srcpath],  r12
+	mov	[r15 + DrvCtx.srcpathn], r13
+  .not_first:
+	inc	dword [r15 + DrvCtx.nsrc]
+	xor	eax, eax
+	return
+
+  .duplicate:
+	lea	rdi, [drv_m_dupsrc]
+	mov	rsi, r12
+	mov	rdx, r13
+	xor	rcx, rcx
+	call	drv_msg
+	mov	eax, DRV_EXIT_USAGE
+	return
+  .too_many:
+	lea	rdi, [drv_m_maxsrc]
+	mov	rsi, r12
+	mov	rdx, r13
+	lea	rcx, [drv_m_maxsrc2]
+	mov	r8d, DRV_SOURCES_MAX
+	call	drv_msgu
+	mov	eax, DRV_EXIT_USAGE
+	return
+endp
+
 ; ---- the parser ------------------------------------------------------------
 
 ; drv_ctx_reset -- zero exactly the `DrvCtx` fields `drv_parse` writes, and
@@ -541,6 +734,7 @@ proc drv_ctx_reset
 	mov	dword [r15 + DrvCtx.dmset],    0
 	mov	dword [r15 + DrvCtx.epochset], 0
 	mov	dword [r15 + DrvCtx.nenv],     0
+	mov	dword [r15 + DrvCtx.nsrc],     0
 	mov	dword [r15 + DrvCtx.emitte],    DRV_EMIT_NONE
 	mov	dword [r15 + DrvCtx.emitteset], 0
 	mov	qword [r15 + DrvCtx.epoch],    0
@@ -559,8 +753,8 @@ endp
 ; drv_main, so this routine only ever sees `aedifica`'s options.
 ;
 ; One left-to-right pass. Anything beginning with `-` and longer than one
-; byte is an option; anything else is the positional SOURCE, of which there
-; is exactly one. There is no `--` end-of-options marker and no `--opt=value`
+; byte is an option; anything else is a positional SOURCE, of which §12
+; admits one or more, in order. There is no `--` end-of-options marker and no `--opt=value`
 ; form: §12 spells `--hospes TRIPLE` and `-o OUT` with a space, and one
 ; spelling per option is one thing to test. `[OPEN]`: a SOURCE whose name
 ; begins with `-` is therefore unreachable.
@@ -746,11 +940,14 @@ proc drv_parse, argc, argv
 
 
   .positional:
-	cmp	qword [r15 + DrvCtx.srcpath], 0
-	jne	.two_sources
-	mov	[r15 + DrvCtx.srcpath], r14
-	mov	rax, [an]
-	mov	[r15 + DrvCtx.srcpathn], rax
+	; §12: SOURCE may be repeated, and the order is the input. `drv_src_add`
+	; is the only refusal here (the same path twice, or more files than the
+	; table holds) and has already said which it was.
+	mov	rdi, r14
+	mov	rsi, [an]
+	call	drv_src_add
+	test	eax, eax
+	jnz	.leave
   .next:
 	inc	rbx
 	jmp	.loop
@@ -770,14 +967,6 @@ proc drv_parse, argc, argv
 	return
   .repeated:
 	lea	rdi, [drv_m_repeat]
-	mov	rsi, r14
-	mov	rdx, [an]
-	xor	rcx, rcx
-	call	drv_msg
-	mov	eax, DRV_EXIT_USAGE
-	return
-  .two_sources:
-	lea	rdi, [drv_m_twosrc]
 	mov	rsi, r14
 	mov	rdx, [an]
 	xor	rcx, rcx

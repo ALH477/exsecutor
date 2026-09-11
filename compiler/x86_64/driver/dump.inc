@@ -53,6 +53,29 @@
 ; silent emptiness, which is what this file's header in the task brief asks
 ; for by name.
 ;
+; WHERE THE FILE BOUNDARY IS IN A MULTI-FILE DUMP (spec 12). All three dumps
+; describe ONE compilation unit, because that is what the files named on the
+; command line are -- there is no per-file dump and there should not be one.
+; What the dumps show instead:
+;   - `tokens`: the FILE column. It is the token's own `Span.file_id`, which
+;     rt/span.inc defines as the INTERN ID OF THE PATH -- not a 1-based
+;     position on the command line -- so the values are whatever the interner
+;     handed out (ids are assigned on first use, and a file's identifiers are
+;     interned between its own path and the next file's, so they are rarely
+;     consecutive). The boundary is where that column CHANGES; the START
+;     column does not restart at it, because it is an offset into the unit's
+;     one buffer and runs monotonically from the first file's first byte to
+;     the last file's last. A second thing the dump shows by absence: there is
+;     exactly ONE `EOF` record, at the end, however many files went in --
+;     driver/run.inc drops each file's own trailing `TOK_EOF` because
+;     `__cst_module` stops at the first one it sees.
+;   - `cst` and `ast`: no file column at all. `cst_dump` takes ONE `file_id`
+;     and `ast_from_cst` stamps ONE on every node it builds, so both carry the
+;     FIRST file's -- which is why `drv_emit_diag` resolves a diagnostic's file
+;     from its OFFSET and not from its `file_id` (driver/run.inc,
+;     `__drv_localize`). Giving those two dumps a real per-node file would be
+;     a change in cst/ and ast/, not here. REPORTED, not done.
+;
 ; DETERMINISM. Every dumper here prints a name (this file's own literals, or
 ; `ast`/`cst`'s kind-name pools) or a plain decimal, never a pointer and never
 ; anything iterated by hash order (CLAUDE.md). `drv_tok_kind_name` indexes a

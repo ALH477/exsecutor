@@ -289,6 +289,11 @@ de_setup:
 ; the next one pass or fail (driver_cli.asm's `dt_reset` does the same).
 de_reset:
 	push	rbx
+	; The §12 SOURCE table `drv_parse` appends positionals to. Bound the
+	; same way compiler/x86_64/exsc.asm binds it, because this fixture
+	; drives `drv_parse` over command lines that carry a SOURCE.
+	lea	rax, [de_srcs]
+	mov	[r15 + DrvCtx.srcs], rax
 	call	drv_ctx_reset
 	pop	rbx
 	ret
@@ -405,6 +410,7 @@ DE_REFUSE_COUNT = (de_refuse_tab_end - de_refuse_tab) / 24
 
 segment readable writeable
   de_ctx	rb sizeof.DrvCtx
+  de_srcs	rb DRV_SOURCES_MAX * sizeof.DrvSrc
   de_actptr	rq 1
   de_actlen	rq 1
   de_expptr	rq 1

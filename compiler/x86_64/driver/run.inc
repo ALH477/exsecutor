@@ -25,11 +25,43 @@
 ;
 ; WHAT `aedifica` ACTUALLY IS TODAY, said plainly because the exit statuses
 ; below depend on it: it reads the source, runs lexer/'s §8.1 gate and §8.4
-; tokenizer, and emits whatever diagnostics that produced. There is no
-; parser, no type checker and no backend (§16 Stages 1-3; §15 #9 records that
-; there is no phrase grammar yet). So `aedifica` can find that a file is not
-; admissible Exsecutor source, and it cannot yet turn an admissible one into
-; anything.
+; tokenizer, parses under §8.6, builds §9.1's typed AST, runs as much of
+; Stage 2's checker as exists, and emits whatever diagnostics all of that
+; produced. There is no type checker and no backend (§16 Stages 2-3). So
+; `aedifica` can find that a file is not admissible Exsecutor source, and it
+; cannot yet turn an admissible one into anything.
+;
+; SOURCE MAY BE REPEATED, AND THE FILES ARE ONE MODULE (§12): *"The files
+; named form one compilation unit -- one module in §10's sense: one `ego`, one
+; interface hash, one artifact. Their order on the command line is the order
+; of their items and is part of the input."* The shape of that here, because
+; it is spread over four routines and is easy to read as four unrelated
+; things:
+;
+;   1. driver/io.inc reads every file, in order, back to back into ONE buffer
+;      (`drv_slurp_unit`), and records where each one landed in `DrvCtx.srcs`.
+;   2. this file lexes each file SEPARATELY -- §8.1 is a property of a file,
+;      and two files must never lex into one token -- into ONE token vector,
+;      then rewrites what each `lex_run` appended by that file's base
+;      (`__drv_globalize`) and drops its trailing `TOK_EOF` unless it was the
+;      last file (`__drv_drop_eof`, because `__cst_module` stops at the first
+;      EOF it sees).
+;   3. ONE `cst_parse`, ONE `ast_from_cst`, ONE `ast_verify_stage1`, ONE
+;      `chk_run` then run over that, with the lexer pointed at the whole unit
+;      buffer -- every span past this point is an offset into it.
+;   4. `drv_emit_diag` maps a diagnostic back to the file its offset falls in
+;      (`__drv_localize`) immediately before rendering it, so a diagnostic in
+;      the third file prints the third file's name and the third file's own
+;      line number.
+;
+; NOTHING SORTS. A different order is a different input, and §9.3's
+; byte-identity is promised for the same command line, not across a
+; reordering -- §12 says so in as many words.
+;
+; FOR ONE SOURCE THIS IS ALL THE IDENTITY. The base is 0, the globalize step
+; returns immediately, no EOF is dropped, and the localize step restores the
+; path and bytes the lexer already attached -- so a one-file invocation emits
+; byte-for-byte what it emitted before any of this existed.
 ;
 ; `-o OUT` IS THEREFORE OPTIONAL HERE, AND THAT IS A DECISION, NOT AN
 ; OVERSIGHT. §12 pins *"the minimum build invocation"* as
@@ -108,12 +140,155 @@ drv_m_trunc  db 'a diagnostic did not fit its buffer and was truncated; the outp
 drv_m_okpfx  db 'aedifica: ',0
 drv_m_okbare db ': the front end accepts this source -- it lexes, parses, and builds a typed AST. No object was requested, so none was written.',0
 drv_m_okout  db ': the front end accepts this source, but code generation is not implemented, so no object was written. Spec 16 Stage 3.',0
+drv_m_okunit db ' and the other SOURCE files given with it: the front end accepts this compilation unit -- it lexes and parses all of it and builds ONE typed AST from it (spec 12: the files named form one module). No object was requested, so none was written. Files in the unit: ',0
+drv_m_okoutunit db ' and the other SOURCE files given with it: the front end accepts this compilation unit (spec 12: the files named form one module), but code generation is not implemented, so no object was written. Spec 16 Stage 3. Files in the unit: ',0
 drv_m_emitgate db ': --emitte was given, but this source failed the spec 8.1 source-hygiene gate, so it was never tokenized -- there is no token stream, no CST and no typed AST to dump. Nothing was written to stdout. See the diagnostic below.',0
+
+; __drv_src_at(drs_off) -> rax = the `DrvSrc` whose bytes contain the unit
+; offset `drs_off`, or 0 if no SOURCE has been recorded at all. Linear over
+; `DrvCtx.nsrc`, which is at most DRV_SOURCES_MAX and is walked in
+; command-line order, so nothing here depends on a pointer value (CLAUDE.md).
+;
+; The first entry with `off < sbase + slen` wins. That skips an EMPTY file
+; (`slen` 0) rather than letting it claim the boundary offset it shares with
+; the next file, and an offset past the last file's last byte -- the unit's
+; final `TOK_EOF` sits at exactly `total` -- clamps to the last entry rather
+; than resolving to nothing. Cannot fail; leaves CF clear.
+proc __drv_src_at, drs_off
+	uses	rbx, r12
+	locals
+	endl
+	mov	ecx, [r15 + DrvCtx.nsrc]
+	test	ecx, ecx
+	jz	.none
+	mov	r12, [drs_off]
+	xor	rbx, rbx
+  .loop:
+	cmp	ebx, [r15 + DrvCtx.nsrc]
+	jae	.last
+	mov	rdi, rbx
+	call	drv_src_ptr
+	mov	rcx, [rax + DrvSrc.sbase]
+	add	rcx, [rax + DrvSrc.slen]
+	cmp	r12, rcx
+	jb	.done
+	inc	rbx
+	jmp	.loop
+  .last:
+	mov	eax, [r15 + DrvCtx.nsrc]
+	dec	eax
+	mov	rdi, rax
+	call	drv_src_ptr
+  .done:
+	return
+  .none:
+	xor	eax, eax
+	return
+endp
+
+; __drv_localize(drs_dg) -- rewrite one `Diag` from unit coordinates into the
+; coordinates of the file it is actually in.
+;
+; WHY THIS EXISTS AT ALL, since it is the load-bearing half of multi-file
+; support. Every span in this compilation is an offset into the ONE buffer
+; driver/io.inc read the unit's files into: the lexer's, because
+; driver/run.inc rewrites each file's spans by that file's base (below); the
+; parser's, because `cst_parse` works off `Lexer.src_ptr`, which is that
+; buffer; the checker's, because `ast_from_cst` stamps one `file_id` on every
+; node and `chk_set_source` takes one source. A diagnostic therefore arrives
+; here knowing its offset in the UNIT and nothing about which file that is.
+; This routine is the only place that knows, and it applies the mapping at
+; the last possible moment -- on a COPY, so the record in `DrvCtx.diags` is
+; never mutated and rendering it twice gives the same bytes twice, which is
+; what diag/render.inc promises about its own inputs.
+;
+; A DIAGNOSTIC WITH NO SOURCE ATTACHED IS LEFT ALONE (`src_len` 0). Attaching
+; one here would give a snippet to a record that never claimed to have one.
+;
+; A RELATED SPAN IN A DIFFERENT FILE IS DROPPED, and this is the one place
+; this composition loses information. `diag_render_text` renders `rel`'s
+; gutter block against the record's single `src_ptr` (diag/render.inc), so a
+; related span in another file would be rendered as a line of the CARET's
+; file -- a line that has nothing to do with it. §8.3 makes a diagnostic's
+; span the part a reader is entitled to trust, so showing the wrong line is
+; worse than showing no second block: `DIAG_F_REL` is cleared and the caret,
+; the code and the note still render. This is reachable in practice -- an
+; `EXS-E0202` for a `{` opened in the unit's first file and never closed
+; reports at the unit's end, which is the last file -- and the real fix is a
+; second source pair on `Diag` (or a file table diag/ can consult), which is
+; diag/'s change to make, not driver/'s to force. REPORTED, not done.
+proc __drv_localize, drs_dg
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [drs_dg]
+	cmp	qword [rbx + Diag.src_len], 0
+	je	.leave
+
+	mov	edi, [rbx + Diag.span.start]
+	call	__drv_src_at
+	test	rax, rax
+	jz	.leave
+	mov	r12, rax
+
+	mov	eax, [rbx + Diag.span.start]
+	sub	rax, [r12 + DrvSrc.sbase]
+	mov	[rbx + Diag.span.start], eax
+	mov	eax, [r12 + DrvSrc.sfid]
+	mov	[rbx + Diag.span.file_id], eax
+	mov	rax, [r12 + DrvSrc.sptr]
+	mov	[rbx + Diag.src_ptr], rax
+	mov	rax, [r12 + DrvSrc.slen]
+	mov	[rbx + Diag.src_len], rax
+	mov	rax, [r12 + DrvSrc.spath]
+	mov	[rbx + Diag.path_ptr], rax
+	mov	rax, [r12 + DrvSrc.spathn]
+	mov	[rbx + Diag.path_len], rax
+
+	test	dword [rbx + Diag.flags], DIAG_F_REL
+	jz	.norel
+	mov	edi, [rbx + Diag.rel.start]
+	call	__drv_src_at
+	cmp	rax, r12
+	jne	.dropre
+	mov	eax, [rbx + Diag.rel.start]
+	sub	rax, [r12 + DrvSrc.sbase]
+	mov	[rbx + Diag.rel.start], eax
+	mov	eax, [r12 + DrvSrc.sfid]
+	mov	[rbx + Diag.rel.file_id], eax
+	jmp	.norel
+  .dropre:
+	and	dword [rbx + Diag.flags], not DIAG_F_REL
+  .norel:
+
+	cmp	dword [rbx + Diag.fix.kind], DIAG_FIX_NONE
+	je	.leave
+	; A fix is an EDIT, and `exsc emenda` applies it to the file its
+	; `file_id` names -- so it is resolved against its OWN offset rather
+	; than assumed to be in the caret's file.
+	mov	edi, [rbx + Diag.fix.edit.start]
+	call	__drv_src_at
+	test	rax, rax
+	jz	.leave
+	mov	ecx, [rbx + Diag.fix.edit.start]
+	sub	rcx, [rax + DrvSrc.sbase]
+	mov	[rbx + Diag.fix.edit.start], ecx
+	mov	ecx, [rax + DrvSrc.sfid]
+	mov	[rbx + Diag.fix.edit.file_id], ecx
+  .leave:
+	return
+endp
 
 ; drv_emit_diag(dg, mode) -> eax = 1 if the rendering was truncated, else 0.
 ; Renders one `Diag` and writes it to stderr. Cannot fail; leaves CF clear --
 ; a failed write to stderr is swallowed by `drv_say` for the reason its own
 ; comment gives.
+;
+; THE RECORD IS COPIED AND LOCALIZED FIRST -- see `__drv_localize`, just
+; above. For a one-file unit that mapping is the identity (base 0, and the
+; file's own path and bytes are what the lexer already attached), so this
+; produces byte-for-byte what it produced before the driver could take more
+; than one SOURCE.
 ;
 ; The renderer is handed DRV_DIAG_CAP-1, not DRV_DIAG_CAP, so the JSON Lines
 ; newline always has somewhere to go: a record that exactly filled the buffer
@@ -123,9 +298,18 @@ proc drv_emit_diag, dg, mode
 	uses	rbx
 	locals
 		slot tr,      dq
+		slot dg2,     sizeof.Diag
 		slot drvdbuf, DRV_DIAG_CAP
 	endl
-	mov	rdi, [dg]
+	lea	rdi, [dg2]
+	mov	rsi, [dg]
+	mov	rcx, sizeof.Diag
+	cld
+	rep	movsb
+	lea	rdi, [dg2]
+	call	__drv_localize
+
+	lea	rdi, [dg2]
 	lea	rsi, [drvdbuf]
 	mov	rdx, DRV_DIAG_CAP - 1
 	cmp	qword [mode], DIAG_MODE_JSON
@@ -147,6 +331,98 @@ proc drv_emit_diag, dg, mode
 	mov	rsi, rbx
 	call	drv_say
 	mov	rax, [tr]
+	return
+endp
+
+; __drv_globalize(drs_delta, drs_t0, drs_d0) -- add `drs_delta` to every span
+; of the tokens from index `drs_t0` on and the diagnostics from index `drs_d0`
+; on, so that what one `lex_run` produced over one file's bytes reads as
+; offsets into the unit buffer that file was read into.
+;
+; WHY THE DIAGNOSTICS TOO, when the lexer already attached each one to the
+; right file with the right local offset: so that there is exactly ONE
+; convention in `DrvCtx.diags`. A vector holding some records in file
+; coordinates and others (everything the parser, the AST walk and the checker
+; raise, all of which work off the unit buffer) in unit coordinates would need
+; `drv_emit_diag` to tell them apart, and the only thing available to tell
+; them apart BY is a pointer or a file id the parser does not vary. One
+; convention, applied here, undone in `__drv_localize`, and the round trip is
+; the identity for a one-file unit because `drs_delta` is then 0.
+;
+; THE THREE SPANS OF A `Diag` ARE ALL MOVED: the caret, the related span (only
+; when `DIAG_F_REL` says it is real -- diag/render.inc), and a fix's edit range
+; (only when `fix.kind` says there is one). A `DiagFix`'s `text_ptr` is
+; replacement text in an arena, not an offset, and is not touched.
+; Cannot fail; leaves CF clear.
+proc __drv_globalize, drs_delta, drs_t0, drs_d0
+	uses	rbx, r12, r13, r14
+	locals
+	endl
+	mov	r14, [drs_delta]
+	test	r14, r14
+	jz	.done			; a one-file unit moves nothing
+
+	mov	rbx, [r15 + DrvCtx.toks]
+	mov	r12, [drs_t0]
+	mov	r13, [rbx + Vec.len]
+  .toks:
+	cmp	r12, r13
+	jae	.toksdone
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	vec_get
+	add	dword [rax + Tok.span.start], r14d
+	inc	r12
+	jmp	.toks
+  .toksdone:
+
+	mov	rbx, [r15 + DrvCtx.diags]
+	mov	r12, [drs_d0]
+	mov	r13, [rbx + Vec.len]
+  .diags:
+	cmp	r12, r13
+	jae	.done
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	vec_get
+	add	dword [rax + Diag.span.start], r14d
+	test	dword [rax + Diag.flags], DIAG_F_REL
+	jz	.norel
+	add	dword [rax + Diag.rel.start], r14d
+  .norel:
+	cmp	dword [rax + Diag.fix.kind], DIAG_FIX_NONE
+	je	.nofix
+	add	dword [rax + Diag.fix.edit.start], r14d
+  .nofix:
+	inc	r12
+	jmp	.diags
+  .done:
+	return
+endp
+
+; __drv_drop_eof -- remove the `TOK_EOF` `lex_tokenize` just appended.
+;
+; A `Vec` has no pop (rt/vec.inc: `vec_init`, `vec_push`, `vec_get`, and
+; nothing else), and adding one is rt/'s change, not driver/'s -- so this
+; decrements `Vec.len` directly, which is the same public field
+; `drv_dump_tokens` and `.report` below already read. It `rassert`s that the
+; element it is dropping really is an EOF: dropping anything else would delete
+; a token of the program, and that is a compiler bug rather than a fact about
+; the source. Cannot fail; leaves CF clear.
+proc __drv_drop_eof
+	uses	rbx
+	locals
+	endl
+	mov	rbx, [r15 + DrvCtx.toks]
+	mov	rcx, [rbx + Vec.len]
+	rassert	rcx gt 0
+	dec	rcx
+	mov	rdi, rbx
+	mov	rsi, rcx
+	call	vec_get
+	mov	ecx, [rax + Tok.kind]
+	rassert	ecx eq TOK_EOF
+	dec	qword [rbx + Vec.len]
 	return
 endp
 
@@ -214,6 +490,10 @@ proc drv_aedifica, argc, argv
 		slot srclen, dq
 		slot srcbuf, dq
 		slot trunc,  dq
+		slot drvk,   dq		; the file being lexed
+		slot drvt0,  dq		; DrvCtx.toks length before it
+		slot drvd0,  dq		; DrvCtx.diags length before it
+		slot drvent, dq		; -> its DrvSrc
 	endl
 	; ---- the arenas that exist before the source does -------------------
 	mov	rdi, [r15 + DrvCtx.iarena]
@@ -245,7 +525,7 @@ proc drv_aedifica, argc, argv
 	je	.no_hospes
 	cmp	qword [r15 + DrvCtx.hospesn], 0
 	je	.empty_hospes
-	cmp	qword [r15 + DrvCtx.srcpath], 0
+	cmp	dword [r15 + DrvCtx.nsrc], 0
 	je	.no_source
 
 	; ---- the target: only x86_64-linux exists in this build -------------
@@ -256,16 +536,18 @@ proc drv_aedifica, argc, argv
 	test	eax, eax
 	jz	.hospes_unsupported
 
-	; ---- the source ------------------------------------------------------
-	mov	rdi, [r15 + DrvCtx.srcpath]
-	mov	rsi, [r15 + DrvCtx.srcpathn]
-	lea	rdx, [srclen]
-	call	drv_slurp
+	; ---- the source: every file of the §12 unit, into one buffer ---------
+	lea	rdi, [srclen]
+	call	drv_slurp_unit
 	test	rax, rax
-	jz	.host			; drv_slurp has already said why
+	jz	.host			; drv_slurp_unit has already said why
 	mov	[srcbuf], rax
 
 	; ---- the front end ---------------------------------------------------
+	; ONE token vector and ONE diagnostic vector for the WHOLE unit.
+	; lexer/source.inc says this is supported by construction: `lex_init`
+	; "does not initialise them, because a caller may legitimately want one
+	; vector to outlive several files."
 	mov	rdi, [r15 + DrvCtx.toks]
 	mov	rsi, [r15 + DrvCtx.arena]
 	mov	rdx, sizeof.Tok
@@ -282,12 +564,45 @@ proc drv_aedifica, argc, argv
 	mov	rcx, [r15 + DrvCtx.toks]
 	mov	r8,  [r15 + DrvCtx.diags]
 	call	lex_init
+
+	; ---- §8.1 and §8.4, ONCE PER FILE, into that one vector --------------
+	; Per file, because both are properties of a FILE: a BOM is `EXS-E0101`
+	; at offset 0 and `EXS-E0103` anywhere else (§8.1), NFC segmentation
+	; must not run across a boundary, and two files must never lex into one
+	; token -- `finis` at the end of one and `functio` at the start of the
+	; next are two tokens, not `finisfunctio`. Each file therefore gets its
+	; own `lex_set_source` (its own `Span.file_id`, its own §8.1 gate) and
+	; its own `lex_run`, and `__drv_globalize` then rewrites what that call
+	; appended into offsets within the unit buffer, which is what the parser
+	; below needs and what `__drv_localize` maps back at render time.
+	mov	qword [drvk], 0
+  .lexfile:
+	mov	rax, [drvk]
+	cmp	eax, [r15 + DrvCtx.nsrc]
+	jae	.lexed
+	mov	rdi, [drvk]
+	call	drv_src_ptr
+	mov	[drvent], rax
+	mov	rcx, [r15 + DrvCtx.toks]
+	mov	rcx, [rcx + Vec.len]
+	mov	[drvt0], rcx
+	mov	rcx, [r15 + DrvCtx.diags]
+	mov	rcx, [rcx + Vec.len]
+	mov	[drvd0], rcx
+
 	mov	rdi, [r15 + DrvCtx.lx]
-	mov	rsi, [srcbuf]
-	mov	rdx, [srclen]
-	mov	rcx, [r15 + DrvCtx.srcpath]
-	mov	r8,  [r15 + DrvCtx.srcpathn]
+	mov	rax, [drvent]
+	mov	rsi, [rax + DrvSrc.sptr]
+	mov	rdx, [rax + DrvSrc.slen]
+	mov	rcx, [rax + DrvSrc.spath]
+	mov	r8,  [rax + DrvSrc.spathn]
 	call	lex_set_source
+	mov	rax, [r15 + DrvCtx.lx]
+	mov	ecx, [rax + Lexer.file_id]	; an INTERN id of the path, not a
+						; descriptor (lexer/source.inc)
+	mov	rax, [drvent]
+	mov	[rax + DrvSrc.sfid], ecx
+
 	mov	rdi, [r15 + DrvCtx.lx]
 	call	lex_run			; CF/eax: the FIRST code, if any
 	jc	.gate_failed		; §8.1 IS A GATE. A file that failed it
@@ -296,6 +611,46 @@ proc drv_aedifica, argc, argv
 					; and nothing a parse could add but a
 					; cascade of diagnostics about bytes
 					; the source policy already rejected.
+					; The unit stops here; whatever earlier
+					; files already reported is still
+					; reported below.
+
+	mov	rax, [drvent]
+	mov	rdi, [rax + DrvSrc.sbase]
+	mov	rsi, [drvt0]
+	mov	rdx, [drvd0]
+	call	__drv_globalize
+
+	; Every `lex_tokenize` ends its file with a `TOK_EOF` (lexer/lex.inc),
+	; and `__cst_module` stops at the first one it sees -- so an EOF in the
+	; middle of the unit would end the module at the end of the first file.
+	; All but the last are dropped here. Nothing is lost with them: an EOF
+	; token is zero-width, and the trailing trivia it was standing in front
+	; of is picked up as the gap before the next file's first token.
+	mov	rax, [drvk]
+	inc	rax
+	cmp	eax, [r15 + DrvCtx.nsrc]
+	jae	.keep_eof
+	call	__drv_drop_eof
+  .keep_eof:
+	inc	qword [drvk]
+	jmp	.lexfile
+  .lexed:
+
+	; ---- the unit is one text from here down -----------------------------
+	; `cst_parse` reads `Lexer.src_ptr` for every leaf's bytes and for every
+	; byte of trivia between two tokens, so it is pointed at the whole unit
+	; buffer, whose offsets are exactly what the spans now carry. The path
+	; and `file_id` it also picks up here are the FIRST file's, and they are
+	; what every diagnostic raised past this point carries -- which is why
+	; `drv_emit_diag` resolves a diagnostic's file from its OFFSET rather
+	; than from its `file_id` (see `__drv_localize`).
+	mov	rdi, [r15 + DrvCtx.lx]
+	mov	rsi, [srcbuf]
+	mov	rdx, [srclen]
+	mov	rcx, [r15 + DrvCtx.srcpath]
+	mov	r8,  [r15 + DrvCtx.srcpathn]
+	call	lex_set_source
 
 	; ---- §8.6: the parse, into §9.1's lossless CST -----------------------
 	; cst/ owns no storage: the green array, the builder's work stack and
@@ -385,6 +740,22 @@ proc drv_aedifica, argc, argv
 					; nothing.
   .chk_nomain:
 	call	chk_init
+	; `chk_set_source` TAKES ONE SOURCE AND ONE PATH, and a §12 unit has N
+	; of each. What it is given is the whole unit buffer and the FIRST
+	; file's path, because that is the only shape the call has. Those
+	; values reach exactly one place -- `diag_attach_source` on every
+	; diagnostic the checker appends (checker/resolve/resolve.inc) -- and
+	; `drv_emit_diag` overwrites both from the file the diagnostic's OFFSET
+	; falls in before rendering, so no checker diagnostic is rendered
+	; against the wrong file's bytes. Said plainly because the honest
+	; version matters: if the driver did NOT localize, a checker diagnostic
+	; in the second file would print the second file's line NUMBER against
+	; the first file's NAME and the first file's text. What the checker
+	; should take is the table (`DrvCtx.srcs`), or a per-node `file_id` from
+	; `ast_from_cst`; both are other agents' trees. REPORTED, not done --
+	; and tests/unit/driver_sources.asm asserts the rendered path of a
+	; checker diagnostic raised in the SECOND file, so the day this
+	; localization is removed the fixture says so.
 	mov	rdi, [r15 + DrvCtx.chk]
 	mov	rsi, [srcbuf]
 	mov	rdx, [srclen]
@@ -420,6 +791,30 @@ proc drv_aedifica, argc, argv
 	jmp	.report
 
   .gate_failed:
+	; FIRST, the same globalize every other file got. `lex_run` raised its
+	; §8.1 diagnostics against THIS file's bytes with THIS file's offsets,
+	; and they are in the one vector `.report` walks, so they need the same
+	; rewrite the tokens of the files before them got -- otherwise a local
+	; offset resolves, in `__drv_localize`, to whichever EARLIER file
+	; happens to span it, and the diagnostic prints the wrong file's name
+	; and the wrong file's line. Found by running it: a CRLF in the second
+	; of three files reported the FIRST file's path and line 1, while the
+	; `--emitte` note two lines below it named the second file correctly.
+	; There are no tokens to move (§8.1 is a gate; nothing was tokenized),
+	; and `__drv_globalize` walking an empty token range costs nothing.
+	mov	rax, [drvent]
+	mov	rdi, [rax + DrvSrc.sbase]
+	mov	rsi, [drvt0]
+	mov	rdx, [drvd0]
+	call	__drv_globalize
+
+	; ONE file of the unit failed §8.1, and the file it was is named --
+	; `[drvent]`, not `DrvCtx.srcpath`, because with several SOURCEs the
+	; first one is usually not the one at fault. Everything earlier files
+	; already reported is still reported below; nothing later is lexed,
+	; because §8.1 is a gate and a unit missing one of its files is not the
+	; unit that was asked for.
+	;
 	; --emitte was asked for a stage that never came into existence: §8.1
 	; is a gate, so a rejected file has no tokens, no CST and no AST to
 	; dump. Say so on stderr -- see driver/dump.inc's header for why an
@@ -428,9 +823,10 @@ proc drv_aedifica, argc, argv
 	; refusal goes through.
 	cmp	dword [r15 + DrvCtx.emitte], DRV_EMIT_NONE
 	je	.report
+	mov	rax, [drvent]
 	lea	rdi, [drv_m_okpfx]
-	mov	rsi, [r15 + DrvCtx.srcpath]
-	mov	rdx, [r15 + DrvCtx.srcpathn]
+	mov	rsi, [rax + DrvSrc.spath]
+	mov	rdx, [rax + DrvSrc.spathn]
 	lea	rcx, [drv_m_emitgate]
 	call	drv_msg
 	jmp	.report
@@ -485,11 +881,24 @@ proc drv_aedifica, argc, argv
 	; suppressed in json mode -- see this file's header.
 	cmp	dword [r15 + DrvCtx.diagmode], DIAG_MODE_JSON
 	je	.quiet_ok
+	cmp	dword [r15 + DrvCtx.nsrc], 1
+	ja	.clean_unit
 	lea	rdi, [drv_m_okpfx]
 	mov	rsi, [r15 + DrvCtx.srcpath]
 	mov	rdx, [r15 + DrvCtx.srcpathn]
 	lea	rcx, [drv_m_okbare]
 	call	drv_msg
+	jmp	.quiet_ok
+  .clean_unit:
+	; Several SOURCEs were given and they are ONE module (§12), so the
+	; sentence is about the unit and it says how many files are in it. The
+	; one-file sentence above is left byte-for-byte as it was.
+	lea	rdi, [drv_m_okpfx]
+	mov	rsi, [r15 + DrvCtx.srcpath]
+	mov	rdx, [r15 + DrvCtx.srcpathn]
+	lea	rcx, [drv_m_okunit]
+	mov	r8d, [r15 + DrvCtx.nsrc]
+	call	drv_msgu
   .quiet_ok:
 	mov	eax, DRV_EXIT_OK
 	return
@@ -498,11 +907,22 @@ proc drv_aedifica, argc, argv
 	; An artifact WAS asked for. Saying so and exiting nonzero is the only
 	; honest answer while there is no backend; exiting 0 here would make
 	; tools/publish-gate.sh report a build that never happened.
+	cmp	dword [r15 + DrvCtx.nsrc], 1
+	ja	.clean_out_unit
 	lea	rdi, [drv_m_okpfx]
 	mov	rsi, [r15 + DrvCtx.srcpath]
 	mov	rdx, [r15 + DrvCtx.srcpathn]
 	lea	rcx, [drv_m_okout]
 	call	drv_msg
+	mov	eax, DRV_EXIT_TODO
+	return
+  .clean_out_unit:
+	lea	rdi, [drv_m_okpfx]
+	mov	rsi, [r15 + DrvCtx.srcpath]
+	mov	rdx, [r15 + DrvCtx.srcpathn]
+	lea	rcx, [drv_m_okoutunit]
+	mov	r8d, [r15 + DrvCtx.nsrc]
+	call	drv_msgu
 	mov	eax, DRV_EXIT_TODO
 	return
 
