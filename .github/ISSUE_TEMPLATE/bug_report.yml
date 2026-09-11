@@ -1,0 +1,100 @@
+name: Bug report
+description: >-
+  exsc did something the spec says it should not, on an input you can show.
+title: "[bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        This project's arguments are settled against
+        `docs/spec/exsecutor-spec-v0.4.md`, not against intuition, so a report
+        that cannot name a section is a design question, not a bug -- use the
+        "Spec question" template for that instead. Keep the source as small as
+        you can make it; a smaller reproduction is the whole report.
+
+  - type: textarea
+    id: command
+    attributes:
+      label: Exact command
+      description: >-
+        Full invocation, including --hospes. Spec §9.5: "exsc with no
+        --hospes is an error, no default-to-build-platform" -- a command
+        without it did not run the compiler you think it did.
+      placeholder: build/exsc aedifica --hospes x86_64-linux examples/saluta.exsc -o out.asm
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: source
+    attributes:
+      label: Source (.exsc)
+      description: >-
+        The smallest input that still reproduces it. A file that also
+        exercises unrelated constructs makes someone else re-shrink it before
+        they can start.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What exsc printed
+      description: >-
+        Verbatim, stdout and stderr, including the EXS-E code if one was
+        printed. Codes are permanent and text is not (§8.3) -- the code is
+        the fact; paraphrasing the message is not.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and which spec section says so
+      description: >-
+        Cite the section (e.g. "§13, EXS-E0301" or "§9.3"). Without a section
+        this is a disagreement with intuition, not with the spec, and belongs
+        in "Spec question" instead.
+      placeholder: "§9.3: output must be byte-identical across ... instead it changed when ..."
+    validations:
+      required: true
+
+  - type: input
+    id: commit
+    attributes:
+      label: Commit
+      description: Output of `git rev-parse --short HEAD`.
+      placeholder: 2e257f0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: nix
+    attributes:
+      label: Built inside `nix develop`?
+      description: >-
+        The build closure is fasmg plus the vendored macro package (§18.1);
+        outside the devShell you are trusting whatever fasmg is on PATH.
+      options:
+        - "Yes, nix develop"
+        - "No, ambient fasmg on PATH"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: What was run
+      description: >-
+        "Never report a bug you did not confirm was not one of these" is not
+        written down anywhere, but it should be -- state the result of each,
+        not just that you ran it (CLAUDE.md: never report a test you did not
+        see pass).
+      options:
+        - label: "tests/run.sh -- state the pass/fail line it printed"
+        - label: "make audit -- state PASS or the failing syscall"
+        - label: "tools/spec-check.sh -- state PASS or what drifted"

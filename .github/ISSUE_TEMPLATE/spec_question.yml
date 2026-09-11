@@ -1,0 +1,56 @@
+name: Spec question
+description: >-
+  Two sections of the spec disagree, the spec and the code disagree, or
+  something is marked [OPEN] / [UNTESTED] and you think it should be settled.
+title: "[spec]: "
+labels: ["spec"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        CLAUDE.md: "Code that contradicts the spec is a bug -- but say which
+        of the two is wrong." That is what this template is for asking. If
+        instead exsc misbehaves against a section you can already name, use
+        "Bug report" -- it is the shorter path.
+
+  - type: textarea
+    id: sections
+    attributes:
+      label: Which sections
+      description: Every section in tension, by number. Two, if it's a disagreement.
+      placeholder: "§4.2 and §15 #5"
+    validations:
+      required: true
+
+  - type: textarea
+    id: says
+    attributes:
+      label: What each one says
+      description: >-
+        Quote them. A paraphrase is how a second disagreement gets introduced
+        while resolving the first.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: which-wrong
+    attributes:
+      label: Which you think is wrong, and why
+      description: >-
+        CLAUDE.md requires a fix to say which of the two is wrong before it
+        touches anything -- state your position on that up front, evidence
+        included if you have run something. The spec has been wrong before
+        (its own evidence note says so), so "the spec" is an admissible
+        answer, but it still needs a reason.
+    validations:
+      required: true
+
+  - type: textarea
+    id: marker
+    attributes:
+      label: If this is about an [OPEN] / [UNTESTED] / [UNREPRODUCED] marker
+      description: >-
+        Quote the marker and what would need to be true, or measured, to
+        remove it. Leave blank if this is a disagreement rather than an
+        unresolved marker.

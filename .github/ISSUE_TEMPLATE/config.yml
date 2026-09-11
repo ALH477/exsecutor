@@ -1,0 +1,10 @@
+# Forces a template choice: a blank issue is where a bug report loses its
+# reproduction steps and a spec disagreement loses its section numbers.
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/ALH477/exsecutor/security/advisories/new
+    about: >-
+      Ambient state the audit or type system should have caught (SECURITY.md).
+      Do not open a public issue for this; there is no security email address,
+      and none of the addresses in this tree are one.
