@@ -1,0 +1,19 @@
+# HydraModem's transmitter (examples/hydramodem/) certified on a basis:
+# milestone M2 of docs/design/modem.md, section 3 D9. basis.exsc writes, for
+# each of 137 words -- seventeen zero bytes, then wire bit i = 0..135 set,
+# §14 entry 23's syndrome numbering -- the tone of each of the frame's 356
+# symbols, one byte a symbol, as modulator.exsc's `tonus` decides it: the
+# same pure functions the three WAV tests run, unchanged. stdout is compared
+# with `cmp`, byte for byte, with the same streams reduced from 137 renders
+# of HydraModem's own frame_tx (vendor/hydramodem-tx/PROVENANCE.md prints
+# the reduction and every render's sha256). Byte-identical is 137/137 basis
+# words; given that the symbol stream is affine over GF(2) -- argued from
+# the code, the reference's and this program's, and not measured -- it is
+# agreement on all 2^136 17-byte inputs.
+#
+# Locating a failure: cmp prints the first differing byte N, 1-based. It is
+# symbol s = (N - 1) mod 356 of basis word k = (N - 1) div 356; word 0 is
+# the zero word and word k >= 1 has wire bit k - 1 set (byte (k-1) div 8,
+# mask 0x80 >> (k-1) mod 8). Symbols 0-23 are the preamble, 24-39 the sync
+# word, and s >= 40 is data symbol d = s - 40, coded bit 19 d mod 316.
+TEST: expect-exit=0 stdout=vendor/hydramodem-tx/symbola_basis.bin sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/basis.exsc

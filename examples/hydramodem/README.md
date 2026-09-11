@@ -42,6 +42,7 @@ bytes were written.
 | `modulator.exsc` | the transmitter: the tone of each symbol, the samples each tone becomes, the WAV header | none: pure |
 | `emitte.exsc` | walks that layout and writes every byte to a `Scriptor` | whatever the `Scriptor` carries |
 | `loopback.exsc`, `exemplum.exsc`, `vacuum.exsc` | one `initium` each, holding one frame as a struct literal | `Mundus`, from which `ambitus` |
+| `basis.exsc` | the certificate driver: no WAV, but the 356 tones of each of 137 words, one byte a tone — compiled with `quantum.exsc` and `modulator.exsc` only | `Mundus`, from which `ambitus` |
 
 Only a driver names `Mundus`. `modulator.exsc` declares no `poscit` and takes
 no capability, so it is pure in spec §4.1 rule 6's sense: it may compute,
@@ -87,8 +88,22 @@ What three frames prove, and what they do not, is set out in
 `docs/design/modem.md`. The short version: the header, the timing, the sine
 table and the whole symbol layout are fully checked, since every frame
 exercises them; the CRC, the code and the interleaver are checked at three
-inputs. A CRC replaced by the constant 0 would still pass, because a valid
-DeModFrame always has a modem CRC of `0x0000` — the frame already carries
-its own CRC, and a CRC over data followed by its own CRC is zero. Seeing
-that blind spot closed needs a basis of invalid frames, which is the next
-milestone.
+inputs. A CRC replaced by the constant 0 would still pass those three,
+because a valid DeModFrame always has a modem CRC of `0x0000` — the frame
+already carries its own CRC, and a CRC over data followed by its own CRC is
+zero.
+
+`tests/programs/hydramodem_basis/` closes that. `basis.exsc` runs the same
+`tonus` on 137 words — seventeen zero bytes, then each word with exactly
+one of the 136 bits set — and writes their 48,772 tones, which `cmp`
+compares with the tones of HydraModem's own renders of the same 137 words
+(`vendor/hydramodem-tx/symbola_basis.bin`). None of those words is a valid
+frame, so the CRC is exercised on every one, and the constant-0 CRC now
+fails, at the first word. Because every step from the frame's bits to the
+tones is an exclusive-or, a bit placement or a permutation, the tones of
+any word are those of the zero word with the differences of its set bits
+folded in; so agreeing on these 137 words is agreeing on every one of the
+2^136 possible inputs — and since each symbol's audio depends on its tone
+alone, which the three WAVs check, on every byte of every WAV. That
+"because" is read off the code, not measured; `docs/design/modem.md` D9
+says exactly what it rests on.

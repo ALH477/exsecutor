@@ -69,8 +69,13 @@ calls):
    48 fixtures (`IR_FIXTURE_FLOOR`).
 4. **`tests/programs/`** — Exsecutor sources, RUN. Each directory is one
    program: `exsc aedifica --hospes x86_64-linux SRC... -o OUT`, `fasmg OUT
-   BIN`, run, check. 12 programs run (`PROGRAM_FIXTURE_FLOOR`); none is
+   BIN`, run, check. 13 programs run (`PROGRAM_FIXTURE_FLOOR`); none is
    deferred (the `status=deferred` mechanism below stays for the next one).
+   Four are HydraModem's transmitter, `examples/hydramodem/`: three WAVs
+   (`hydramodem_{loopback,exemplum,vacuum}/`) and the 137-word symbol-stream
+   basis (`hydramodem_basis/`, `docs/design/modem.md` D9), each `cmp`ed
+   against `vendor/hydramodem-tx/`; the basis TEST says how a failing byte
+   names its word and symbol.
 
 Phases 3 and 4 are the first in this script to execute code a compiler
 *emitted*. Until them a `tests/unit/` fixture could only compare emitted

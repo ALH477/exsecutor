@@ -485,7 +485,9 @@ The three WAVs are certified: `examples/hydramodem/`, HydraModem's
 transmitter written in Exsecutor, writes each of them byte for byte
 (`tests/programs/hydramodem_{loopback,exemplum,vacuum}/`, since `7ed75ca`).
 
-`symbola_basis.bin` is `[UNTESTED]` as an Exsecutor artifact at the commit
-that vendors it: a certificate waiting for its program, the way
-`vendor/hydramesh-wire/golden_vectors.json` was before §14 entry 23 existed.
-`docs/design/modem.md` D9 and its milestone M2 are that program.
+`symbola_basis.bin` is certified too: `examples/hydramodem/basis.exsc`
+runs the same pure `tonus` on the 137 words and writes these 48,772 bytes
+exactly (`tests/programs/hydramodem_basis/`, milestone M2 of
+`docs/design/modem.md`), in the commit after the one that vendored it.
+The functions that decide those bytes are M1's, unchanged; the driver
+only derives the words and writes.

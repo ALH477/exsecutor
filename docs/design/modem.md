@@ -1,10 +1,18 @@
-# The HydraModem transmitter — design for the modem program, M1
+# The HydraModem transmitter — design for the modem program, M1 and M2
 
-Status: **design only; nothing implemented.** No Exsecutor program renders a
-DeModFrame to audio. Every claim below about a running program is
-`[UNTESTED]`; what has been measured is listed in section 11, and each such
-measurement was made in a scratch directory with tools that never ship
-(`prototypes/README.md`'s rule). `spec §N` cites
+Status: **M1 and M2 implemented.** M1 (`7ed75ca`): `examples/hydramodem/`
+writes the three vendored WAVs byte for byte, 3/3
+(`tests/programs/hydramodem_{loopback,exemplum,vacuum}/`). M2 (the commit
+after `860e678`, which vendored its basis): the same pure functions give
+HydraModem's symbol stream on all 137 words of D9's basis, 137/137
+(`tests/programs/hydramodem_basis/`) — which, *given* the affinity D9
+argues from the code and does not measure, is agreement on every 17-byte
+input. Sections 1–11 are the design as written before M1, kept as written
+except where a marker is retired or a finding has moved on; section 12
+records where M1 departed from them and what it found, section 13 is M2.
+Markers left standing are on things no test runs. Measurements are listed
+in section 11 (the design's), 12 and 13; each scratch measurement was made
+with tools that never ship (`prototypes/README.md`'s rule). `spec §N` cites
 `docs/spec/exsecutor-spec-v0.4.md` at the commit of this file; `WC §n` and
 `WC Dn` cite `docs/design/wire-codec.md`; ADR 0013 is
 `docs/decisions/0013-hydramodem-transmitter.md`. The reference is HydraMesh
@@ -51,6 +59,7 @@ source and by measurement (section 2, section 11):
    modulator is memoryless per symbol, so a basis certificate on the symbol
    stream lifts to the whole WAV (D9). M1 does not build that certificate;
    it is M2, and D9 says exactly what M1's three frames prove without it.
+   (M2 built it, 137/137: section 13.)
 
 ## 2. What the survey established, verified against source
 
@@ -121,7 +130,8 @@ acquisition threshold `best_score < nknown − 3` (`hydra_modem.c:278`), i.e.
 
 No new §13 code (section 4). No spec edit: nothing the transmitter needs
 contradicts the spec, and the one thing that contradicts the *compiler* is
-reported as finding 1, not fixed here.
+reported as finding 1, not fixed here (it was fixed in the compiler by
+`a1e46e3`, before M1).
 
 ### D1 The reference is the C DSP at `fce2813`, not Faust
 
@@ -192,7 +202,10 @@ model:
 Both close at M2, whose basis words are one-hot and all 136 of them
 *invalid* DeModFrames with nonzero modem CRC (measured), so the CRC is
 exercised on every non-trivial value. Section 6 states the M1 mutant set
-with these limits in view.
+with these limits in view. (Closed, measured: section 13 — the constant-0
+CRC fails the basis at word 0, symbol 55, and a defect confined to the
+sixteen CRC bits, reading them one place late, at word 0, symbol 73; both
+still pass M1's three WAVs.)
 
 Rejected: more frames at M1. Frames chosen by hand are more points; they
 do not become a basis, and D9's basis is the right shape for M2. Also
@@ -200,9 +213,11 @@ rejected: an affine argument at M1 on the WAV. The WAV is not affine in
 the frame — a sample is a table lookup, and a table lookup is not linear —
 so entry 23's argument does not transfer; D9 says what does.
 
-**Retired by M1:** the three `tests/programs/hydramodem_*/` directories
-passing `cmp` against the vendored WAVs; the mutants of section 6 failing at
-their predicted offsets; the constant-0 CRC mutant passing, as predicted.
+**Retired by M1** (`7ed75ca`): `tests/programs/hydramodem_{loopback,
+exemplum,vacuum}/` pass `cmp` against the vendored WAVs, 3/3; the ten
+mutants of section 6 failed at exactly their predicted offsets and the
+constant-0 CRC mutant passed, as predicted (the commit message records
+each, predicted and observed).
 
 ### D3 Integer-exact modulation: a 48-entry table and an index that steps by `c`
 
@@ -213,8 +228,10 @@ for each of 48 samples, `m = m + c; si m ge 48 { m = m − 48; }` then
 stay `[OPEN]`. After 48 steps `m` is `48·c mod 48 = 0`: each symbol begins
 at index 0 whatever came before, which is the reference's "phase ≡ 0 at
 every symbol boundary" restated as an invariant a reader can check by
-arithmetic. `[UNTESTED]`: the walk in Exsecutor; measured: the walk in the
-scratch model reproduces all three vendored WAVs (section 11).
+arithmetic. The walk in Exsecutor is `phasis(k, i)` (section 12: it
+restarts from 0 for every sample rather than being carried), and it runs
+in all three M1 WAV tests; the walk in the scratch model reproduces all
+three vendored WAVs too (section 11).
 
 **Why this is exact and not approximately so.** The reference accumulates
 `f/48000` in `double` 17,088 times with a `floor` wrap
@@ -233,9 +250,9 @@ reference's drift only by reproducing its `double` arithmetic, which the
 language has not settled (spec §5.4 floating point is `[OPEN]` in the
 backend) and which the certificate shows is unnecessary.
 
-**Retired by M1** (the three frames: sample 0 of the preamble is `T[2]`,
-sample 5 is `T[12]`, and every other entry follows in the first two
-symbols).
+**Retired by M1** (`tests/programs/hydramodem_{loopback,exemplum,vacuum}/`:
+sample 0 of the preamble is `T[2]`, sample 5 is `T[12]`, and every other
+entry follows in the first two symbols).
 
 ### D4 The sine table is a function of nine values and quarter-wave symmetry; array literals stay `[OPEN]`
 
@@ -254,8 +271,10 @@ since `c_k ∈ {2,3,4,5}` — reads a value nothing has checked; it is
 recorded here as `3849` so that the day it is needed the number and its
 derivation are on file, marked `[UNTESTED]`.
 
-**`discerne` does not run today — finding 1.** The spelling this decision
-was written for,
+**`discerne` did not run when this was written — finding 1, fixed since
+by `a1e46e3`, and M1's `sinus` is the `discerne`** (section 12). The rest
+of this paragraph is kept as the design's record of the workaround it
+planned. The spelling this decision was written for,
 
     discerne q { casus 0 { v = 0; } casus 2 { v = 7633; } … aliter { v = 0; } }
 
@@ -300,8 +319,10 @@ view does the split once at the write. Also rejected: computing the sine.
 There is no integer sine to compute; the table *is* the specification of
 the reference's rounding chain.
 
-**Retired by M1** (every live entry, through the three frames);
-`discerne`'s re-spelling by the fixture that retires finding 1.
+**Retired by M1** (every live entry, through the three frames,
+`tests/programs/hydramodem_{loopback,exemplum,vacuum}/`); `discerne`'s
+re-spelling by `a1e46e3`'s `tests/programs/discerne/` and M1's `sinus`,
+which is written with it.
 
 ### D5 Bits, the encoder and the interleaver, with settled language only — and why the encoder is evaluated feedforward
 
@@ -361,8 +382,10 @@ computing the interleaved index as `(19·i) mod 316` (needs remainder);
 see the buffer above — the delays are `datum` reads instead).
 
 **Retired by M1:** the three frames (every data symbol is a coded bit
-through `datum`/`codificatum`/the walk); the G1-tap, stride and sync
-mutants of section 6.
+through `datum`/`codificatum`/the walk,
+`tests/programs/hydramodem_{loopback,exemplum,vacuum}/`); the G1-tap,
+stride and sync mutants of section 6 (`7ed75ca`). M2 extends it to the
+137-word basis (section 13).
 
 ### D6 Samples and the header through `@transitus` views; negatives by `0 -% v`
 
@@ -387,7 +410,7 @@ the reader's head, not the type); a `u16` sample written as two narrowing
 casts (`[OPEN]`, and the view says the order once instead of twice).
 
 **Retired by M1** (the first 44 bytes and every sample of all three
-frames).
+frames, `tests/programs/hydramodem_{loopback,exemplum,vacuum}/`).
 
 ### D7 Output: the WAV on stdout, one byte per call; the modulator is pure
 
@@ -406,7 +429,10 @@ Rejected: an `acies<u8, N>` writer (WC D7's reason: no generic `N` in the
 prelude); writing a file (needs `archivum`, and the harness compares
 stdout).
 
-**Retired by M1** (the audit lines of the three program tests).
+**Retired by M1** (the audit lines of
+`tests/programs/hydramodem_{loopback,exemplum,vacuum}/`: `exit_group` and
+three `write` sites, nothing else; 35–39 ms wall a run, measured at
+`7ed75ca`).
 
 ### D8 Where the code lives: `examples/hydramodem/`, tested from `tests/programs/hydramodem_*/`
 
@@ -442,8 +468,11 @@ thing being demonstrated, and the harness already has the `sources=`
 mechanism for this. Rejected: one driver taking the frame from stdin (no
 reader; M3's problem, not M1's).
 
-**Retired by M1** (the three directories running; the `saluta` precedent
-already runs).
+**Retired by M1** (`tests/programs/hydramodem_{loopback,exemplum,vacuum}/`
+running; the `saluta` precedent already runs). M2's
+`tests/programs/hydramodem_basis/` follows the same layout: its driver,
+`basis.exsc`, lives with the other three in `examples/hydramodem/`
+(section 13 says why).
 
 ### D9 The symbol stream is affine over GF(2), and the modulator is memoryless — so a symbol-stream basis lifts to the WAV
 
@@ -468,8 +497,10 @@ it: every data-dependent operation in `datum`, `codificatum`, the walk and
 `tonus` is a bit extraction, an `aut`, a constant shift or a
 data-independent index computation; no `+`, no `*`, no comparison used as
 a value touches data (the `ge 0x80` tests select a constant, as the CRC's
-does). That argument is made in section 7 against the code as written and
-is `[UNTESTED]` until M2 runs.
+does). That argument was made in section 7 against the design's text; it
+is re-made in section 13 against the code that runs, and M2 has run:
+137/137. The premise stays an argument — the basis tests the map at 137
+points, which is proof of agreement everywhere only *given* affinity.
 
 **Claim 2: the WAV is a memoryless function of the symbol stream.** D3:
 `m` starts at 0 at every symbol, so the 96 bytes of symbol `s` depend on
@@ -486,7 +517,10 @@ not, which is stronger than the prompt for this design anticipated (it
 asked whether the argument applies to the symbol stream; it applies to the
 audio, because the modulator has no memory). What it rests on is the two
 structural premises about the Exsecutor code, argued from reading, plus
-M1's certification of the blocks, the header and the layout.
+M1's certification of the blocks, the header and the layout. (Section 13
+states the lift as built, premise by premise, with what of each is
+measured: it also needs both premises of the *reference*, not only of the
+Exsecutor code, and that the certificate's `tonus` is the WAV units'.)
 
 **Proposal for M2** (section 9): a vendored basis of 137 symbol streams,
 each 356 bits packed MSB-first in 45 bytes (6,165 bytes in all), extracted
@@ -498,12 +532,18 @@ reduced by a stated, checkable rule and not a re-derivation. The Exsecutor
 side writes `tonus` for each of the 137 words as one byte per symbol, and
 a verification-only Python script compares. The one-hot words are all
 invalid DeModFrames with nonzero modem CRC (measured), which is what
-closes D2's two blind spots.
+closes D2's two blind spots. (As built, section 13: one byte a symbol in
+the vendored file as well, 48,772 bytes, so `cmp` compares and its offset
+names the word and symbol — no Python comparer; the rule checks every
+whole 96-byte block against both tone blocks, not sample 0 alone; the
+extraction script is printed in full in `PROVENANCE.md`, not only its
+digest.)
 
 Rejected: a basis at M1. M1 is the artifact people will play; the basis is
 the proof, and it needs 137 renders the vendoring did not include.
 
-**Retired by:** M2 (the basis, 137/137); the structural premises stay an
+**Retired by M2** (`tests/programs/hydramodem_basis/`, 137/137 against
+`vendor/hydramodem-tx/symbola_basis.bin`); the structural premises stay an
 argument, as entry 23's do.
 
 ## 4. Error codes, checked against §13
@@ -546,7 +586,11 @@ lexicon pass, which is not enabled, would judge them; provisional):
 | `modula(s: Scriptor, f: acies<u8, 17>) -> mensura poscit sicut s` | the whole WAV: header, 960 zero samples, 356 symbols × 48 samples, 960 zero samples; returns the byte count, 38,060 |
 
 `tonus` takes `j` rather than computing it so that the walk lives in one
-place (D5) and `tonus` stays a pure function of its arguments. WC finding
+place (D5) and `tonus` stays a pure function of its arguments. (As built it
+does not: `tonus(f, c, s)` computes `j` through a pure `intertexe`, which
+keeps it pure *and* a function of the symbol index alone — what M2's
+driver needs — section 12. `basis.exsc`, M2's driver, is a fifth file of
+the same shape as the WAV drivers, section 13.) WC finding
 9 applies as it did to `probatio.exsc`: a `poscit sicut s` function calling
 another `poscit sicut s` with the same `s` is refused (`EXS-E0421`, the
 checker's defect), so `emitte.exsc`'s helpers write **no** `poscit` and let
@@ -586,10 +630,27 @@ The last row is the one entry 23 did not need: it records the certificate's
 blind spot as a prediction the harness checks, so that when M2's basis
 closes it the change is visible.
 
+**Observed at M1** (`7ed75ca`, each mutant on a temporary copy of
+`examples/hydramodem/`, all three frames): every one of the first ten
+failed at exactly the byte in this table, and the constant-0 CRC passed on
+all three. **Observed at M2** (section 13): the symbol-stream mutants
+against the basis, each failing at a predicted word and symbol — the
+constant-0 CRC included, which the change was for. The three `sinus`
+mutants are not among them: the basis is a symbol stream and never reads
+the table, whose certificate stays M1's.
+
 A harness on which any of the first ten passes, or the eleventh fails, has
 proved nothing and is itself the bug.
 
-## 7. Worked example, in current syntax `[UNTESTED]`
+## 7. Worked example, as designed — superseded by `examples/hydramodem/`
+
+This is the design's text, kept as written; it is not the program. The
+code that runs is `examples/hydramodem/` (M1), and section 12 lists where
+it departs from what follows — `tonus` without `j`, the walks pure rather
+than carried by `modula`, `sinus` as a `discerne`. The text below, *in
+this form*, stays `[UNTESTED]`; every function in it has a running
+counterpart, and section 13 re-makes the closing affinity argument against
+that counterpart.
 
 Written against the language as it runs at the commit of this file; the
 fragments marked "probe" were compiled, assembled and run in that form
@@ -782,7 +843,9 @@ comparison selecting a constant — bit extraction, linear. `codificatum`:
 WC §5's argument, affine. `synchronia`, `praeambulum`: constants. `tonus`:
 selects among them by `s`, data-independent. The walk: data-independent.
 Nothing carries, multiplies or compares data as a value. `[UNTESTED]` as a
-measurement; it is the reading M2 will test.
+measurement; it is the reading M2 will test. (M2 tested the map at its
+137 basis points, and section 13 re-reads the running code the same way;
+affinity itself stays a reading, as entry 23's does.)
 
 **What is known to run of this section**, from the probes of section 11:
 `sinus` as written (through `Exemplum`, four indices including a negated
@@ -791,7 +854,10 @@ extraction over a byte; `u1` bindings, `aut` on `u1` and a `u1` copied
 between bindings; `per i in 0..n` at `n = 38060` with a `scribe_octeto`
 per iteration. Not run: `datum`, `codificatum`, `tonus`, `caput`,
 `modula`, any `acies<u8, 17>` parameter read at a computed index, and the
-`discerne` spelling, which traps.
+`discerne` spelling, which traps. (That was the state before M1. Since
+`7ed75ca` every one of them runs in the form `examples/hydramodem/` gives
+it, the `discerne` included, in the four `tests/programs/hydramodem_*/`
+directories.)
 
 ## 8. Findings
 
@@ -814,6 +880,14 @@ Numbered; each names the document and the line.
    D4 routes around it with `si`/`sin`. The README's status block says
    most of the language beyond what the programs use is `rassert`-refused;
    `discerne` should be named there.
+   **Fixed by `a1e46e3`, before M1.** The trap was localised there: the
+   checker never typed a `casus` pattern, so a literal pattern reached the
+   lowering with no width (`rassert` in `__lwr_nty`), and the lowering then
+   also refused every `mensura` scrutinee and could inline a `mutabilis`
+   pattern's initial value — all three fixed, with
+   `tests/programs/discerne/` (30 checks) and two unit fixtures. M1's
+   `sinus` is the nine-arm `discerne` D4 intended, not the `si`/`sin`
+   chain, and runs in every WAV test.
 2. **`hydra_profile.h:61-63` says the default is "FEC off".** The code
    sets `HYDRA_FEC_CONV` (`hydra_profile.c:16`, "production default: soft
    Viterbi") and the vendored WAVs are 356 symbols long — 316 coded data
@@ -863,6 +937,22 @@ Numbered; each names the document and the line.
    parameter. That is what forced D5's feedforward encoder and what M3
    (a 64-state metric array, a 158×64 traceback) cannot live with —
    section 9.
+   **Measured at M1, sharper than "at first read":** the first *element
+   write* is already the fault. `mutabilis c: acies<u8, 316>; c[0] = 1;`
+   is `EXS-E0307` at the `c` of `c[0]` (re-run for this section with
+   `exsc` at `860e678`: `--diagnostica json` gives
+   `{"code":"EXS-E0307",…,"line":3,"col":5,…,"snippet":"c"}`), so no
+   sequence of element stores can fill an array the language cannot
+   create. **Spec-correct**, on the rule's own ground: §13's note makes
+   `E0307` cover "a binding declared without an initializer and read on
+   some path before any assignment" so that the lowering never meets
+   Braun's *undef*, and an element store *is* a read of its base — the
+   lowering's `Assign`/`Index` row (`docs/design/lowering.md` section 2)
+   takes the aggregate's address, `index %p %i stride`, then `store`, and
+   an unassigned aggregate has no `%p`. What the spec does not do is say
+   so: neither §13's note nor §8's assignment grammar states that `a[i] =
+   v` reads `a`. A wording gap (reported, finding 9), not a defect in the
+   checker; the missing construct is array creation, D4's M5 question.
 7. **`README.md:60` (HydraModem), "FEC: conv … — default"** agrees with
    the code and contradicts finding 2's header comment; the README is the
    one to trust. `README.md:164-165`, "identical loopback results", is a
@@ -871,6 +961,19 @@ Numbered; each names the document and the line.
    (section 2). Not an error in the survey — the formula is right for all
    48 — but a number carried without a certificate, and the design carries
    only the nine that have one.
+9. **Spec gap: whether an element store reads its base** (found at M1,
+   written up at M2). Finding 6's verdict rests on the lowering's reading
+   of `a[i] = v` as a use of `a`, which the spec does not state. One
+   sentence in §13's `E0307` note would settle it — that an indexed store
+   reads the binding it indexes. Reported; `docs/spec/` not edited here.
+10. **Every mutant of the set fails the basis at word 0** (M2, section
+    13). The zero word is itself an invalid frame — `signum` 0, modem CRC
+    `0xc7ec` — so its coded tail is not zero, and it alone sees every
+    mutant M2 ran; the 136 one-hot words then see each mutant that changes
+    the map's linear part again, in all 136 difference columns. Not a
+    defect: a fact about which word does the work, recorded so that "first
+    failing word 0" is read as the zero word being a strong test and not
+    as the one-hot words being idle.
 
 ## 9. Later milestones
 
@@ -886,7 +989,10 @@ walked with `deorsum 1` into a `mutabilis` copy of the zero word) and
 writing `tonus` for `s = 0..355` as one byte each; a verification-only
 Python comparer. Language needed: nothing new. `[OPEN]` items forced:
 none. What it retires: D9's consequence — all 2^136 inputs byte-identical
-— under the two structural premises, and D2's blind spots.
+— under the two structural premises, and D2's blind spots. **Done**:
+section 13 — 48,772 bytes one byte a symbol rather than 6,165 packed, and
+`cmp` rather than a Python comparer; language needed, as predicted,
+nothing new.
 
 **M3 — the receiver.** Decode the three vendored WAVs and M1's own output
 back to the frame; then robustness under noise, gain, clock offset and
@@ -952,11 +1058,12 @@ construct, and the design should not conflate them.
 
 | decision or claim | milestone | the test as planned | what retires it |
 |---|---|---|---|
-| D2 three frames byte-identical; D3 the walk; D4 the nine values; D5 extraction, encoder, interleaver; D6 views and `0 -% v`; D7 output and audit; D8 the layout | M1 | `tests/programs/hydramodem_{loopback,exemplum,vacuum}/`, `cmp` against `vendor/hydramodem-tx/*.wav`, audit `write` + `exit_group` | — |
-| section 6's ten mutants failing at their offsets; the constant-0 CRC mutant passing | M1 | the harness's mutation run over `examples/hydramodem/` | — |
-| finding 1: `discerne` traps | a compiler fix outside this tree | a `tests/programs/` fixture running a `discerne` from source; then `sinus` re-spelled | — |
-| D9 claim 1 (affinity of the Exsecutor symbol stream) | M2 | 137/137 against the vendored basis | — |
-| D9 consequence (all 2^136 inputs) | M2 | the same, plus M1's blocks | argued, never measured — as entry 23's |
+| D2 three frames byte-identical; D3 the walk; D4 the nine values; D5 extraction, encoder, interleaver; D6 views and `0 -% v`; D7 output and audit; D8 the layout | M1 | `tests/programs/hydramodem_{loopback,exemplum,vacuum}/`, `cmp` against `vendor/hydramodem-tx/*.wav`, audit `write` + `exit_group` | **retired**, `7ed75ca`: 3/3 byte-identical; audit `exit_group` and three `write` sites |
+| section 6's ten mutants failing at their offsets; the constant-0 CRC mutant passing | M1 | the harness's mutation run over `examples/hydramodem/` | **retired**, `7ed75ca`: ten of ten at the predicted byte, the constant-0 CRC passing 3/3 — run on temporary copies and recorded in the commit message, not a harness branch |
+| finding 1: `discerne` traps | a compiler fix outside this tree | a `tests/programs/` fixture running a `discerne` from source; then `sinus` re-spelled | **retired**: `a1e46e3`'s `tests/programs/discerne/`; `sinus` is a `discerne` since `7ed75ca` |
+| D9 claim 1 (affinity of the Exsecutor symbol stream) | M2 | 137/137 against the vendored basis | **tested**, M2: `tests/programs/hydramodem_basis/`, 137/137; the premise itself stays argued (section 13) — agreement at 137 points, consistent at 19 more |
+| D9 consequence (all 2^136 inputs) | M2 | the same, plus M1's blocks | argued, never measured — as entry 23's; section 13 lists its premises and what of each is measured |
+| D2's blind spots: a constant-0 CRC; a defect confined to data bits 136–151 | M2 | the basis | **closed**, M2: both fail the basis at word 0 (symbols 55 and 73) and still pass M1's three WAVs, as predicted (section 13) |
 | the survey's receiver figures `[UNREPRODUCED]` | M3 | the perturbation sweep | — |
 | array literals `[OPEN]` | M5 | — | a spec amendment, if taken |
 | `T[1] = 3849` and the three other dead values `[UNTESTED]` | M4 or never | a profile that reads an odd index | — |
@@ -1000,4 +1107,229 @@ figures re-measurable by re-running the same recipes.
     assigning arms, empty arms, one arm plus `aliter` — each accepted
     without `-o`, each SIGILL (exit 132) with `-o`. Finding 1.
 - **Not measured:** any complete Exsecutor transmitter; the affinity of
-  the Exsecutor code (an argument, section 7); the receiver figures.
+  the Exsecutor code (an argument, section 7); the receiver figures. (The
+  transmitter has been measured since: sections 12 and 13. The affinity
+  and the receiver figures still have not.)
+
+## 12. M1 as built: where it departs from the design, and what it found
+
+`7ed75ca`, `examples/hydramodem/`: `quantum.exsc` (§5.2's `DeModFrame`,
+`redundantia`), `modulator.exsc` (pure), `emitte.exsc` (the writer),
+`loopback.exsc` / `exemplum.exsc` / `vacuum.exsc` (one `initium` each).
+`tests/programs/hydramodem_{loopback,exemplum,vacuum}/`: 3/3
+byte-identical, exit 0, audit `exit_group` and three `write` sites;
+35–39 ms wall a run; binaries 7,766 / 7,766 / 7,760 bytes (measured at
+`7ed75ca`, its commit message).
+
+**Departures, each deliberate:**
+
+- **The walks are pure functions, not state the writer carries.** The
+  design (D5, section 7) had `modula` carry the interleaver index `j` and
+  the phase index `m` and pass `j` into `tonus`. As built, `intertexe(d)`
+  walks `19·d mod 316` from 0 on every call, `phasis(k, i)` walks the phase
+  index from 0 on every call, `sona(k, i) = sinus(phasis(k, i))`, and
+  `tonus(f, c, s)` takes no `j`. So `modulator.exsc` decides every byte and
+  `emitte.exsc` only loops and writes; and `tonus` is a function of the
+  word, its CRC and the symbol index alone — which is what let M2's driver
+  ask for any symbol of any word with no walk to replay. The cost is
+  quadratic where the design's was linear — 49,770 steps of `intertexe`
+  and 418,656 of `phasis` per WAV — and invisible at this size (35–39 ms a
+  WAV, against the design's 31 ms probe of the writes alone).
+- **`sinus` is the `discerne`** D4 intended, since `a1e46e3` fixed finding
+  1; not the `si`/`sin` chain the design fell back to.
+- **`codificatum` names the six delays** as `u1` bindings through a
+  private `ante(t, k)` (zero before the first input bit), so each
+  generator's taps read straight off its mask; evaluation is D5's
+  feedforward one.
+- **Layout constants are module `publica firma`** (`silentium`,
+  `symbola`, `exempla_symboli`), each declared above its first use —
+  `a1e46e3` found that a module `firma` used above its declaration is typed
+  as the error type with no diagnostic, and M1 does not depend on that.
+  A `scribe_silentium` helper writes the lead and tail.
+
+**Findings:** finding 6 made sharper (an element *write* is already
+`E0307`, and that is spec-correct), and finding 9, the spec wording gap
+behind it — both in section 8.
+
+## 13. M2 as built: the symbol-stream basis
+
+**Result.** `tests/programs/hydramodem_basis/` compiles
+`examples/hydramodem/quantum.exsc`, `modulator.exsc` and `basis.exsc`,
+runs it, and compares its stdout with `cmp` against
+`vendor/hydramodem-tx/symbola_basis.bin`:
+
+    hydramodem_basis: stdout byte-identical to vendor/hydramodem-tx/symbola_basis.bin
+
+**137/137 basis words**, all 356 symbols of each: 48,772 bytes. Exit 0;
+the binary (7,671 bytes) is within `{Mundus, ambitus}` and its syscall
+sites are `exit_group` and three `write`s, nothing else; 98–107 ms wall a
+run (three runs, this host). `quantum.exsc` and `modulator.exsc` check as a
+unit on their own, and outside comments name no capability, `Scriptor`,
+`sub` or `initium`.
+
+**The reference** (`860e678`, `vendor/hydramodem-tx/PROVENANCE.md`): 137
+`frame_tx` renders from HydraMesh `fce2813`, built by the recipe already
+vendored, reduced by the block map — each 96-byte symbol block equal to
+tone block `A` or `B` of the certified all-zero-body WAV, header, lead and
+tail equal to its — which held on every one of the 48,772 blocks. The
+reduction script is printed in `PROVENANCE.md` with every render's
+sha256; the renders were identical at `-O0`/`-O2`/`-O3` (411), and
+`frame_rx` decodes each back to its word (137/137).
+
+**The format** is one byte a symbol, not D9's 45-byte packed records: a
+first differing byte `N` (1-based, as `cmp` prints it) is symbol `(N − 1)
+mod 356` of word `(N − 1) div 356`, so the program-test phase's own `cmp`
+line locates a failure and no comparer is needed (the formula is in the
+TEST file); a byte holds a tone index, so the format serves M4's multi-bit
+profiles unchanged; nothing is packed, so neither side has an in-format
+bit order to get wrong. 42,607 bytes more than packing.
+
+**The driver, and why it lives in `examples/`.** `basis.exsc` builds the
+zero word as a `DeModFrame` literal with every field 0 cast to
+`acies<u8, 17>`, and walks wire bits 0..135 exactly as entry 23's
+`probatio.exsc` `verte` does — a one-hot `u8` mask moved by `deorsum 1`,
+`aut` into a `mutabilis` copy, `aut` again to clear — so no word is
+written in the file and nothing needs a variable shift. For each word it
+computes `redundantia(w, 17)` and writes `tonus(w, c, s)` for `s =
+0..355` as a byte through `scribe_octeto` (`t = 1` when `tonus` is 1, else
+0: no narrowing cast). It lives beside the WAV drivers because the
+harness refuses a test directory with its own `*.exsc` *and* `sources=`,
+and the certificate must compile M1's `modulator.exsc` from `examples/`,
+not a copy (D8's one-copy rule); and because a reader of the example
+should find its proof next to it. It does not compile `emitte.exsc`.
+
+**It runs the code the WAVs run.** Nothing in the certified path is new:
+`tonus` and everything beneath it are M1's. Measured: the fasmg text
+`exsc` emits for `quantum.exsc` and `modulator.exsc` — `redundantia`
+through `tonus`, 1,209 lines — is byte-identical in the basis unit, in
+M1's three WAV units, and in 16 further WAV units (below); the 686 lines
+of runtime text before it were identical too in the two units compared
+(the basis unit and one WAV unit). The lowering builds each function from
+its own body (`docs/design/lowering.md`: builder scratch reset per
+function), so a caller cannot change it; the 20 units are the measurement.
+
+**The affinity argument, against the code that runs** (D9 claim 1,
+re-made; section 7 made it against the design's text). For each word `f`
+the program computes, per symbol `s`:
+
+- `redundantia`: `c` starts at `0xffff`; each byte enters by `c aut
+  ((b[i] sicut u16) sursum 8)`; each of eight steps is `(c sursum 1) aut
+  0x1021` when `c ge 0x8000`, else `c sursum 1` — that is `(c sursum 1) ⊕
+  c₁₅·0x1021`, a constant scaled by one bit of `c`. Linear in `c` and in
+  the bytes; `0xffff` is the affine offset.
+- `datum(f, c, u)`: `u` fixes which byte (or `c`) is read and how many
+  unit shifts are applied; the `ge 0x80` / `ge 0x8000` test then *returns
+  the bit's value*. A coordinate projection: linear. `u ≥ 152` is 0.
+- `ante(f, c, t, k)`: a guard on `t` and `k` only, then `datum`.
+- `codificatum(f, c, j)`: the `aut` of five `ante`s, which five chosen by
+  `j` alone. Linear.
+- `intertexe(d)`, `praeambulum(s)`, `synchronia(n)`: functions of the
+  index alone; the last two are constants of the stream.
+- `tonus(f, c, s)`: branches on `s` alone; a data symbol's `si
+  codificatum(…) eq 1 { redde 1; } redde 0;` is the identity on a bit.
+- `basis.exsc`: the word is built by `aut`, and the byte written is the
+  tone.
+
+Nothing adds, multiplies, carries or compares data as a value; every
+comparison that touches data reads one bit and yields it. So each symbol
+is an affine function over GF(2) of the 136 frame bits. **Argued, not
+measured.** Consistent with it, measured: M1's three frames, and 16 random
+17-byte words run end to end (below) — 19 non-basis points at which the
+Exsecutor stream equals the reference's, which the basis's affine
+prediction also equals.
+
+**The lift to audio, stated whole.** For every 17-byte input `f`, the WAV
+a driver carrying `f` writes is `frame_tx`'s WAV for `f`, byte for byte —
+**given** these, with what of each is measured:
+
+| premise | status |
+|---|---|
+| P1. the reference's symbol stream `S_ref` is affine in the 136 bits | argued from HydraModem's source (D9 claim 1); consistent at 1,003 non-basis renders (below) |
+| P2. the Exsecutor stream `S_E` is affine | argued from the code, above; consistent at 19 non-basis points |
+| P3. `S_E = S_ref` on the 137 basis words | **measured**: `tests/programs/hydramodem_basis/`, 137/137 |
+| ⇒ `S_E = S_ref` on all 2^136 inputs | two affine maps agreeing on an affine basis agree everywhere |
+| P4. the Exsecutor WAV is header ‖ lead ‖ `blk_E(S_E(f)_s)` for each `s` ‖ tail, all but the blocks independent of `f` | read off the code: `caput()` and the silence are constants, and `sona(k, i)` depends on the tone and the sample index only (section 12) |
+| P5. the reference WAV is header ‖ lead ‖ `blk_ref(S_ref(f)_s)` … ‖ tail, likewise | **measured** at 1,140 renders (the 137, M1's 3, 1,000 random: the block map exact on every block); argued for the rest from D3's rounding bound, which does not depend on the symbol sequence |
+| P6. the two headers, leads, tails and both pairs of tone blocks are equal | **measured** by M1: every WAV's first two symbols are the preamble's tones 0 and 1 |
+| P7. the certificate's `tonus` is the WAV units' `tonus` | **measured** for 20 units (identical emitted text, above); argued in general from the per-function lowering |
+| P8. "the reference" is `frame_tx` from `fce2813` built with gcc 14.3.0 as `PROVENANCE.md` records | its outputs identical at `-O0`/`-O2`/`-O3` on 140 inputs; another toolchain is another oracle |
+
+⇒ `WAV_E(f) = WAV_ref(f)` for every `f`. The two affinity premises are
+the ones no test can reach, as in entry 23; everything else is either
+measured or read off a few lines of code.
+
+**The mutants**, each applied mechanically to a *temporary copy* of
+`examples/hydramodem/` (every substitution required to match exactly
+once), run against the basis and against M1's three WAVs. Predicted by a
+scratch model written from section 2 — register-form encoder, gather
+interleaver, independent of both the Exsecutor code and the reference
+binary, and equal to all 137 vendored records unmutated — and observed at
+this tree. `(k, s)` is the first failing basis word and symbol; "words" is
+how many of the 137 records differ; "columns" how many of the 136
+difference columns `S(e_i) ⊕ S(0)` differ, i.e. whether the one-hot words
+see the mutant independently of the zero word:
+
+| mutant | predicted (k, s) | observed (k, s), `cmp` byte | words | columns | M1's three WAVs, pred = obs |
+|---|---|---|---|---|---|
+| G1 tap `d5 → d4` (`0x5B → 0x5D`) | (0, 55) | (0, 55), byte 56 | 137 | 136 | fail at 6284 / 6668 / 9164 |
+| G0 tap `d3 → d4` (`0x79 → 0x75`) | (0, 106) | (0, 106), byte 107 | 137 | 136 | fail at 6572 / 5996 / 9068 |
+| interleave stride 19 → 17 | (0, 55) | (0, 55), byte 56 | 137 | 136 | fail at 5900 ×3 |
+| sync `0x2dd4 → 0xadd4` | (0, 24) | (0, 24), byte 25 | 137 | 0 | fail at 4268 ×3 |
+| preamble starts on tone 1 | (0, 0) | (0, 0), byte 1 | 137 | 0 | fail at 1964 ×3 |
+| CRC polynomial `0x1021 → 0x1020` | (0, 71) | (0, 71), byte 72 | 137 | 136 | fail at 8780 ×3 |
+| **CRC := 0** (`redundantia` returns 0) | (0, 55) | (0, 55), byte 56 | 137 | 136 | **pass ×3** |
+| **CRC bits read one place late** (`datum`: `u − 136 → u − 135`) | (0, 73) | (0, 73), byte 74 | 137 | 136 | **pass ×3** |
+
+Predicted equals observed on every count, 8/8. The M1 column reproduces
+`7ed75ca`'s offsets. The stride mutant fails at data symbol 15 here, not 1
+as on M1's frames: on the zero word the coded bits below 272 are all zero
+(they come from data bits 0–135, which are), and data symbol 15 is the
+first where stride 19 reaches the nonzero tail (19·15 = 285) and stride
+17 does not (255). Sync and preamble
+change only the constant `S(0)`, so no difference column moves — the zero
+word is their witness.
+
+**CRC := 0 is now caught — the gain over M1.** On M1's three frames it
+passes, byte for byte: each is valid, and a valid DeModFrame's modem CRC
+is `0x0000` (finding 3). On the basis it fails at the first word: the zero
+word has `signum` 0 and modem CRC `0xc7ec`, so its data bits 136–151 are
+not zero, and the first coded bit that changes is interleaved to data
+symbol 15, symbol 55. It fails again in all 136 difference columns, since
+the CRC's linear part moves every one-hot word's tail — the one-hot words
+alone would have caught it. The second mutant, confined to the sixteen CRC
+bits, is D2's other blind spot and closes the same way. And through the
+harness itself — `tests/run.sh` run on a scratch copy of the tree with
+only this mutant applied — the four modem tests report exactly that (the
+harness's bracketed verdict tags dropped here, since `tools/spec-check.sh`
+reads a bracketed upper-case word as an evidence marker):
+
+    FAIL hydramodem_basis: stdout differs from vendor/hydramodem-tx/symbola_basis.bin
+         … differ: byte 56, line 1
+    ok   hydramodem_exemplum: stdout byte-identical to vendor/hydramodem-tx/d31312340001ffffdeadbeefab12cd24c0.wav
+    ok   hydramodem_loopback: stdout byte-identical to vendor/hydramodem-tx/d310123400a1ffffdeadbeef0a1b2ca961.wav
+    ok   hydramodem_vacuum: stdout byte-identical to vendor/hydramodem-tx/d310000000000000000000000000005b80.wav
+
+Byte 56 is word 0, symbol 55; the run ended `pass: 652  fail: 1`.
+
+**Measured for this section, in scratch, none of it on the build path:**
+
+- the scratch model above: all 137 records, each mutant's prediction, and
+  the three M1 streams, which the block map also recovers from the
+  vendored WAVs;
+- **the reference's affinity**, spot-checked: the basis's prediction `S(0)
+  ⊕ ⨁(S(e_i) ⊕ S(0))` equals the reduced render at M1's three frames and at
+  1,000 random 17-byte words (`random.Random(20260911)`), 1,003/1,003; the
+  136 columns have rank 136 over GF(2) (so, given affinity, `S` is
+  injective: no two inputs share a symbol stream) and none
+  touches the 40 preamble and sync symbols;
+- **end to end at non-basis points**: the first 16 of those random words,
+  each compiled into a driver of `loopback.exsc`'s shape with the frame as
+  a `DeModFrame` literal and run with the committed `quantum.exsc`,
+  `modulator.exsc` and `emitte.exsc`: 16/16 WAVs byte-identical to
+  `frame_tx`'s, exit 0 — invalid frames, every one;
+- the emitted-text identity of P7, over those 16 units, M1's three and the
+  basis unit.
+
+**Not measured:** the affinity of either stream (P1, P2) beyond the points
+above; the reference modulator's memorylessness beyond 1,140 renders
+(P5); any toolchain but the one recorded (P8).

@@ -8,7 +8,9 @@ Exsecutor source, two programs, both compiled and run by `tests/run.sh`:
   writes, byte for byte, the WAV HydraModem's own reference transmitter
   writes for the same frame. `hydramodem/README.md` has how to build and
   run it; `tests/programs/hydramodem_*/` compare its output with the
-  vendored reference WAVs.
+  vendored reference WAVs, and `hydramodem_basis/` compares its symbol
+  streams on a 137-word basis, which under the design's affinity argument
+  covers every 17-byte input.
 
 This file said "nothing here compiles — there is no compiler" until
 2026-09-10, and then, until the hydramodem commit, that nothing here was

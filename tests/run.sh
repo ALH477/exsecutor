@@ -64,7 +64,7 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-162}"
 # positive test of what it compiles to is tests/unit/lwr_transitus.asm
 # (`load u64 %0 0 maior`), because the emitter cannot run a `maior` load yet.
 IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-48}"
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-12}"
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-13}"
 
 PASS=0
 FAIL=0

@@ -1,8 +1,17 @@
 # 0013 — Adopt HydraModem's reference transmitter as the second external certificate
 
-**Status:** Accepted, 2026-09-11. Vendored (`7633035`); **design only** —
-no Exsecutor transmitter exists, and every claim below about one is
-`[UNTESTED]` until `docs/design/modem.md`'s M1 runs.
+**Status:** Accepted, 2026-09-11. Vendored (`7633035`, the three WAVs;
+`860e678`, the 137-word basis). **M1 and M2 implemented.** M1 (`7ed75ca`):
+`examples/hydramodem/` writes all three vendored WAVs byte for byte, 3/3,
+and ten mutants failed at their predicted bytes while the constant-0 CRC
+passed, as predicted. M2 (the commit after `860e678`): the same pure
+functions give HydraModem's symbol stream on all 137 basis words, 137/137
+(`tests/programs/hydramodem_basis/`); eight mutants each failed at the
+predicted basis word and symbol, the constant-0 CRC among them — which
+under M1 still passes. Given the affinity of both symbol streams, argued
+from their code and not measured, that is byte-identical audio for every
+17-byte input (`modem.md` section 13 lists the premises). The text below
+is the decision as taken; the Open section is updated.
 **Relates to:** ADR 0011 (the first external certificate); spec §4.6, §5.2,
 §5.4, §8.6, §9.3, §14; `vendor/hydramodem-tx/`, `docs/design/modem.md`.
 
@@ -119,11 +128,14 @@ milestone with three tables in hand, not taken on one.
   re-vendor when upstream moves. Pinned to a commit.
 - The certificate is three points until M2 vendors 137 more renders'
   worth of symbol streams; the design says so on every page it matters.
+  (M2 did, `860e678`: 48,772 bytes, one byte a symbol, and the tree is
+  now 162,952 bytes.)
 - Writing a table as control flow does not scale; the receiver will make
   that concrete and force a decision the transmitter can defer.
 - The design found that `discerne` — parsed, typed, lowered on paper —
   traps in today's compiler when code is asked for (`modem.md` finding 1).
-  Not fixed here; the transmitter is written around it.
+  Not fixed here; the transmitter is written around it. (Fixed in the
+  compiler by `a1e46e3`; M1's table is a `discerne`.)
 
 **Neutral**
 
@@ -133,12 +145,17 @@ milestone with three tables in hand, not taken on one.
 
 ## Open
 
-- **Nothing is implemented.** `[UNTESTED]` — the design's worked example
-  compiles in fragments (the table, the sample view, the bit extraction,
-  the `u1` register step, the 38,060 writes), never as a whole.
-- **The affinity of the Exsecutor symbol stream** is an argument from the
-  code as designed (`modem.md` §7), to be tested by M2's basis and never
-  proved by it — exactly ADR 0011's caveat, one layer out.
+- ~~**Nothing is implemented.**~~ Closed: M1 (`7ed75ca`) and M2 run, in
+  `tests/programs/hydramodem_{loopback,exemplum,vacuum,basis}/`.
+- **The affinity of both symbol streams** — the reference's and the
+  Exsecutor transmitter's — is an argument from their code (`modem.md`
+  §13 re-makes it against the code that runs). M2's basis tested the map
+  at 137 points and it agrees at 19 more end to end (and the reference's
+  own affine prediction at 1,003 renders); none of that proves it —
+  exactly ADR 0011's caveat, one layer out.
+- **The reference modulator's memorylessness** is measured at 1,140
+  renders and argued for the rest from its rounding bound (`modem.md` D3,
+  §13's P5).
 - **The receiver** needs a stdin reader under `ambitus` (a spec/prelude
   decision), signed multiply-accumulate, array creation, and possibly
   signed shifts — the `[OPEN]` items M3 will force (`modem.md` §9).
