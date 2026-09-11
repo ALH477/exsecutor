@@ -26,14 +26,20 @@
 ;
 ; THE PAIR IS ONE CHARACTER APART:
 ;
-;	publica functio f(g: u32) -> u8 { redde h; }   rejected, exactly E0301
-;	publica functio f(g: u32) -> u8 { redde g; }   accepted, no diagnostic
+;	publica functio f(g: u32) -> u32 { redde h; }  rejected, exactly E0301
+;	publica functio f(g: u32) -> u32 { redde g; }  accepted, no diagnostic
 ;
 ; Both trees are the VERBATIM output of `build/exsc aedifica --hospes
 ; x86_64-linux --emitte ast FILE` on those two sources. Diffing the dumps shows
-; exactly ONE differing token -- `n 5 Seg`'s interner id, 6 (`h`) against 3
+; exactly ONE differing token -- `n 5 Seg`'s interner id, 5 (`h`) against 3
 ; (`g`) -- which is what makes the accepted twin a control rather than a
 ; second, unrelated program.
+;
+; THE RESULT TYPE IS `u32`, NOT `u8`, and it changed when pass 2 landed:
+; `redde g;` with `g: u32` in a `-> u8` function is a real `EXS-E0303`, so the
+; accepted twin as first written stopped being a control the moment anything
+; checked types. One character in each source, and both dumps regenerated
+; from them.
 ;
 ; NON-VACUITY. Check 2 asserts the code is 301 and the caret sits on the four
 ; bytes `h` occupies; changing either constant fails the fixture.
@@ -88,6 +94,12 @@ segment readable executable
 	lea	rcx, [fx_scratch]
 	xor	r8, r8
 	call	chk_init
+	; --hospes's pointer width. Required from the moment `chk_types` ORs
+	; CHK_S_TYPES in, because that un-gates pass 4 and `chk_run` rasserts
+	; a zero here (spec §9.5: there is no default-to-build-platform).
+	lea	rdi, [fx_chk]
+	mov	rsi, 64
+	call	chk_set_target
 	lea	rdi, [fx_chk]
 	lea	rsi, [fx_rsrc]
 	mov	rdx, FX_RSRC_LEN
@@ -106,7 +118,7 @@ segment readable executable
 	mov	r12, rax
 	cmp	dword [r12 + Diag.code_num], 301
 	jne	.fail2
-	cmp	dword [r12 + Diag.span.start], 44
+	cmp	dword [r12 + Diag.span.start], 45
 	jne	.fail2
 	cmp	dword [r12 + Diag.span.len], 1
 	jne	.fail2
@@ -141,6 +153,12 @@ segment readable executable
 	lea	rcx, [fx_scratch]
 	xor	r8, r8
 	call	chk_init
+	; --hospes's pointer width. Required from the moment `chk_types` ORs
+	; CHK_S_TYPES in, because that un-gates pass 4 and `chk_run` rasserts
+	; a zero here (spec §9.5: there is no default-to-build-platform).
+	lea	rdi, [fx_chk]
+	mov	rsi, 64
+	call	chk_set_target
 	lea	rdi, [fx_chk]
 	lea	rsi, [fx_asrc]
 	mov	rdx, FX_ASRC_LEN
@@ -200,9 +218,9 @@ segment readable writeable
   fx_path	db 'chk_e0301.exsc'
   FX_PATH_LEN = $ - fx_path
 
-  fx_rsrc	db 'publica functio f(g: u32) -> u8 {', 10, '    redde h;', 10, '}', 10
+  fx_rsrc	db 'publica functio f(g: u32) -> u32 {', 10, '    redde h;', 10, '}', 10
   FX_RSRC_LEN = $ - fx_rsrc
-  fx_asrc	db 'publica functio f(g: u32) -> u8 {', 10, '    redde g;', 10, '}', 10
+  fx_asrc	db 'publica functio f(g: u32) -> u32 {', 10, '    redde g;', 10, '}', 10
   FX_ASRC_LEN = $ - fx_asrc
 
   fx_rej:
@@ -212,29 +230,29 @@ segment readable writeable
 	db 'x 3 7', 10
 	db 'x 4 9', 10
 	db 't 1 error 0 0 0 0 0 0', 10
-	db 'd 1 Fn 1 0 2 9 0 0 1 8 40', 10
+	db 'd 1 Fn 1 0 2 9 0 0 1 8 41', 10
 	db 'd 2 Param 0 0 3 2 0 1 1 18 6', 10
-	db 'd 3 CapAtom 0 0 12 0 0 0 0 0 0', 10
-	db 'd 4 CapAtom 0 0 13 0 0 0 0 0 0', 10
-	db 'd 5 CapAtom 0 0 14 0 0 0 0 0 0', 10
-	db 'd 6 CapAtom 0 0 15 0 0 0 0 0 0', 10
-	db 'd 7 CapAtom 0 0 16 0 0 0 0 0 0', 10
-	db 'd 8 CapAtom 0 0 17 0 0 0 0 0 0', 10
-	db 'd 9 CapAtom 0 0 18 0 0 0 0 0 0', 10
-	db 'd 10 CapAtom 0 0 19 0 0 0 0 0 0', 10
-	db 'd 11 CapAtom 0 0 20 0 0 0 0 0 0', 10
-	db 'd 12 CapAtom 0 0 21 0 0 0 0 0 0', 10
-	db 'd 13 CapAtom 0 0 22 0 0 0 0 0 0', 10
+	db 'd 3 CapAtom 0 0 19 0 0 0 0 0 0', 10
+	db 'd 4 CapAtom 0 0 20 0 0 0 0 0 0', 10
+	db 'd 5 CapAtom 0 0 21 0 0 0 0 0 0', 10
+	db 'd 6 CapAtom 0 0 22 0 0 0 0 0 0', 10
+	db 'd 7 CapAtom 0 0 23 0 0 0 0 0 0', 10
+	db 'd 8 CapAtom 0 0 24 0 0 0 0 0 0', 10
+	db 'd 9 CapAtom 0 0 25 0 0 0 0 0 0', 10
+	db 'd 10 CapAtom 0 0 26 0 0 0 0 0 0', 10
+	db 'd 11 CapAtom 0 0 27 0 0 0 0 0 0', 10
+	db 'd 12 CapAtom 0 0 28 0 0 0 0 0 0', 10
+	db 'd 13 CapAtom 0 0 29 0 0 0 0 0 0', 10
 	db 'n 1 TyBit 32 0 0 0 0 0 1 21 3', 10
 	db 'n 2 Param 0 0 3 1 0 2 1 18 6', 10
-	db 'n 3 TyBit 8 0 0 0 0 0 1 29 2', 10
-	db 'n 4 Sig 0 0 1 1 3 0 1 8 23', 10
-	db 'n 5 Seg 0 0 6 0 0 0 1 44 1', 10
-	db 'n 6 Path 0 0 2 1 0 0 1 44 1', 10
-	db 'n 7 Redde 0 0 6 0 0 0 1 38 8', 10
-	db 'n 8 Block 0 0 3 1 0 0 1 32 16', 10
-	db 'n 9 Fn 1 0 4 8 0 1 1 8 40', 10
-	db 'n 10 Module 0 0 4 1 0 0 1 0 49', 10
+	db 'n 3 TyBit 32 0 0 0 0 0 1 29 3', 10
+	db 'n 4 Sig 0 0 1 1 3 0 1 8 24', 10
+	db 'n 5 Seg 0 0 5 0 0 0 1 45 1', 10
+	db 'n 6 Path 0 0 2 1 0 0 1 45 1', 10
+	db 'n 7 Redde 0 0 6 0 0 0 1 39 8', 10
+	db 'n 8 Block 0 0 3 1 0 0 1 33 16', 10
+	db 'n 9 Fn 1 0 4 8 0 1 1 8 41', 10
+	db 'n 10 Module 0 0 4 1 0 0 1 0 50', 10
   FX_REJ_LEN = $ - fx_rej
 
   fx_acc:
@@ -244,29 +262,29 @@ segment readable writeable
 	db 'x 3 7', 10
 	db 'x 4 9', 10
 	db 't 1 error 0 0 0 0 0 0', 10
-	db 'd 1 Fn 1 0 2 9 0 0 1 8 40', 10
+	db 'd 1 Fn 1 0 2 9 0 0 1 8 41', 10
 	db 'd 2 Param 0 0 3 2 0 1 1 18 6', 10
-	db 'd 3 CapAtom 0 0 12 0 0 0 0 0 0', 10
-	db 'd 4 CapAtom 0 0 13 0 0 0 0 0 0', 10
-	db 'd 5 CapAtom 0 0 14 0 0 0 0 0 0', 10
-	db 'd 6 CapAtom 0 0 15 0 0 0 0 0 0', 10
-	db 'd 7 CapAtom 0 0 16 0 0 0 0 0 0', 10
-	db 'd 8 CapAtom 0 0 17 0 0 0 0 0 0', 10
-	db 'd 9 CapAtom 0 0 18 0 0 0 0 0 0', 10
-	db 'd 10 CapAtom 0 0 19 0 0 0 0 0 0', 10
-	db 'd 11 CapAtom 0 0 20 0 0 0 0 0 0', 10
-	db 'd 12 CapAtom 0 0 21 0 0 0 0 0 0', 10
-	db 'd 13 CapAtom 0 0 22 0 0 0 0 0 0', 10
+	db 'd 3 CapAtom 0 0 18 0 0 0 0 0 0', 10
+	db 'd 4 CapAtom 0 0 19 0 0 0 0 0 0', 10
+	db 'd 5 CapAtom 0 0 20 0 0 0 0 0 0', 10
+	db 'd 6 CapAtom 0 0 21 0 0 0 0 0 0', 10
+	db 'd 7 CapAtom 0 0 22 0 0 0 0 0 0', 10
+	db 'd 8 CapAtom 0 0 23 0 0 0 0 0 0', 10
+	db 'd 9 CapAtom 0 0 24 0 0 0 0 0 0', 10
+	db 'd 10 CapAtom 0 0 25 0 0 0 0 0 0', 10
+	db 'd 11 CapAtom 0 0 26 0 0 0 0 0 0', 10
+	db 'd 12 CapAtom 0 0 27 0 0 0 0 0 0', 10
+	db 'd 13 CapAtom 0 0 28 0 0 0 0 0 0', 10
 	db 'n 1 TyBit 32 0 0 0 0 0 1 21 3', 10
 	db 'n 2 Param 0 0 3 1 0 2 1 18 6', 10
-	db 'n 3 TyBit 8 0 0 0 0 0 1 29 2', 10
-	db 'n 4 Sig 0 0 1 1 3 0 1 8 23', 10
-	db 'n 5 Seg 0 0 3 0 0 0 1 44 1', 10
-	db 'n 6 Path 0 0 2 1 0 0 1 44 1', 10
-	db 'n 7 Redde 0 0 6 0 0 0 1 38 8', 10
-	db 'n 8 Block 0 0 3 1 0 0 1 32 16', 10
-	db 'n 9 Fn 1 0 4 8 0 1 1 8 40', 10
-	db 'n 10 Module 0 0 4 1 0 0 1 0 49', 10
+	db 'n 3 TyBit 32 0 0 0 0 0 1 29 3', 10
+	db 'n 4 Sig 0 0 1 1 3 0 1 8 24', 10
+	db 'n 5 Seg 0 0 3 0 0 0 1 45 1', 10
+	db 'n 6 Path 0 0 2 1 0 0 1 45 1', 10
+	db 'n 7 Redde 0 0 6 0 0 0 1 39 8', 10
+	db 'n 8 Block 0 0 3 1 0 0 1 33 16', 10
+	db 'n 9 Fn 1 0 4 8 0 1 1 8 41', 10
+	db 'n 10 Module 0 0 4 1 0 0 1 0 50', 10
   FX_ACC_LEN = $ - fx_acc
 
   fx_arena:	rb sizeof.Arena

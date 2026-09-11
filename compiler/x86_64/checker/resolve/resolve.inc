@@ -123,6 +123,71 @@
 ; (shadowing, no cross-module inference), §8.6 (the grammar), §9.3
 ; (determinism), §13 (the codes; never invent one -- CLAUDE.md).
 ; -----------------------------------------------------------------------------
+; E0301 AND RECOVERY ARTIFACTS -- `tests/diagnostics/README.md`, "The number
+; moved when the checker joined the pipeline": measured on that corpus, this
+; pass adds four `EXS-E0301` the pre-checker baseline never had -- c14 (+2),
+; c20 (+1), c22 (+1) -- every one of them a TRUE fact about the tree (the name
+; really does not resolve) that is noise to a reader, because it exists only
+; as a byproduct of parser recovery from an EARLIER, already-reported
+; diagnostic on the same construct. AST H3 / checker.md H3 make the same
+; argument one stage later, about `Error` operands and Stage 2 typing
+; ("a checker that diagnoses an `Error` operand duplicates the parser");
+; this is that argument applied to pass 1, before Stage 2 exists to apply it.
+;
+; RULE. Pass 1 does not raise `E0301` for a `Path`/`Seg` (`__chk_path`'s
+; `.ordinary` miss) or a `RowItem` `Path` (`__chk_rowitem`'s `.potestas` miss)
+; that lies inside a subtree -- at ANY depth, including through a nested
+; `Block` -- containing a RECOVERY ARTIFACT. The name is still RESOLVED when
+; it can be (a hit is a hit regardless of taint); only a genuine miss's
+; diagnostic is withheld, so later passes still see `d` = 0 exactly where
+; nothing was found, same as today.
+;
+; TWO ARTIFACT SHAPES, MEASURED, NOT ONE. `tests/diagnostics/README.md`'s own
+; closing paragraph names one: "the checker's resolve pass now walks the
+; recovered tree and reports names that exist only because recovery invented
+; structure around a parse error... do not raise E0301 on a name inside a
+; subtree that contains an Error node." That covers c14 exactly -- dumping it
+; (`--emitte ast`) shows `Error` node 11 (the abandoned `> 10`) as a sibling
+; STATEMENT, inside the same function-body `Block` as the `if`/`return` `Path`
+; nodes that mis-resolve, so a taint that reaches every statement in a `Block`
+; whose subtree contains an `Error` node removes both. It does NOT cover c20
+; or c22: measured with the same dump, NEITHER tree contains a single
+; `AST_ERROR` node (`--emitte ast | grep Error` matches nothing but the
+; harmless `t 1 error` type-table entry every tree carries per typed-ast.md
+; §2.2). Their cascade is `interior()` failing to resolve a nested, NAMED
+; `functio` -- a construct spec §8.6's peek rejects with `EXS-E0201`, but
+; `cst/parse.inc`'s `.functio` handler recovers by parsing it as the complete,
+; well-formed declaration it plainly is (no `Error` wrapper at all: "the
+; construct is then parsed as the declaration it plainly is"). Pass 1 never
+; binds a nested `Fn`'s own name into any scope (by design -- nested named
+; functions are not part of the grammar), so any reference to it is a REAL
+; miss, structurally identical in kind to the `Error` case (full recovery
+; around an already-reported diagnostic) but not identical in shape. Recorded
+; here rather than silently folded into "the `Error`-node rule", because
+; `tests/diagnostics/README.md`'s prose and the measured tree disagree, and
+; CLAUDE.md's evidence discipline says which: the prose is the one that is
+; wrong (or, charitably, incomplete) -- it should read "...or a nested `Fn`
+; declaration the peek recovered around," and whoever owns that file next
+; should amend it (out of this file's scope: `tests/diagnostics/` is not in
+; this pass's write scope, only `checker/resolve/` and its own `tests/unit/`
+; fixtures are).
+;
+; MECHANISM AND COST. One pass over every node, `__chk_taint_pass`, run once
+; before the walk: `ChkCtx.taint` is a flat `u8[nodes+1]`, and node N's byte is
+; 1 iff N is itself an artifact (`AST_ERROR`, or a nested-`Fn`-in-`Fn`
+; declaration -- `__chk_is_nested_fn`) OR any child slot `ast_roles` names for
+; N's kind already has its byte set. Postorder (typed-ast.md §2.1: "children
+; are emitted before their parent") makes this a single forward scan, id 1..N,
+; rather than a recursive walk or a second per-node subtree search: every
+; child's id is smaller than N's, so its answer is already in the array.
+; `__chk_tainted` then costs O(frame depth) -- it asks whether ANY currently
+; open frame's node (or, with no frame open, the module root) is tainted, the
+; same "ancestor, not just the immediate parent" shape `__chk_lookup` already
+; walks for names, and IS how a `Block` nested inside the tainted one (c14's
+; `return`, one `Block` below the `Error` sibling) still gets suppressed. Net
+; cost: one extra O(nodes) pass, paid once per run, plus O(depth) per E0301
+; candidate -- not a second walk per name, and no search over declarations.
+; -----------------------------------------------------------------------------
 
 ; ---- flags, kinds, capacities ----------------------------------------------
 
@@ -255,6 +320,12 @@ struct ChkCtx
 				; key may not point into a `Vec` -- one flat
 				; `arena_alloc` that never grows is the fix, the
 				; same one ast/types.inc made for its type keys.
+	field taint,   dq	; -> u8[nodes+1], ONE flat `arena_alloc`, computed
+				; once by `__chk_taint_pass` before the walk: 1 if
+				; that node's own subtree contains an `E0301`
+				; RECOVERY ARTIFACT (this file's header, "E0301 AND
+				; RECOVERY ARTIFACTS"). Read by `__chk_tainted`,
+				; never grown, never mutated after the pass runs.
 	field flags,   dd	; CHK_F_*
 	field ndiag,   dd	; diagnostics this run has emitted
 	field capbase, dd	; `ast_cap_base(tree)`; 0 if the tree has no atoms
@@ -267,6 +338,12 @@ struct ChkCtx
 				; (an explicit `poscit`, or `publica` -- checker.md
 				; section 2.3), 0 while it is inferred
 	field stages,  dd	; CHK_S_* -- what has run, for `chk_verify`
+	field nsupp,   dd	; E0301s WITHHELD by the taint rule below. Not a
+				; diagnostic count -- a record that this tree holds
+				; names the checker deliberately did not resolve and
+				; deliberately said nothing about, which is a state
+				; `chk_verify`'s "unresolved is legal only in type
+				; position" clause otherwise forbids.
 	field ptrbits, dd	; pointer width of --hospes in bits (64 for x86_64-linux);
 				; set by `chk_set_target`, read by pass 4. 0 = never set,
 				; and pass 4 rasserts: spec §9.5 forbids a default.
@@ -325,9 +402,11 @@ proc chk_init, chk_c, chk_t, chk_dg, chk_ar, chk_fl
 	mov	qword [rbx + ChkCtx.srcn], 0
 	mov	qword [rbx + ChkCtx.path], 0
 	mov	qword [rbx + ChkCtx.pathn], 0
+	mov	qword [rbx + ChkCtx.taint], 0	; until __chk_taint_pass
 	mov	eax, [chk_fl]
 	mov	[rbx + ChkCtx.flags], eax
 	mov	dword [rbx + ChkCtx.ndiag], 0
+	mov	dword [rbx + ChkCtx.nsupp], 0
 	mov	dword [rbx + ChkCtx.capbase], 0
 	mov	dword [rbx + ChkCtx.nmain], 0
 	mov	dword [rbx + ChkCtx.mainid], 0
@@ -1107,7 +1186,16 @@ endp
 proc chk_prelude_lookup, chk_c, chk_nm
 	locals
 	endl
-	xor	eax, eax
+	; WIRED, 2026-09-10, by `checker-types`: both blockers above are
+	; answered in `checker/types/prim.inc` -- the tagged `Seg.d` (bit 31 =
+	; a `prelude/interface.inc` part B row, which `chk_verify` now drops
+	; before its bounds check) and pass 2's primitive table. Without this
+	; forwarding line `Scriptor.ad_exitum(a)` in `examples/initium.exsc` is
+	; `EXS-E0301` raised HERE, in pass 1, and pass 2 cannot retract a
+	; diagnostic another pass has already buffered.
+	mov	rdi, [chk_c]
+	mov	rsi, [chk_nm]
+	call	chk_ty_prelude_lookup
 	return
 endp
 
@@ -1732,6 +1820,267 @@ proc __chk_mods, chk_c
 endp
 
 ; =============================================================================
+; E0301 recovery-artifact taint -- see this file's header
+; =============================================================================
+
+; __chk_is_nested_fn(chk_c, chk_n) -> al = 1 if node `chk_n` is a `Fn` whose
+; own declaration is `AST_D_FN` and whose declaration's PARENT is ALSO
+; `AST_D_FN`. The only way that pairing arises is spec §8.6's peek rejecting a
+; nested NAMED `functio` (`EXS-E0201`) and `cst/parse.inc`'s `.functio`
+; recovering by parsing it anyway -- an ordinary top-level `Fn` has `parent`
+; 0, an `Impl`/`Externus` member's parent is `AST_D_IMPL`/`AST_D_EXTERNUS`
+; (or `AST_D_EXTERNFN` for the externus function itself), and nothing else in
+; this grammar nests a `Fn` declaration inside another `Fn` declaration. See
+; this file's header, "E0301 AND RECOVERY ARTIFACTS".
+proc __chk_is_nested_fn, chk_c, chk_n
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [chk_c]
+	mov	r12, [chk_n]
+	mov	rdi, [rbx + ChkCtx.tree]
+	mov	rsi, r12
+	call	ast_node_at
+	movzx	ecx, word [rax + AstNode.kind]
+	cmp	ecx, AST_FN
+	jne	.no
+	mov	eax, [rax + AstNode.d]
+	test	eax, eax
+	jz	.no
+	mov	r12, rax		; this Fn's own declaration
+	mov	rdi, [rbx + ChkCtx.tree]
+	mov	rsi, r12
+	call	ast_decl_at
+	movzx	ecx, byte [rax + AstDecl.kind]
+	cmp	ecx, AST_D_FN
+	jne	.no
+	mov	ecx, [rax + AstDecl.parent]
+	test	ecx, ecx
+	jz	.no			; module level -- ordinary and legal
+	mov	rdi, [rbx + ChkCtx.tree]
+	mov	rsi, rcx
+	call	ast_decl_at
+	movzx	ecx, byte [rax + AstDecl.kind]
+	cmp	ecx, AST_D_FN
+	jne	.no
+	mov	al, 1
+	return
+  .no:
+	xor	al, al
+	return
+endp
+
+; __chk_taint_of(chk_c, chk_n) -> al = 1 if node `chk_n` is itself a recovery
+; artifact, or any child slot `ast_roles` names for its kind is already
+; tainted. Driven by the same table `__chk_kids` walks, in the same slot
+; order, but this is a flat read of `ChkCtx.taint` for each child -- never a
+; recursive call -- because `__chk_taint_pass` below only ever asks this for
+; node ids in increasing order, and postorder guarantees every child's id is
+; smaller than `chk_n`'s (typed-ast.md §2.1).
+proc __chk_taint_of, chk_c, chk_n
+	uses	rbx, r12, r13, r14
+	locals
+		slot	chk_k,   dq
+		slot	chk_r,   dq
+		slot	chk_off, dq
+		slot	chk_cnt, dq
+		slot	chk_tb,  dq
+	endl
+	mov	rbx, [chk_c]
+	mov	r12, [chk_n]
+	mov	rdi, [rbx + ChkCtx.tree]
+	mov	rsi, r12
+	call	ast_node_at
+	movzx	ecx, word [rax + AstNode.kind]
+	mov	[chk_k], rcx
+	mov	rax, [rbx + ChkCtx.taint]
+	mov	[chk_tb], rax
+
+	cmp	qword [chk_k], AST_ERROR
+	jne	.notsrc
+	mov	al, 1
+	return
+  .notsrc:
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_is_nested_fn
+	test	al, al
+	jz	.slots
+	mov	al, 1
+	return
+
+  .slots:
+	xor	r13, r13
+  .slot:
+	cmp	r13, 4
+	jae	.miss
+	mov	rdi, [chk_k]
+	mov	rsi, r13
+	call	ast_role_of
+	mov	[chk_r], rax
+	cmp	eax, AST_R_NODE
+	je	.child
+	cmp	eax, AST_R_NODEQ
+	je	.child
+	cmp	eax, AST_R_LIST
+	je	.list
+	cmp	eax, AST_R_LIST2
+	je	.list
+	jmp	.next
+  .child:
+	mov	rdi, [rbx + ChkCtx.tree]
+	mov	rsi, r12
+	call	ast_node_at
+	lea	rcx, [rax + AstNode.a]
+	mov	eax, [rcx + r13*4]
+	test	eax, eax
+	jz	.next
+	mov	rcx, [chk_tb]
+	movzx	edx, byte [rcx + rax]
+	test	dl, dl
+	jz	.next
+	mov	al, 1
+	return
+  .list:
+	mov	rdi, [rbx + ChkCtx.tree]
+	mov	rsi, r12
+	call	ast_node_at
+	lea	rcx, [rax + AstNode.a]
+	mov	eax, [rcx + r13*4]
+	mov	[chk_off], rax
+	lea	rdx, [r13 + 1]
+	mov	eax, [rcx + rdx*4]
+	mov	[chk_cnt], rax
+	cmp	qword [chk_r], AST_R_LIST2
+	jne	.have_n
+	shl	qword [chk_cnt], 1	; `Si` stores (cond, block) PAIRS
+  .have_n:
+	xor	r14, r14
+  .elem:
+	cmp	r14, [chk_cnt]
+	jae	.next
+	mov	rdi, [rbx + ChkCtx.tree]
+	mov	rsi, [chk_off]
+	add	rsi, r14
+	call	ast_extra_at
+	test	eax, eax
+	jz	.elemnext
+	mov	rcx, [chk_tb]
+	movzx	edx, byte [rcx + rax]
+	test	dl, dl
+	jz	.elemnext
+	mov	al, 1
+	return
+  .elemnext:
+	inc	r14
+	jmp	.elem
+  .next:
+	inc	r13
+	jmp	.slot
+  .miss:
+	xor	al, al
+	return
+endp
+
+; __chk_taint_pass(chk_c) -- ONE FORWARD SCAN over every node id, building
+; `ChkCtx.taint`. Allocated from `ChkCtx.arena` (scratch -- never read after
+; `chk_run` returns, same lifetime as `ChkCtx.keys`), sized `nodes + 1` so a
+; 0 id (never a live node id) is always 0. Must run before pass 1's walk;
+; `chk_resolve` calls it first, unconditionally -- an empty tree costs one
+; `ast_node_count` and no loop iterations.
+proc __chk_taint_pass, chk_c
+	uses	rbx, r12, r13
+	locals
+		slot	chk_n,   dq
+		slot	chk_buf, dq
+	endl
+	mov	rbx, [chk_c]
+	mov	rdi, [rbx + ChkCtx.tree]
+	call	ast_node_count
+	mov	[chk_n], rax
+	mov	rdi, [rbx + ChkCtx.arena]
+	lea	rsi, [rax + 1]
+	call	arena_alloc
+	mov	r13, rax
+	mov	rdi, rax
+	mov	rcx, [chk_n]
+	inc	rcx
+	xor	al, al
+	cld
+	rep	stosb			; scratch arena content is not promised
+					; zero -- this pass owns making it so
+	mov	rbx, [chk_c]
+	mov	[rbx + ChkCtx.taint], r13
+
+	mov	r12, 1
+  .node:
+	cmp	r12, [chk_n]
+	ja	.out
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_taint_of
+	mov	rcx, [rbx + ChkCtx.taint]
+	mov	[rcx + r12], al
+	inc	r12
+	jmp	.node
+  .out:
+	return
+endp
+
+; __chk_tainted(chk_c) -> al = 1 if `E0301` must be WITHHELD right now: any
+; currently open frame's node is tainted, or -- with no frame open -- the
+; module root is. Ancestor-inclusive, not just the immediate frame: c14's
+; `return` (this file's header) sits in a `Block` one level below the one
+; whose sibling statement is the `Error` node, so the check walks every open
+; frame, same "innermost outward, but the whole stack" shape `__chk_lookup`
+; already uses for names. O(frame depth), not a second tree walk.
+proc __chk_tainted, chk_c
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [chk_c]
+	cmp	qword [rbx + ChkCtx.taint], 0
+	je	.no			; defensive: pass 1 always runs the taint
+					; pass first, so this should not happen
+	cmp	qword [rbx + ChkCtx.frames.len], 0
+	jne	.frame
+	mov	rdi, [rbx + ChkCtx.tree]
+	mov	eax, [rdi + Ast.root]
+	test	eax, eax
+	jz	.no
+	mov	rcx, [rbx + ChkCtx.taint]
+	movzx	eax, byte [rcx + rax]
+	test	al, al
+	jz	.no
+	mov	al, 1
+	return
+
+  .frame:
+	xor	r12, r12
+  .up:
+	cmp	r12, [rbx + ChkCtx.frames.len]
+	jae	.no
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_frame_at
+	mov	eax, [rax + ChkFrame.node]
+	test	eax, eax
+	jz	.next
+	mov	rcx, [rbx + ChkCtx.taint]
+	movzx	edx, byte [rcx + rax]
+	test	dl, dl
+	jz	.next
+	mov	al, 1
+	return
+  .next:
+	inc	r12
+	jmp	.up
+  .no:
+	xor	al, al
+	return
+endp
+
+; =============================================================================
 ; pass 1 -- the walk
 ; =============================================================================
 
@@ -2081,6 +2430,16 @@ proc __chk_path, chk_c, chk_n, chk_pos
 	call	__chk_lookup
 	test	rax, rax
 	jnz	.have
+	; a genuine miss -- withhold E0301 inside a recovery artifact's taint
+	; (this file's header, "E0301 AND RECOVERY ARTIFACTS")
+	mov	rdi, rbx
+	call	__chk_tainted
+	test	al, al
+	jz	.raise301
+	inc	dword [rbx + ChkCtx.nsupp]
+	xor	rax, rax
+	jmp	.have
+  .raise301:
 	mov	rdi, rbx
 	mov	rsi, CHK_P_RESOLVE
 	mov	rdx, 301
@@ -2205,6 +2564,16 @@ proc __chk_rowitem, chk_c, chk_n
 	call	__chk_lookup
 	test	rax, rax
 	jnz	.record
+	; a genuine miss -- withhold E0301 inside a recovery artifact's taint
+	; (this file's header, "E0301 AND RECOVERY ARTIFACTS")
+	mov	rdi, rbx
+	call	__chk_tainted
+	test	al, al
+	jz	.rowitem301
+	inc	dword [rbx + ChkCtx.nsupp]
+	xor	rax, rax
+	jmp	.record
+  .rowitem301:
 	mov	rdi, rbx
 	mov	rsi, CHK_P_RESOLVE
 	mov	rdx, 301
@@ -2724,6 +3093,10 @@ proc chk_resolve, chk_c
 	mov	rbx, [chk_c]
 	mov	rdi, rbx
 	call	__chk_pass0
+	mov	rdi, rbx
+	call	__chk_taint_pass	; before __chk_mods/__chk_walk: both may
+					; call __chk_tainted through __chk_path
+					; and __chk_rowitem
 	mov	rdi, rbx
 	call	__chk_mods
 	mov	rdi, [rbx + ChkCtx.tree]

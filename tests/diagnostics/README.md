@@ -204,6 +204,19 @@ walks the recovered tree and reports names that exist only because recovery
 invented structure around a parse error. They are true statements about the
 tree and noise to a reader, the same class as a cascade. Not suppressed here
 — recorded, so the next re-evaluation of §16's criterion compares like with
-like (the Stage 1 numbers were measured before the checker ran). The fix is
-the checker's: do not raise `E0301` on a name inside a subtree that contains
-an `Error` node.
+like (the Stage 1 numbers were measured before the checker ran).
+
+**And the fix this paragraph first prescribed was wrong.** It said: do not
+raise `E0301` on a name inside a subtree that contains an `Error` node. c20
+and c22 contain **no** `Error` node at all — measured with `--emitte ast`.
+Their cascade comes from §8.6's nested-named-`functio` peek, which
+`cst/parse.inc` recovers from by parsing the declaration it plainly is, with
+no error wrapper. The rule the checker implements has two taint sources:
+an `AST_ERROR` node, **and** a `Fn` whose declaration's parent is itself a
+`Fn`. Withholding a diagnostic also made the tree unverifiable in a way
+`chk_verify` forbids, which is why the withholding is counted.
+
+A raw total is no longer comparable across commits either: the checker's
+type, row and control-flow passes now run on this corpus and add codes the
+Stage 1 measurement never saw. Compare per-code, and compare `E0201`'s share
+of the parse-error subset — that is the number §16's criterion turned on.

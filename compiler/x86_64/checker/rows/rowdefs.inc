@@ -49,7 +49,7 @@
 ; `poscit` attaches).
 ; -----------------------------------------------------------------------------
 
-include '../resolve/resolve.inc'
+include '../types/types.inc'
 
 ; ---- item kinds ------------------------------------------------------------
 ; `docs/design/checker.md` section 6 fixes these two numbers as part of the

@@ -103,6 +103,12 @@ segment readable executable
 	lea	rcx, [fx_scratch]
 	xor	r8, r8
 	call	chk_init
+	; --hospes's pointer width. Required from the moment `chk_types` ORs
+	; CHK_S_TYPES in, because that un-gates pass 4 and `chk_run` rasserts
+	; a zero here (spec §9.5: there is no default-to-build-platform).
+	lea	rdi, [fx_chk]
+	mov	rsi, 64
+	call	chk_set_target
 	lea	rdi, [fx_chk]
 	lea	rsi, [fx_rsrc]
 	mov	rdx, FX_RSRC_LEN
@@ -176,6 +182,12 @@ segment readable executable
 	lea	rcx, [fx_scratch]
 	xor	r8, r8
 	call	chk_init
+	; --hospes's pointer width. Required from the moment `chk_types` ORs
+	; CHK_S_TYPES in, because that un-gates pass 4 and `chk_run` rasserts
+	; a zero here (spec §9.5: there is no default-to-build-platform).
+	lea	rdi, [fx_chk]
+	mov	rsi, 64
+	call	chk_set_target
 	lea	rdi, [fx_chk]
 	lea	rsi, [fx_asrc]
 	mov	rdx, FX_ASRC_LEN

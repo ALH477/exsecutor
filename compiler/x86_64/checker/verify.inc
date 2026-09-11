@@ -114,7 +114,17 @@ proc chk_verify, chk_t, chk_nd, chk_ss
 		slot	chk_n, dq
 	endl
 	cmp	qword [chk_nd], 0
-	jne	.out			; gate 1: see this file's header
+	jne	.out			; gate 1: see this file's header. `chk_nd` is
+					; diagnostics RAISED **plus** E0301s the taint
+					; rule WITHHELD (ChkCtx.nsupp): a tree the parser
+					; recovered in holds names pass 1 deliberately
+					; left unresolved and deliberately did not report,
+					; and `__chk_v_path`'s "unresolved is legal only in
+					; type position" is false of exactly that shape.
+					; A suppressed diagnostic makes a tree as
+					; unverifiable as a raised one; the alternative --
+					; threading the taint array in here -- verifies a
+					; little more of a tree nobody will lower anyway.
 	mov	rax, [chk_ss]
 	test	rax, CHK_S_RESOLVE
 	jz	.out			; nothing ran; nothing is owed
@@ -206,6 +216,7 @@ proc __chk_v_path, chk_t, chk_n, chk_ss
 	; every filled `d` names a declaration that exists
 	test	r13, r13
 	jz	.unresolved
+	btr	r13, 31			; bit 31 = a PRELUDE declaration, not an `Ast.decls` index (checker/types/prim.inc)
 	mov	rdi, rbx
 	call	ast_decl_count
 	rassert	r13 le rax

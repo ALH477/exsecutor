@@ -41,7 +41,7 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # this -- the test is `found < floor` -- so a floor that drifts below the real
 # count still catches the failure mode that matters: a discovery mechanism
 # silently finding nothing. Drift costs precision, not the guarantee.
-UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-131}"
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-136}"
 
 PASS=0
 FAIL=0

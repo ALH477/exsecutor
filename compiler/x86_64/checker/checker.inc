@@ -151,8 +151,8 @@ proc chk_run, chk_c
 	; would run the row fixpoint over `ty == 0` everywhere and either rassert
 	; or raise E0421 against nothing.
 	;
-	;	mov	rdi, rbx
-	;	call	chk_types		; pass 2 -- `checker-types` (unwritten)
+	mov	rdi, rbx
+	call	chk_types		; pass 2 -- `checker-types`
 	;
 	test	dword [rbx + ChkCtx.stages], CHK_S_TYPES
 	jz	.no_rows
@@ -179,6 +179,7 @@ proc chk_run, chk_c
 
 	mov	rdi, [rbx + ChkCtx.tree]
 	mov	esi, [rbx + ChkCtx.ndiag]
+	add	esi, [rbx + ChkCtx.nsupp]	; see chk_verify's gate 1
 	mov	edx, [rbx + ChkCtx.stages]
 	call	chk_verify
 
