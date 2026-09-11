@@ -829,9 +829,44 @@ performance and never changes the value.
   wrapping in `tests/ir/narrow_wrap.ir`, trapping in
   `tests/ir/trap_add_u4.ir` and its siblings, and in source
   (`tests/programs/angusta/`: `+% -% +| +` and comparisons on
-  `u8 u16 u32 i8`). Narrowing `sicut` is not defined by this document —
-  §5.2 has only the widening sentence — and stays `[OPEN]` here even
-  though the lowering emits a `trunc` for it.
+  `u8 u16 u32 i8`).
+- **`sicut` between integer types is total and never traps.** Widening
+  is §5.2's explicit sentence: a `uN` is zero-extended, an `iN`
+  sign-extended, **by the source's sign**. The two other cases were not
+  defined by this document until the HydraModem receiver leaned on both
+  (`docs/design/receptor.md`, finding 13):
+  - **Narrowing** (`u16 sicut u8`, `i64 sicut u8`, `i64 sicut i32`): the
+    result is the **low N bits of the source's two's-complement
+    representation**, read as the destination type — truncation, never a
+    trap, never a diagnostic. `300 sicut u8` is 44. Why truncation and
+    not a trap: overflow behaviour belongs to the *arithmetic operator*
+    by this section's own rule — `+` traps, `+%` wraps — and a cast that
+    trapped would be an operation with a failure mode its type does not
+    show and no `sicut%` to opt out of; a program that wants the check
+    compares first. Widening after narrowing does not round-trip above
+    N bits, which is what "narrowing" means.
+  - **Equal-width signed↔unsigned** (`u8 sicut i8`, `i64 sicut u64`): a
+    reinterpretation of the same bits; the value is the two's-complement
+    reading of them in the destination type. `200 sicut i8` is −56,
+    `(−56) sicut u8` is 200. No trap.
+  Both lower to one `trunc` (`lower/expr.inc`, `__lwr_cast`: a
+  destination no wider than the source is `trunc`, wider is `zext`/`sext`
+  by source sign) and the emitter normalises the result to the
+  destination's canonical form (`docs/design/ssa-ir.md` §2.2), so the
+  bits above N are right and a 64-bit compare sees the same value the
+  narrow type does. **Evidence, exactly:** from source,
+  `tests/programs/angusta/` runs one narrowing, `u16 300 sicut u8` = 44
+  (check 5, unsigned to unsigned), and one equal-width change, `u8 200
+  sicut i8` = −56 (check 6, unsigned to signed, and check 7 adds 100 to
+  it and gets 44). At the IR, `tests/ir/conv_roundtrip.ir` runs the
+  other directions: `trunc u8` of `i8` −56 is 200 (signed to unsigned,
+  equal width), `trunc i32` of `i64` −1 is −1 (signed narrowing),
+  `trunc u4` of `u8` 171 is 11; `tests/unit/bfa_emit_narrow.asm` pins the
+  emitted text. So from source, narrowing from a **signed** source or
+  into a signed destination, and an equal-width **signed-to-unsigned**
+  change, are `[UNTESTED]` — the lowering emits the same `trunc` for
+  them and the IR fixture runs that `trunc`, but no program has written
+  one.
 - **Exclusive or and shifts** are the contextual words `aut`, `sursum`,
   `deorsum` (§8.4 tier 2; precedence in §8.6). `docs/design/wire-codec.md`
   D1. Exercised: parsed (`tests/unit/cst_shift_xor.asm`), typed

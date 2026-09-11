@@ -8,7 +8,9 @@ true milestone by milestone. Every `[UNTESTED]` this file carried has been
 retired against a named, merged test (section 10 lists each); what remains
 marked is `[OPEN]` and is open on purpose: `&T:o`, `:o` on a non-field
 place, nested `@transitus` structs, signed shifts, bitwise and/or, a code for
-a signed explicitly-ordered field, and narrowing `sicut`'s spec text. `spec §N` cites
+a signed explicitly-ordered field (narrowing `sicut`'s spec text was on
+this list; spec §5.4 has since defined it as truncation, with
+`docs/design/receptor.md` finding 13 as the reason). `spec §N` cites
 `docs/spec/exsecutor-spec-v0.4.md` as amended in the same commit as this
 file; `IR n.m` cites `docs/design/ssa-ir.md`; `CHK n.m`
 `docs/design/checker.md`; `LOW n.m` `docs/design/lowering.md`; ADR 0011 is
@@ -573,7 +575,8 @@ confuse them:
 The driver avoids division and a variable shift count entirely: it walks a
 one-hot value with `x = x sursum 1` (for the encode basis, per field) or
 `m = m deorsum 1` inside a byte loop (for the wire bits), so D1's
-same-type rule never needs a narrowing cast — which is `[OPEN]` (IR 2.3).
+same-type rule never needs a narrowing cast — which was `[OPEN]` (IR 2.3)
+when this was written and is truncation since spec §5.4 defined it.
 
 | § | bytes | content | expected from |
 |---|---|---|---|

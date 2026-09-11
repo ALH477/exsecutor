@@ -565,7 +565,9 @@ Literal typing without §8.4's grammar; brand syntax and a prelude that
 produces one; new-type `typus` (the ego's `publica typus textus` has no
 source form); generic impl heads; multiple bounds; receiver syntax and
 `Self`; the contribution syntax for a `contrahe` accumulator (section 9,
-finding 9); narrowing `sicut`; `@nucleus` enforcement; `numeri` coercion
+finding 9); `@nucleus` enforcement (narrowing `sicut` was on this list and is
+settled as truncation in spec §5.4 — the checker already admitted it and
+needs nothing); `numeri` coercion
 between modules (there are no modules yet); `sub` in loop bodies; what
 `sub alloc = a` accepts as `a`; whether the standard streams' owner is
 `ambitus` (amendment in progress); the morpheme table as an `ego`

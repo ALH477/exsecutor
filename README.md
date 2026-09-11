@@ -340,8 +340,8 @@ syscalls are `write` and `exit_group`. The receiver is not written yet.
 **What does not run yet.** Most of the language beyond what these programs use
 is `rassert`-refused rather than lowered: `contrahe` and its reduction triple,
 lambdas, `eventus`, generics, floating point, and every `numeri` but the
-default. Bitwise and/or, division, remainder and narrowing `sicut` are
-unspecified (`[OPEN]`). The checker refuses a correct program where a
+default. Bitwise and/or, division and remainder are unspecified
+(`[OPEN]`); narrowing `sicut` is truncation (spec §5.4). The checker refuses a correct program where a
 `poscit sicut s` function calls another with the same `s` (`EXS-E0421`; the
 spec is right, `docs/design/wire-codec.md` finding 9). The C backend (§9.2's
 reach backend) does not exist; neither does the `ego` reader, the module

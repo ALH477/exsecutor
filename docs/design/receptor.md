@@ -518,9 +518,11 @@ find the largest magnitude `M`; find the smallest `k` with `M deorsum k ≤
 a `u64`); then every soft bit is its magnitude `deorsum k` with its sign
 put back. The magnitude is `(E_1 − E_0) sicut u64` or `(E_0 − E_1) sicut
 u64` by the sign of the comparison — an equal-width `i64 → u64` cast of a
-non-negative value, the bit pattern unchanged, which runs today
-(`tests/programs/angusta/`: `200 sicut i8` is `−56`) and whose spec
-sentence is `[OPEN]` (finding 13). `k` is a `u64` because the shift count
+non-negative value, the bit pattern unchanged: a reinterpretation by spec
+§5.4 as amended in the follow-up (finding 13), run from source only in
+the `u8 → i8` direction (`tests/programs/angusta/`: `200 sicut i8` is
+`−56`) and at the IR in this one (`conv_roundtrip.ir`), so `[UNTESTED]`
+from source. `k` is a `u64` because the shift count
 must have the operand's type (spec §5.4), and **a variable count on `u64`
 is settled**: `chk_ty_bitops.asm` types it, `shift_narrow.ir` runs one.
 One `k` for the frame rather than one per bit, so the relative weights of
@@ -1006,9 +1008,9 @@ Things this leans on and where each stands: `[b0, b1] sicut Exemplum`
 (D2 with WC D4's cast, bytes to struct — the direction `forma` reads);
 `h sicut Caput` likewise at 44 bytes; `p.i0[i + 1] = …` (an index store
 through a field place, finding 11); `i * i` on `i64` (finding 14); `b
-sicut u8` on a `u16` known to be below 256 (a narrowing cast, `[OPEN]` in
-spec §5.4, lowered as `trunc` and run at `u16 → u8` by `angusta`, finding
-13); `x * t[m0]` with `x: i64`, `t: acies<i64, 48>`; `bits[t]` with `t:
+sicut u8` on a `u16` known to be below 256 (a narrowing cast — truncation
+by spec §5.4 as amended in the follow-up, lowered as `trunc` and run at
+`u16 → u8` by `angusta`, finding 13); `x * t[m0]` with `x: i64`, `t: acies<i64, 48>`; `bits[t]` with `t:
 mensura` computed by subtraction; `dum … terminus 64` for the scaling
 shift (in `mollia`, not shown); every `per` bound a pending-literal range.
 
@@ -1109,17 +1111,23 @@ Numbered; each names the document and the line.
     arrays plus a count plus an origin plus the pointer is seven words.
     `Praefixa` is the answer, and it is the better one — one thing to
     hand over.
-13. **Two casts the spec leaves `[OPEN]` and the code runs.** A narrowing
+13. **Two casts the spec left `[OPEN]` while the code ran them.** A narrowing
     `sicut` (`u16 → u8`, for a byte known to be below 256) and an
     equal-width sign change (`i64 → u64`, for a magnitude) are both
     `trunc` in the lowering and both run at eight bits in `angusta`
     (`300 sicut u8` is 44; `200 sicut i8` is −56). Spec §5.4 has only the
-    widening sentence and says narrowing "stays `[OPEN]`". The receiver
-    needs both; the design uses both and marks them; a one-sentence
-    amendment — *a `sicut` between integer types of the same or smaller
-    width keeps the low bits* — is recommended and is **not** made here,
-    being outside the two amendments this design was opened for. The
-    alternative, avoiding them, is a byte read by comparison-and-subtract
+    widening sentence and said narrowing "stays `[OPEN]`". The receiver
+    needs both; the design uses both. The amendment was recommended when
+    this finding was written and held back as outside the two this design
+    was opened for; **it was then made, in the follow-up commit after
+    `bd316cd`**: spec §5.4 now defines narrowing as the low N bits of the
+    two's-complement representation (never a trap — overflow behaviour
+    belongs to the arithmetic operator, and a trapping cast would have a
+    failure mode its type does not show) and the equal-width sign change
+    as a reinterpretation, citing exactly what `angusta` and
+    `conv_roundtrip.ir` run and marking the source-level directions no
+    program has written (`i64 sicut u64` among them) `[UNTESTED]`. The
+    alternative, avoiding them, was a byte read by comparison-and-subtract
     into a `u8` (possible, eight steps) and a magnitude by branch into
     `u64` — which needs the cast anyway.
 14. **`*` on `i64` from source is `[UNTESTED]`** (modem.md §9 said so;
@@ -1217,7 +1225,7 @@ second form rather than a second construct.
 | D10 the timing loop; finding 6's prediction | R3 | the eight clock-offset vectors; the plateau-edge mutant failing on them | — |
 | D11 R3: 35 vectors against the reference's verdicts | R3 | one directory per vector | — |
 | finding 7 (+300 Hz: reference fails by timing, receiver decodes) | R3 | the `+300` vector with `expect-exit=0` — the receiver decodes it, or the loop makes it fail as the reference does; either is recorded, neither certified | — |
-| finding 13 (two `[OPEN]` casts) | a spec amendment outside this design | — | — |
+| finding 13 (two casts the spec left `[OPEN]`) | the follow-up commit after `bd316cd` | — | **retired** as a spec question: §5.4 defines both as truncation; the source-level directions no program writes stay `[UNTESTED]` there |
 | findings 11, 15, 16 (in-place mutation; `stdin=`; a 640 KB local) | the implementer's trees | — | — |
 | M4's per-profile tables and the scaled acquisition sum; M5's byte-identity | M4, M5 | `cmp` on the M1 WAVs and the M2 basis after M5 | — |
 

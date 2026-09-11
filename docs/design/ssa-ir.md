@@ -128,7 +128,7 @@ is that type unless shown. Text form: `%n = op T operands`.
 | overflow predicate | `addov subov mulov → u1` | true iff the trapping form would trap; `+?` is `addov` + `addw` |
 | bitwise | `and or xor shl shr` | `shr` arithmetic for `iN`; bits shifted beyond N discarded, result normalised (section 2.2; `tests/ir/shift_narrow.ir`, `bitwise.ir`, `tests/unit/bfa_emit_bitwise.asm`); **a count ≥ N traps** (spec §5.4; `tests/ir/trap_shl_u8.ir` count 8 in `u8`, `trap_shr_u32.ir` count 32 in `u32`), so `shl`/`shr` are **side-effecting** like the trapping group: never removed if unused, never reordered across another side effect. The `[OPEN]` this row carried is closed by that sentence |
 | compare | `cmp.eq .ne .lt .le .gt .ge → u1` | signedness from `T` |
-| convert | `zext sext trunc` | `zext`/`sext` by source sign; `trunc` keeps low bits (narrowing `sicut` `[OPEN]`) |
+| convert | `zext sext trunc` | `zext`/`sext` by source sign; `trunc` keeps low bits — which is now what spec §5.4 says a narrowing or equal-width `sicut` means (the marker this row carried, "narrowing `sicut` `[OPEN]`", was stale from the day `__lwr_cast` emitted `trunc`: the emitter implemented truncation and the spec caught up) |
 | float | `fadd fsub fmul fdiv fneg` | one IEEE rounding each, in the function's `rotundatio`, subnormals per `subnormales` |
 | fused | `fma` | one rounding; the only contraction that can exist (`contractio explicita`) |
 | float misc | `fcmp.* → u1`, `fext ftrunc itof ftoi`, `bitcast` | `fcmp` ordered; unordered forms, `ftoi` on NaN/range `[OPEN]` |
@@ -404,9 +404,11 @@ type interning and is never iterated.
 
 ## 6. Unresolved
 
-`arborea w` when `n` is not a multiple of `w`; narrowing `sicut`'s spec
-text (the lowering emits `trunc` and `tests/programs/angusta/` runs one,
-but spec §5.2 has only the widening sentence); `/`, `rem`, `ftoi` edges
+`arborea w` when `n` is not a multiple of `w`; `/`, `rem`, `ftoi` edges
+(narrowing `sicut`'s spec text was on this list — the lowering emitted
+`trunc` and `tests/programs/angusta/` ran one while spec §5.2 had only
+the widening sentence — and spec §5.4 now defines narrowing and the
+equal-width sign change as truncation, matching the implementation);
 (downstream of spec §8.4's open operator set — shifts ≥ width were on this
 list and are settled in section 2.3, `tests/ir/trap_shl_u8.ir`;
 `u12:maior`-class fields were on it and no longer parse); whether a `contrahe` variable is

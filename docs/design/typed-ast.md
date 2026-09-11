@@ -316,7 +316,7 @@ rest `[OPEN]`), not into `nodes`.
 | `Decl.flags` `memory_resident` / `address_taken` | `slot` + `load` vs SSA variable (IR 2.5) |
 | `Ast.layout` | `load`/`store`/`loadbits`/`storebits` operands (IR 2.7) |
 | `Binary.aux` `+` `+%` `+\|` | three opcodes, never a flag (IR 2.3); `+?` `[OPEN]` |
-| `Cast` with two int types | `zext`/`sext`/`trunc` by the types; narrowing `[OPEN]` (IR 2.3) |
+| `Cast` with two int types | `zext`/`sext`/`trunc` by the types; narrowing and the equal-width sign change are truncation (spec §5.4, which closed the `[OPEN]` this row cited) |
 | `Index` | `chk` then `index` (IR 2.7) |
 | `For` + `Contrahe` | `redinit`/`contrib`/`redfin` (IR 2.6); `quisque` sets the header flag (IR 2.4) |
 | `Dum` with `terminus` | counter + trap (IR 5, H3) |

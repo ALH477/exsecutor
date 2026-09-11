@@ -532,7 +532,7 @@ no `copy`, which is the IR RT 5 writes down.
 | `Binary` `lt le gt ge eq ne` | `cmp.pred T` / `fcmp.pred F` by operand type; signedness is the type's |
 | `Binary` `et` / `vel` | **short-circuit**: `br` into a second block that evaluates the rhs, a join, and a phi over a synthetic variable written in both — spec §8.6 lists them as operators and gives no evaluation rule (section 8, finding 13); short-circuit is what the whole lineage does and what a condition with a call in its right operand needs |
 | `Binary` `..` | only as `For.a`; elsewhere the checker's |
-| `Cast` int→int | `zext`/`sext` (by *source* sign) when widening, `trunc` when narrowing (IR 2.3's `[OPEN]` on narrowing semantics stands; the opcode is fixed); int↔float `itof`/`ftoi`; `f32`↔`f64` `fext`/`ftrunc`; same id → nothing; `sicut dyn` → two `ptr`s `[OPEN]` |
+| `Cast` int→int | `zext`/`sext` (by *source* sign) when widening, `trunc` when narrowing or changing sign at equal width (spec §5.4 defines both as truncation; the `[OPEN]` this row once cited is closed); int↔float `itof`/`ftoi`; `f32`↔`f64` `fext`/`ftrunc`; same id → nothing; `sicut dyn` → two `ptr`s `[OPEN]` |
 | `Index` | `%n = iconst u64 N` (from the `acies` type's width), `chk %i %n`, `%e = index %p %i stride`, then `load`/the `ptr` by element type |
 | `Member` field read | `load T %p off order` / `loadbits T %p byte bit` from `Ast.layout[field decl]` — `loadbits` when the width is not a whole number of bytes at a byte boundary (IR 2.7) |
 | `Assign` | lhs `Path` → `writeVariable` or `store`; `Member` → `store`/`storebits`; `Index` → `chk`, `index`, `store`; `*p` → `store`; an `ACCUM` lhs → `contrib` (section 2.5); an aggregate rhs → `copy n %dst %src` plus one `retain` per reference field `[UNTESTED]` |

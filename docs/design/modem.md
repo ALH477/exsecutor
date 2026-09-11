@@ -336,7 +336,8 @@ toward significance `u − ((u deorsum 3) sursum 3)` times by `sursum 1` in
 width (WC D1), so there is no mask and no bitwise and; the top-bit test is
 a comparison, as in `redundantia`. A shift by a *variable* count would
 need the count to be a `u8` (WC D1, same type as the operand), which from
-a `mensura` needs a narrowing `sicut` — `[OPEN]` in spec §5.4 — so the
+a `mensura` needs a narrowing `sicut` — `[OPEN]` in spec §5.4 when this
+was written; truncation since the receiver's follow-up amended it — so the
 count is a loop of unit shifts instead. Measured: the `ge 0x80` /
 `sursum 1` walk over `0xd3` gives `11010011` (section 11, probe `p4`).
 
@@ -357,7 +358,8 @@ while a register produces 0, 1, 2 … — so a register form must buffer all
 316 coded bits before the first symbol, and the language has no way to
 *make* a 316-bit buffer: an `acies` binding is born only from a
 `@transitus` struct (finding 6), and writing bit `j` of a byte array needs
-a variable shift and a narrowing cast, both `[OPEN]`. So coded bit `j` is
+a variable shift and a narrowing cast, both `[OPEN]` then (the cast is
+truncation since spec §5.4's later amendment). So coded bit `j` is
 computed when it is needed: `t = j deorsum 1`, `p = j − (t sursum 1)`
 (which output), and `codificatum(f, c, j)` is the `aut` of `datum(t − k)`
 over that output's taps, guarded by `t ge k`. Same taps, same code, no
@@ -1012,8 +1014,9 @@ become measurements). Language needed, in order of how hard each is:
   2^37 overflows `u64`; scaling `I` down first is a signed shift
   (`[OPEN]`, spec §5.4). The division-free route: `abs` by `si I lt 0 { I
   = 0 - I; }`, an equal-width sign-change `sicut` to `u64` (measured to
-  lower as `trunc`, `tests/programs/angusta/`, but "narrowing `sicut`" is
-  the spec's `[OPEN]` sentence and needs one for the equal-width case),
+  lower as `trunc`, `tests/programs/angusta/`; "narrowing `sicut`" was
+  the spec's `[OPEN]` sentence when this was written and needed one for
+  the equal-width case — spec §5.4 now defines both as truncation),
   then `deorsum 6` unsigned, then square. Comparison of energies by
   cross-multiplication where a ratio is wanted, so `/` stays `[OPEN]`.
 - **argmax acquisition** over ~11,000 origins × 40 symbols: `per` loops
