@@ -1,18 +1,67 @@
 cff-version: 1.2.0
-message: "If you refer to this work, please cite it using the metadata in this file."
+message: "If you use Exsecutor or its compiler, please cite it."
+title: "Exsecutor: a systems language in which locale and target are capabilities, and its freestanding compiler"
+abstract: >-
+  A systems language whose thesis is that no operation may implicitly read the host
+  locale, encoding, byte order, pointer width, clock, or environment: if a computation
+  depends on a human language or on a machine, that dependency appears in its signature
+  or the program does not compile. Capability rows travel with function types and with
+  capability-bearing types, so a caller and an audit see the same authority; public names
+  must decompose against a versioned Latin morpheme table. The compiler, exsc, is written
+  in freestanding x86-64 assembly with no libc and a closed nine-syscall allowlist, which
+  makes the purity contract a checkable property of the binary rather than a discipline:
+  the emitted program is audited against the capability closure it declares.
 type: software
-title: "Exsecutor"
-abstract: "A systems language in which locale and target are capabilities, never ambient state, with a checked Latin morphological lexicon for public names; and its compiler, exsc, written in freestanding x86-64 assembly with a closed syscall allowlist so the compiler's purity contract is a property of the artifact."
 version: "0.4"
-authors:
-  - name: "ALH477"
+date-released: 2026-09-10
 license: GPL-3.0-or-later
 repository-code: "https://github.com/ALH477/exsecutor"
+# DOI is assigned by Zenodo on first archive; paste it back here as `doi:` and in `identifiers`.
+# doi: 10.5281/zenodo.XXXXXXX
+authors:
+  - given-names: Asher
+    family-names: LeRoy
+    affiliation: "DeMoD LLC"
+    email: demodllc@gmail.com
+    orcid: "https://orcid.org/0009-0006-5842-4975"
+  - name: "DeMoD LLC"
 keywords:
-  - programming-language
+  - programming language
   - compiler
-  - capabilities
-  - reproducible-builds
-  - x86-64
-  - assembly
-  - nix
+  - object-capability model
+  - capability safety
+  - reproducible builds
+  - freestanding
+  - x86-64 assembly
+  - Unicode security
+  - Nix
+  - Latin
+references:
+  - type: conference-paper
+    title: "Simple and Efficient Construction of Static Single Assignment Form"
+    authors:
+      - given-names: Matthias
+        family-names: Braun
+      - given-names: Sebastian
+        family-names: Buchwald
+      - given-names: Sebastian
+        family-names: Hack
+      - given-names: Roland
+        family-names: "Leißa"
+      - given-names: Christoph
+        family-names: Mallon
+      - given-names: Andreas
+        family-names: Zwinkau
+    year: 2013
+    conference:
+      name: "International Conference on Compiler Construction (CC 2013)"
+    notes: "The SSA construction the lowering implements; docs/design/ssa-ir.md and docs/design/lowering.md."
+  - type: conference-paper
+    title: "Ghosts of Departed Proofs: Functional Correct-by-Construction Programming with Dependent Types"
+    authors:
+      - given-names: Matt
+        family-names: Noonan
+    year: 2018
+    conference:
+      name: "ACM SIGPLAN International Symposium on Haskell"
+    notes: "The branded-offset technique behind spec section 5.1's positio<'t>."
