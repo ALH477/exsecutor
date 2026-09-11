@@ -195,6 +195,7 @@ run_conformance_tests() {
   #
   #   // TEST: entry=<1-24> shape=<code|bytes|cert|abort|nocap>
   #            [expect-code=EXS-E0XXX] status=<run|deferred> [needs=<token>]
+  #            [sources=A,B]
   #
   #   entry=N       the §14 entry number this fixture exercises.
   #   shape=        one of the five above.
@@ -214,6 +215,11 @@ run_conformance_tests() {
   #                 type_checker, capability_checker, lexicon_checker,
   #                 wire_layout_checker, ffi_checker, import_closure,
   #                 backend, runtime, cross_compile, wire_codec.
+  #   sources=      shape=cert only: the files compiled AFTER the fixture,
+  #                 in this order, as one unit (spec §12), relative to
+  #                 tests/conformance/. They live in a subdirectory
+  #                 (entry23/) so the `*.exsc` glob below does not take
+  #                 them for fixtures of their own.
   #
   # WHY A DIRECTIVE PER FIXTURE RATHER THAN A TABLE HERE: codes.inc vs §13
   # is this project's own argument against a second, hand-maintained copy
@@ -240,13 +246,20 @@ run_conformance_tests() {
   #                         prints a banner naming the fixture it actually
   #                         built when exsc can't be) as a pass for this
   #                         suite.
-  #   cert / abort / nocap -- no fixture claims status=run for these this
-  #                         wave (nothing exists to check them against:
-  #                         no backend, no executed binary, no capability
-  #                         checker). Dispatched defensively below so a
-  #                         future fixture that DID claim status=run
-  #                         without real support fails loudly instead of
-  #                         being silently treated as a pass.
+  #   cert, status=run    -- entry 23 only: cert_entry23, below. The fixture
+  #                         plus its `sources=` (paths relative to
+  #                         tests/conformance/) are compiled as one unit,
+  #                         assembled, RUN, audited, and the stream it writes
+  #                         compared section by section with what
+  #                         entry23/expecta.py builds from the vendored
+  #                         certificate; then three mechanical mutants must
+  #                         each fail at the vector the design names.
+  #   abort / nocap       -- no fixture claims status=run for these this
+  #                         wave (no executed-binary abort check, no
+  #                         capability checker). Dispatched defensively
+  #                         below so a future fixture that DID claim
+  #                         status=run without real support fails loudly
+  #                         instead of being silently treated as a pass.
   #
   # FLOORS, mirroring UNIT_FIXTURE_FLOOR above but local to this function
   # (this project has produced four green checks that saw nothing; a
@@ -255,16 +268,16 @@ run_conformance_tests() {
   #   fixture_floor -- §14 has exactly 24 entries; fewer *.exsc files than
   #                    that means fixtures went missing, not that §14 shrank.
   #   run_floor     -- entries 3, 5, 18, 19, 20, 22 are lexically checkable,
-  #                    and entries 6, 7, 9, 21 are checkable by the
-  #                    wire-codec branch's @transitus layout checker and
-  #                    type checker, all ten verified passing (see this
-  #                    suite's own report); if the number that actually RUN
-  #                    ever drops below that, something silently stopped
-  #                    working.
+  #                    entries 6, 7, 9, 21 are checkable by the wire-codec
+  #                    branch's @transitus layout checker and type checker,
+  #                    and entry 23 runs its certificate -- all eleven
+  #                    verified passing (see this suite's own report); if the
+  #                    number that actually RUN ever drops below that,
+  #                    something silently stopped working.
   echo "== conformance suite (tests/conformance/, spec §14) =="
   local dir="$REPO_ROOT/tests/conformance"
   local fixture_floor=24
-  local run_floor=10
+  local run_floor=11
 
   if [[ ! -d "$dir" ]]; then
     bad "tests/conformance/ does not exist"
@@ -329,7 +342,7 @@ run_conformance_tests() {
       continue
     fi
 
-    local entry="" shape="" expect_code="" status="" needs=""
+    local entry="" shape="" expect_code="" status="" needs="" sources=""
     local kv
     for kv in $directive; do
       case "$kv" in
@@ -338,6 +351,7 @@ run_conformance_tests() {
         expect-code=*) expect_code="${kv#expect-code=}" ;;
         status=*) status="${kv#status=}" ;;
         needs=*) needs="${kv#needs=}" ;;
+        sources=*) sources="${kv#sources=}" ;;
       esac
     done
 
@@ -412,11 +426,24 @@ run_conformance_tests() {
           sed 's/^/         /' "$workdir/$name.out"
         fi
         ;;
-      cert|abort|nocap)
+      cert)
+        if [[ "$entry" != "23" || -z "$sources" ]]; then
+          bad "$name: shape=cert is §14 entry 23 only, and needs sources= (got entry=$entry sources='$sources')"
+          continue
+        fi
+        if [[ "$exsc_ok" -ne 1 ]]; then
+          bad "$name: entry $entry claims status=run but exsc is not available this run"
+          continue
+        fi
+        if cert_entry23 "$f" "$sources" "$exsc_bin" "$workdir"; then
+          ran=$((ran + 1))
+        fi
+        ;;
+      abort|nocap)
         bad "$name: entry $entry: shape=$shape has no status=run implementation --"
-        bad "no fixture should claim status=run for this shape yet (cert needs a"
-        bad "backend + wire codec, abort needs an executed binary, nocap needs a"
-        bad "capability checker) -- fix the fixture's directive, not this branch"
+        bad "no fixture should claim status=run for this shape yet (abort needs"
+        bad "an executed binary, nocap needs a capability checker) -- fix the"
+        bad "fixture's directive, not this branch"
         ;;
       *)
         bad "$name: unknown shape='$shape'"
@@ -450,6 +477,222 @@ run_conformance_tests() {
   else
     note "$ran/$nfix entries RAN and passed; $deferred/$nfix entries DEFERRED (not counted as passing)"
   fi
+}
+
+# ===========================================================================
+# §14 entry 23: the DeModFrame codec, written in Exsecutor, certified.
+#
+# cert_entry23 FIXTURE SOURCES EXSC WORKDIR -- returns 0 iff every check
+# below passed; each check also counts ok/bad itself. docs/design/
+# wire-codec.md sections 5-6 are the design, and every number asserted here
+# is that document's:
+#
+#   1. purity, spec §4.1 rule 6: "declared row empty AND no capability
+#      parameter". The first source (entry23/codex.exsc) must check with the
+#      fixture and nothing else; every function in it is `publica` and none
+#      writes `poscit`, so each row is DECLARED EMPTY and it is the checker,
+#      not this script, that refuses any draw in a body; and outside
+#      comments it names no capability atom (§4.6), no `Scriptor` (the
+#      prelude's capability-bearing type), no `sub` and no `initium`, so no
+#      parameter can carry authority in. The one other way in, a
+#      capability-bearing user struct, is closed by §5.2: the only types it
+#      declares or uses are `@transitus`, whose fields are integers.
+#   2. the unit -- the fixture, then SOURCES in order -- compiles, assembles
+#      and runs: exit 0 (probatio's own count of 2,502 one-byte writes), no
+#      stderr.
+#   3. the syscall audit with `--potestates Mundus,ambitus` passes, AND the
+#      syscall sites it finds are `write` and `exit_group` and nothing else.
+#   4. a second run writes the byte-identical stream (spec §9.3).
+#   5. entry23/expecta.py --compara: section by section against the stream
+#      built from vendor/hydramesh-wire/golden_vectors.json. Sections 1-2
+#      are the 246-vector certificate, 3 the anchors, 4-5 the laws, and each
+#      is reported on its own line; a mismatch names the section, the vector
+#      and the differing bytes.
+#   6. three mutants, applied mechanically to COPIES of the sources in a
+#      temp dir (never to a tracked file), must each produce a stream whose
+#      FIRST mismatch is the section and vector wire-codec.md section 6.1
+#      names -- not merely "differs". A mutant that passes, or fails
+#      somewhere else, fails the entry: a harness a mutant survives has
+#      proved nothing, and one that fails at the wrong place is not testing
+#      what it says.
+# ===========================================================================
+
+# cert_stream EXSC PREFIX SRC... -- compile, assemble and run the unit; its
+# stdout is PREFIX.stdout, its binary PREFIX.bin. Returns 0 iff it exited 0
+# with an empty stderr; otherwise prints what went wrong.
+cert_stream() {
+  local exsc="$1" p="$2"; shift 2
+  if ! "$exsc" aedifica --hospes x86_64-linux "$@" -o "$p.asm" >"$p.exsclog" 2>&1; then
+    echo "exsc refused the unit:"; sed 's/^/         /' "$p.exsclog"; return 1
+  fi
+  if ! "$FASMG" "$p.asm" "$p.bin" >"$p.asmlog" 2>&1; then
+    echo "fasmg cannot assemble exsc's output:"; sed 's/^/         /' "$p.asmlog"; return 1
+  fi
+  chmod +x "$p.bin"
+  local st; st="$(run_binary "$p.bin" "$p.stdout" "$p.stderr")"
+  if [[ "$st" != "exit 0" || -s "$p.stderr" ]]; then
+    echo "the binary gave '$st' (expected 'exit 0' and no stderr):"
+    sed 's/^/         /' "$p.stderr"; return 1
+  fi
+  return 0
+}
+
+# cert_mutate KIND FIXTURE CODEX -- applies one mutant to the (copied) files,
+# each substitution required to match EXACTLY once, so a source edit that
+# moved the text makes the mutant fail loudly rather than silently become
+# the unmutated program.
+cert_mutate() {
+  python3 - "$@" <<'PY'
+import re, sys
+kind, fixture, codex = sys.argv[1:4]
+def sub(path, pat, rep):
+    with open(path, encoding='utf-8') as fh:
+        s = fh.read()
+    t, n = re.subn(pat, rep, s, flags=re.M)
+    if n != 1:
+        sys.exit('mutant %s: %r matches %d times in %s, expected exactly once'
+                 % (kind, pat, n, path))
+    with open(path, 'w', encoding='utf-8') as fh:
+        fh.write(t)
+if kind == 'polynomium':      # the CRC polynomial, 0x1021 -> 0x1020
+    sub(codex, r'\(c sursum 1\) aut 0x1021;', '(c sursum 1) aut 0x1020;')
+elif kind == 'ordo':          # one field's byte order, maior -> minor
+    sub(fixture, r'^    numerus: u16:maior$', '    numerus: u16:minor')
+elif kind == 'permutatio':    # the sub-byte packing order: versio, genus swapped
+    sub(fixture, r'^    versio:  u4\n    genus:   u4$', '    genus:   u4\n    versio:  u4')
+else:
+    sys.exit('unknown mutant ' + kind)
+PY
+}
+
+cert_entry23() {
+  local fixture="$1" sources="$2" exsc="$3" work="$4"
+  local cdir="$REPO_ROOT/tests/conformance"
+  local name; name="$(basename "$fixture")"
+  local expecta="$cdir/entry23/expecta.py"
+  local rel=() srcs=("$fixture") s rc=0 msg
+  IFS=',' read -r -a rel <<<"$sources"
+  for s in "${rel[@]}"; do
+    if [[ ! -f "$cdir/$s" ]]; then
+      bad "$name: entry 23: source $s does not exist (sources= is relative to tests/conformance/)"
+      return 1
+    fi
+    srcs+=("$cdir/$s")
+  done
+  if [[ ${#srcs[@]} -ne 3 ]]; then
+    bad "$name: entry 23: expected sources=CODEX,DRIVER, got '$sources'"
+    return 1
+  fi
+  local codex="${srcs[1]}" cname; cname="$(basename "$codex")"
+
+  # 1. purity
+  local code; code="$(sed 's://.*$::' "$codex")"
+  local impure='poscit|initium|sub|Scriptor|Mundus|alloc|sermo|horologium|archivum|rete|fortuna|ambitus|Filum|machina|Crudum'
+  if grep -qwE "$impure" <<<"$code"; then
+    bad "$name: entry 23: $cname is meant to be pure, and names one of $impure:"
+    grep -nwE "$impure" <<<"$code" | sed 's/^/         /'; rc=1
+  elif grep -E '(^|[^[:alnum:]_])functio[[:space:]]' <<<"$code" |
+       grep -vqE '^[[:space:]]*publica[[:space:]]+functio[[:space:]]'; then
+    bad "$name: entry 23: every function in $cname must be publica, so its empty row is declared"
+    rc=1
+  elif ! "$exsc" aedifica --hospes x86_64-linux "$fixture" "$codex" >"$work/e23.purity" 2>&1; then
+    bad "$name: entry 23: $cname does not check with the fixture alone:"
+    sed 's/^/         /' "$work/e23.purity"; rc=1
+  else
+    ok "$name: entry 23: $cname is pure (spec §4.1 rule 6) -- every function publica with no poscit, no capability named, and it checks with the fixture alone"
+  fi
+
+  # 2. compile, assemble, run
+  local p="$work/e23"
+  if ! msg="$(cert_stream "$exsc" "$p" "${srcs[@]}")"; then
+    bad "$name: entry 23: $msg"
+    return 1
+  fi
+  ok "$name: entry 23: fixture + ${rel[*]} compile, assemble and run: exit 0, $(wc -c <"$p.stdout" | tr -d ' ') bytes on stdout"
+
+  # 3. the syscall surface: within {Mundus, ambitus}, and write + exit_group only
+  if "$AUDIT" --potestates Mundus,ambitus "$p.bin" >"$p.audit" 2>&1; then
+    local kinds
+    kinds="$(grep -E '^0x[0-9a-f]+[[:space:]]+[0-9]+[[:space:]]' "$p.audit" |
+             awk '{print $3}' | LC_ALL=C sort -u | tr '\n' ' ')"
+    if [[ "$kinds" == "exit_group write " ]]; then
+      ok "$name: entry 23: syscall audit (--potestates Mundus,ambitus) passes; the binary's syscalls are write and exit_group, nothing else"
+    else
+      bad "$name: entry 23: syscall kinds found are '$kinds', expected exactly exit_group and write"
+      sed 's/^/         /' "$p.audit"; rc=1
+    fi
+  else
+    bad "$name: entry 23: syscall surface exceeds {Mundus, ambitus}"
+    sed 's/^/         /' "$p.audit"; rc=1
+  fi
+
+  # 4. determinism: the same binary, run again
+  local st2; st2="$(run_binary "$p.bin" "$p.again" "$p.again.err")"
+  if [[ "$st2" == "exit 0" ]] && cmp -s "$p.stdout" "$p.again"; then
+    ok "$name: entry 23: a second run writes the byte-identical stream"
+  else
+    bad "$name: entry 23: a second run gave '$st2' and a different stream"; rc=1
+  fi
+
+  # 5. the certificate, the anchors, the laws
+  local report crc=0 line
+  report="$(python3 "$expecta" --compara "$p.stdout" 2>&1)" || crc=$?
+  grep -E '^MISMATCH|^section ' <<<"$report" | sed 's/^/         /' || true
+  for line in certificate anchors laws; do
+    local l; l="$(grep -m1 "^$line: " <<<"$report" || true)"
+    if [[ -z "$l" ]]; then
+      bad "$name: entry 23: expecta.py printed no '$line:' line (exit $crc):"
+      sed 's/^/         /' <<<"$report"; rc=1; continue
+    fi
+    # every a/b on the line must have a == b
+    local pair allok=1
+    for pair in $(grep -oE '[0-9]+/[0-9]+' <<<"$l"); do
+      [[ "${pair%/*}" == "${pair#*/}" ]] || allok=0
+    done
+    if [[ "$allok" -eq 1 ]]; then ok "$name: entry 23: $l"; else bad "$name: entry 23: $l"; rc=1; fi
+  done
+  if [[ "$crc" -ne 0 && "$rc" -eq 0 ]]; then
+    bad "$name: entry 23: expecta.py --compara exited $crc:"; sed 's/^/         /' <<<"$report"; rc=1
+  fi
+
+  # 6. the three mutants of wire-codec.md section 6.1, each with the first
+  # vector it must fail at. Section 1 is the encode basis; index = vector.
+  local mspec
+  for mspec in "polynomium:1:0:polynomial 0x1021 -> 0x1020 in redundantia" \
+               "ordo:1:5:numerus u16:maior -> u16:minor in the declaration" \
+               "permutatio:1:0:versio and genus swapped in the declaration"; do
+    local kind="${mspec%%:*}" rest="${mspec#*:}"
+    local wsec="${rest%%:*}"; rest="${rest#*:}"
+    local widx="${rest%%:*}" what="${rest#*:}"
+    local m; m="$(mktemp -d "$work/mutant.XXXXXX")"
+    local msrcs=() t
+    for t in "${srcs[@]}"; do cp -- "$t" "$m/"; msrcs+=("$m/$(basename "$t")"); done
+    if ! msg="$(cert_mutate "$kind" "${msrcs[0]}" "${msrcs[1]}" 2>&1)"; then
+      bad "$name: entry 23: mutant '$what' could not be applied: $msg"; rc=1; continue
+    fi
+    if cmp -s "${msrcs[0]}" "${srcs[0]}" && cmp -s "${msrcs[1]}" "${srcs[1]}"; then
+      bad "$name: entry 23: mutant '$what' changed nothing"; rc=1; continue
+    fi
+    if ! msg="$(cert_stream "$exsc" "$m/out" "${msrcs[@]}")"; then
+      bad "$name: entry 23: mutant '$what' produced no stream to judge -- it must run and"
+      bad "fail at section $wsec vector $widx: $msg"; rc=1; continue
+    fi
+    local mrep first detail
+    mrep="$(python3 "$expecta" --compara "$m/out.stdout" 2>&1 || true)"
+    first="$(grep -m1 '^FIRST-FAIL ' <<<"$mrep" || true)"
+    detail="$(grep -m1 '^MISMATCH ' <<<"$mrep" || true)"
+    if [[ -z "$first" ]]; then
+      bad "$name: entry 23: mutant '$what' PASSED the certificate -- the harness proves nothing"
+      rc=1
+    elif [[ "$first" == "FIRST-FAIL section=$wsec index=$widx" ]]; then
+      ok "$name: entry 23: mutant '$what' fails, first at section $wsec vector $widx, as wire-codec.md section 6.1 says"
+      note "  ${detail#MISMATCH }"
+    else
+      bad "$name: entry 23: mutant '$what' fails, but first at ${first#FIRST-FAIL }, not section=$wsec index=$widx"
+      note "  ${detail#MISMATCH }"; rc=1
+    fi
+  done
+  return "$rc"
 }
 
 # ===========================================================================

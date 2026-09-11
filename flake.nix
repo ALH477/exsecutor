@@ -497,6 +497,11 @@
             cp -r --no-preserve=mode -- ${./compiler} repo/compiler
             cp -r --no-preserve=mode -- ${./examples} repo/examples
             cp -r --no-preserve=mode -- ${./vendor/fasmg-x86} repo/vendor/fasmg-x86
+            # §14 entry 23's expected stream is built from the vendored
+            # certificate (tests/conformance/entry23/expecta.py reads
+            # vendor/hydramesh-wire/golden_vectors.json); without it here the
+            # cert branch would have nothing to compare against.
+            cp -r --no-preserve=mode -- ${./vendor/hydramesh-wire} repo/vendor/hydramesh-wire
             chmod +x repo/tests/run.sh repo/tools/*.sh
             # The sandbox has no /usr/bin/env, and tests/run.sh invokes the
             # audit as an executable -- so the `#!/usr/bin/env bash` shebang is

@@ -9,7 +9,7 @@ calls):
    toolchain itself (`fasmg` + `vendor/fasmg-x86`) and `tools/syscall-audit.sh`,
    so that is what these fixtures exercise.
 2. **`tests/conformance/`** — spec §14's 24-entry suite. **All 24 cases
-   are written; 10 run.** `exsc` now exists, so the entries the lexer can
+   are written; 11 run.** `exsc` now exists, so the entries the lexer can
    decide are checked against a real diagnostic: 3 (bidi in a comment,
    `EXS-E0103`), 5 (non-NFC, `E0102`), 18 (BOM, `E0101`), 19 (mixed-script,
    `E0104`), 20 (CRLF, `E0106`), 22 (sub-byte byte order on `:maior`,
@@ -17,12 +17,22 @@ calls):
    checker moved four more from `DEFERRED` to run: 6 (`:nativus` in a wire
    struct, `E0321`), 7 (implicit padding in a wire struct, `E0322`), 9 (a
    row-carrying function where a bare function type is expected, `E0303`),
-   21 (bit widths not summing to a whole byte, `E0322`). The other 14
-   report **`DEFERRED`** with what they wait on — `type_checker`,
-   `capability_checker`, `import_closure`, `ffi_checker`,
-   `lexicon_checker`, `backend`, `runtime`, `cross_compile`, `wire_codec`
-   — and are **never counted as passing**. A suite reporting 24/24 while
-   running 10 would be worse than no suite.
+   21 (bit widths not summing to a whole byte, `E0322`). **Entry 23 runs its
+   certificate**: the DeModFrame codec written in Exsecutor
+   (`conformance/entry23/codex.exsc`, pure; `probatio.exsc`, the driver) is
+   compiled with the fixture as one unit, run, audited (`write` and
+   `exit_group` only), and its 2,502-byte stream compared section by section
+   with what `entry23/expecta.py` builds from
+   `vendor/hydramesh-wire/golden_vectors.json` — 246/246 certificate
+   vectors, the three anchors and two laws reported apart — after which
+   three mechanical mutants must each fail at the vector
+   `docs/design/wire-codec.md` section 6.1 names. `entry23/` is a
+   subdirectory so the `*.exsc` glob does not take its files for fixtures.
+   The other 13 report **`DEFERRED`** with what they wait on —
+   `type_checker`, `capability_checker`, `import_closure`, `ffi_checker`,
+   `lexicon_checker`, `backend`, `runtime`, `cross_compile` — and are
+   **never counted as passing**. A suite reporting 24/24 while running 11
+   would be worse than no suite.
 
    Five rule shapes, and a runner assuming one will quietly mishandle four:
    reject-with-exact-code (most), byte-identical output (16, 17), external

@@ -1,7 +1,8 @@
 # 0011 — Adopt the DCF DeModFrame as the wire-format reference
 
-**Status:** Accepted, 2026-09-09. Vendored and probed; **no Exsecutor
-implementation exists.**
+**Status:** Accepted, 2026-09-09. Vendored and probed; **implemented in
+Exsecutor and certified**, 2026-09-11: §14 entry 23 runs and passes all 246
+vectors (the last bullet under Open says what that does and does not show).
 **Relates to:** spec §5.2, §9.3, §10.3, §14 (entries 21–23), §17;
 `vendor/hydramesh-wire/`, `prototypes/wire/`
 
@@ -117,3 +118,25 @@ it is equivalent to agreeing with the reference on all 2^108 frames.
   record of the question; what retires it is that design's M6 reading a
   `u24` back through a compiled program. Nothing is implemented, and the
   status line is unchanged.
+- **Appended 2026-09-11, M7 of `docs/design/wire-codec.md`.** An Exsecutor
+  implementation exists and the certificate runs: §14 entry 23 is
+  `status=run`. `tests/conformance/entry23/codex.exsc` is the codec — the
+  CRC, the syndrome, `obsigna` (seal), `lege` (read). Every function in it
+  is `publica` with no `poscit`, so each row is declared empty and the
+  checker refuses any draw, and none takes a capability or a
+  capability-bearing value, so each is pure in spec §4.1 rule 6's sense:
+  the "encode/decode is pure computation and requires **no** capability"
+  bullet above is now a property the harness checks, not a sentence. `probatio.exsc`
+  drives it, deriving every basis input from its bit index; the binary's
+  syscalls are `write` and `exit_group` only; its 2,502-byte stream matches
+  the one `entry23/expecta.py` builds from the vendored JSON — **246/246**
+  certificate vectors, the three anchors, decode after encode the identity
+  on all 109 basis frames, and the reference's decode order on all 136
+  one-bit corruptions of the example frame. Three mechanical mutants
+  (polynomial, one field's byte order, the nibble order) each fail at the
+  vector the design predicted. What this does NOT show: the extension from
+  246 vectors to 2^108 frames rests on the codec being affine, which is an
+  argument from reading its code (wire-codec.md section 5), not a
+  measurement; and the `u24` bullet above is answered for this backend
+  only. The "Nothing is implemented" bullet is superseded by this one and
+  kept as the record.

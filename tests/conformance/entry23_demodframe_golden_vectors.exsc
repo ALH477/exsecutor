@@ -36,18 +36,21 @@
 // design probe, not this suite's reference) and is never invoked from
 // run_conformance_tests.
 //
-// DEFERRED: needs a real encoder/decoder for `@transitus` types (Stage 3
-// backend) to run the 246 vectors through at all. `exsc aedifica --hospes
-// x86_64-linux`, run directly against this file with no `-o`, exits 0 with
-// no diagnostic -- the type checker (wire-codec branch) now accepts the
-// `DeModFrame` declaration below cleanly, including its layout. RESTATED
-// against that landing: `exsc aedifica --hospes x86_64-linux -o OUT`, run
-// against this file, now exits 1 with EXS-E0424 ("entry point malformed") --
-// this fixture declares only a `structura`, no `initium`/entry function, so
-// codegen's entry-point check now fires before codegen itself would; it no
-// longer reaches "code generation is not implemented" because that specific
-// path is gated behind having an entry point at all. Confirmed, not
-// assumed, against the current build/exsc.
+// RUN. The codec is written in Exsecutor: entry23/codex.exsc (pure -- no
+// `poscit`, no `initium`) and entry23/probatio.exsc (the `initium` driver,
+// the only file naming `Mundus`), compiled as ONE unit with this file first,
+// so the declaration being certified is the one below, §5.2's verbatim.
+// tests/run.sh's cert branch (cert_entry23) compiles, assembles and runs the
+// unit, audits the binary (`write` and `exit_group` only), and compares the
+// 2,502-byte stream it writes, section by section, with what
+// entry23/expecta.py builds from the vendored JSON: sections 1-2 are the
+// 246 certificate vectors, 3 the anchors, 4-5 the laws
+// (docs/design/wire-codec.md section 6). Then three mechanical mutants --
+// polynomial 0x1021 -> 0x1020, `numerus: u16:minor`, `versio`/`genus`
+// swapped -- must each fail at the vector section 6.1 names. The mutants of
+// this declaration are applied to a COPY of this file; the two lines they
+// match (`    numerus: u16:maior`, and `versio`/`genus` adjacent) are
+// load-bearing for the harness, which fails loudly if either moves.
 
 @transitus
 publica structura DeModFrame {
@@ -62,4 +65,4 @@ publica structura DeModFrame {
     cursus:  u16:maior
 }
 
-// TEST: entry=23 shape=cert status=deferred needs=backend,wire_codec
+// TEST: entry=23 shape=cert status=run sources=entry23/codex.exsc,entry23/probatio.exsc

@@ -1,9 +1,12 @@
 # The DeModFrame wire codec — design for §14 entry 23
 
-Status: **design only; nothing implemented.** Every decision below is
-`[UNTESTED]` and names the milestone whose test retires the marker. Nothing
-here has lexed, parsed, checked, lowered or run; the worked example in
-section 8 has not been compiled by anything. `spec §N` cites
+Status: **implemented, M2 through M7; §14 entry 23 runs.** Section 11
+records what M7 ran and what it found. The status this line first carried
+-- "design only; nothing implemented. Nothing here has lexed, parsed,
+checked, lowered or run" -- was true when it was written and stopped being
+true milestone by milestone; the `[UNTESTED]` markers below still name the
+milestone whose test retires each, and are left for the marker-retirement
+pass rather than dropped here one by one. `spec §N` cites
 `docs/spec/exsecutor-spec-v0.4.md` as amended in the same commit as this
 file; `IR n.m` cites `docs/design/ssa-ir.md`; `CHK n.m`
 `docs/design/checker.md`; `LOW n.m` `docs/design/lowering.md`; ADR 0011 is
@@ -589,7 +592,9 @@ publica functio lege(w: acies<u8, 17>) -> u8 {
 }
 ```
 
-The driver's two byte-emitting helpers, for the shape of D7 and section 2:
+The driver's two byte-emitting helpers, for the shape of D7 and section 2
+(as built, `probatio.exsc` writes them without `poscit sicut s` -- finding
+9):
 
 ```exsecutor
 // entry23/probatio.exsc -- the only file that names Mundus.
@@ -703,6 +708,38 @@ one that was wrong, the amendment is in the same commit as this file.
    `&DeModFrame` out-parameter instead and this section is amended — the
    codec's bytes do not change.
 
+9. **`poscit sicut s` does not compose: a function declared `poscit sicut
+   s` that calls another declared `poscit sicut s` with the same `s` is
+   refused, `EXS-E0421`.** Found by M7 writing `probatio.exsc` as section 8
+   drew it, with helpers that call helpers. Minimal repro:
+
+   ```exsecutor
+   functio unum(s: Scriptor, b: u8) -> mensura poscit sicut s {
+       redde s.scribe_octeto(b);
+   }
+   functio duo(s: Scriptor, b: u8) -> mensura poscit sicut s {
+       redde unum(s, b);        // EXS-E0421 here
+   }
+   ```
+
+   with an `initium` that binds `sub ambitus` and calls `duo`. By spec §4.2
+   as amended, the row of a `Scriptor`-typed value is its mark, `{ambitus}`:
+   at the call `unum(s, b)` the callee's `sicut s` substitutes to `{ambitus}`
+   (`checker/rows/compute.inc`, `__chk_row_contrib`, the `.have_row`
+   substitution through `__chk_row_tyrow`), and `duo`'s own declared `sicut
+   s` means the same `{ambitus}` -- so the draw is covered. But
+   `__chk_row_e0421` (`compute.inc:1713`) subtracts only the caller's
+   declared ATOMS (`wrat`) from a contribution that substitution has already
+   turned into atoms; the caller's declared ordinals (`wror`) are subtracted
+   only from leftover ordinals, never expanded to the mark of the parameter
+   they name. The spec is right and the checker is wrong. Not fixed here: it
+   is a soundness-relevant change to capability rows in the checker's tree,
+   not a small obviously-right one. `probatio.exsc` does what §4.1 rule 5
+   already provides for a private function -- it writes no `poscit` and the
+   rows are inferred -- which is not a workaround in the language, only a
+   departure from section 8's drawing; `initium` still binds `sub ambitus`
+   and the binary's audit is unchanged.
+
 ## 10. What retires each marker
 
 | decision | milestone | the test |
@@ -717,3 +754,33 @@ one that was wrong, the amendment is in the same commit as this file.
 Until M7 passes, §14 entry 23 remains `status=deferred`, ADR 0011's status
 line remains "no Exsecutor implementation exists", and everything in this
 file is a hypothesis.
+
+## 11. What M7 ran
+
+`tests/run.sh`'s cert branch (`cert_entry23`) compiles the fixture,
+`entry23/codex.exsc` and `entry23/probatio.exsc` as one unit, assembles and
+runs it, and compares the stream with `entry23/expecta.py`'s. The codex is
+section 8's block, unchanged but for comments; `probatio.exsc` walks the
+encode basis three times (frames, verdicts, round-trip flags) through one
+function taking a mode, and the wire bits twice (syndromes, bit-flip
+verdicts) the same way, so the 109 inputs and 136 masks are each derived in
+one place. Observed, in the worktree the M7 commit was verified in:
+
+- the binary exits 0 and writes **2,502 bytes**; a second run writes the
+  same bytes;
+- `tools/syscall-audit.sh --potestates Mundus,ambitus`: PASS, and the only
+  syscall sites are `write` and `exit_group`;
+- **246/246 certificate vectors** (encode basis 109/109, syndrome basis
+  137/137); anchors 3/3; laws 218/218 (section 4) and 136/136 (section 5);
+- the three mutants of section 6.1 each fail, first at exactly the vector
+  that section predicted: polynomial `0x1020`, section 1 vector 0
+  (`...5b80` became `...6a40`, byte 15); `numerus: u16:minor`, section 1
+  vector 5 (byte 2 `00` became `01`); `versio`/`genus` swapped, section 1
+  vector 0 (byte 1 `10` became `01`).
+
+The compiler needed no change for any of it. The one departure from
+section 8 is finding 9. Two things section 8 leaned on as `[UNTESTED]` ran
+here: a function taking and returning a `DeModFrame` by value (`obsigna`,
+LOW 2.7's aggregate return, with the hidden result pointer inside the
+six-word limit), and `mutabilis w = basis` copying an `acies<u8, 17>`
+parameter before `verte` writes through an index.
