@@ -42,9 +42,14 @@
 ; the lowering to get wrong. Recorded so that the owner can overrule it with
 ; one sentence rather than by reading this file.
 ;
-; `[UNTESTED]` ON REAL SOURCE, for compute.inc's reason: `Decl.ty` is the
-; types pass's and no types pass exists. The fixtures build the two structs
-; §5.2 itself uses -- `Capitulum` and `DeModFrame` -- by hand.
+; ON REAL SOURCE: `tests/unit/chk_row_layout_src.asm` runs every field kind
+; this file can be handed, in and out of `@transitus`, through the whole
+; front end, and reads the layout back. It exists because the fixtures that
+; build `Decl.ty` by hand (`chk_row_layout.asm`, `chk_row_layout_kind.asm`,
+; which lay out the two structs §5.2 itself uses -- `Capitulum` and
+; `DeModFrame` -- and each field kind once) never saw the type pass 2
+; actually builds for `Scriptor`, and `structura T { x: Scriptor }` trapped
+; here (`.prestruc`, below).
 ;
 ; Spec: docs/spec/exsecutor-spec-v0.4.md §5.2 (byte order, `@transitus`, the
 ; four bit-width rules), §5.5 (placement), §9.5 (`--hospes` fixes `mensura`).
@@ -76,7 +81,13 @@ include 'compute.inc'
 ; sub-8-bit integer (rule 3's exemption applied to width <= 8 without
 ; excluding width == 0) and passed unrejected; that was the bug, not the
 ; rule -- this file's `EXS-E0322` and `EXS-E0321` fixture predates the fix
-; and only ever exercised whole-byte-or-wider `uN` fields.
+; and only ever exercised whole-byte-or-wider `uN` fields. The first fix
+; excluded width 0 only, which still admitted a NON-integer of width 1-8
+; (`acies<u8, 1>`, a nested one-`u8` struct); the exemption is now decided
+; by KIND, `AST_TY_INT` alone.
+;
+; `Scriptor` is the one struct with no `AstDecl`, and it is SIZED, not
+; width 0: `.prestruc` below.
 proc __chk_lay_ty, chkl_wk, chkl_ty, chkl_dp
 	uses	rbx, r12, r13
 	locals
@@ -138,7 +149,10 @@ proc __chk_lay_ty, chkl_wk, chkl_ty, chkl_dp
 	mov	eax, [rbx + ChkRowWork.wptr]
 	return
   .struc:
-	mov	r12d, [rax + AstType.a]		; the struct's DECLARATION
+	mov	r12d, [rax + AstType.a]		; the struct's DECLARATION -- or,
+						; bit 31 set, a PRELUDE reference
+	bt	r12, 31
+	jc	.prestruc
 	mov	rdi, rbx
 	mov	rsi, r12
 	mov	rdx, [chkl_dp]
@@ -149,6 +163,23 @@ proc __chk_lay_ty, chkl_wk, chkl_ty, chkl_dp
 	call	ast_layout_at
 	mov	eax, [rax + AstLayout.off]	; a struct's SIZE, in bytes
 	shl	rax, 3
+	xor	edx, edx
+	return
+  .prestruc:
+	; `Scriptor`, the one prelude struct. It has NO `AstDecl`
+	; (checker/types/prim.inc's `chk_ty_prelude_type` interns it as an
+	; `AST_TY_STRUCT` whose `a` is `CHK_TY_PRELUDE or k`), so the `.struc`
+	; arm above cannot lay it out: it used to hand the TAGGED value to
+	; `__chk_lay_struct` as a declaration id, and `__chk_row_g1`'s bounds
+	; `rassert` trapped on `0x80000001` -- `exsc aedifica` on
+	; `structura T { x: Scriptor }`, with or without `@transitus`, died
+	; with SIGILL. Its size is `prelude/interface.inc`'s, the same constant
+	; `lower/ty.inc`'s `.prestruct` reads for a `slot` and the prelude blob
+	; is assembled from, so the layout and the lowering cannot disagree.
+	; Order `:nativus`, as for every struct: a struct cannot carry one.
+	and	r12d, CHK_TY_PRE_MASK
+	rassert	r12 eq CHK_TY_PRE_SCRIPTOR
+	mov	eax, EXS_IFACE_SCRIPTOR_SIZE * 8
 	xor	edx, edx
 	return
   .acies:
@@ -259,17 +290,24 @@ proc __chk_lay_struct, chkl_wk, chkl_sd, chkl_dp
 	call	ast_type_at
 	movzx	ecx, byte [rax + AstType.kind]
 	mov	[chkl_kd], rcx
+	cmp	ecx, AST_TY_INT
+	jne	.ckorder			; not an integer: never exempt
+						; from the order check below --
+						; rule 3's "at or below eight
+						; bits" describes a real
+						; sub-byte or whole-byte
+						; INTEGER. This test used to be
+						; `width == 0`, which caught
+						; `textus` and the atoms but let
+						; every non-integer of width 1-8
+						; through clean: `acies<u8, 1>`
+						; and a nested one-`u8` struct in
+						; a `@transitus` struct both
+						; checked with no diagnostic,
+						; against §5.2's "no `acies`, and
+						; no nested struct"
+						; (`tests/unit/chk_row_layout_src.asm`)
 	mov	rax, [chkl_w]
-	test	rax, rax
-	jz	.ckorder			; width 0: a kind `__chk_lay_ty`
-						; cannot size (textus, a
-						; capability-bearing type, ...)
-						; is never exempt from the order
-						; check below -- rule 3's "at or
-						; below eight bits" describes a
-						; real sub-byte or whole-byte
-						; INTEGER, and a field this pass
-						; cannot size is never one
 	cmp	rax, 8
 	jle	.record				; §5.2 rule 3: byte order is
 						; not part of the grammar at or

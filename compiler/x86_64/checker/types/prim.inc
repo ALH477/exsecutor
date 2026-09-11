@@ -857,9 +857,13 @@ endp
 ; declaration id in `a` the way a source struct does. It carries the TAGGED
 ; prelude reference instead -- the same tag `Seg.d` carries -- which keeps
 ; "nominal identity is one number" true and keeps the two `Scriptor`s in one
-; program the same id. Nothing in Stage 2 dereferences `struct.a` as a
-; declaration except pass 4's layout loop, which walks `Ast.decls` and
-; therefore never sees this type at all.
+; program the same id. Every reader of `struct.a` must therefore test bit 31
+; before treating it as a declaration. This comment used to say pass 4's
+; layout "walks `Ast.decls` and therefore never sees this type at all"; it
+; does see it, as the type of a FIELD (`structura T { x: Scriptor }`), and
+; trapped on the tagged id until `checker/rows/layout.inc`'s `.prestruc`
+; (`tests/unit/chk_row_layout_src.asm`). The other readers already test it:
+; pass 3's `__chk_row_tyatoms` (`.pre`) and the lowering's `lwr_ty_size`.
 proc chk_ty_prelude_type, chkt_wp, chkt_kp
 	uses	rbx, r12
 	locals
