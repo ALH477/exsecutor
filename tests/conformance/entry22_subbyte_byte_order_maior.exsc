@@ -5,37 +5,44 @@
 // and is not part of the grammar AT OR BELOW IT. An unannotated multi-byte
 // field in a `@transitus` type IS `:nativus` and is therefore already
 // EXS-E0321; `u4:maior` does not parse, so it is EXS-E0201. Neither needs a
-// new code."
+// new code." One code, not two.
 //
-// NOT REACHABLE THIS WAVE -- FOUND BY RUNNING, CONTRARY TO THE INITIAL
-// PLAN. This entry was scoped as one of the six "lexical, reachable this
-// wave" entries, alongside 3/5/18/19/20. It is not, and the other five are:
-// checked directly against BOTH this suite's own probe and the real
-// `exsc aedifica --diagnostica json`, `u4:maior` produces ZERO diagnostics
-// and exit 0 -- the same silent accept as an ordinary, fully valid file.
-// The reason is exactly what §5.2 rule 3 already says in different words:
-// "does not parse" is a GRAMMAR fact, and grammar is Stage 2 (there is no
-// parser: compiler/x86_64/ast/ and cst/ are both empty, and `exsc` says of
-// itself "only aedifica does anything today: it reads a source file,
-// applies spec 8.1 and lexes it"). Lexically, `u4` is simply XID_Start
-// 'u' + XID_Continue '4' -- ONE ordinary identifier token, not a
-// recognized "sub-byte type" shape -- and `maior` is not a reserved word
-// either (compiler/x86_64/lexer/keywords.inc's generated 30-word table has
-// no entry for it: `:maior`/`:nativus` are grammar sitting after a type,
-// never lexicon). So `u4:maior` tokenizes as IDENT(u4) PUNCT(:)
-// IDENT(maior) and stops there, cleanly, with nothing left to object to
-// until something knows `u4` names a sub-byte width and THEN sees `:maior`
-// attached to it.
+// DEFERRED, FOUND BY RUNNING, CONTRARY TO THE PRIOR RECORD HERE. This
+// fixture once read `status=run` on the strength of exsc's exit status and
+// a `grep -qF '"code":"EXS-E0201"'` match against its diagnostics -- a
+// PRESENCE check, not an exact one. Tightening tests/run.sh's shape=code
+// check to require the exact SET of codes emitted to equal {expect-code}
+// (a spec-guardian review's finding: a run that emits the expected code
+// PLUS other codes still passed) found this entry was never really
+// passing: run directly through `exsc aedifica --diagnostica json`,
+// `u4:maior` now produces TWO diagnostics, not one --
 //
-// Recorded as a finding for this suite's report, not silently reclassified
-// without saying so (CLAUDE.md's evidence discipline: "never present a
-// re-derivation as a restoration" -- and, by the same logic, never let a
-// planning assumption stand once running the thing has actually falsified
-// it).
+//   {"code":"EXS-E0201",...,"message":"unexpected token",...,"snippet":":maior"}
+//   {"code":"EXS-E0322",...,"message":"implicit padding in a @transitus type",...}
+//
+// -- confirmed by actually running it, not assumed. The first is exactly
+// what this entry claims. The second is not: the wire-layout checker
+// (entries 6/7/21's `EXS-E0322`) is evaluating `campus: u4` as if `:maior`
+// were never there, over whatever the parser's recovery from the E0201
+// leaves behind, and finding the same partial-trailing-byte violation
+// entry 21 raises on purpose. §5.2 rule 3's own text says this should be
+// impossible -- "Neither needs a new code" presumes ONE fires, not both --
+// so this is a real cascading-diagnostic gap in parser-error recovery
+// feeding a downstream checker pass a tree it should not still be looking
+// at, not a defect in this fixture (contrast entry 19, whose fixture WAS
+// the defect -- two missing `;`s -- and was fixed in place instead of
+// deferred).
+//
+// tests/conformance/ is this agent's own tree; the parser and the
+// @transitus layout checker are not (CLAUDE.md's Scope: "Do not edit
+// another agent's tree; report the needed change instead"). Reported, not
+// patched around: recovery from an EXS-E0201 unparseable bit-width
+// annotation should not leave a shape the layout checker treats as valid
+// input to evaluate.
 
 @transitus
 publica structura Malum2 {
     campus: u4:maior
 }
 
-// TEST: entry=22 shape=code expect-code=EXS-E0201 status=run
+// TEST: entry=22 shape=code expect-code=EXS-E0201 status=deferred needs=parser_error_recovery

@@ -233,9 +233,29 @@ run_conformance_tests() {
   #                         for every such fixture) and run
   #                         `exsc aedifica --hospes x86_64-linux
   #                         --diagnostica json FIXTURE`; §8.3's own
-  #                         machine-readable mode is matched on its "code"
-  #                         member via a plain substring check, never on
-  #                         English text. Front-end diagnostics have no
+  #                         machine-readable mode is JSON Lines (driver/
+  #                         run.inc: one object per diagnostic, one per
+  #                         line, no wrapping array), so every line's
+  #                         "code" member is pulled out and the fixture
+  #                         passes iff that SET, DEDUPED, is exactly
+  #                         {expect-code} -- never a substring check on one
+  #                         line, and never on English text. A repeated
+  #                         occurrence of expect-code (the same violation
+  #                         named once per occurrence in source -- entry
+  #                         19's identifier at its declaration and its use
+  #                         -- collapses to one element of the set and is
+  #                         not a second code); ANY other code, even
+  #                         alongside a correct one, fails the fixture --
+  #                         that is exactly the gap a plain `grep -qF` left
+  #                         open (a spec-guardian review caught it: entries
+  #                         19 and 22 were passing on a match against
+  #                         expect-code while ALSO emitting a second,
+  #                         different code the grep never looked for). The
+  #                         exit status is also checked, separately, against
+  #                         exsc.asm's own table (comment above `start:`,
+  #                         "Exit: 0 clean, 1 diagnostics, ...") -- 1, the
+  #                         diagnostics exit, not 132 (an `rassert` trap) or
+  #                         4 (unimplemented). Front-end diagnostics have no
   #                         target concept (§8.1-§8.4 predate targets
   #                         entirely), so which --hospes triple is used
   #                         here is not load-bearing.
@@ -267,17 +287,28 @@ run_conformance_tests() {
   # fixtures -- would be the fifth):
   #   fixture_floor -- §14 has exactly 24 entries; fewer *.exsc files than
   #                    that means fixtures went missing, not that §14 shrank.
-  #   run_floor     -- entries 3, 5, 18, 19, 20, 22 are lexically checkable,
-  #                    entries 6, 7, 9, 21 are checkable by the wire-codec
-  #                    branch's @transitus layout checker and type checker,
-  #                    and entry 23 runs its certificate -- all eleven
-  #                    verified passing (see this suite's own report); if the
-  #                    number that actually RUN ever drops below that,
-  #                    something silently stopped working.
+  #   run_floor     -- entries 3, 5, 18, 20 are lexically checkable, entries
+  #                    6, 7, 9, 19, 21 are checkable by the wire-codec
+  #                    branch's @transitus layout checker, type checker and
+  #                    lexer identifier classification, and entry 23 runs
+  #                    its certificate -- all ten verified passing under the
+  #                    exact-code-set check below (see this suite's own
+  #                    report). Entry 22 (`u4:maior`) is DEFERRED, not run:
+  #                    tightening the check from a substring match to an
+  #                    exact set found it was never really passing --
+  #                    exsc emits EXS-E0201 (the entry's own expectation)
+  #                    AND EXS-E0322 (implicit padding), the second raised
+  #                    by the wire-layout checker over whatever partial
+  #                    parse the E0201 recovery leaves behind -- a real
+  #                    second diagnostic, not a fixture bug (§5.2 rule 3:
+  #                    "`u4:maior` does not parse, so it is EXS-E0201.
+  #                    Neither needs a new code" -- one code, not two). If
+  #                    the number that actually RUN ever drops below the
+  #                    floor, something silently stopped working.
   echo "== conformance suite (tests/conformance/, spec §14) =="
   local dir="$REPO_ROOT/tests/conformance"
   local fixture_floor=24
-  local run_floor=11
+  local run_floor=10
 
   if [[ ! -d "$dir" ]]; then
     bad "tests/conformance/ does not exist"
@@ -398,11 +429,22 @@ run_conformance_tests() {
           sed 's/^/         /' "$errlog"
           continue
         fi
-        if grep -qF "\"code\":\"$expect_code\"" "$errlog"; then
-          ok "$name: entry $entry rejected with exactly $expect_code"
+        # EXACT match, not "found somewhere": pull the "code" member out of
+        # every JSON Lines diagnostic (one object per line -- driver/
+        # run.inc), dedupe, and require the resulting SET to be exactly
+        # {expect_code}. A repeated occurrence of expect_code collapses to
+        # one element and still passes (see the header comment above); any
+        # OTHER code -- a second, real diagnostic the old `grep -qF`
+        # presence check never looked for -- fails it.
+        local codes
+        codes="$(grep -oE '"code":"EXS-E[0-9]+"' "$errlog" |
+                 sed -E 's/.*"(EXS-E[0-9]+)"$/\1/' | sort -u | tr '\n' ' ')"
+        codes="${codes% }"
+        if [[ "$codes" == "$expect_code" ]]; then
+          ok "$name: entry $entry rejected with exactly {$expect_code}, no other code"
           ran=$((ran + 1))
         else
-          bad "$name: entry $entry expected $expect_code, not found in exsc's diagnostics:"
+          bad "$name: entry $entry expected exactly {$expect_code}, exsc's diagnostics carry {${codes:-none}}:"
           sed 's/^/         /' "$errlog"
         fi
         ;;

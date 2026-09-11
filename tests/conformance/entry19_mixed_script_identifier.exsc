@@ -14,10 +14,22 @@
 // RUNS this wave: lexer/lex.inc's `lex_script_ok` already implements this
 // exactly (verified by actually running this fixture through
 // tests/conformance/tools/lex_probe -- see run_conformance_tests).
+//
+// SEMICOLONS ARE LOAD-BEARING HERE, unlike entries 3/5/18/20: those four
+// are §8.1 whole-byte-stream codes (E0101/E0102/E0103/E0106) and the pass
+// that raises them halts compilation before the parser ever runs, so a
+// missing `;` after it never gets the chance to matter. E0104 is raised
+// during ordinary identifier classification instead, which does not halt
+// tokenization -- the parser still runs afterward, and §8.6 decision 1
+// requires the `;` this body was missing on both statements. Without it,
+// exsc's diagnostics carried E0104 (this entry) AND two spurious E0201
+// ("unexpected token") from the parser recompiling from token debris --
+// the second code an exact expect-code={E0104} match must reject and a
+// substring `grep -qF` did not (see tests/run.sh's spec-guardian note).
 
 publica functio saluta() -> textus {
-    firma xа = "Ave, mundus."
-    redde xа
+    firma xа = "Ave, mundus.";
+    redde xа;
 }
 
 // TEST: entry=19 shape=code expect-code=EXS-E0104 status=run

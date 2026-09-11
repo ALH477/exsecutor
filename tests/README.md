@@ -9,30 +9,47 @@ calls):
    toolchain itself (`fasmg` + `vendor/fasmg-x86`) and `tools/syscall-audit.sh`,
    so that is what these fixtures exercise.
 2. **`tests/conformance/`** — spec §14's 24-entry suite. **All 24 cases
-   are written; 11 run.** `exsc` now exists, so the entries the lexer can
+   are written; 10 run.** `exsc` now exists, so the entries the lexer can
    decide are checked against a real diagnostic: 3 (bidi in a comment,
    `EXS-E0103`), 5 (non-NFC, `E0102`), 18 (BOM, `E0101`), 19 (mixed-script,
-   `E0104`), 20 (CRLF, `E0106`), 22 (sub-byte byte order on `:maior`,
-   `E0201`). The wire-codec branch's `@transitus` layout checker and type
-   checker moved four more from `DEFERRED` to run: 6 (`:nativus` in a wire
-   struct, `E0321`), 7 (implicit padding in a wire struct, `E0322`), 9 (a
-   row-carrying function where a bare function type is expected, `E0303`),
-   21 (bit widths not summing to a whole byte, `E0322`). **Entry 23 runs its
-   certificate**: the DeModFrame codec written in Exsecutor
-   (`conformance/entry23/codex.exsc`, pure; `probatio.exsc`, the driver) is
-   compiled with the fixture as one unit, run, audited (`write` and
-   `exit_group` only), and its 2,502-byte stream compared section by section
-   with what `entry23/expecta.py` builds from
+   `E0104`), 20 (CRLF, `E0106`). The wire-codec branch's `@transitus`
+   layout checker and type checker moved four more from `DEFERRED` to run:
+   6 (`:nativus` in a wire struct, `E0321`), 7 (implicit padding in a wire
+   struct, `E0322`), 9 (a row-carrying function where a bare function type
+   is expected, `E0303`), 21 (bit widths not summing to a whole byte,
+   `E0322`). **Entry 23 runs its certificate**: the DeModFrame codec
+   written in Exsecutor (`conformance/entry23/codex.exsc`, pure;
+   `probatio.exsc`, the driver) is compiled with the fixture as one unit,
+   run, audited (`write` and `exit_group` only), and its 2,502-byte stream
+   compared section by section with what `entry23/expecta.py` builds from
    `vendor/hydramesh-wire/golden_vectors.json` — 246/246 certificate
    vectors, the three anchors and two laws reported apart — after which
    three mechanical mutants must each fail at the vector
    `docs/design/wire-codec.md` section 6.1 names. `entry23/` is a
    subdirectory so the `*.exsc` glob does not take its files for fixtures.
-   The other 13 report **`DEFERRED`** with what they wait on —
+
+   Each `shape=code` entry above is checked against the exact SET of
+   `EXS-E` codes in exsc's `--diagnostica json` output (JSON Lines — one
+   object per diagnostic), required to equal `{expect-code}` after
+   deduplication, not merely to contain it — a substring/presence check
+   passes a fixture that ALSO emits an unrelated second diagnostic, which
+   is exactly what a prior version of this check did. That tightening
+   moved **entry 22** (`u4:maior`, `E0201`) to `DEFERRED`: it now emits
+   `E0201` *and* a spurious `E0322` from the wire-layout checker running
+   over the parser's recovery from the unparseable annotation — a real
+   compiler-side cascading-diagnostic gap (`needs=parser_error_recovery`),
+   not a fixture defect, and outside this tree to fix (CLAUDE.md's Scope).
+   Entry 19 (mixed-script) was a genuine fixture defect instead — two
+   missing `;`s that a source-policy fast-path had been masking on 3/5/18/20
+   but not on 19, whose `E0104` is raised later, mid-lex, without halting
+   the parser — and was fixed in place; both `xа` occurrences still raise
+   `E0104`, which is one element of the set, not two.
+
+   The other 14 report **`DEFERRED`** with what they wait on —
    `type_checker`, `capability_checker`, `import_closure`, `ffi_checker`,
-   `lexicon_checker`, `backend`, `runtime`, `cross_compile` — and are
-   **never counted as passing**. A suite reporting 24/24 while running 11
-   would be worse than no suite.
+   `lexicon_checker`, `backend`, `runtime`, `cross_compile`,
+   `parser_error_recovery` — and are **never counted as passing**. A suite
+   reporting 24/24 while running 10 would be worse than no suite.
 
    Five rule shapes, and a runner assuming one will quietly mishandle four:
    reject-with-exact-code (most), byte-identical output (16, 17), external
