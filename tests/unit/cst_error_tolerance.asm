@@ -463,9 +463,11 @@ segment readable
 	dq	case_15, case_15_LEN
 	dd	0, 0, 0, 0, 0, 0
 	; the conformance entry itself: one diagnostic, EXS-E0201, at the
-	; `:maior` that §5.2 rule 3 forbids on a sub-byte field
+	; `:maior` that §5.2 rule 3 forbids on a sub-byte field. The span start is
+	; a byte offset into that file, so it moves whenever the file's comment
+	; header changes length: 2124 until 2f21338 rewrote the header, 2503 since.
 	dq	case_e22, case_e22_LEN
-	dd	1, 201, 2124, 6, 0, 0
+	dd	1, 201, 2503, 6, 0, 0
   case_end:
   CASE_N = (case_end - case_tab) / CT_ROW
   assert CASE_N = 16
