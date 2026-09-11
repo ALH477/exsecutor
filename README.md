@@ -238,7 +238,7 @@ are byte-exact exceptions and why).
      Every figure is from running the named command at the named commit.
      Refresh it here and nowhere else. -->
 
-## Status as of `ed16563` (2026-09-11)
+## Status as of `db48b27` (2026-09-11)
 
 Every figure here was produced by running the named command at this commit, in
 the `nix develop` shell, on `x86_64-linux`.
@@ -288,9 +288,31 @@ swap, so the language gained only `aut` (xor), `sursum`/`deorsum` (shifts),
 hex literals, struct literals and one aggregate cast — spec §5.2, §5.4, §8.4,
 §8.6.
 
+**An acoustic modem, byte for byte.** HydraModem's transmitter — 2-FSK at
+48 kHz and 1000 baud, CRC-16, a K=7 convolutional code, an interleaver and
+CPFSK modulation — is written in Exsecutor (`examples/hydramodem/`, 460
+lines). It writes WAV files **byte-identical** to HydraModem's own reference
+transmitter, built from source and vendored at `vendor/hydramodem-tx/`
+(ADR 0013):
+
+```
+hydramodem_loopback: stdout byte-identical to vendor/hydramodem-tx/d310123400a1ffffdeadbeef0a1b2ca961.wav
+hydramodem_exemplum: stdout byte-identical to vendor/hydramodem-tx/d31312340001ffffdeadbeefab12cd24c0.wav
+hydramodem_vacuum:   stdout byte-identical to vendor/hydramodem-tx/d310000000000000000000000000005b80.wav
+hydramodem_basis:    stdout byte-identical to vendor/hydramodem-tx/symbola_basis.bin
+```
+
+The last line is a 137-word basis of the symbol stream. With the three WAVs
+and the per-symbol memorylessness of the modulator, it extends to
+byte-identical audio for every one of 2^136 inputs, *given* that the stream is
+affine over GF(2). That is argued from the code, not measured
+(`docs/design/modem.md` §13 lists the premises). It uses no floating point, no
+signed arithmetic, no bitwise and/or and no remainder, and each program's
+syscalls are `write` and `exit_group`. The receiver is not written yet.
+
 **What runs:**
 
-- `make all` → `build/exsc`, **416,880 bytes**, freestanding, no libc.
+- `make all` → `build/exsc`, **416,942 bytes**, freestanding, no libc.
 - **All three stages of §16 reach end to end.** Stage 1: the §8.1 source gate,
   the lexer, the lossless CST, the typed AST. Stage 2: name resolution, types,
   capability rows, packed layout — the lexicon pass is built and **not
@@ -305,8 +327,8 @@ hex literals, struct literals and one aggregate cast — spec §5.2, §5.4, §8.
   corpus — `docs/design/diagnostics-review.md`, final section, and
   `tests/diagnostics/`. Stage 2's (`sub` resolution needing a search) does not
   fire, argued first in `docs/design/checker.md` §2.1.
-- `tests/run.sh`: **628 pass, 0 fail** — 160 unit fixtures; 48 IR fixtures and
-  8 Exsecutor programs, each compiled, assembled, **run**, and syscall-audited;
+- `tests/run.sh`: **653 pass, 0 fail** — 162 unit fixtures; 48 IR fixtures and
+  13 Exsecutor programs, each compiled, assembled, **run**, and syscall-audited;
   10 of 24 conformance entries running, each required to emit exactly its
   expected code and nothing else (the other 14 report `DEFERRED` and are never
   counted as passing).
