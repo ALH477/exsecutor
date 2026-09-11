@@ -1,0 +1,20 @@
+; TEST: emit-exit=5
+;
+; `load u12`: a `load` is a whole number of bytes (ssa-ir.md 2.7, "`load`/
+; `store` take whole-byte widths at a byte boundary"); a field narrower than
+; a byte, or one that ends mid-byte, is `loadbits`/`storebits`. Verifier
+; rule 1 (verify.inc's `__bfa_verify_memty`). The emitter refuses the same
+; text by name (exit 4), because `exsc` reaches the emitter without the
+; verifier -- this fixture's 5 says the verifier got there first.
+;
+; Mutation (run): __bfa_verify_memty's whole-byte test dropped -> emit_ir
+; exits 4 (the emitter's refusal), not 5.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = slot 8 8
+%2 = load u12 %1 0 nativus
+%3 = iconst u8 0
+ret %3
+}

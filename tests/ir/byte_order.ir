@@ -1,0 +1,842 @@
+; TEST: expect-exit=200
+;
+; `load`/`store` in every byte order at every whole-byte width the emitter
+; assembles byte by byte (ssa-ir.md 2.7; wire-codec.md milestone M4):
+; `maior` and `minor` at 16/24/32/64, `maior` at 40 and 56, `minor` at 48,
+; `nativus` at 24 (which on this little-endian host IS `minor`), and a
+; negative i40. Every store is READ BACK BYTE BY BYTE with `load u8
+; nativus` -- the one-instruction path M4 did not touch, so a store and a
+; load that were wrong the same way cannot agree with each other and pass --
+; then read back whole in its own order. The 80-byte slot is pre-filled
+; with 0xAA and every case is followed by an untouched guard byte, so a store
+; that wrote one byte too many (or too few) shows at the guard.
+;
+; The loaded value is canonical (ssa-ir.md 2.2): `cmp.eq` is a 64-bit
+; compare, so a u24 load leaving anything above bit 23 never equals its
+; expected constant, and the i16/i24/i40 loads must come back
+; sign-extended.
+;
+; Mutations (run): __bfa_byte_addr's `maior`/`minor` branch inverted ->
+; exit 2 (byte 1 holds 0x34, not 0x12); the signed normalisation after a
+; byte-by-byte load dropped -> exit 87 (i40 -2 comes back as 2^40 - 2).
+;
+; A CHECK CHAIN: check k compares one value and on a mismatch returns k.
+; All 91 right: exit 200.
+;
+;    1      guard byte 0                       = 0xaa, untouched
+;    2-3    store u16 0x1234 maior at 1        bytes 12 34
+;    4      guard byte 3                       = 0xaa, untouched
+;    5      load u16 maior at 1                = 0x1234
+;    6-7    store u16 0x1234 minor at 4        bytes 34 12
+;    8      guard byte 6                       = 0xaa, untouched
+;    9      load u16 minor at 4                = 0x1234
+;   10-12   store u24 0xab12cd maior at 7      bytes ab 12 cd
+;   13      guard byte 10                      = 0xaa, untouched
+;   14      load u24 maior at 7                = 0xab12cd
+;   15-17   store u24 0xab12cd minor at 11     bytes cd 12 ab
+;   18      guard byte 14                      = 0xaa, untouched
+;   19      load u24 minor at 11               = 0xab12cd
+;   20-23   store u32 0xdeadbeef maior at 15   bytes de ad be ef
+;   24      guard byte 19                      = 0xaa, untouched
+;   25      load u32 maior at 15               = 0xdeadbeef
+;   26-29   store u32 0xdeadbeef minor at 20   bytes ef be ad de
+;   30      guard byte 24                      = 0xaa, untouched
+;   31      load u32 minor at 20               = 0xdeadbeef
+;   32-39   store u64 0x102030405060708 maior at 25 bytes 01 02 03 04 05 06 07 08
+;   40      guard byte 33                      = 0xaa, untouched
+;   41      load u64 maior at 25               = 0x102030405060708
+;   42-49   store u64 0x102030405060708 minor at 34 bytes 08 07 06 05 04 03 02 01
+;   50      guard byte 42                      = 0xaa, untouched
+;   51      load u64 minor at 34               = 0x102030405060708
+;   52-56   store u40 0x102030405 maior at 43  bytes 01 02 03 04 05
+;   57      guard byte 48                      = 0xaa, untouched
+;   58      load u40 maior at 43               = 0x102030405
+;   59-64   store u48 0xa0b0c0d0e0f minor at 49 bytes 0f 0e 0d 0c 0b 0a
+;   65      guard byte 55                      = 0xaa, untouched
+;   66      load u48 minor at 49               = 0xa0b0c0d0e0f
+;   67-73   store u56 0x11223344556677 maior at 56 bytes 11 22 33 44 55 66 77
+;   74      guard byte 63                      = 0xaa, untouched
+;   75      load u56 maior at 56               = 0x11223344556677
+;   76-78   store u24 0x123456 nativus at 64   bytes 56 34 12
+;   79      guard byte 67                      = 0xaa, untouched
+;   80      load u24 nativus at 64             = 0x123456
+;   81-85   store i40 -2 maior at 68           bytes ff ff ff ff fe
+;   86      guard byte 73                      = 0xaa, untouched
+;   87      load i40 maior at 68               = -2
+;   88      load u24 minor at 64               = 0x123456: nativus is minor on this host
+;   89      load u8 maior at 7                 = 0xab: one byte has no order
+;   90      load i16 maior at 15               = -8531: sign-extended
+;   91      load i24 minor at 11               = -5565747: sign-extended
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = slot 80 8
+%2 = iconst u64 12297829382473034410
+store u64 %1 0 nativus %2
+store u64 %1 8 nativus %2
+store u64 %1 16 nativus %2
+store u64 %1 24 nativus %2
+store u64 %1 32 nativus %2
+store u64 %1 40 nativus %2
+store u64 %1 48 nativus %2
+store u64 %1 56 nativus %2
+store u64 %1 64 nativus %2
+store u64 %1 72 nativus %2
+%3 = iconst u16 4660
+store u16 %1 1 maior %3
+%4 = iconst u16 4660
+store u16 %1 4 minor %4
+%5 = iconst u24 11211469
+store u24 %1 7 maior %5
+%6 = iconst u24 11211469
+store u24 %1 11 minor %6
+%7 = iconst u32 3735928559
+store u32 %1 15 maior %7
+%8 = iconst u32 3735928559
+store u32 %1 20 minor %8
+%9 = iconst u64 72623859790382856
+store u64 %1 25 maior %9
+%10 = iconst u64 72623859790382856
+store u64 %1 34 minor %10
+%11 = iconst u40 4328719365
+store u40 %1 43 maior %11
+%12 = iconst u48 11042563100175
+store u48 %1 49 minor %12
+%13 = iconst u56 4822678189205111
+store u56 %1 56 maior %13
+%14 = iconst u24 1193046
+store u24 %1 64 nativus %14
+%15 = iconst i40 -2
+store i40 %1 68 maior %15
+%16 = load u8 %1 0 nativus
+%17 = iconst u8 170
+%18 = cmp.eq u8 %16 %17
+br %18 b2 b1
+b1:
+%19 = iconst u8 1
+ret %19
+b2:
+%20 = load u8 %1 1 nativus
+%21 = iconst u8 18
+%22 = cmp.eq u8 %20 %21
+br %22 b4 b3
+b3:
+%23 = iconst u8 2
+ret %23
+b4:
+%24 = load u8 %1 2 nativus
+%25 = iconst u8 52
+%26 = cmp.eq u8 %24 %25
+br %26 b6 b5
+b5:
+%27 = iconst u8 3
+ret %27
+b6:
+%28 = load u8 %1 3 nativus
+%29 = iconst u8 170
+%30 = cmp.eq u8 %28 %29
+br %30 b8 b7
+b7:
+%31 = iconst u8 4
+ret %31
+b8:
+%32 = load u16 %1 1 maior
+%33 = iconst u16 4660
+%34 = cmp.eq u16 %32 %33
+br %34 b10 b9
+b9:
+%35 = iconst u8 5
+ret %35
+b10:
+%36 = load u8 %1 4 nativus
+%37 = iconst u8 52
+%38 = cmp.eq u8 %36 %37
+br %38 b12 b11
+b11:
+%39 = iconst u8 6
+ret %39
+b12:
+%40 = load u8 %1 5 nativus
+%41 = iconst u8 18
+%42 = cmp.eq u8 %40 %41
+br %42 b14 b13
+b13:
+%43 = iconst u8 7
+ret %43
+b14:
+%44 = load u8 %1 6 nativus
+%45 = iconst u8 170
+%46 = cmp.eq u8 %44 %45
+br %46 b16 b15
+b15:
+%47 = iconst u8 8
+ret %47
+b16:
+%48 = load u16 %1 4 minor
+%49 = iconst u16 4660
+%50 = cmp.eq u16 %48 %49
+br %50 b18 b17
+b17:
+%51 = iconst u8 9
+ret %51
+b18:
+%52 = load u8 %1 7 nativus
+%53 = iconst u8 171
+%54 = cmp.eq u8 %52 %53
+br %54 b20 b19
+b19:
+%55 = iconst u8 10
+ret %55
+b20:
+%56 = load u8 %1 8 nativus
+%57 = iconst u8 18
+%58 = cmp.eq u8 %56 %57
+br %58 b22 b21
+b21:
+%59 = iconst u8 11
+ret %59
+b22:
+%60 = load u8 %1 9 nativus
+%61 = iconst u8 205
+%62 = cmp.eq u8 %60 %61
+br %62 b24 b23
+b23:
+%63 = iconst u8 12
+ret %63
+b24:
+%64 = load u8 %1 10 nativus
+%65 = iconst u8 170
+%66 = cmp.eq u8 %64 %65
+br %66 b26 b25
+b25:
+%67 = iconst u8 13
+ret %67
+b26:
+%68 = load u24 %1 7 maior
+%69 = iconst u24 11211469
+%70 = cmp.eq u24 %68 %69
+br %70 b28 b27
+b27:
+%71 = iconst u8 14
+ret %71
+b28:
+%72 = load u8 %1 11 nativus
+%73 = iconst u8 205
+%74 = cmp.eq u8 %72 %73
+br %74 b30 b29
+b29:
+%75 = iconst u8 15
+ret %75
+b30:
+%76 = load u8 %1 12 nativus
+%77 = iconst u8 18
+%78 = cmp.eq u8 %76 %77
+br %78 b32 b31
+b31:
+%79 = iconst u8 16
+ret %79
+b32:
+%80 = load u8 %1 13 nativus
+%81 = iconst u8 171
+%82 = cmp.eq u8 %80 %81
+br %82 b34 b33
+b33:
+%83 = iconst u8 17
+ret %83
+b34:
+%84 = load u8 %1 14 nativus
+%85 = iconst u8 170
+%86 = cmp.eq u8 %84 %85
+br %86 b36 b35
+b35:
+%87 = iconst u8 18
+ret %87
+b36:
+%88 = load u24 %1 11 minor
+%89 = iconst u24 11211469
+%90 = cmp.eq u24 %88 %89
+br %90 b38 b37
+b37:
+%91 = iconst u8 19
+ret %91
+b38:
+%92 = load u8 %1 15 nativus
+%93 = iconst u8 222
+%94 = cmp.eq u8 %92 %93
+br %94 b40 b39
+b39:
+%95 = iconst u8 20
+ret %95
+b40:
+%96 = load u8 %1 16 nativus
+%97 = iconst u8 173
+%98 = cmp.eq u8 %96 %97
+br %98 b42 b41
+b41:
+%99 = iconst u8 21
+ret %99
+b42:
+%100 = load u8 %1 17 nativus
+%101 = iconst u8 190
+%102 = cmp.eq u8 %100 %101
+br %102 b44 b43
+b43:
+%103 = iconst u8 22
+ret %103
+b44:
+%104 = load u8 %1 18 nativus
+%105 = iconst u8 239
+%106 = cmp.eq u8 %104 %105
+br %106 b46 b45
+b45:
+%107 = iconst u8 23
+ret %107
+b46:
+%108 = load u8 %1 19 nativus
+%109 = iconst u8 170
+%110 = cmp.eq u8 %108 %109
+br %110 b48 b47
+b47:
+%111 = iconst u8 24
+ret %111
+b48:
+%112 = load u32 %1 15 maior
+%113 = iconst u32 3735928559
+%114 = cmp.eq u32 %112 %113
+br %114 b50 b49
+b49:
+%115 = iconst u8 25
+ret %115
+b50:
+%116 = load u8 %1 20 nativus
+%117 = iconst u8 239
+%118 = cmp.eq u8 %116 %117
+br %118 b52 b51
+b51:
+%119 = iconst u8 26
+ret %119
+b52:
+%120 = load u8 %1 21 nativus
+%121 = iconst u8 190
+%122 = cmp.eq u8 %120 %121
+br %122 b54 b53
+b53:
+%123 = iconst u8 27
+ret %123
+b54:
+%124 = load u8 %1 22 nativus
+%125 = iconst u8 173
+%126 = cmp.eq u8 %124 %125
+br %126 b56 b55
+b55:
+%127 = iconst u8 28
+ret %127
+b56:
+%128 = load u8 %1 23 nativus
+%129 = iconst u8 222
+%130 = cmp.eq u8 %128 %129
+br %130 b58 b57
+b57:
+%131 = iconst u8 29
+ret %131
+b58:
+%132 = load u8 %1 24 nativus
+%133 = iconst u8 170
+%134 = cmp.eq u8 %132 %133
+br %134 b60 b59
+b59:
+%135 = iconst u8 30
+ret %135
+b60:
+%136 = load u32 %1 20 minor
+%137 = iconst u32 3735928559
+%138 = cmp.eq u32 %136 %137
+br %138 b62 b61
+b61:
+%139 = iconst u8 31
+ret %139
+b62:
+%140 = load u8 %1 25 nativus
+%141 = iconst u8 1
+%142 = cmp.eq u8 %140 %141
+br %142 b64 b63
+b63:
+%143 = iconst u8 32
+ret %143
+b64:
+%144 = load u8 %1 26 nativus
+%145 = iconst u8 2
+%146 = cmp.eq u8 %144 %145
+br %146 b66 b65
+b65:
+%147 = iconst u8 33
+ret %147
+b66:
+%148 = load u8 %1 27 nativus
+%149 = iconst u8 3
+%150 = cmp.eq u8 %148 %149
+br %150 b68 b67
+b67:
+%151 = iconst u8 34
+ret %151
+b68:
+%152 = load u8 %1 28 nativus
+%153 = iconst u8 4
+%154 = cmp.eq u8 %152 %153
+br %154 b70 b69
+b69:
+%155 = iconst u8 35
+ret %155
+b70:
+%156 = load u8 %1 29 nativus
+%157 = iconst u8 5
+%158 = cmp.eq u8 %156 %157
+br %158 b72 b71
+b71:
+%159 = iconst u8 36
+ret %159
+b72:
+%160 = load u8 %1 30 nativus
+%161 = iconst u8 6
+%162 = cmp.eq u8 %160 %161
+br %162 b74 b73
+b73:
+%163 = iconst u8 37
+ret %163
+b74:
+%164 = load u8 %1 31 nativus
+%165 = iconst u8 7
+%166 = cmp.eq u8 %164 %165
+br %166 b76 b75
+b75:
+%167 = iconst u8 38
+ret %167
+b76:
+%168 = load u8 %1 32 nativus
+%169 = iconst u8 8
+%170 = cmp.eq u8 %168 %169
+br %170 b78 b77
+b77:
+%171 = iconst u8 39
+ret %171
+b78:
+%172 = load u8 %1 33 nativus
+%173 = iconst u8 170
+%174 = cmp.eq u8 %172 %173
+br %174 b80 b79
+b79:
+%175 = iconst u8 40
+ret %175
+b80:
+%176 = load u64 %1 25 maior
+%177 = iconst u64 72623859790382856
+%178 = cmp.eq u64 %176 %177
+br %178 b82 b81
+b81:
+%179 = iconst u8 41
+ret %179
+b82:
+%180 = load u8 %1 34 nativus
+%181 = iconst u8 8
+%182 = cmp.eq u8 %180 %181
+br %182 b84 b83
+b83:
+%183 = iconst u8 42
+ret %183
+b84:
+%184 = load u8 %1 35 nativus
+%185 = iconst u8 7
+%186 = cmp.eq u8 %184 %185
+br %186 b86 b85
+b85:
+%187 = iconst u8 43
+ret %187
+b86:
+%188 = load u8 %1 36 nativus
+%189 = iconst u8 6
+%190 = cmp.eq u8 %188 %189
+br %190 b88 b87
+b87:
+%191 = iconst u8 44
+ret %191
+b88:
+%192 = load u8 %1 37 nativus
+%193 = iconst u8 5
+%194 = cmp.eq u8 %192 %193
+br %194 b90 b89
+b89:
+%195 = iconst u8 45
+ret %195
+b90:
+%196 = load u8 %1 38 nativus
+%197 = iconst u8 4
+%198 = cmp.eq u8 %196 %197
+br %198 b92 b91
+b91:
+%199 = iconst u8 46
+ret %199
+b92:
+%200 = load u8 %1 39 nativus
+%201 = iconst u8 3
+%202 = cmp.eq u8 %200 %201
+br %202 b94 b93
+b93:
+%203 = iconst u8 47
+ret %203
+b94:
+%204 = load u8 %1 40 nativus
+%205 = iconst u8 2
+%206 = cmp.eq u8 %204 %205
+br %206 b96 b95
+b95:
+%207 = iconst u8 48
+ret %207
+b96:
+%208 = load u8 %1 41 nativus
+%209 = iconst u8 1
+%210 = cmp.eq u8 %208 %209
+br %210 b98 b97
+b97:
+%211 = iconst u8 49
+ret %211
+b98:
+%212 = load u8 %1 42 nativus
+%213 = iconst u8 170
+%214 = cmp.eq u8 %212 %213
+br %214 b100 b99
+b99:
+%215 = iconst u8 50
+ret %215
+b100:
+%216 = load u64 %1 34 minor
+%217 = iconst u64 72623859790382856
+%218 = cmp.eq u64 %216 %217
+br %218 b102 b101
+b101:
+%219 = iconst u8 51
+ret %219
+b102:
+%220 = load u8 %1 43 nativus
+%221 = iconst u8 1
+%222 = cmp.eq u8 %220 %221
+br %222 b104 b103
+b103:
+%223 = iconst u8 52
+ret %223
+b104:
+%224 = load u8 %1 44 nativus
+%225 = iconst u8 2
+%226 = cmp.eq u8 %224 %225
+br %226 b106 b105
+b105:
+%227 = iconst u8 53
+ret %227
+b106:
+%228 = load u8 %1 45 nativus
+%229 = iconst u8 3
+%230 = cmp.eq u8 %228 %229
+br %230 b108 b107
+b107:
+%231 = iconst u8 54
+ret %231
+b108:
+%232 = load u8 %1 46 nativus
+%233 = iconst u8 4
+%234 = cmp.eq u8 %232 %233
+br %234 b110 b109
+b109:
+%235 = iconst u8 55
+ret %235
+b110:
+%236 = load u8 %1 47 nativus
+%237 = iconst u8 5
+%238 = cmp.eq u8 %236 %237
+br %238 b112 b111
+b111:
+%239 = iconst u8 56
+ret %239
+b112:
+%240 = load u8 %1 48 nativus
+%241 = iconst u8 170
+%242 = cmp.eq u8 %240 %241
+br %242 b114 b113
+b113:
+%243 = iconst u8 57
+ret %243
+b114:
+%244 = load u40 %1 43 maior
+%245 = iconst u40 4328719365
+%246 = cmp.eq u40 %244 %245
+br %246 b116 b115
+b115:
+%247 = iconst u8 58
+ret %247
+b116:
+%248 = load u8 %1 49 nativus
+%249 = iconst u8 15
+%250 = cmp.eq u8 %248 %249
+br %250 b118 b117
+b117:
+%251 = iconst u8 59
+ret %251
+b118:
+%252 = load u8 %1 50 nativus
+%253 = iconst u8 14
+%254 = cmp.eq u8 %252 %253
+br %254 b120 b119
+b119:
+%255 = iconst u8 60
+ret %255
+b120:
+%256 = load u8 %1 51 nativus
+%257 = iconst u8 13
+%258 = cmp.eq u8 %256 %257
+br %258 b122 b121
+b121:
+%259 = iconst u8 61
+ret %259
+b122:
+%260 = load u8 %1 52 nativus
+%261 = iconst u8 12
+%262 = cmp.eq u8 %260 %261
+br %262 b124 b123
+b123:
+%263 = iconst u8 62
+ret %263
+b124:
+%264 = load u8 %1 53 nativus
+%265 = iconst u8 11
+%266 = cmp.eq u8 %264 %265
+br %266 b126 b125
+b125:
+%267 = iconst u8 63
+ret %267
+b126:
+%268 = load u8 %1 54 nativus
+%269 = iconst u8 10
+%270 = cmp.eq u8 %268 %269
+br %270 b128 b127
+b127:
+%271 = iconst u8 64
+ret %271
+b128:
+%272 = load u8 %1 55 nativus
+%273 = iconst u8 170
+%274 = cmp.eq u8 %272 %273
+br %274 b130 b129
+b129:
+%275 = iconst u8 65
+ret %275
+b130:
+%276 = load u48 %1 49 minor
+%277 = iconst u48 11042563100175
+%278 = cmp.eq u48 %276 %277
+br %278 b132 b131
+b131:
+%279 = iconst u8 66
+ret %279
+b132:
+%280 = load u8 %1 56 nativus
+%281 = iconst u8 17
+%282 = cmp.eq u8 %280 %281
+br %282 b134 b133
+b133:
+%283 = iconst u8 67
+ret %283
+b134:
+%284 = load u8 %1 57 nativus
+%285 = iconst u8 34
+%286 = cmp.eq u8 %284 %285
+br %286 b136 b135
+b135:
+%287 = iconst u8 68
+ret %287
+b136:
+%288 = load u8 %1 58 nativus
+%289 = iconst u8 51
+%290 = cmp.eq u8 %288 %289
+br %290 b138 b137
+b137:
+%291 = iconst u8 69
+ret %291
+b138:
+%292 = load u8 %1 59 nativus
+%293 = iconst u8 68
+%294 = cmp.eq u8 %292 %293
+br %294 b140 b139
+b139:
+%295 = iconst u8 70
+ret %295
+b140:
+%296 = load u8 %1 60 nativus
+%297 = iconst u8 85
+%298 = cmp.eq u8 %296 %297
+br %298 b142 b141
+b141:
+%299 = iconst u8 71
+ret %299
+b142:
+%300 = load u8 %1 61 nativus
+%301 = iconst u8 102
+%302 = cmp.eq u8 %300 %301
+br %302 b144 b143
+b143:
+%303 = iconst u8 72
+ret %303
+b144:
+%304 = load u8 %1 62 nativus
+%305 = iconst u8 119
+%306 = cmp.eq u8 %304 %305
+br %306 b146 b145
+b145:
+%307 = iconst u8 73
+ret %307
+b146:
+%308 = load u8 %1 63 nativus
+%309 = iconst u8 170
+%310 = cmp.eq u8 %308 %309
+br %310 b148 b147
+b147:
+%311 = iconst u8 74
+ret %311
+b148:
+%312 = load u56 %1 56 maior
+%313 = iconst u56 4822678189205111
+%314 = cmp.eq u56 %312 %313
+br %314 b150 b149
+b149:
+%315 = iconst u8 75
+ret %315
+b150:
+%316 = load u8 %1 64 nativus
+%317 = iconst u8 86
+%318 = cmp.eq u8 %316 %317
+br %318 b152 b151
+b151:
+%319 = iconst u8 76
+ret %319
+b152:
+%320 = load u8 %1 65 nativus
+%321 = iconst u8 52
+%322 = cmp.eq u8 %320 %321
+br %322 b154 b153
+b153:
+%323 = iconst u8 77
+ret %323
+b154:
+%324 = load u8 %1 66 nativus
+%325 = iconst u8 18
+%326 = cmp.eq u8 %324 %325
+br %326 b156 b155
+b155:
+%327 = iconst u8 78
+ret %327
+b156:
+%328 = load u8 %1 67 nativus
+%329 = iconst u8 170
+%330 = cmp.eq u8 %328 %329
+br %330 b158 b157
+b157:
+%331 = iconst u8 79
+ret %331
+b158:
+%332 = load u24 %1 64 nativus
+%333 = iconst u24 1193046
+%334 = cmp.eq u24 %332 %333
+br %334 b160 b159
+b159:
+%335 = iconst u8 80
+ret %335
+b160:
+%336 = load u8 %1 68 nativus
+%337 = iconst u8 255
+%338 = cmp.eq u8 %336 %337
+br %338 b162 b161
+b161:
+%339 = iconst u8 81
+ret %339
+b162:
+%340 = load u8 %1 69 nativus
+%341 = iconst u8 255
+%342 = cmp.eq u8 %340 %341
+br %342 b164 b163
+b163:
+%343 = iconst u8 82
+ret %343
+b164:
+%344 = load u8 %1 70 nativus
+%345 = iconst u8 255
+%346 = cmp.eq u8 %344 %345
+br %346 b166 b165
+b165:
+%347 = iconst u8 83
+ret %347
+b166:
+%348 = load u8 %1 71 nativus
+%349 = iconst u8 255
+%350 = cmp.eq u8 %348 %349
+br %350 b168 b167
+b167:
+%351 = iconst u8 84
+ret %351
+b168:
+%352 = load u8 %1 72 nativus
+%353 = iconst u8 254
+%354 = cmp.eq u8 %352 %353
+br %354 b170 b169
+b169:
+%355 = iconst u8 85
+ret %355
+b170:
+%356 = load u8 %1 73 nativus
+%357 = iconst u8 170
+%358 = cmp.eq u8 %356 %357
+br %358 b172 b171
+b171:
+%359 = iconst u8 86
+ret %359
+b172:
+%360 = load i40 %1 68 maior
+%361 = iconst i40 -2
+%362 = cmp.eq i40 %360 %361
+br %362 b174 b173
+b173:
+%363 = iconst u8 87
+ret %363
+b174:
+%364 = load u24 %1 64 minor
+%365 = iconst u24 1193046
+%366 = cmp.eq u24 %364 %365
+br %366 b176 b175
+b175:
+%367 = iconst u8 88
+ret %367
+b176:
+%368 = load u8 %1 7 maior
+%369 = iconst u8 171
+%370 = cmp.eq u8 %368 %369
+br %370 b178 b177
+b177:
+%371 = iconst u8 89
+ret %371
+b178:
+%372 = load i16 %1 15 maior
+%373 = iconst i16 -8531
+%374 = cmp.eq i16 %372 %373
+br %374 b180 b179
+b179:
+%375 = iconst u8 90
+ret %375
+b180:
+%376 = load i24 %1 11 minor
+%377 = iconst i24 -5565747
+%378 = cmp.eq i24 %376 %377
+br %378 b182 b181
+b181:
+%379 = iconst u8 91
+ret %379
+b182:
+%380 = iconst u8 200
+ret %380
+}

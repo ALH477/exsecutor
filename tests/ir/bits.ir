@@ -1,0 +1,272 @@
+; TEST: expect-exit=150
+;
+; `loadbits`/`storebits` (ssa-ir.md 2.7; wire-codec.md milestone M4) at both
+; nibbles, a 1-bit field at the top, the bottom and the middle of a byte, a
+; 3-bit field at three offsets, and the whole byte as a u8 field. The bit
+; operand counts from the MOST significant bit of the byte: spec 5.2 rule 1
+; (sub-byte fields pack MSB-first in declaration order) and
+; checker/rows/layout.inc (a field's bit offset is the bits declared before
+; it in its byte). So `loadbits u4 %p 1 0` is DeModFrame's `versio`, bits
+; 7..4 of byte 1, and `loadbits u4 %p 1 4` its `genus`, bits 3..0 -- checks
+; 10 and 11 read them from 0x13.
+;
+; `storebits` is a read-modify-write of one byte: the field's old bits are
+; cleared (check 14 overwrites a nibble that already held 1100), the rest of
+; the byte kept (checks 13-15), and the neighbouring bytes untouched (20-23).
+;
+; Mutations (run): the bit operand read LSB-first (S = bit, not 8 - bit - w)
+; -> exit 1; the store's clear-the-field mask dropped (old bits kept) ->
+; exit 14.
+;
+; A CHECK CHAIN: check k compares one value and on a mismatch returns k.
+; All 23 right: exit 150.
+;
+;    1  loadbits u4 %s 0 0         = 10     high nibble: bit 0 is the MSB
+;    2  loadbits u4 %s 0 4         = 5      low nibble
+;    3  loadbits u1 %s 0 0         = 1      bit 7 of the byte
+;    4  loadbits u1 %s 0 1         = 0      bit 6
+;    5  loadbits u1 %s 0 7         = 1      bit 0, the LSB
+;    6  loadbits u3 %s 0 0         = 5      101
+;    7  loadbits u3 %s 0 3         = 1      001
+;    8  loadbits u3 %s 0 5         = 5      101
+;    9  loadbits u8 %s 0 0         = 165    the whole byte
+;   10  loadbits u4 %s 1 0         = 1      DeModFrame versio
+;   11  loadbits u4 %s 1 4         = 3      DeModFrame genus
+;   12  load u8 byte 2             = 0xc0   storebits u4 12 at bit 0 of 0x00
+;   13  load u8 byte 2             = 0xc3   then u4 3 at bit 4: the high nibble kept
+;   14  load u8 byte 2             = 0x13   then u4 1 at bit 0: old bits cleared, low nibble kept
+;   15  load u8 byte 3             = 0x7e   u1 0 at bits 0 and 7 of 0xff
+;   16  load u8 byte 4             = 0x10   u1 1 at bit 3 of 0x00
+;   17  load u8 byte 5             = 0x28   u3 101 at bit 2 of 0x00: 0010 1000
+;   18  load u8 byte 6             = 0xf8   u3 0 at bit 5 of 0xff
+;   19  load u8 byte 6             = 0x5a   u8 at bit 0: the whole byte
+;   20  load u8 byte 0             = 0xa5   byte 0 untouched
+;   21  load u8 byte 1             = 0x13   byte 1 untouched
+;   22  load u8 byte 5             = 0x28   byte 5 untouched by byte 6's stores
+;   23  load u8 byte 7             = 0x77   byte 7 untouched
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = slot 8 8
+%2 = iconst u8 165
+store u8 %1 0 nativus %2
+%3 = iconst u8 119
+store u8 %1 7 nativus %3
+%4 = iconst u8 19
+store u8 %1 1 nativus %4
+%5 = loadbits u4 %1 0 0
+%6 = iconst u4 10
+%7 = cmp.eq u4 %5 %6
+br %7 b2 b1
+b1:
+%8 = iconst u8 1
+ret %8
+b2:
+%9 = loadbits u4 %1 0 4
+%10 = iconst u4 5
+%11 = cmp.eq u4 %9 %10
+br %11 b4 b3
+b3:
+%12 = iconst u8 2
+ret %12
+b4:
+%13 = loadbits u1 %1 0 0
+%14 = iconst u1 1
+%15 = cmp.eq u1 %13 %14
+br %15 b6 b5
+b5:
+%16 = iconst u8 3
+ret %16
+b6:
+%17 = loadbits u1 %1 0 1
+%18 = iconst u1 0
+%19 = cmp.eq u1 %17 %18
+br %19 b8 b7
+b7:
+%20 = iconst u8 4
+ret %20
+b8:
+%21 = loadbits u1 %1 0 7
+%22 = iconst u1 1
+%23 = cmp.eq u1 %21 %22
+br %23 b10 b9
+b9:
+%24 = iconst u8 5
+ret %24
+b10:
+%25 = loadbits u3 %1 0 0
+%26 = iconst u3 5
+%27 = cmp.eq u3 %25 %26
+br %27 b12 b11
+b11:
+%28 = iconst u8 6
+ret %28
+b12:
+%29 = loadbits u3 %1 0 3
+%30 = iconst u3 1
+%31 = cmp.eq u3 %29 %30
+br %31 b14 b13
+b13:
+%32 = iconst u8 7
+ret %32
+b14:
+%33 = loadbits u3 %1 0 5
+%34 = iconst u3 5
+%35 = cmp.eq u3 %33 %34
+br %35 b16 b15
+b15:
+%36 = iconst u8 8
+ret %36
+b16:
+%37 = loadbits u8 %1 0 0
+%38 = iconst u8 165
+%39 = cmp.eq u8 %37 %38
+br %39 b18 b17
+b17:
+%40 = iconst u8 9
+ret %40
+b18:
+%41 = loadbits u4 %1 1 0
+%42 = iconst u4 1
+%43 = cmp.eq u4 %41 %42
+br %43 b20 b19
+b19:
+%44 = iconst u8 10
+ret %44
+b20:
+%45 = loadbits u4 %1 1 4
+%46 = iconst u4 3
+%47 = cmp.eq u4 %45 %46
+br %47 b22 b21
+b21:
+%48 = iconst u8 11
+ret %48
+b22:
+%49 = iconst u8 0
+store u8 %1 2 nativus %49
+%50 = iconst u4 12
+storebits u4 %1 2 0 %50
+%51 = load u8 %1 2 nativus
+%52 = iconst u8 192
+%53 = cmp.eq u8 %51 %52
+br %53 b24 b23
+b23:
+%54 = iconst u8 12
+ret %54
+b24:
+%55 = iconst u4 3
+storebits u4 %1 2 4 %55
+%56 = load u8 %1 2 nativus
+%57 = iconst u8 195
+%58 = cmp.eq u8 %56 %57
+br %58 b26 b25
+b25:
+%59 = iconst u8 13
+ret %59
+b26:
+%60 = iconst u4 1
+storebits u4 %1 2 0 %60
+%61 = load u8 %1 2 nativus
+%62 = iconst u8 19
+%63 = cmp.eq u8 %61 %62
+br %63 b28 b27
+b27:
+%64 = iconst u8 14
+ret %64
+b28:
+%65 = iconst u8 255
+store u8 %1 3 nativus %65
+%66 = iconst u1 0
+storebits u1 %1 3 0 %66
+%67 = iconst u1 0
+storebits u1 %1 3 7 %67
+%68 = load u8 %1 3 nativus
+%69 = iconst u8 126
+%70 = cmp.eq u8 %68 %69
+br %70 b30 b29
+b29:
+%71 = iconst u8 15
+ret %71
+b30:
+%72 = iconst u8 0
+store u8 %1 4 nativus %72
+%73 = iconst u1 1
+storebits u1 %1 4 3 %73
+%74 = load u8 %1 4 nativus
+%75 = iconst u8 16
+%76 = cmp.eq u8 %74 %75
+br %76 b32 b31
+b31:
+%77 = iconst u8 16
+ret %77
+b32:
+%78 = iconst u8 0
+store u8 %1 5 nativus %78
+%79 = iconst u3 5
+storebits u3 %1 5 2 %79
+%80 = load u8 %1 5 nativus
+%81 = iconst u8 40
+%82 = cmp.eq u8 %80 %81
+br %82 b34 b33
+b33:
+%83 = iconst u8 17
+ret %83
+b34:
+%84 = iconst u8 255
+store u8 %1 6 nativus %84
+%85 = iconst u3 0
+storebits u3 %1 6 5 %85
+%86 = load u8 %1 6 nativus
+%87 = iconst u8 248
+%88 = cmp.eq u8 %86 %87
+br %88 b36 b35
+b35:
+%89 = iconst u8 18
+ret %89
+b36:
+%90 = iconst u8 90
+storebits u8 %1 6 0 %90
+%91 = load u8 %1 6 nativus
+%92 = iconst u8 90
+%93 = cmp.eq u8 %91 %92
+br %93 b38 b37
+b37:
+%94 = iconst u8 19
+ret %94
+b38:
+%95 = load u8 %1 0 nativus
+%96 = iconst u8 165
+%97 = cmp.eq u8 %95 %96
+br %97 b40 b39
+b39:
+%98 = iconst u8 20
+ret %98
+b40:
+%99 = load u8 %1 1 nativus
+%100 = iconst u8 19
+%101 = cmp.eq u8 %99 %100
+br %101 b42 b41
+b41:
+%102 = iconst u8 21
+ret %102
+b42:
+%103 = load u8 %1 5 nativus
+%104 = iconst u8 40
+%105 = cmp.eq u8 %103 %104
+br %105 b44 b43
+b43:
+%106 = iconst u8 22
+ret %106
+b44:
+%107 = load u8 %1 7 nativus
+%108 = iconst u8 119
+%109 = cmp.eq u8 %107 %108
+br %109 b46 b45
+b45:
+%110 = iconst u8 23
+ret %110
+b46:
+%111 = iconst u8 150
+ret %111
+}

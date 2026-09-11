@@ -1,0 +1,19 @@
+; TEST: emit-exit=5
+;
+; `storebits u1 %p 0 8 %v`: the bit offset counts from the MOST significant
+; bit of its byte (spec 5.2 rule 1, MSB-first; checker/rows/layout.inc) and
+; is 0..7 -- bit 8 of byte 0 is bit 0 of byte 1, and has one spelling.
+; Verifier rule 1 (verify.inc's `__bfa_verify_bitsty`).
+;
+; Mutation (run): the bit-offset test dropped -> emit_ir exits 4 (the
+; emitter's straddle refusal, since 8 + 1 > 8), not 5.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = slot 8 8
+%2 = iconst u1 1
+storebits u1 %1 0 8 %2
+%3 = iconst u8 0
+ret %3
+}

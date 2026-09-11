@@ -1,0 +1,102 @@
+// The first CRC written in Exsecutor: CRC-16/CCITT-FALSE -- init 0xffff,
+// polynomial 0x1021, no reflection, no final xor -- one byte at a time,
+// using only what milestone M5 of docs/design/wire-codec.md merged: `aut`
+// (exclusive or), `sursum`/`deorsum` (shifts toward more/less
+// significance), hex literals, and the u8/u16 arithmetic, `per`, `si`/
+// `aliter` and `sicut` widening that were already there. No array: the
+// bytes of "123456789" are fed as the values 0x31, 0x32, ... from a u8
+// counter. `initium` returns 0 when every check is right, else the number
+// of the first wrong one:
+//
+//   1  CRC of "123456789"                         0x29b1  the check value
+//   2  CRC of fifteen zero bytes                  0x4ec3  vendor/hydramesh-
+//                                                         wire's crc_zero15
+//   3  (0xabcd sursum 4) deorsum 4                0x0bcd  the top nibble is
+//                                                 discarded, not wrapped
+//   4  (0xabcd deorsum 4) sursum 4                0xabc0
+//   5  1 sursum 15                                0x8000  a count of N-1
+//   6  (x aut y) aut y                            x       aut undoes itself
+//   7  a count held in a u16 binding              0x0bcd  the count is the
+//                                                 left side's type (5.4)
+//
+// Why `c sursum 1` needs no `and 0xffff`: bits shifted past the width are
+// discarded (spec 5.4 as amended), so the u16 stays a u16. `c ge 0x8000`
+// reads the top bit before the shift throws it away. The two branches differ
+// by a constant `aut`, which is what makes the CRC affine over GF(2)
+// (wire-codec.md section 5).
+//
+// The loop bounds are typed bindings (`firma octo: mensura = 8; per k in
+// 0..octo`), not `0..8`: a range of two pending literals is EXS-E0308 on
+// this branch (checker/types/stmt.inc:829, `__chk_ty_for` calling
+// `__chk_ty_settled` on the range). Spec 8.5's rule typing it `mensura` is
+// being implemented on the M6 branch; once it merges these can be written
+// `per k in 0..8`.
+//
+// Mutations (run): the polynomial 0x1021 -> 0x1020 -> exit 1; `nullorum`'s
+// init 0xffff -> 0 -> exit 2 (the CRC of zeros from zero is zero).
+
+functio passus(c: u16, b: u8) -> u16 {
+    mutabilis x: u16 = c aut ((b sicut u16) sursum 8);
+    firma octo: mensura = 8;
+    per k in 0..octo {
+        si x ge 0x8000 {
+            x = (x sursum 1) aut 0x1021;
+        } aliter {
+            x = x sursum 1;
+        }
+    }
+    redde x;
+}
+
+functio numerorum() -> u16 {
+    mutabilis c: u16 = 0xffff;
+    mutabilis b: u8 = 0x31;
+    firma novem: mensura = 9;
+    per i in 0..novem {
+        c = passus(c, b);
+        b = b + 1;
+    }
+    redde c;
+}
+
+functio nullorum() -> u16 {
+    mutabilis c: u16 = 0xffff;
+    firma quindecim: mensura = 15;
+    per i in 0..quindecim {
+        c = passus(c, 0);
+    }
+    redde c;
+}
+
+functio deorsum_sursum(x: u16, k: u16) -> u16 {
+    redde (x sursum k) deorsum k;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    si numerorum() ne 0x29b1 {
+        redde 1;
+    }
+    si nullorum() ne 0x4ec3 {
+        redde 2;
+    }
+    firma x: u16 = 0xabcd;
+    si (x sursum 4) deorsum 4 ne 0x0bcd {
+        redde 3;
+    }
+    si (x deorsum 4) sursum 4 ne 0xabc0 {
+        redde 4;
+    }
+    firma unus: u16 = 1;
+    si unus sursum 15 ne 0x8000 {
+        redde 5;
+    }
+    firma y: u16 = 0x1021;
+    si (x aut y) aut y ne x {
+        redde 6;
+    }
+    firma quattuor: u16 = 4;
+    si deorsum_sursum(x, quattuor) ne 0x0bcd {
+        redde 7;
+    }
+    redde 0;
+}

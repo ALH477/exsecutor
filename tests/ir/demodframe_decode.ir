@@ -1,0 +1,112 @@
+; TEST: expect-exit=0
+;
+; The DECODER half of demodframe_encode.ir: the certified example frame,
+;
+;     d3 13 12 34 00 01 ff ff de ad be ef ab 12 cd 24 c0
+;
+; written into a 17-byte `slot` as literal bytes (two little-endian u64
+; stores and a byte -- the one-instruction `nativus` path, independent of
+; everything M4 added), then every field read back through the byte order
+; and bit field loads of milestone M4, in spec 5.2's declaration order:
+;
+;     1 signum   load u8             at 0              0xd3
+;     2 versio   loadbits u4         at byte 1 bit 0   1
+;     3 genus    loadbits u4         at byte 1 bit 4   3
+;     4 numerus  load u16 maior      at 2              0x1234
+;     5 fons     load u16 maior      at 4              1
+;     6 meta     load u16 maior      at 6              0xffff
+;     7 onus     load u32 maior      at 8              0xdeadbeef
+;     8 tempus   load u24 maior      at 12             0xab12cd
+;     9 cursus   load u16 maior      at 15             0x24c0
+;
+; Exit 0 if every field is right, else the number of the first wrong one.
+;
+; Mutations (run): `versio` and `genus` read at each other's bit offset ->
+; exit 2; `tempus` read `minor` -> exit 8.
+;
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = slot 17 1
+%2 = iconst u64 18446463699118068691
+store u64 %1 0 nativus %2
+%3 = iconst u64 2651796285262048734
+store u64 %1 8 nativus %3
+%4 = iconst u8 192
+store u8 %1 16 nativus %4
+%5 = load u8 %1 0 nativus
+%6 = iconst u8 211
+%7 = cmp.eq u8 %5 %6
+br %7 b2 b1
+b1:
+%8 = iconst u8 1
+ret %8
+b2:
+%9 = loadbits u4 %1 1 0
+%10 = iconst u4 1
+%11 = cmp.eq u4 %9 %10
+br %11 b4 b3
+b3:
+%12 = iconst u8 2
+ret %12
+b4:
+%13 = loadbits u4 %1 1 4
+%14 = iconst u4 3
+%15 = cmp.eq u4 %13 %14
+br %15 b6 b5
+b5:
+%16 = iconst u8 3
+ret %16
+b6:
+%17 = load u16 %1 2 maior
+%18 = iconst u16 4660
+%19 = cmp.eq u16 %17 %18
+br %19 b8 b7
+b7:
+%20 = iconst u8 4
+ret %20
+b8:
+%21 = load u16 %1 4 maior
+%22 = iconst u16 1
+%23 = cmp.eq u16 %21 %22
+br %23 b10 b9
+b9:
+%24 = iconst u8 5
+ret %24
+b10:
+%25 = load u16 %1 6 maior
+%26 = iconst u16 65535
+%27 = cmp.eq u16 %25 %26
+br %27 b12 b11
+b11:
+%28 = iconst u8 6
+ret %28
+b12:
+%29 = load u32 %1 8 maior
+%30 = iconst u32 3735928559
+%31 = cmp.eq u32 %29 %30
+br %31 b14 b13
+b13:
+%32 = iconst u8 7
+ret %32
+b14:
+%33 = load u24 %1 12 maior
+%34 = iconst u24 11211469
+%35 = cmp.eq u24 %33 %34
+br %35 b16 b15
+b15:
+%36 = iconst u8 8
+ret %36
+b16:
+%37 = load u16 %1 15 maior
+%38 = iconst u16 9408
+%39 = cmp.eq u16 %37 %38
+br %39 b18 b17
+b17:
+%40 = iconst u8 9
+ret %40
+b18:
+%41 = iconst u8 0
+ret %41
+}

@@ -1,0 +1,3 @@
+# redundantia.exsc's header lists the seven checks; 1-7 names the first
+# wrong one, 0 is all right.
+TEST: expect-exit=0

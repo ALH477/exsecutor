@@ -914,6 +914,116 @@ proc __bfa_verify_pa_redfin, ctx, instid
 	return
 endp
 
+; __bfa_verify_memty(ctx, instid, ordv) -> eax = 0, or rule 1: the access
+; type of a `load`/`store` against its byte order (ssa-ir.md 2.7, "`load`/
+; `store` take whole-byte widths at a byte boundary with order `nativus`,
+; `maior` or `minor`"; wire-codec.md milestone M4):
+;   - a uN/iN must be a whole number of bytes: `load u12`, `load u4` are
+;     refused -- a sub-byte field is `loadbits`/`storebits`;
+;   - `maior`/`minor` order an integer's bytes, so they need a uN/iN:
+;     `load ptr %p 0 maior` is refused;
+;   - `maior`/`minor` on a `u8`/`i8` is ADMITTED, and means what `nativus`
+;     means: one byte has no order. Refusing it would make the lowering
+;     special-case the one width where the order it carries is harmless.
+; Any other type under `nativus` is what it was before M4 (a `ptr`, an
+; `f32` -- tests/unit/bfa_verify_dot_ok.asm loads one).
+proc __bfa_verify_memty, ctx, instid, ordv
+	locals
+		slot ty, dd
+		slot kind, dd
+	endl
+	mov	rdi, [ctx]
+	mov	rdi, [rdi + BfaVerifyCtx.func]
+	mov	rsi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.ty]
+	mov	[ty], ecx
+	mov	rdi, [ctx]
+	mov	esi, [ty]
+	call	__bfa_verify_ty_ok
+	test	eax, eax
+	jz	.bad
+	mov	rdi, [ctx]
+	mov	rdi, [rdi + BfaVerifyCtx.module]
+	mov	esi, [ty]
+	call	bfa_type_ptr
+	movzx	ecx, byte [rax + BfaType.kind]
+	mov	[kind], ecx
+	movzx	eax, word [rax + BfaType.width]
+	cmp	dword [kind], BFA_TK_U
+	je	.isint
+	cmp	dword [kind], BFA_TK_I
+	je	.isint
+	cmp	dword [ordv], BFA_ORDER_NATIVUS
+	jne	.bad
+	jmp	.ok
+  .isint:
+	test	eax, 7
+	jnz	.bad
+  .ok:
+	mov	eax, 0
+	return
+  .bad:
+	mov	eax, BFA_VERIFY_R1_OPERAND
+	return
+endp
+
+; __bfa_verify_bitsty(ctx, instid) -> eax = 0, or rule 1: a `loadbits`/
+; `storebits` field is a uN/iN 1 to 8 bits wide at a bit offset 0..7 of its
+; byte (ssa-ir.md 2.7: "any width <= 8 at any bit offset"). A field with
+; bit + width > 8 STRADDLES into the next byte, which ssa-ir.md 2.7 admits
+; ("straddling a byte if the declaration did") and this rule therefore
+; admits too; it is the emitter that refuses it, by name, because nothing
+; needs it yet (emit.inc, "Byte order and bit fields").
+proc __bfa_verify_bitsty, ctx, instid
+	locals
+		slot ty, dd
+		slot kind, dd
+		slot width, dd
+	endl
+	mov	rdi, [ctx]
+	mov	rdi, [rdi + BfaVerifyCtx.func]
+	mov	rsi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.ty]
+	mov	[ty], ecx
+	mov	ecx, [rax + BfaInst.a]
+	add	ecx, 2
+	mov	rdi, [ctx]
+	mov	rdi, [rdi + BfaVerifyCtx.func]
+	mov	esi, ecx
+	call	bfa_extra_get
+	cmp	eax, 7
+	ja	.bad				; the bit offset
+	mov	rdi, [ctx]
+	mov	esi, [ty]
+	call	__bfa_verify_ty_ok
+	test	eax, eax
+	jz	.bad
+	mov	rdi, [ctx]
+	mov	rdi, [rdi + BfaVerifyCtx.module]
+	mov	esi, [ty]
+	call	bfa_type_ptr
+	movzx	ecx, byte [rax + BfaType.kind]
+	mov	[kind], ecx
+	movzx	eax, word [rax + BfaType.width]
+	mov	[width], eax
+	cmp	dword [kind], BFA_TK_U
+	je	.isint
+	cmp	dword [kind], BFA_TK_I
+	jne	.bad
+  .isint:
+	cmp	dword [width], 1
+	jb	.bad
+	cmp	dword [width], 8
+	ja	.bad
+	mov	eax, 0
+	return
+  .bad:
+	mov	eax, BFA_VERIFY_R1_OPERAND
+	return
+endp
+
 proc __bfa_verify_pa_load, ctx, instid
 	locals
 		slot eidx, dd
@@ -950,6 +1060,14 @@ proc __bfa_verify_pa_load, ctx, instid
 	mov	eax, BFA_VERIFY_R1_OPERAND
 	return
   .ordok:
+	mov	rdi, [ctx]
+	mov	rsi, [instid]
+	mov	edx, [ordv]
+	call	__bfa_verify_memty
+	test	eax, eax
+	jz	.tyok
+	return
+  .tyok:
 	mov	rdi, [ctx]
 	call	__bfa_verify_ptrty
 	mov	[ptrty], eax
@@ -1009,6 +1127,14 @@ proc __bfa_verify_pa_store, ctx, instid
 	return
   .ordok:
 	mov	rdi, [ctx]
+	mov	rsi, [instid]
+	mov	edx, [ordv]
+	call	__bfa_verify_memty
+	test	eax, eax
+	jz	.tyok
+	return
+  .tyok:
+	mov	rdi, [ctx]
 	call	__bfa_verify_ptrty
 	mov	[ptrty], eax
 	mov	rdi, [ctx]
@@ -1034,6 +1160,13 @@ proc __bfa_verify_pa_loadbits, ctx, instid
 		slot vp, dd
 		slot ptrty, dd
 	endl
+	mov	rdi, [ctx]
+	mov	rsi, [instid]
+	call	__bfa_verify_bitsty
+	test	eax, eax
+	jz	.fieldok
+	return
+  .fieldok:
 	mov	rdi, [ctx]
 	mov	rdi, [rdi + BfaVerifyCtx.func]
 	mov	rsi, [instid]
@@ -1064,6 +1197,13 @@ proc __bfa_verify_pa_storebits, ctx, instid
 		slot ptrty, dd
 		slot r, dd
 	endl
+	mov	rdi, [ctx]
+	mov	rsi, [instid]
+	call	__bfa_verify_bitsty
+	test	eax, eax
+	jz	.fieldok
+	return
+  .fieldok:
 	mov	rdi, [ctx]
 	mov	rdi, [rdi + BfaVerifyCtx.func]
 	mov	rsi, [instid]

@@ -32,10 +32,10 @@ calls):
    whole fasmg program `bfa_emit_program` makes of it, with the hello
    world's closure `{Mundus, ambitus}` and MXCSR `0x1F80`. The phase
    assembles that, runs it, and checks the exit status or abort and stdout.
-   39 fixtures (`IR_FIXTURE_FLOOR`).
+   48 fixtures (`IR_FIXTURE_FLOOR`).
 4. **`tests/programs/`** — Exsecutor sources, RUN. Each directory is one
    program: `exsc aedifica --hospes x86_64-linux SRC... -o OUT`, `fasmg OUT
-   BIN`, run, check. 6 programs run (`PROGRAM_FIXTURE_FLOOR`) and 1 is
+   BIN`, run, check. 7 programs run (`PROGRAM_FIXTURE_FLOOR`) and 1 is
    deferred (`forma/`, type-checked only; see below).
 
 Phases 3 and 4 are the first in this script to execute code a compiler
@@ -155,9 +155,9 @@ Binaries run with stdin from `/dev/null`, an empty environment, and a
 
 **`tests/ir/*.ir`:** the directive is a `; TEST:` line in the IR itself
 (`;` is the IR's comment). One more key, `emit-exit=N` — `emit_ir`'s own
-status (3 parse error, 5 verifier verdict; `emit_ir.asm`'s header has the
-table). Non-zero makes the fixture a rejection: nothing is assembled or
-run.
+status (3 parse error, 4 emitter refusal, 5 verifier verdict;
+`emit_ir.asm`'s header has the table). Non-zero makes the fixture a
+rejection: nothing is assembled or run.
 
 **`tests/programs/<name>/`:** the directive is the `TEST:` line of a file
 named `TEST` in the directory (`#` lines are comments). The compilation

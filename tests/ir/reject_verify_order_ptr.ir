@@ -1,0 +1,22 @@
+; TEST: emit-exit=5
+;
+; `load ptr %p 0 maior`: `maior`/`minor` order the bytes of an INTEGER
+; (spec 5.2: every `@transitus` field is a uN), so an ordered access needs a
+; uN/iN. A `ptr` read big-endian is not a thing any declaration can ask
+; for. Verifier rule 1 (verify.inc's `__bfa_verify_memty`); the emitter
+; refuses it by name too (exit 4).
+;
+; `maior` on a `u8` is ADMITTED -- one byte has no order to get wrong --
+; and tests/ir/byte_order.ir loads one.
+;
+; Mutation (run): __bfa_verify_memty's order test dropped -> emit_ir exits
+; 4, not 5.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = slot 8 8
+%2 = load ptr %1 0 maior
+%3 = iconst u8 0
+ret %3
+}

@@ -1,0 +1,240 @@
+; TEST: expect-exit=0
+;
+; A DeModFrame ENCODER written by hand in the IR, before any language change
+; can produce one: the byte order and bit field machinery of milestone M4
+; (docs/design/wire-codec.md section 10) building the certified example
+; frame, vendor/hydramesh-wire/golden_vectors.json's `exampleFrame_full`,
+;
+;     d3 13 12 34 00 01 ff ff de ad be ef ab 12 cd 24 c0
+;
+; in a 17-byte `slot`, field by field in spec 5.2's declaration:
+;
+;     signum   store u8  0xd3        at 0          d3
+;     versio   storebits u4 1        at byte 1 bit 0   }  13  (MSB-first:
+;     genus    storebits u4 3        at byte 1 bit 4   }      versio high)
+;     numerus  store u16 0x1234 maior at 2         12 34
+;     fons     store u16 1      maior at 4         00 01
+;     meta     store u16 0xffff maior at 6         ff ff
+;     onus     store u32 0xdeadbeef maior at 8     de ad be ef
+;     tempus   store u24 0xab12cd maior at 12      ab 12 cd
+;     cursus   store u16 CRC    maior at 15        24 c0
+;
+; Byte 1 starts as 0xff, so both `storebits` must clear the bits they
+; replace. The CRC is CRC-16/CCITT-FALSE over bytes 0..14 -- init 0xffff,
+; polynomial 0x1021, no reflection, no final xor -- as two nested loops
+; (the M2 phis) in u16 arithmetic (M3's `zext`, `shl`, `xor`, `cmp.ge`):
+;
+;     c = 0xffff
+;     for i in 0..15:  c = c xor (b[i] shl 8)
+;                      8 times: if c >= 0x8000: c = (c shl 1) xor 0x1021
+;                               else:           c = c shl 1
+;
+; `shl u16` discards the bit shifted out (spec 5.4 as amended), which is why
+; there is no `and 0xffff`. Then all 17 bytes are compared, one `load u8
+; nativus` each, against the frame above: exit 0 if all match, else the
+; index of the first wrong byte plus one.
+;
+; Mutations (run): `cursus` stored `minor` -> exit 16 (byte 15 is c0, not
+; 24); `versio` and `genus` stored at each other's bit offset -> exit 2
+; (byte 1 is 31, not 13).
+;
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = slot 17 1
+%2 = iconst u8 255
+store u8 %1 1 nativus %2
+%3 = iconst u8 211
+store u8 %1 0 nativus %3
+%4 = iconst u4 1
+storebits u4 %1 1 0 %4
+%5 = iconst u4 3
+storebits u4 %1 1 4 %5
+%6 = iconst u16 4660
+store u16 %1 2 maior %6
+%7 = iconst u16 1
+store u16 %1 4 maior %7
+%8 = iconst u16 65535
+store u16 %1 6 maior %8
+%9 = iconst u32 3735928559
+store u32 %1 8 maior %9
+%10 = iconst u24 11211469
+store u24 %1 12 maior %10
+%11 = iconst u16 65535
+%12 = iconst u64 0
+%13 = iconst u64 15
+%14 = iconst u64 8
+jmp b1
+b1:
+%15 = phi u16 b0 %11 b7 %23
+%16 = phi u64 b0 %12 b7 %31
+%17 = cmp.lt u64 %16 %13
+br %17 b2 b8
+b2:
+%18 = index %1 %16 1
+%19 = load u8 %18 0 nativus
+%20 = zext u16 %19
+%21 = shl u16 %20 8
+%22 = xor u16 %15 %21
+jmp b3
+b3:
+%23 = phi u16 b2 %22 b6 %29
+%24 = phi u64 b2 %12 b6 %30
+%25 = cmp.lt u64 %24 %14
+br %25 b4 b7
+b4:
+%26 = shl u16 %23 1
+%27 = cmp.ge u16 %23 32768
+br %27 b5 b6
+b5:
+%28 = xor u16 %26 4129
+jmp b6
+b6:
+%29 = phi u16 b4 %26 b5 %28
+%30 = addw u64 %24 1
+jmp b3
+b7:
+%31 = addw u64 %16 1
+jmp b1
+b8:
+store u16 %1 15 maior %15
+%32 = load u8 %1 0 nativus
+%33 = iconst u8 211
+%34 = cmp.eq u8 %32 %33
+br %34 b10 b9
+b9:
+%35 = iconst u8 1
+ret %35
+b10:
+%36 = load u8 %1 1 nativus
+%37 = iconst u8 19
+%38 = cmp.eq u8 %36 %37
+br %38 b12 b11
+b11:
+%39 = iconst u8 2
+ret %39
+b12:
+%40 = load u8 %1 2 nativus
+%41 = iconst u8 18
+%42 = cmp.eq u8 %40 %41
+br %42 b14 b13
+b13:
+%43 = iconst u8 3
+ret %43
+b14:
+%44 = load u8 %1 3 nativus
+%45 = iconst u8 52
+%46 = cmp.eq u8 %44 %45
+br %46 b16 b15
+b15:
+%47 = iconst u8 4
+ret %47
+b16:
+%48 = load u8 %1 4 nativus
+%49 = iconst u8 0
+%50 = cmp.eq u8 %48 %49
+br %50 b18 b17
+b17:
+%51 = iconst u8 5
+ret %51
+b18:
+%52 = load u8 %1 5 nativus
+%53 = iconst u8 1
+%54 = cmp.eq u8 %52 %53
+br %54 b20 b19
+b19:
+%55 = iconst u8 6
+ret %55
+b20:
+%56 = load u8 %1 6 nativus
+%57 = iconst u8 255
+%58 = cmp.eq u8 %56 %57
+br %58 b22 b21
+b21:
+%59 = iconst u8 7
+ret %59
+b22:
+%60 = load u8 %1 7 nativus
+%61 = iconst u8 255
+%62 = cmp.eq u8 %60 %61
+br %62 b24 b23
+b23:
+%63 = iconst u8 8
+ret %63
+b24:
+%64 = load u8 %1 8 nativus
+%65 = iconst u8 222
+%66 = cmp.eq u8 %64 %65
+br %66 b26 b25
+b25:
+%67 = iconst u8 9
+ret %67
+b26:
+%68 = load u8 %1 9 nativus
+%69 = iconst u8 173
+%70 = cmp.eq u8 %68 %69
+br %70 b28 b27
+b27:
+%71 = iconst u8 10
+ret %71
+b28:
+%72 = load u8 %1 10 nativus
+%73 = iconst u8 190
+%74 = cmp.eq u8 %72 %73
+br %74 b30 b29
+b29:
+%75 = iconst u8 11
+ret %75
+b30:
+%76 = load u8 %1 11 nativus
+%77 = iconst u8 239
+%78 = cmp.eq u8 %76 %77
+br %78 b32 b31
+b31:
+%79 = iconst u8 12
+ret %79
+b32:
+%80 = load u8 %1 12 nativus
+%81 = iconst u8 171
+%82 = cmp.eq u8 %80 %81
+br %82 b34 b33
+b33:
+%83 = iconst u8 13
+ret %83
+b34:
+%84 = load u8 %1 13 nativus
+%85 = iconst u8 18
+%86 = cmp.eq u8 %84 %85
+br %86 b36 b35
+b35:
+%87 = iconst u8 14
+ret %87
+b36:
+%88 = load u8 %1 14 nativus
+%89 = iconst u8 205
+%90 = cmp.eq u8 %88 %89
+br %90 b38 b37
+b37:
+%91 = iconst u8 15
+ret %91
+b38:
+%92 = load u8 %1 15 nativus
+%93 = iconst u8 36
+%94 = cmp.eq u8 %92 %93
+br %94 b40 b39
+b39:
+%95 = iconst u8 16
+ret %95
+b40:
+%96 = load u8 %1 16 nativus
+%97 = iconst u8 192
+%98 = cmp.eq u8 %96 %97
+br %98 b42 b41
+b41:
+%99 = iconst u8 17
+ret %99
+b42:
+%100 = iconst u8 0
+ret %100
+}

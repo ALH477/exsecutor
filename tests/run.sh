@@ -49,7 +49,7 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # this -- the test is `found < floor` -- so a floor that drifts below the real
 # count still catches the failure mode that matters: a discovery mechanism
 # silently finding nothing. Drift costs precision, not the guarantee.
-UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-157}"
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-158}"
 
 # The same guarantee for the two run phases below: tests/ir/*.ir fixtures,
 # and tests/programs/*/ directories. Same rule -- `found < floor` fails --
@@ -63,8 +63,8 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-157}"
 # a `u64:maior` field read, milestone M6 made the read compile, and the
 # positive test of what it compiles to is tests/unit/lwr_transitus.asm
 # (`load u64 %0 0 maior`), because the emitter cannot run a `maior` load yet.
-IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-39}"
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-6}"
+IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-48}"
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-7}"
 
 PASS=0
 FAIL=0
@@ -625,8 +625,9 @@ run_ir_tests() {
   # comment, so the directive is part of the IR text itself), keys above
   # plus:
   #   emit-exit=N   emit_ir's own exit status (default 0). Non-zero means
-  #                 the fixture is a REJECTION -- 3 parse error, 5 verifier
-  #                 verdict (emit_ir.asm's header has the table) -- and
+  #                 the fixture is a REJECTION -- 3 parse error, 4 emitter
+  #                 refusal, 5 verifier verdict (emit_ir.asm's header has
+  #                 the table) -- and
   #                 nothing is assembled or run, so expect-exit=/abort=/
   #                 stdout= are refused alongside it.
   # -------------------------------------------------------------------------

@@ -56,11 +56,13 @@
 ; canonical form of a narrow integer", below -- wire-codec.md milestone
 ; M3), `jmp`, `br`, `ret`, `phi` as a parallel copy on each incoming edge
 ; ("phi -- parallel copies on edges"), and Tier 2's memory, call, ARC and
-; `trap` ops, plus `index`/`chk`/`copy`/`addr` and `nativus` loads and
-; stores at 8/16/32 bits. Every other opcode -- floats, `div`/`rem`,
-; `muls`, the `*ov` predicates, `loadbits`/`storebits`, `maior`/`minor`
-; byte order, `callind`, the reduction ops -- this file's own
-; `__bfa_emit_die` refuses by name rather than emitting something wrong.
+; `trap` ops, plus `index`/`chk`/`copy`/`addr`, loads and stores at every
+; whole-byte width in every byte order (`maior`/`minor` byte by byte), and
+; `loadbits`/`storebits` within one byte ("Byte order and bit fields",
+; below -- wire-codec.md milestone M4). Every other opcode -- floats,
+; `div`/`rem`, `muls`, the `*ov` predicates, `callind`, the reduction ops --
+; and a bit field that straddles a byte, this file's own `__bfa_emit_die`
+; refuses by name rather than emitting something wrong.
 ; ADR 0012 already prices "a naive backend still needs an instruction
 ; selector for every IR op" as real, unscheduled engineering; this is a
 ; slice of it, not all of it.
@@ -2085,34 +2087,141 @@ proc __bfa_emit_gaddr, ctx, func, instid
 	return
 endp
 
-; __bfa_check_nativus(func, eidx) -- dies unless the byte order at extra
-; slot `eidx` is `nativus`. `maior`/`minor` need a `bswap` and a width the
-; hello world does not use; refusing by name beats emitting a native-order
-; access for a declaration that asked for big-endian.
-proc __bfa_check_nativus, func, eidx
+; ============================================================================
+; Byte order and bit fields (ssa-ir.md 2.7; wire-codec.md milestone M4)
+; ============================================================================
+;
+; A `load`/`store` is emitted in one of two forms, chosen by __bfa_mem_plan:
+;
+;   ONE INSTRUCTION -- `nativus` at 8, 16, 32 or 64 bits (and any 64-bit
+;       type: `ptr`, a `ref`), and ANY order at 8 bits, where one byte has
+;       no order to get wrong. This is the Tier-2/M3 text, byte for byte:
+;       nothing M4 added reaches it, and bfa_emit_tier2/narrow/program,
+;       passing unmodified, are the evidence.
+;
+;   BYTE BY BYTE -- `maior` and `minor` at 16, 24, 32, 40, 48, 56 and 64
+;       bits, and `nativus` at 24/40/48/56, which on this host IS `minor`:
+;       x86-64 is little-endian, so an in-process `u24` is three
+;       little-endian bytes, the order a 32-bit `mov` of it would have
+;       used. A load walks the bytes from most to least significant,
+;       accumulating in rcx:
+;
+;           mov     rax, [rbp-8p]
+;           movzx   ecx, byte [rax+A(n-1)]        ; most significant
+;           shl     rcx, 8
+;           movzx   edx, byte [rax+A(n-2)]
+;           or      rcx, rdx                      ; ... down to A(0)
+;           mov     qword [rbp-8v], rcx
+;
+;       which leaves a `uN` zero-extended -- canonical (ssa-ir.md 2.2) with
+;       nothing further -- and an `iN` below 64 bits gets the normalisation
+;       pair (`shl`/`sar rcx, 64-N`). A store mirrors it, least significant
+;       byte first: `mov byte [rax+A(k)], cl` / `shr rcx, 8`. A(k), the
+;       address of the byte of significance k, is `off + n-1-k` for `maior`
+;       (big-endian: the most significant byte at the lowest address) and
+;       `off + k` for `minor`.
+;
+; Why no `bswap`: vendor/fasmg-x86's x64.inc has `bswap` but not `movbe`,
+; and `bswap` has no 24-, 40-, 48- or 56-bit form. Byte assembly is the one
+; path every width shares, so it is the one path to test; a `bswap` fast
+; path at 16/32/64 would be a second, and `tests/ir/byte_order.ir` would
+; have to cover both.
+;
+; BIT FIELDS. `loadbits T %p byte bit` reads a `T` (1 to 8 bits wide) from
+; byte `byte`, where `bit` counts from that byte's MOST significant bit:
+; spec 5.2 rule 1, sub-byte fields pack MSB-first in declaration order, and
+; checker/rows/layout.inc records a field's bit offset as the bits declared
+; before it in its byte -- so DeModFrame's `versio` is `loadbits u4 %p 1 0`
+; (bits 7..4 of byte 1) and `genus` is `loadbits u4 %p 1 4` (bits 3..0).
+; With S = 8 - bit - w, the field is bits S..S+w-1 counted from the least
+; significant end:
+;
+;       loadbits                         storebits
+;       mov     rax, [rbp-8p]            mov     rax, [rbp-8p]
+;       movzx   eax, byte [rax+B]        mov     rcx, [rbp-8v]
+;       shr     eax, S                   and     ecx, 2^w-1
+;       and     eax, 2^w-1               shl     ecx, S
+;       mov     qword [rbp-8v], rax      movzx   edx, byte [rax+B]
+;                                        and     edx, 255 xor ((2^w-1) shl S)
+;                                        or      edx, ecx
+;                                        mov     byte [rax+B], dl
+;
+; `shr`/`shl` by 0 are omitted. The store masks its value even though a
+; canonical `uN` needs no mask (ssa-ir.md 2.2): a store of a non-canonical
+; value spills into the NEIGHBOURING field -- the one instruction in this
+; file where a broken invariant would damage bytes it was not asked to
+; write -- and one `and` is what that costs.
+;
+; REFUSED, by name: a field that straddles a byte boundary (bit + w > 8).
+; ssa-ir.md 2.7 lets `loadbits` straddle "if the declaration did", and the
+; verifier admits it; this emitter does not implement it, because nothing
+; needs it -- DeModFrame's only sub-byte fields are `versio`/`genus`, which
+; share byte 1 exactly. Also refused: an `iN` bit field (spec 5.2 makes
+; every `@transitus` field unsigned, so no lowering of a wire format
+; produces one).
+
+; __bfa_mem_plan(module, ty, ord) -> eax = the form a `load`/`store` of
+; `ty` in byte order `ord` is emitted in, edx = its width in bytes:
+;   BFA_ORDER_NATIVUS  the one-instruction form (__bfa_mem_access then picks
+;                      the instruction, and refuses a width it has none for)
+;   BFA_ORDER_MAIOR    byte by byte, the most significant byte first
+;   BFA_ORDER_MINOR    byte by byte, the least significant byte first
+; Dies on `maior`/`minor` of anything but a uN/iN.
+proc __bfa_mem_plan, module, ty, ord
 	locals
+		slot width, dd
+		slot kind, dd
 	endl
-	mov	rdi, [func]
-	mov	esi, [eidx]
-	call	bfa_extra_get
-	cmp	eax, BFA_ORDER_NATIVUS
-	je	.ok
+	mov	rdi, [module]
+	mov	esi, [ty]
+	call	__bfa_ty_info
+	mov	[width], eax
+	mov	[kind], edx
+	cmp	edx, BFA_TK_U
+	je	.isint
+	cmp	edx, BFA_TK_I
+	je	.isint
+	cmp	dword [ord], BFA_ORDER_NATIVUS
+	je	.native
 	jmp	.after_msg
-  .msg db "load/store: only `nativus` byte order is implemented"
+  .msg db "load/store: `maior`/`minor` order an integer's bytes; this is not a uN/iN"
   .after_msg:
 	lea	rdi, [.msg]
 	mov	rsi, .after_msg - .msg
 	call	__bfa_emit_die
-  .ok:
+  .isint:
+	test	dword [width], 7
+	jnz	.native			; not whole bytes: __bfa_mem_access refuses
+	cmp	dword [width], 8
+	je	.native			; one byte has no order
+	cmp	dword [ord], BFA_ORDER_NATIVUS
+	jne	.ordered
+	cmp	dword [width], 16
+	je	.native
+	cmp	dword [width], 32
+	je	.native
+	cmp	dword [width], 64
+	je	.native
+	mov	eax, BFA_ORDER_MINOR	; nativus u24/u40/u48/u56: little-endian
+	jmp	.nbytes
+  .ordered:
+	mov	eax, [ord]
+	jmp	.nbytes
+  .native:
+	mov	eax, BFA_ORDER_NATIVUS
+  .nbytes:
+	mov	edx, [width]
+	shr	edx, 3
 	return
 endp
 
 ; __bfa_mem_access(module, ty) -> eax = 0 for the 64-bit access Tier 2
 ; always had (any 64-bit type), else 8/16/32 for a `uN`/`iN` of that width,
-; with edx = 1 iff it is an `iN`. Everything else dies: `u24`, a `u12`, and
-; every width that is not a whole number of bytes at a byte boundary are
-; `loadbits`/`storebits` and the byte-by-byte `maior`/`minor` forms, which
-; are wire-codec milestone M4's, not this one's.
+; with edx = 1 iff it is an `iN`. Only the one-instruction form reaches it
+; (__bfa_mem_plan sends u24/u40/u48/u56 and every ordered access to the
+; byte-by-byte form), so what dies here is a width that is not a whole
+; number of bytes -- a bit field, which is `loadbits`/`storebits` -- or a
+; float narrower than 64 bits.
 proc __bfa_mem_access, module, ty
 	locals
 		slot kind, dd
@@ -2139,7 +2248,7 @@ proc __bfa_mem_access, module, ty
 	je	.ok
   .bad:
 	jmp	.after_msg
-  .msg db "load/store: width must be 8, 16, 32 or 64 (u24 and bit fields are wire-codec M4)"
+  .msg db "load/store: a width that is not a whole number of bytes (a bit field is `loadbits`/`storebits`)"
   .after_msg:
 	lea	rdi, [.msg]
 	mov	rsi, .after_msg - .msg
@@ -2151,10 +2260,121 @@ proc __bfa_mem_access, module, ty
 	return
 endp
 
-; __bfa_emit_load(ctx, module, func, instid) -- `%v = load T %p off order`,
-; order `nativus`. At 64 bits (`ptr`, `u64`, `i64`) one `mov`; a `u8`/`u16`
-; /`u32` is `movzx`/`mov r32` (zero-extending) and an `i8`/`i16`/`i32`
-; `movsx`/`movsxd`, which is the canonical form straight from memory.
+; __bfa_emit_byteref(ctx, off) -- "byte [rax+OFF]".
+proc __bfa_emit_byteref, ctx, off
+	locals
+	endl
+	__bfa_emtxt "byte [rax+"
+	mov	rdi, [ctx]
+	mov	esi, [off]
+	call	__bfa_out_u64
+	__bfa_emtxt "]"
+	return
+endp
+
+; __bfa_byte_addr(off, n, ord, k) -> eax = the offset of the byte of
+; significance k (0 = least significant) in an n-byte access at `off` in
+; order `ord`: off + n-1-k for `maior`, off + k for `minor`.
+proc __bfa_byte_addr, off, n, ord, k
+	locals
+	endl
+	mov	eax, [off]
+	cmp	dword [ord], BFA_ORDER_MAIOR
+	jne	.lsbfirst
+	add	eax, [n]
+	dec	eax
+	sub	eax, [k]
+	return
+  .lsbfirst:
+	add	eax, [k]
+	return
+endp
+
+; __bfa_emit_load_bytes(ctx, vp, off, ord, n) -- the byte-by-byte load's
+; body: the pointer into rax, then the n bytes assembled into rcx, most
+; significant first. The caller normalises an `iN` and stores rcx.
+proc __bfa_emit_load_bytes, ctx, vp, off, ord, n
+	locals
+		slot k, dd
+	endl
+	mov	rdi, [ctx]
+	mov	esi, [vp]
+	call	__bfa_out_movq_rax_slot		; mov rax, [rbp-8p]
+	mov	eax, [n]
+	dec	eax
+	mov	[k], eax
+	__bfa_emtxt 9, "movzx", 9, "ecx, "
+	jmp	.addr
+  .next:
+	cmp	dword [k], 0
+	je	.done
+	dec	dword [k]
+	__bfa_emtxt 9, "shl", 9, "rcx, 8", 10, 9, "movzx", 9, "edx, "
+  .addr:
+	mov	edi, [off]
+	mov	esi, [n]
+	mov	edx, [ord]
+	mov	ecx, [k]
+	call	__bfa_byte_addr
+	mov	rdi, [ctx]
+	mov	esi, eax
+	call	__bfa_emit_byteref
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	mov	eax, [n]
+	dec	eax
+	cmp	eax, [k]
+	je	.next				; the first byte has nothing to `or` into
+	__bfa_emtxt 9, "or", 9, "rcx, rdx", 10
+	jmp	.next
+  .done:
+	return
+endp
+
+; __bfa_emit_store_bytes(ctx, vp, off, ord, n, vv) -- the byte-by-byte
+; store: the pointer into rax, the value into rcx, then n bytes written
+; least significant first, shifting rcx down a byte between them.
+proc __bfa_emit_store_bytes, ctx, vp, off, ord, n, vv
+	locals
+		slot k, dd
+	endl
+	mov	rdi, [ctx]
+	mov	esi, [vp]
+	call	__bfa_out_movq_rax_slot		; mov rax, [rbp-8p]
+	__bfa_emtxt 9, "mov", 9, "rcx, "
+	mov	rdi, [ctx]
+	mov	esi, [vv]
+	call	__bfa_slot
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	mov	dword [k], 0
+  .loop:
+	__bfa_emtxt 9, "mov", 9
+	mov	edi, [off]
+	mov	esi, [n]
+	mov	edx, [ord]
+	mov	ecx, [k]
+	call	__bfa_byte_addr
+	mov	rdi, [ctx]
+	mov	esi, eax
+	call	__bfa_emit_byteref
+	__bfa_emtxt ", cl", 10
+	inc	dword [k]
+	mov	eax, [k]
+	cmp	eax, [n]
+	jae	.done
+	__bfa_emtxt 9, "shr", 9, "rcx, 8", 10
+	jmp	.loop
+  .done:
+	return
+endp
+
+; __bfa_emit_load(ctx, module, func, instid) -- `%v = load T %p off order`.
+; The one-instruction form: at 64 bits (`ptr`, `u64`, `i64`) one `mov`; a
+; `u8`/`u16`/`u32` is `movzx`/`mov r32` (zero-extending) and an `i8`/`i16`
+; /`i32` `movsx`/`movsxd`, which is the canonical form straight from
+; memory. Everything else is the byte-by-byte form (see this section's
+; header).
 proc __bfa_emit_load, ctx, module, func, instid
 	locals
 		slot eidx, dd
@@ -2162,6 +2382,9 @@ proc __bfa_emit_load, ctx, module, func, instid
 		slot off, dd
 		slot mw, dd
 		slot msigned, dd
+		slot ordv, dd
+		slot n, dd
+		slot ty, dd
 	endl
 	mov	rdi, [func]
 	mov	esi, [instid]
@@ -2169,12 +2392,7 @@ proc __bfa_emit_load, ctx, module, func, instid
 	mov	ecx, [rax + BfaInst.a]
 	mov	[eidx], ecx
 	mov	ecx, [rax + BfaInst.ty]
-	push	rcx
-	mov	rdi, [module]
-	pop	rsi
-	call	__bfa_mem_access
-	mov	[mw], eax
-	mov	[msigned], edx
+	mov	[ty], ecx
 
 	mov	rdi, [func]
 	mov	esi, [eidx]
@@ -2190,7 +2408,23 @@ proc __bfa_emit_load, ctx, module, func, instid
 	mov	eax, [eidx]
 	add	eax, 2
 	mov	esi, eax
-	call	__bfa_check_nativus
+	call	bfa_extra_get
+	mov	[ordv], eax
+
+	mov	rdi, [module]
+	mov	esi, [ty]
+	mov	edx, [ordv]
+	call	__bfa_mem_plan
+	mov	[ordv], eax
+	mov	[n], edx
+	cmp	eax, BFA_ORDER_NATIVUS
+	jne	.bytewise
+
+	mov	rdi, [module]
+	mov	esi, [ty]
+	call	__bfa_mem_access
+	mov	[mw], eax
+	mov	[msigned], edx
 
 	mov	rdi, [ctx]
 	mov	esi, [vp]
@@ -2250,11 +2484,38 @@ proc __bfa_emit_load, ctx, module, func, instid
 	mov	esi, [instid]
 	call	__bfa_out_movq_slot_rax
 	return
+
+  .bytewise:
+	mov	rdi, [ctx]
+	mov	esi, [vp]
+	mov	edx, [off]
+	mov	ecx, [ordv]
+	mov	r8d, [n]
+	call	__bfa_emit_load_bytes
+	mov	rdi, [module]
+	mov	esi, [ty]
+	call	__bfa_ty_is_signed
+	test	eax, eax
+	jz	.canonical			; a uN: zero-extended as assembled
+	mov	rdi, [ctx]
+	mov	esi, 1				; rcx
+	mov	edx, [n]
+	shl	edx, 3
+	mov	ecx, 1
+	call	__bfa_emit_norm_bits		; nothing at 64 bits
+  .canonical:
+	__bfa_emtxt 9, "mov", 9, "qword "
+	mov	rdi, [ctx]
+	mov	esi, [instid]
+	call	__bfa_slot
+	__bfa_emtxt ", rcx", 10
+	return
 endp
 
 ; __bfa_emit_store(ctx, module, func, instid) -- `store T %p off order %v`.
-; A narrow store writes the low 1, 2 or 4 bytes of the value's slot, which
-; for a canonical value are the whole value.
+; A narrow one-instruction store writes the low 1, 2 or 4 bytes of the
+; value's slot, which for a canonical value are the whole value; the
+; byte-by-byte form writes the low n bytes one at a time.
 proc __bfa_emit_store, ctx, module, func, instid
 	locals
 		slot eidx, dd
@@ -2262,6 +2523,9 @@ proc __bfa_emit_store, ctx, module, func, instid
 		slot off, dd
 		slot vv, dd
 		slot mw, dd
+		slot ordv, dd
+		slot n, dd
+		slot ty, dd
 	endl
 	mov	rdi, [func]
 	mov	esi, [instid]
@@ -2269,11 +2533,7 @@ proc __bfa_emit_store, ctx, module, func, instid
 	mov	ecx, [rax + BfaInst.a]
 	mov	[eidx], ecx
 	mov	ecx, [rax + BfaInst.ty]
-	push	rcx
-	mov	rdi, [module]
-	pop	rsi
-	call	__bfa_mem_access
-	mov	[mw], eax
+	mov	[ty], ecx
 
 	mov	rdi, [func]
 	mov	esi, [eidx]
@@ -2289,13 +2549,37 @@ proc __bfa_emit_store, ctx, module, func, instid
 	mov	eax, [eidx]
 	add	eax, 2
 	mov	esi, eax
-	call	__bfa_check_nativus
+	call	bfa_extra_get
+	mov	[ordv], eax
 	mov	rdi, [func]
 	mov	eax, [eidx]
 	add	eax, 3
 	mov	esi, eax
 	call	bfa_extra_get
 	mov	[vv], eax
+
+	mov	rdi, [module]
+	mov	esi, [ty]
+	mov	edx, [ordv]
+	call	__bfa_mem_plan
+	mov	[ordv], eax
+	mov	[n], edx
+	cmp	eax, BFA_ORDER_NATIVUS
+	je	.onestore
+	mov	rdi, [ctx]
+	mov	esi, [vp]
+	mov	edx, [off]
+	mov	ecx, [ordv]
+	mov	r8d, [n]
+	mov	r9d, [vv]
+	call	__bfa_emit_store_bytes
+	return
+
+  .onestore:
+	mov	rdi, [module]
+	mov	esi, [ty]
+	call	__bfa_mem_access
+	mov	[mw], eax
 
 	mov	rdi, [ctx]
 	mov	esi, [vp]
@@ -2362,6 +2646,220 @@ proc __bfa_emit_store, ctx, module, func, instid
 	return
   .r32:
 	__bfa_emtxt "], ecx", 10
+	return
+endp
+
+; __bfa_bits_plan(module, func, instid) -> eax = S (the field's shift from
+; the least significant end of its byte, 8 - bit - w), edx = the mask
+; 2^w - 1. Dies on what this emitter does not lower: a width outside 1..8
+; (the verifier's rule 1 refuses it first), an `iN` field, a bit offset
+; past 7, and a field that straddles a byte boundary.
+proc __bfa_bits_plan, module, func, instid
+	locals
+		slot width, dd
+		slot eidx, dd
+		slot bio, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[eidx], ecx
+	mov	ecx, [rax + BfaInst.ty]
+	mov	rdi, [module]
+	mov	esi, ecx
+	call	__bfa_ty_info
+	mov	[width], eax
+	cmp	edx, BFA_TK_U
+	jne	.notu
+	cmp	eax, 1
+	jb	.badw
+	cmp	eax, 8
+	ja	.badw
+	mov	rdi, [func]
+	mov	esi, [eidx]
+	add	esi, 2
+	call	bfa_extra_get
+	mov	[bio], eax
+	add	eax, [width]
+	cmp	eax, 8
+	ja	.straddle
+	mov	eax, 8
+	sub	eax, [bio]
+	sub	eax, [width]			; S
+	mov	ecx, [width]
+	mov	edx, 1
+	shl	edx, cl
+	dec	edx				; 2^w - 1
+	return
+  .notu:
+	jmp	.after_m1
+  .m1 db "loadbits/storebits: a signed (iN) bit field is not implemented (spec 5.2: wire fields are unsigned)"
+  .after_m1:
+	lea	rdi, [.m1]
+	mov	rsi, .after_m1 - .m1
+	call	__bfa_emit_die
+  .badw:
+	jmp	.after_m2
+  .m2 db "loadbits/storebits: a bit field is 1 to 8 bits wide"
+  .after_m2:
+	lea	rdi, [.m2]
+	mov	rsi, .after_m2 - .m2
+	call	__bfa_emit_die
+  .straddle:
+	jmp	.after_m3
+  .m3 db "loadbits/storebits: a field that straddles a byte boundary is not implemented (DeModFrame never straddles)"
+  .after_m3:
+	lea	rdi, [.m3]
+	mov	rsi, .after_m3 - .m3
+	call	__bfa_emit_die
+endp
+
+; __bfa_emit_loadbits(ctx, module, func, instid) -- `%v = loadbits T %p
+; byte bit`, MSB-first (this section's header).
+proc __bfa_emit_loadbits, ctx, module, func, instid
+	locals
+		slot shamt, dd
+		slot bfmask, dd
+		slot vp, dd
+		slot byo, dd
+		slot eidx, dd
+	endl
+	mov	rdi, [module]
+	mov	rsi, [func]
+	mov	edx, [instid]
+	call	__bfa_bits_plan
+	mov	[shamt], eax
+	mov	[bfmask], edx
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[eidx], ecx
+	mov	rdi, [func]
+	mov	esi, [eidx]
+	call	bfa_extra_get
+	mov	[vp], eax
+	mov	rdi, [func]
+	mov	esi, [eidx]
+	inc	esi
+	call	bfa_extra_get
+	mov	[byo], eax
+
+	mov	rdi, [ctx]
+	mov	esi, [vp]
+	call	__bfa_out_movq_rax_slot		; mov rax, [rbp-8p]
+	__bfa_emtxt 9, "movzx", 9, "eax, "
+	mov	rdi, [ctx]
+	mov	esi, [byo]
+	call	__bfa_emit_byteref
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	cmp	dword [shamt], 0
+	je	.noshift
+	__bfa_emtxt 9, "shr", 9, "eax, "
+	mov	rdi, [ctx]
+	mov	esi, [shamt]
+	call	__bfa_out_u64
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+  .noshift:
+	__bfa_emtxt 9, "and", 9, "eax, "
+	mov	rdi, [ctx]
+	mov	esi, [bfmask]
+	call	__bfa_out_u64
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	mov	rdi, [ctx]
+	mov	esi, [instid]
+	call	__bfa_out_movq_slot_rax
+	return
+endp
+
+; __bfa_emit_storebits(ctx, module, func, instid) -- `storebits T %p byte
+; bit %v`: read the byte, clear the field's bits, or in the value shifted
+; to them, write the byte back (this section's header).
+proc __bfa_emit_storebits, ctx, module, func, instid
+	locals
+		slot shamt, dd
+		slot bfmask, dd
+		slot vp, dd
+		slot byo, dd
+		slot vv, dd
+		slot eidx, dd
+	endl
+	mov	rdi, [module]
+	mov	rsi, [func]
+	mov	edx, [instid]
+	call	__bfa_bits_plan
+	mov	[shamt], eax
+	mov	[bfmask], edx
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[eidx], ecx
+	mov	rdi, [func]
+	mov	esi, [eidx]
+	call	bfa_extra_get
+	mov	[vp], eax
+	mov	rdi, [func]
+	mov	esi, [eidx]
+	inc	esi
+	call	bfa_extra_get
+	mov	[byo], eax
+	mov	rdi, [func]
+	mov	esi, [eidx]
+	add	esi, 3
+	call	bfa_extra_get
+	mov	[vv], eax
+
+	mov	rdi, [ctx]
+	mov	esi, [vp]
+	call	__bfa_out_movq_rax_slot		; mov rax, [rbp-8p]
+	__bfa_emtxt 9, "mov", 9, "rcx, "
+	mov	rdi, [ctx]
+	mov	esi, [vv]
+	call	__bfa_slot
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	__bfa_emtxt 9, "and", 9, "ecx, "
+	mov	rdi, [ctx]
+	mov	esi, [bfmask]
+	call	__bfa_out_u64
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	cmp	dword [shamt], 0
+	je	.noshift
+	__bfa_emtxt 9, "shl", 9, "ecx, "
+	mov	rdi, [ctx]
+	mov	esi, [shamt]
+	call	__bfa_out_u64
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+  .noshift:
+	__bfa_emtxt 9, "movzx", 9, "edx, "
+	mov	rdi, [ctx]
+	mov	esi, [byo]
+	call	__bfa_emit_byteref
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	__bfa_emtxt 9, "and", 9, "edx, "
+	mov	eax, [bfmask]
+	mov	ecx, [shamt]
+	shl	eax, cl
+	not	eax
+	and	eax, 0xFF			; the bits of the byte that are kept
+	mov	rdi, [ctx]
+	mov	esi, eax
+	call	__bfa_out_u64
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	__bfa_emtxt 9, "or", 9, "edx, ecx", 10, 9, "mov", 9
+	mov	rdi, [ctx]
+	mov	esi, [byo]
+	call	__bfa_emit_byteref
+	__bfa_emtxt ", dl", 10
 	return
 endp
 
@@ -3584,6 +4082,24 @@ proc __bfa_emit_inst, ctx, module, func, instid, lblptr, lbllen
 	call	__bfa_emit_store
 	return
   .notstore:
+	cmp	dword [op], BFA_OP_LOADBITS
+	jne	.notloadbits
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfa_emit_loadbits
+	return
+  .notloadbits:
+	cmp	dword [op], BFA_OP_STOREBITS
+	jne	.notstorebits
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfa_emit_storebits
+	return
+  .notstorebits:
 	cmp	dword [op], BFA_OP_CALL
 	jne	.notcall
 	mov	rdi, [ctx]
