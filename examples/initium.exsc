@@ -11,9 +11,13 @@
 // (§4.6): writing to a terminal touches nothing on a filesystem, and the audit
 // in §10.3 should say so.
 //
-// `[UNTESTED]` -- this parses and builds a typed AST; nothing checks or runs it
-// yet (spec §16, Stages 2 and 3). `Scriptor` is the standard writer type that
-// the runtime prelude supplies; its shape is pinned in docs/design/runtime.md.
+// This file is checked, lowered, emitted and RUN: tests/programs/saluta/
+// builds the hello world from the three examples/ sources (`sources=`) and
+// compares its output, and tools/publish-gate.sh runs the same program as
+// its regression guard on every emitter change. (This comment once said
+// nothing checked or ran it; that was true before Stage 2 and 3 existed.)
+// `Scriptor` is the standard writer type that the runtime prelude supplies;
+// its shape is pinned in docs/design/runtime.md.
 
 publica functio initium(m: Mundus) -> u8 {
     firma a = m.ambitus();

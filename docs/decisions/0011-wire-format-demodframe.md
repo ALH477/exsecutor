@@ -112,9 +112,10 @@ record.
   real test that really passes; phases 2 and 3 were analyses.
 - In-memory representation of non-power-of-two widths. **Closed for the
   reference backend**: a `uN` is held zero-extended in 64 bits
-  (`docs/design/ssa-ir.md` §2.2); `tests/ir/byte_order.ir` reads `u24`,
-  `u40`, `u48` and `u56` in both orders, `tests/ir/demodframe_decode.ir`
-  reads `tempus` back, and `tests/programs/forma/` does it from source.
+  (`docs/design/ssa-ir.md` §2.2); `tests/ir/byte_order.ir` reads `u16`,
+  `u24`, `u32` and `u64` in both orders, `u40` and `u56` as `maior` only,
+  `u48` as `minor` only; `tests/ir/demodframe_decode.ir` reads `tempus`
+  back, and `tests/programs/forma/` does it from source.
   The C backend's answer is `[OPEN]` until ADR 0012's differential test
   covers it.
 - Whether adapters above the quantum (DCF-Audio and the rest) are worth

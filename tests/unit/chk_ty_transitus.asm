@@ -21,8 +21,8 @@
 ; see Exception A in LICENSE.EXCEPTION.
 ; -----------------------------------------------------------------------------
 ; checker fixture -- spec §5.2's places (D2), its one aggregate cast (D4) and
-; §8.5's range-of-two-literals rule, all `[UNTESTED]` in the spec until this
-; runs (docs/design/wire-codec.md), through the whole front end.
+; §8.5's range-of-two-literals rule; the spec cites this fixture as what
+; exercises all three (docs/design/wire-codec.md), through the whole front end.
 ;
 ;   rule                                              rejected         accepted
 ;   D2: a `u16:maior` field READS as `u16`            `redde w.n` from `redde w.n` from

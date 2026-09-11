@@ -36,7 +36,7 @@ the doc stands alone) found, at M0 — every row since closed:
 | gap | where |
 |---|---|
 | no xor or shift operator | spec §8.4/§8.6 `[OPEN]` |
-| no hex literal | spec §8.4 `[OPEN]`; `lexer/lex.inc:335` rejects `0x10` as `EXS-E0210` |
+| no hex literal | spec §8.4 `[OPEN]`; the lexer's digit scan (then `lex.inc:335`) rejected `0x10` as `EXS-E0210` |
 | no struct or array literal, so no program can create a `DeModFrame` | spec §8.6 `[OPEN]`, position reserved |
 | byte order is part of type identity, so `u16:maior` ≠ `u16` and every field access is `EXS-E0303` | `checker/types/sig.inc:251` |
 | the emitter aborts on any phi, so every loop dies | `backend_fasmg/emit.inc:2165` |
@@ -75,15 +75,18 @@ stay identifiers everywhere else.
 
 - **`aut` is exclusive or.** Latin's exclusive "or", paired against the
   inclusive `vel` the language already uses for logical disjunction. It is
-  **strict**: both operands are evaluated, left first; there is no
-  short-circuit because there is nothing to short-circuit — the result
-  depends on both operands always.
+  **strict**: both operands are evaluated (one `xor`, `lwr_bitops.asm`);
+  left first, `[UNTESTED]` — no fixture puts an observable side effect on
+  each side; there is no short-circuit because there is nothing to
+  short-circuit — the result depends on both operands always.
 - **`sursum` / `deorsum` shift toward more / less significance.** Not
   "left" and "right", deliberately: byte order lives in the type (§5.2), and
   a shift named by a direction on paper would invite the question of which
   paper. Significance is order-free.
 - **Precedence**: level 5a shift, non-associative; level 5b `aut`,
-  left-associative; both between additive (5) and range (6). The letters are
+  left-associative (`[UNTESTED]`: `cst_shift_xor.asm` pins the level order
+  and the chained shift, and no row chains `a aut b aut c`); both between
+  additive (5) and range (6). The letters are
   so that the level numbers already cited in code comments
   (`cst/parse.inc`, `checker/types/types.inc`) do not move. Chaining a shift
   is `EXS-E0201` at the second word by the same mechanism that rejects
@@ -165,8 +168,10 @@ read in that order, is `[OPEN]` and would be an extension, not a reversal.
 field reads as `u16` and is written with a `u16`; `&w.n`, `&w.h` are
 `EXS-E0305`, `&w` is not); `tests/unit/lwr_transitus.asm` (the three
 orders as `load`/`store … maior|minor|nativus`, `loadbits 1 0` / `1 4`,
-`store u16 %p 15 maior`); `tests/ir/byte_order.ir` and `bits.ir` (the
-emitter, every order at every whole-byte width, both nibbles);
+`store u16 %p 15 maior`); `tests/ir/byte_order.ir` (the emitter: `u16`,
+`u24`, `u32`, `u64` in both orders, `u40` and `u56` `maior` only, `u48`
+`minor` only, `u24` `nativus`, a negative `i40`) and `bits.ir` (both
+nibbles, `u1` and `u3` at several offsets, a whole-byte `u8`);
 `tests/programs/forma/` (build the example frame from a literal, take its
 CRC through the byte view, decode it back — exit 0); §14 entry 23. The
 `u24` answer for ADR 0011 is read back in `forma` and in
@@ -209,10 +214,14 @@ literal: source-order `iconst`s, declaration-order stores). Run:
 Two things the implementer decided where the text above was silent, now in
 spec §8.6: inside an `ExprNS` position the literal is **re-admitted** by
 `( )`, `[ ]`, a call's arguments, a literal's own braces and the statements
-of any nested block — the rule Rust uses; `cst_structlit.asm` rows 6–8 pin
-`si (S { a: 1 }).a eq 1 {`. And `EXS-E0304` for missing fields is reported
-**once per literal**, not once per field; two different faults in one
-literal are both reported, in source order.
+of any nested block — the rule Rust uses. `cst_structlit.asm` pins two of
+those: row 6, `si (S { a: 1 }).a eq 1 {` (and that the flag comes back for
+the block), and row 7, a call's arguments; row 8 is the trailing comma.
+`[ ]`, a nested block's statements and the `sin` position are `[UNTESTED]`
+by any row. And `EXS-E0304` for missing fields is reported **once per
+literal**, not once per field, and **last**: initialiser faults come in
+source order as the walk meets them, `E0304` after the walk, at the
+literal (`S { a: 1, z: 2 }`: `E0301` at `z`, then `E0304` at `S`).
 
 ### D4 The one aggregate `sicut`
 
@@ -245,12 +254,18 @@ declaration reuses existing codes: an unannotated non-integer field is
 `:nativus` by rule 3 and is `EXS-E0321`; an order annotation on a
 non-integer type (`textus:maior`) is `EXS-E0309`, an annotation not
 applicable to the type. Both are pinned by
-`tests/unit/chk_row_layout_kind.asm` (commit 622a541: `textus`,
-`acies<u8, 4>`, `refero<u8>`, a nested struct and a capability-bearing
-type each `E0321` unannotated; `textus:maior` `E0309`) — a fixture that
-exists because the width-0 exemption in `layout.inc` had let
-`@transitus structura T { t: textus }` check clean, which `exsc` confirmed
-before the fix. Two gaps that fixture recorded rather than closed, now
+`tests/unit/chk_row_layout_kind.asm` (commit 622a541; it builds each
+struct's typed tree **by hand** and runs pass 4 alone: `textus`,
+`acies<u8, 4>`, `refero_communis<u8>` (`AST_TY_REFC` — `refero<u8>` is
+`AST_TY_REF` and takes the same layout path, with no row of its own), a
+nested struct and a capability-bearing type each `E0321` unannotated;
+`textus:maior` `E0309`) — a fixture that exists because the width-0
+exemption in `layout.inc` had let `@transitus structura T { t: textus }`
+check clean, which `exsc` confirmed before the fix. From **real source**,
+`textus`, `textus:maior` and `i32:maior` are confirmed (measured with
+`exsc`); the capability-bearing case is `[UNTESTED]` from real source —
+`structura T { x: Scriptor }` currently crashes the compiler before pass 4,
+a defect being fixed separately. Two gaps that fixture recorded rather than closed, now
 also in spec §5.2: a **signed** field with an explicit order
 (`i32:maior`) has no code assigned — the enforcement text distinguishes
 integer from non-integer and never revisits signedness — so it checks
@@ -440,13 +455,13 @@ and the precedent that the use is in the code's class.
 | code | §13 text | used here for | fit |
 |---|---|---|---|
 | `EXS-E0201` | unexpected token | a chained shift; `u4:maior`; a trailing comma in a literal | the parser's general code; a chained comparison is already this |
-| `EXS-E0210` | malformed literal | `0X…`, `0x` with no digit, `0x1G` | the lexer's; `lex.inc:335` already gives `0x10` this code today |
+| `EXS-E0210` | malformed literal | `0X…`, `0x` with no digit, `0x1G` | the lexer's; at M0 its digit scan gave `0x10` this code, and since D6 the same "runs into an identifier character" rule gives it to `0x1G` (`lex.inc:335-377`) |
 | `EXS-E0301` | name does not resolve | a field name the struct does not declare | class A: the name does not resolve *in the struct's scope* |
 | `EXS-E0302` | duplicate declaration in one scope | a field named twice in one literal | class B; precedent: `sig.inc:46` uses it for a second implementation of one interface on one type, which is likewise a second binding of one name where one is allowed, not a declaration in the grammatical sense. §8.3: text is not permanent, the class is |
 | `EXS-E0303` | type mismatch | shift count not the left operand's type; `aut` operands of different types | class C |
-| `EXS-E0304` | wrong number of arguments | a field left out of a literal | class D; precedent: `sig.inc:742` uses it for a wrong number of *generic* arguments, so "arguments" already reads as "things a form requires, counted". A literal is the struct's constructor and its field initialisers are its arguments |
-| `EXS-E0305` | operation not defined on the type | `aut`/shift on a signed or non-integer operand; an aggregate `sicut` other than D4's pair; a literal whose path is not a `structura` | class E; `types.inc:305` already routes cast admissibility here |
-| `EXS-E0308` | literal cannot be typed or does not fit its width | a hex literal too wide for its type, or beyond 64 bits | class H, `types.inc:63` and `sig.inc:829` |
+| `EXS-E0304` | wrong number of arguments | a field left out of a literal | class D; precedent: `sig.inc:752` uses it for a wrong number of *generic* arguments, so "arguments" already reads as "things a form requires, counted". A literal is the struct's constructor and its field initialisers are its arguments |
+| `EXS-E0305` | operation not defined on the type | `aut`/shift on a signed or non-integer operand; an aggregate `sicut` other than D4's pair; a literal whose path is not a `structura` | class E; `types.inc:323` (`.cast`) already routes cast admissibility here |
+| `EXS-E0308` | literal cannot be typed or does not fit its width | a hex literal too wide for its type, or beyond 64 bits | class H, `types.inc:63` and `sig.inc:838` |
 
 **Finding on the mapping.** `E0302` and `E0304` are the two stretches, and
 both hold for the same reason: each code is one *class* with a stable

@@ -22,9 +22,23 @@ agent instead of making it.
 | `driver` † | `compiler/x86_64/driver/`, `compiler/x86_64/exsc.asm` | §9.3, §9.5, §12, §18.2 |
 | `backend-fasmg` † | `compiler/x86_64/backend_fasmg/`, `tests/ir/` | §9.2, `docs/design/ssa-ir.md` |
 | `lower` † | `compiler/x86_64/lower/`, `compiler/x86_64/prelude/`, `tests/programs/` | §4.7, §6.6, `docs/design/lowering.md`, `docs/design/runtime.md` |
+| `checker` † | `compiler/x86_64/checker/` (the wave-5 agents `docs/design/checker.md` proposed, one pass per file: `resolve/`, `types/`, `rows/`, `lexicon/`) | §4, §5, §8.6 (typing), `docs/design/checker.md` |
 
 † briefed inline when spawned; no definition file in this directory yet. The
 scope was exclusive all the same, and stays so.
+
+**Cross-tree grants under the wire-codec plan** (`docs/design/wire-codec.md`,
+recorded so the exclusivity rule reads as kept rather than quietly broken):
+milestones M5b (`aut`/`sursum`/`deorsum` and hex values: `cst/`, `ast/`,
+`checker/`, `lower/` in one commit, b1f0042) and M6 (struct literals, places
+and the aggregate cast: the same four trees, 36ff767) were granted
+cross-tree scope by the plan itself, because each decision crossed four
+trees and a per-tree sequence would have left three of them uncompilable
+between commits. Three smaller edits outside their authors' trees were
+integration edits made under the same plan: M7a's two lines in
+`checker/types/member.inc` (the `scribe_octeto` prelude row reachable as a
+member, f8e0cd9), M7b's `flake.nix` and ADR 0011 edits (07bc8d5), and the
+conformance agent's root `README.md` status refresh (ffc7847).
 
 ## Wave ordering
 

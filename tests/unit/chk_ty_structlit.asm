@@ -21,7 +21,7 @@
 ; see Exception A in LICENSE.EXCEPTION.
 ; -----------------------------------------------------------------------------
 ; checker fixture -- spec §8.6's struct literal (docs/design/wire-codec.md D3;
-; `[UNTESTED]` in the spec until this runs), through the whole front end:
+; the spec cites this fixture as what exercises its rules), through the whole front end:
 ; checker/types/member.inc's `__chk_ty_structlit`.
 ;
 ; EVERY REJECTED ROW PINS THE COUNT, THE CODE AND THE OFFSET, and the rules

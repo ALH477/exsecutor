@@ -21,8 +21,8 @@
 ; see Exception A in LICENSE.EXCEPTION.
 ; -----------------------------------------------------------------------------
 ; checker fixture -- the typing rules of `aut`, `sursum`, `deorsum` (spec
-; §5.4, Integers; docs/design/wire-codec.md D1; `[UNTESTED]` in the spec until
-; this runs), through the whole front end: checker/types/types.inc's `.bitop`
+; §5.4, Integers; docs/design/wire-codec.md D1; the spec cites this fixture
+; as what exercises those rules), through the whole front end: checker/types/types.inc's `.bitop`
 ; arm and `__chk_ty_expect`'s `.bin` arm.
 ;
 ; EVERY REJECTED ROW PINS THE COUNT, THE CODE AND THE OFFSET, and every rule

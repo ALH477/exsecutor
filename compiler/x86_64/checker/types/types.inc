@@ -1182,8 +1182,9 @@ proc __chk_ty_binary, chkt_wB, chkt_nB
 
   .bitop:
 	; `a aut b`, `a sursum n`, `a deorsum n` -- spec §5.4, Integers, and
-	; docs/design/wire-codec.md D1. `[UNTESTED]` in the spec; exercised by
-	; tests/unit/chk_ty_bitops.asm. Four rules, IN THIS ORDER:
+	; docs/design/wire-codec.md D1. The spec cites this fixture as the one
+	; that exercises the rules: tests/unit/chk_ty_bitops.asm. Four rules,
+	; IN THIS ORDER:
 	;
 	;   1. ADMISSIBILITY, per operand, on the type it has on its own:
 	;      anything but an unsigned integer is `EXS-E0305` AT THAT OPERAND

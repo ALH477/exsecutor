@@ -27,13 +27,16 @@
 ; `lwr_module`, `bfa_verify_func` over every function, and `bfa_print_module`
 ; compared BYTE FOR BYTE against the text below.
 ;
-; WHY THE IR AND NOT A RUNNING PROGRAM. The emitter does not implement `xor`,
-; `shl` or `shr` yet -- that is milestone M3 of docs/design/wire-codec.md's
-; plan, with the D5 normalisation and the count >= width trap -- so
-; `exsc aedifica -o` on this source stops in `bfa_emit_program` with
-; "opcode not implemented". Until then the IR is the end of the line this
-; change can reach, and the verifier passing on it is the evidence the IR is
-; well-formed and not merely printable.
+; WHY THE IR AND NOT A RUNNING PROGRAM. When this was written the emitter
+; did not implement `xor`, `shl` or `shr` -- milestone M3 of
+; docs/design/wire-codec.md's plan, with the D5 normalisation and the
+; count >= width trap -- so `exsc aedifica -o` on this source stopped in
+; `bfa_emit_program` with "opcode not implemented", and the IR was the end
+; of the line. M3 (6955adf) landed those; the running program is
+; tests/programs/redundantia/. This fixture stays because it pins the
+; LOWERING's text byte for byte, which a running program cannot, and the
+; verifier passing on it is the evidence the IR is well-formed and not
+; merely printable.
 ;
 ;	functio f(a: u16, b: u16) -> u16 {
 ;		firma c: u16 = a aut b;

@@ -2782,7 +2782,8 @@ endp
 
 ; __cst_struct_lit(p) -- spec §8.6's `StructLit ::= '{' [FieldInit (','
 ; FieldInit)*] '}'`, `FieldInit ::= IDENT ':' Expr`, as a
-; `CST_STRUCT_LIT_SUFFIX` over `CST_FIELD_INIT`s. `[UNTESTED]` in the spec;
+; `CST_STRUCT_LIT_SUFFIX` over `CST_FIELD_INIT`s. Spec §8.6 cites
+; tests/unit/cst_structlit.asm as the fixture that exercises it;
 ; docs/design/wire-codec.md D3.
 ;
 ; COMMAS ARE MANDATORY AND A TRAILING ONE IS `EXS-E0201`, at the `}` it runs
@@ -3082,8 +3083,8 @@ endp
 ; first `sursum 1`, no lower level takes `sursum`, and the statement that asked
 ; for `;` meets an identifier instead -- `EXS-E0201` at the second word, by
 ; the same path that rejects `a lt b lt c` (spec §8.6, "Shifts are
-; non-associative like comparison"). `[UNTESTED]` in the spec; exercised by
-; tests/unit/cst_shift_xor.asm.
+; non-associative like comparison"). Spec §8.6 cites the fixture that
+; exercises it: tests/unit/cst_shift_xor.asm.
 proc __cst_shift, p
 	uses	rbx, r12
 	locals

@@ -18,10 +18,12 @@
 //            tempus cursus
 //   50       the decoded frame's CRC does not hold
 //
-// DEFERRED (TEST): it type-checks and lowers to verified IR today --
-// tests/unit/lwr_forma.asm lowers exactly this file -- and the emitter does
+// RUNS (TEST: expect-exit=0, since aca9755). Written at M6 as a deferred
+// program -- it type-checked and lowered to verified IR, which
+// tests/unit/lwr_forma.asm still pins byte for byte, while the emitter could
 // not yet produce `load`/`store` at `maior`, `loadbits`/`storebits`, `copy`,
-// `index`, `chk`, narrow arithmetic or `xor`/`shl` (milestones M3 and M4).
+// `index`, `chk`, narrow arithmetic or `xor`/`shl`. M3 and M4 added those,
+// and this directory has compiled, assembled and exited 0 since.
 
 @transitus
 publica structura DeModFrame {

@@ -26,11 +26,12 @@
 // (wire-codec.md section 5).
 //
 // The loop bounds are typed bindings (`firma octo: mensura = 8; per k in
-// 0..octo`), not `0..8`: a range of two pending literals is EXS-E0308 on
-// this branch (checker/types/stmt.inc:829, `__chk_ty_for` calling
-// `__chk_ty_settled` on the range). Spec 8.5's rule typing it `mensura` is
-// being implemented on the M6 branch; once it merges these can be written
-// `per k in 0..8`.
+// 0..octo`), not `0..8`. When this was written a range of two pending
+// literals was EXS-E0308 (`__chk_ty_for` calling `__chk_ty_settled` on the
+// range); M6 (36ff767) then implemented spec 8.5's rule typing it `mensura`,
+// so `per k in 0..8` is accepted now (tests/unit/chk_ty_transitus.asm pins
+// it, and forma and entry 23 write it). The typed bindings stay: this is a
+// test source, and its bytes are what its mutations were run against.
 //
 // Mutations (run): the polynomial 0x1021 -> 0x1020 -> exit 1; `nullorum`'s
 // init 0xffff -> 0 -> exit 2 (the CRC of zeros from zero is zero).

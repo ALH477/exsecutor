@@ -21,7 +21,7 @@
 ; see Exception A in LICENSE.EXCEPTION.
 ; -----------------------------------------------------------------------------
 ; checker fixture -- the VALUE of a hexadecimal integer literal (spec §8.4 as
-; amended, `[UNTESTED]`; docs/design/wire-codec.md D6), as
+; amended, which cites this fixture; docs/design/wire-codec.md D6), as
 ; checker/types/sig.inc's `chk_ty_litval` computes it and `__chk_ty_fits`
 ; then checks it against the width the literal lands in.
 ;

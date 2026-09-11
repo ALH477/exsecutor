@@ -62,8 +62,10 @@
 ;   5. `a: acies<u8, 4>`, unannotated element -- `EXS-E0321`. `__chk_lay_ty`'s
 ;      `.acies` case propagates the ELEMENT's order (here `:nativus`), and
 ;      an `acies` field is never an admitted kind regardless.
-;   6. `r: refero<u8>` (`AST_TY_REFC`; `&T` is `AST_TY_REF` and takes the
-;      same `.word` path in `__chk_lay_ty`, so one stands for both) --
+;   6. `r: refero_communis<u8>` (`AST_TY_REFC`; `refero<u8>` is `AST_TY_REF`
+;      -- checker/types/sig.inc's `.refero` arm -- and takes the same
+;      `.word` path in `__chk_lay_ty`, so one row stands for both; an
+;      earlier version of this line labelled the REFC row `refero<u8>`) --
 ;      `EXS-E0321`. Not to be confused with spec §5.2's `EXS-E0305`, which
 ;      is about taking `&` of a `@transitus` VALUE -- a different operation
 ;      this pass does not check.

@@ -1,7 +1,7 @@
 // §14 entry 23 -- `DeModFrame` encode/decode against ALL 246 vectors of
 // `vendor/hydramesh-wire/golden_vectors.json` -- byte-identical to every
 // one of them. DIFFERENT IN KIND from every other entry (§14 says so
-// itself): the other 22 are cases this project wrote for itself; this one
+// itself): the other 23 are cases this project wrote for itself; this one
 // is an EXTERNAL CERTIFICATE this project must satisfy. Under the
 // certificate's own theorem (`vendor/hydramesh-wire/golden_vectors.json`'s
 // "theorem" field, confirmed by reading the file directly: encode is
@@ -9,7 +9,11 @@
 // GF(2)^136 -> GF(2)^16), matching all 246 vectors -- 109 in
 // `encode_basis`, 137 in `syndrome_basis`, confirmed by counting the file's
 // own arrays, not assumed from the "246" figure alone -- is equivalent to
-// agreeing with the reference implementation on all 2^108 frames.
+// agreeing with the reference implementation on all 2^108 frames GIVEN
+// THAT THE CODEC IS AFFINE (bit placement plus a CRC). That premise is
+// argued from reading entry23/codex.exsc (docs/design/wire-codec.md
+// section 5), not measured; the example frame in the stream's third
+// section is one non-basis spot check of it, not a proof.
 //
 // §5.2's own worked example, verbatim:
 //

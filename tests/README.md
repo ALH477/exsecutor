@@ -82,10 +82,13 @@ a shipped artifact, and is checked every time it is built instead.
   a referenced list is the same mistake as renumbering an error code (§8.3).
 
   Entries **21-23** followed, covering §5.2's bit-width rules. Entry 23 is
-  different in kind from the other twenty-two: they are cases this project
+  different in kind from the other twenty-three: they are cases this project
   wrote for itself, while 23 is an external certificate it must satisfy —
   `vendor/hydramesh-wire/golden_vectors.json`, 246 vectors, equivalent under
-  its own theorem to agreeing with the reference on all 2^108 frames.
+  its own theorem to agreeing with the reference on all 2^108 frames **given
+  that the codec is affine** (bit placement plus a CRC) — a premise argued
+  from reading `entry23/codex.exsc`, not measured; the example frame in the
+  stream's third section is one non-basis spot check of it.
 
   **24 entries, five rule shapes.** Most are "rejects with exactly code
   EXS-Exxxx". Entries 16 and 17 instead require byte-identical output across
@@ -194,9 +197,10 @@ is counted as one check, and nothing is assembled or run. It is reported
 `DEFERRED` with what it waits on and never counted toward
 `PROGRAM_FIXTURE_FLOOR`, which counts directories that run. Its
 `expect-exit=`/`abort=`/`stdout=` stay in the directive, so un-deferring
-is deleting two keys. `forma/` is the first: milestone M6's program, which
-lowers to verified IR today (`tests/unit/lwr_forma.asm` lowers that very
-file) and waits on the emitter's M3/M4 opcodes.
+is deleting two keys. `forma/` was the first: milestone M6's program, which
+lowered to verified IR (`tests/unit/lwr_forma.asm` still lowers that very
+file) while it waited on the emitter's M3/M4 opcodes; since aca9755 it runs
+(`expect-exit=0`), and no directory is deferred at the time of writing.
 
 ## Adding a case
 
