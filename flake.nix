@@ -302,6 +302,15 @@
       # LC_ALL=C pinned, because a digest that moves with the developer's LANG
       # is not an integrity check.
       wireVendorDigest = "770382f1f32b672fdee15a0d54d7231ba38729dd01c5494ec75c29f39a62d5e5"; # LC_ALL=C
+
+      # vendor/hydramodem-tx: three WAVs rendered by HydraModem's own reference
+      # transmitter (frame_tx, reference DSP, default profile) for the three
+      # frames vendor/hydramodem-tx/PROVENANCE.md names. Program OUTPUT vendored
+      # as a test certificate, not code -- nothing here links into exsc, and the
+      # files keep their upstream LGPL-3.0-only identifier. Same digest
+      # discipline as fasmg-x86 and hydramesh-wire above: PROVENANCE.md
+      # excluded, LC_ALL=C pinned.
+      modemVendorDigest = "5ce6a3d11d10b0a3d7143a011963300c96ccadab239a1479a320de07ba45a3f2"; # LC_ALL=C
     in
     {
       packages.${system} = {
@@ -482,6 +491,36 @@
           '';
         };
 
+        # Same check as wire-vendor-integrity above, for vendor/hydramodem-tx
+        # (ADR-adjacent to 0011: the transmitter-output certificate, not the
+        # wire-format spec itself). See vendor/hydramodem-tx/PROVENANCE.md.
+        modem-vendor-integrity = pkgs.stdenvNoCC.mkDerivation {
+          name = "check-vendor-hydramodem-tx-integrity";
+          nativeBuildInputs = [ pkgs.coreutils pkgs.findutils ];
+          dontUnpack = true;
+          buildCommand = ''
+            set -e
+            export LC_ALL=C
+            mkdir -p work/vendor
+            cp -r --no-preserve=mode -- ${./vendor/hydramodem-tx} work/vendor/hydramodem-tx
+            cd work
+            actual="$(find vendor/hydramodem-tx -type f ! -name PROVENANCE.md | sort | xargs sha256sum | sha256sum | cut -d' ' -f1)"
+            echo "expected (LC_ALL=C): ${modemVendorDigest}"
+            echo "actual   (LC_ALL=C): $actual"
+            if [ "$actual" != "${modemVendorDigest}" ]; then
+              echo "" >&2
+              echo "FAIL: vendor/hydramodem-tx content hash does not match." >&2
+              echo "These files are HydraModem reference-transmitter output," >&2
+              echo "vendored verbatim and never edited here. A mismatch means" >&2
+              echo "a local edit or a re-vendor; report it rather than" >&2
+              echo "updating this digest to match." >&2
+              exit 1
+            fi
+            mkdir -p "$out"
+            echo "$actual" > "$out"/digest
+          '';
+        };
+
         test = pkgs.stdenvNoCC.mkDerivation {
           name = "check-unit-tests";
           nativeBuildInputs = [
@@ -502,6 +541,10 @@
             # vendor/hydramesh-wire/golden_vectors.json); without it here the
             # cert branch would have nothing to compare against.
             cp -r --no-preserve=mode -- ${./vendor/hydramesh-wire} repo/vendor/hydramesh-wire
+            # The next milestone's program tests compare stdout against these
+            # reference WAVs (stdout=vendor/hydramodem-tx/<name>.wav); without
+            # it here that branch would have nothing to compare against.
+            cp -r --no-preserve=mode -- ${./vendor/hydramodem-tx} repo/vendor/hydramodem-tx
             chmod +x repo/tests/run.sh repo/tools/*.sh
             # The sandbox has no /usr/bin/env, and tests/run.sh invokes the
             # audit as an executable -- so the `#!/usr/bin/env bash` shebang is

@@ -160,7 +160,7 @@ examples/           the hello world, its golden output, and their README
 prototypes/         Python design probes -- never shipped, never on the build closure (§18)
 tests/              unit fixtures, the §14 conformance suite, the Stage 1 diagnostics corpus
 tools/              the audits, generators, and the publish gate; nothing here is on the build path except as a check
-vendor/             third-party, byte-exact, own licences: fasmg-x86/ (BSD-3-Clause), hydramesh-wire/ (LGPL-3.0-only)
+vendor/             third-party, byte-exact, own licences: fasmg-x86/ (BSD-3-Clause), hydramesh-wire/ (LGPL-3.0-only), hydramodem-tx/ (LGPL-3.0-only)
 .claude/agents/     how the work is organised: one agent per directory, scopes exclusive
 CLAUDE.md           the working invariants, binding on every change
 ```
@@ -338,9 +338,10 @@ executables, `ego` files, diagnostics -- under terms of your choosing, and
 Exception B is the GNU Classpath linking exception, attaching only to a file
 whose own header carries the designation line, which no file in this repository
 currently does. `vendor/` is third-party and keeps its own licences --
-`vendor/fasmg-x86/` is BSD-3-Clause and `vendor/hydramesh-wire/` is
-LGPL-3.0-only -- and neither exception applies to it. `LICENSE.EXCEPTION`
-states that it has not been reviewed by a lawyer, and so does this sentence.
+`vendor/fasmg-x86/` is BSD-3-Clause and `vendor/hydramesh-wire/` and
+`vendor/hydramodem-tx/` are LGPL-3.0-only -- and none of the exceptions apply
+to it. `LICENSE.EXCEPTION` states that it has not been reviewed by a lawyer,
+and so does this sentence.
 
 ## Where to look next
 

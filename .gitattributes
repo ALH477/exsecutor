@@ -15,6 +15,14 @@
 # conversion in both directions.
 vendor/fasmg-x86/** -text
 
+# vendor/hydramodem-tx/ is HydraModem's reference-transmitter WAV output,
+# vendored verbatim as a test certificate (see
+# vendor/hydramodem-tx/PROVENANCE.md). Binary audio, not source -- `-text`
+# disables git's EOL conversion and diffing so the bytes (and therefore the
+# recorded per-file and tree sha256 digests) never move on checkout, the same
+# reason vendor/fasmg-x86/** is pinned above.
+vendor/hydramodem-tx/** -text
+
 # --- tests/conformance/: byte-exact by definition, DO NOT NORMALISE ---
 #
 # These fixtures exist to violate §8.1 on purpose. entry20_crlf.exsc must
@@ -44,3 +52,4 @@ tests/programs/*/expected.out -text
 
 # PROVENANCE.md is ours, not upstream's, and is excluded from the digest.
 vendor/fasmg-x86/PROVENANCE.md text eol=lf
+vendor/hydramodem-tx/PROVENANCE.md text eol=lf
