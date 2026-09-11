@@ -372,6 +372,20 @@ publica functio applica(v: f32, f: functio(f32) -> f32) -> f32 poscit alloc, sic
 
 `sicut f` is unchanged as surface syntax. Its meaning is now *the row in parameter `f`'s type*, resolved by typing rather than by inspecting the call site.
 
+**What "the row carried by a type" means, for every type that carries one.** The rule above was written for function types and says nothing about the others, which made `poscit sicut s` with `s` a plain capability-bearing `structura` — `examples/imprime.exsc`, the companion to the canonical program — a clause with nothing to substitute. The checker found it by refusing to compile the example. The row of a type is:
+
+| type | its row |
+|---|---|
+| `functio(A) -> B poscit {R}` | `{R}` — the declared row; a bare function type's row is empty (§8.6) |
+| `dyn X poscit {P}` | `{P}` — the bound at the cast site (§4.4) |
+| a capability atom (`rete`, `ambitus`) | that atom alone |
+| a **capability-bearing** type (§4.3) | its **mark** — the union of the atoms its fields carry, transitively |
+| anything else | empty |
+
+A type's mark and a function type's row are the same fact about a value — *what authority it carries* — written down for two different shapes, and §10.3's audit already reads both. Substitution reads whichever the argument's type has. So `imprime_gutenbergio(s: Scriptor, t: textus) -> mensura poscit sicut s` requires exactly `Scriptor`'s mark: point it at a writer holding an `ambitus` and it requires `ambitus`; point it at one holding nothing and it requires nothing. That is what that function's own comment claimed the rule already said.
+
+This changes no existing judgement — a function type's row is its row, as before — and it closes the case where a caller could hand over a capability-bearing value and have the callee's `sicut` mean nothing at all.
+
 Without this, unioning the callee's row propagates a name with no referent in the caller (the prototype produced `requires [sicut f]` inside a function having no `f`). Substitution is what makes laundering impossible rather than merely annotated:
 
 ```exsecutor
