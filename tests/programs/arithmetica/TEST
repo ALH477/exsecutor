@@ -1,0 +1,2 @@
+# arithmetica.exsc's header derives the 42.
+TEST: expect-exit=42

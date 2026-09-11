@@ -1,0 +1,14 @@
+; TEST: abort=5
+;
+; `trap terminus` -- abort kind 5, `dum ... terminus N` entering its N+1th
+; iteration (prelude/README.md's table; docs/design/lowering.md finding 2
+; asked for it so the overrun stops folding into kind 1). The one trap kind
+; word emit.inc's `__bfa_emit_trap` knows. Distinct from trap_add_carry.ir's
+; kind 1: an emitter that routed every trap through the shared kind-1 stub
+; passes that fixture and fails this one.
+
+functio @initium (ptr) -> u64 {
+b0:
+%0 = param ptr 0
+trap terminus
+}

@@ -1,0 +1,42 @@
+; TEST: abort=1
+;
+; `@combo`'s trapping `add` (tier1_combo_lt.ir), made to carry out of 64 bits.
+; Spec 6.6's one abort shape: `abortus 1` on fd 2 -- kind 1, numeric trap
+; (prelude/README.md's abort-kind table) -- then SIGILL. The emitted
+; `jc bfausr_trap` lands on `mov edi, 1 / jmp exsrt_abort`.
+;
+; The operands are built by multiplication because an `iconst` at or above
+; 2^31 does not assemble yet (emit.inc stores it with `mov qword [slot], imm`,
+; a sign-extended imm32 -- the plan's B4, fixed in M3):
+;   x  = 2147483647                      2^31 - 1
+;   x2 = x * x   = 2^62 - 2^32 + 1       no carry
+;   x8 = x2 * 4  = 2^64 - 2^34 + 4       no carry
+;   combo(x8, x2): x8 + x2 > 2^64        CARRY -> trap, before the compare
+; Both `mul`s are the trapping form too, and must NOT trap: if either did,
+; this fixture would still see `abortus 1`, so tier1_mul_no_carry.ir runs
+; the same two products to an exit status.
+
+functio @combo (u64 u64) -> u64 {
+b0:
+%0 = param u64 0
+%1 = param u64 1
+%2 = add u64 %0 %1
+%3 = cmp.lt u64 %0 %1
+br %3 b1 b2
+b1:
+%4 = addw u64 %2 1
+ret %4
+b2:
+ret %2
+}
+
+functio @initium (ptr) -> u64 {
+b0:
+%0 = param ptr 0
+%1 = iconst u64 2147483647
+%2 = mul u64 %1 %1
+%3 = iconst u64 4
+%4 = mul u64 %2 %3
+%5 = call u64 @combo %4 %2
+ret %5
+}

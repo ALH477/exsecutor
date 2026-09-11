@@ -1,0 +1,13 @@
+; TEST: emit-exit=3
+;
+; The other negative case: text parse.inc cannot build a module from. `%1`
+; is used and never defined, and a non-phi operand has no forward-reference
+; path (parse.inc's header), so this is a parse error, fatal inside
+; parse.inc -- "bfa: parse error at line N" on stderr, exit 3 -- and emit_ir
+; must pass that status through rather than print a partial program.
+
+functio @initium (ptr) -> u64 {
+b0:
+%0 = iconst u64 1
+ret %1
+}

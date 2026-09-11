@@ -1,0 +1,32 @@
+// An `initium` whose exit status is computed, not written: two calls, the
+// trapping `+` and `*` on u64, and a `si`/`aliter` taken both ways.
+//
+//   summa(1, 2) = 1 + 2*2 = 5      5 lt 10  -> the `si` arm
+//   summa(4, 5) = 4 + 5*2 = 14    14 lt 10  is false -> iudica's `aliter`
+//
+// so the status is 42. The wrong arm anywhere gives 1 or 3 instead.
+//
+// Everything is u64 until the `redde` of a u8 constant: the emitter handles
+// 64-bit arithmetic only until milestone M3 (narrow integers), so a u8 sum
+// would not compile today. A `si` with no `aliter` would need a phi at the
+// join, which M2 adds; both arms here end in `redde`, so there is no join.
+
+functio summa(a: u64, b: u64) -> u64 {
+    redde a + b * 2;
+}
+
+functio iudica(x: u64) -> u8 {
+    si x lt 10 {
+        redde 3;
+    } aliter {
+        redde 42;
+    }
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    si summa(1, 2) lt 10 {
+        redde iudica(summa(4, 5));
+    } aliter {
+        redde 1;
+    }
+}

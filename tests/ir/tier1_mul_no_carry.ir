@@ -1,0 +1,35 @@
+; TEST: expect-exit=62
+;
+; trap_add_carry.ir's two products, and no carry: that fixture sees
+; `abortus 1` whether its `add` traps or one of its `mul`s does, so this one
+; runs the same `mul`s to a status. It also checks the product's HIGH bits,
+; which an exit status (the low byte) cannot show on its own, by computing
+; 2^62 two independent ways and comparing:
+;   x = 2^31 - 1,  x*x + 65536*65536 - 1  ==  (x + 1) * (x + 1)
+; Equal -> exit 62. Not equal -> exit 1. A trap -> `abortus 1`, SIGILL.
+; `mul` carries into rdx and sets CF only past 2^64 (emit.inc's `jc` after
+; the one-operand `mul`), so every product here is the trapping form and
+; none may trap.
+
+functio @initium (ptr) -> u64 {
+b0:
+%0 = param ptr 0
+%1 = iconst u64 2147483647
+%2 = mul u64 %1 %1
+%3 = iconst u64 4
+%4 = mul u64 %2 %3
+%5 = iconst u64 65536
+%6 = mul u64 %5 %5
+%7 = add u64 %2 %6
+%8 = sub u64 %7 1
+%9 = add u64 %1 1
+%10 = mul u64 %9 %9
+%11 = cmp.eq u64 %8 %10
+br %11 b1 b2
+b1:
+%12 = iconst u64 62
+ret %12
+b2:
+%13 = iconst u64 1
+ret %13
+}

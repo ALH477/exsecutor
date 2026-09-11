@@ -1,0 +1,9 @@
+# The hello world, compiled from examples/ where it lives rather than copied
+# here: one copy of the program, so this test and tools/publish-gate.sh can
+# never drift apart on what "the hello world" is. Sources in the gate's order
+# (spec 12: they form one compilation unit).
+#
+# The gate checks the same run end to end; this entry puts it inside
+# tests/run.sh, under the same directive as every other program, so a
+# regression shows up in the suite and not only at the gate.
+TEST: expect-exit=0 stdout=examples/saluta.expected sources=examples/saluta.exsc,examples/imprime.exsc,examples/initium.exsc

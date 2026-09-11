@@ -1,6 +1,6 @@
 # tests/
 
-Two phases, run by `tests/run.sh` (no arguments; this is what `make test`
+Four phases, run by `tests/run.sh` (no arguments; this is what `make test`
 calls):
 
 1. **`tests/unit/`** — real, running today. `.asm` fixtures assembled
@@ -26,6 +26,27 @@ calls):
    `UNIT_FIXTURE_FLOOR`. It earned that immediately: with `exsc.asm`
    untracked the Nix sandbox could not build it, 0 entries ran, and
    `nix flake check` FAILED loudly instead of printing a green subset.
+3. **`tests/ir/`** — SSA IR text, RUN. `emit_ir.asm` reads a `.ir` file on
+   stdin, parses it, **verifies** every function (ssa-ir.md section 3 —
+   the driver never calls the verifier; this harness does), and prints the
+   whole fasmg program `bfa_emit_program` makes of it, with the hello
+   world's closure `{Mundus, ambitus}` and MXCSR `0x1F80`. The phase
+   assembles that, runs it, and checks the exit status or abort and stdout.
+   8 fixtures (`IR_FIXTURE_FLOOR`).
+4. **`tests/programs/`** — Exsecutor sources, RUN. Each directory is one
+   program: `exsc aedifica --hospes x86_64-linux SRC... -o OUT`, `fasmg OUT
+   BIN`, run, check. 4 programs (`PROGRAM_FIXTURE_FLOOR`).
+
+Phases 3 and 4 are the first in this script to execute code a compiler
+*emitted*. Until them a `tests/unit/` fixture could only compare emitted
+text — it cannot `execve` — and the running half was done by hand and
+reported (`bfa_emit_tier1.asm`'s header says so). Every binary either phase
+runs is also audited with `tools/syscall-audit.sh --potestates
+Mundus,ambitus`, the publish gate's own invocation; `emit_ir` itself is
+audited against the compiler's closed nine, since it is built from the
+compiler's modules and everything phase 3 reports is trusted through it.
+`make audit` still audits `build/exsc` alone: `emit_ir` is test tooling, not
+a shipped artifact, and is checked every time it is built instead.
 
 ## What is deliberately absent
 
@@ -114,6 +135,40 @@ verified smoke fixture, this suite keeps it as originally proven and adds
 `exit` — as the fixture that is actually expected to pass. Both facts are
 asserted by `tests/run.sh` and checked on every run.
 
+## `tests/ir/` and `tests/programs/` — the run directives
+
+Both phases read the same keys (space-separated `key=value`, the unit
+directive's style):
+
+| key | meaning |
+|---|---|
+| `expect-exit=N` | the program exits normally with `N`; its stderr must be empty |
+| `abort=N` | spec §6.6's one abort shape: killed by `SIGILL`, with a stderr line ending `abortus N`. Not shell status 132, which `redde 132;` also produces — the runner tells a signal from an exit status |
+| `stdout=PATH` | stdout byte-identical to `PATH`, relative to the repo root. Absent: stdout must be empty |
+
+Exactly one of `expect-exit=` / `abort=` is required for anything that
+runs. **An unknown key fails the fixture** — the unit directive silently
+ignores one, so a typo there falls back to the default and passes.
+Binaries run with stdin from `/dev/null`, an empty environment, and a
+20-second limit.
+
+**`tests/ir/*.ir`:** the directive is a `; TEST:` line in the IR itself
+(`;` is the IR's comment). One more key, `emit-exit=N` — `emit_ir`'s own
+status (3 parse error, 5 verifier verdict; `emit_ir.asm`'s header has the
+table). Non-zero makes the fixture a rejection: nothing is assembled or
+run.
+
+**`tests/programs/<name>/`:** the directive is the `TEST:` line of a file
+named `TEST` in the directory (`#` lines are comments). The compilation
+unit is the directory's own `*.exsc` in byte order (`LC_ALL=C`), or
+`sources=A,B,...` — repo-relative, in that order — to compile sources that
+live elsewhere; `saluta/` uses it to build the hello world from `examples/`
+rather than keep a second copy. A file `expected.out` is the stdout
+reference when present. `exsc-exit=N` expects `exsc` itself to fail with
+shell status `N` and runs nothing; `ordo_maior_custodia/` uses it for the
+lowering's byte-order guard, until milestone M6 replaces it with a program
+that reads a big-endian field.
+
 ## Adding a case
 
 **A new `tests/unit/` fixture:** drop a `.asm` file in this directory with
@@ -121,6 +176,11 @@ a `; TEST:` line describing what should happen, and `tests/run.sh` picks
 it up automatically — nothing else to wire up. Prefer one fixture per
 thing being proven, and say in a comment what it proves; see the existing
 three for the pattern.
+
+**A new `tests/ir/` or `tests/programs/` case:** add the `.ir` file or the
+directory with its `TEST` file, then raise `IR_FIXTURE_FLOOR` or
+`PROGRAM_FIXTURE_FLOOR` in `tests/run.sh` in the same commit, and show it is
+not vacuous (CONTRIBUTING.md: break the thing, watch it fail, restore).
 
 **A new `tests/conformance/` entry (once `exsc` exists):** add the source
 fixture under `tests/conformance/`, then extend

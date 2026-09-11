@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/run.sh -- minimal, real test harness.
 #
-# Two phases:
+# Four phases:
 #   1. run_unit_tests: discovers tests/unit/*.asm, assembles each with
 #      fasmg, and checks the expectations declared in its `; TEST:`
 #      directive comment (run=yes|no, expect-exit=<N>, audit=pass|fail|skip).
@@ -14,6 +14,14 @@
 #      comment once said "a deliberate no-op until exsc.asm exists"; it
 #      was kept as a separate phase precisely so wiring it up
 #      later does not require touching run_unit_tests.
+#   3. run_ir_tests: tests/ir/*.ir, SSA IR text fed through tests/ir/
+#      emit_ir.asm (parse -> VERIFY -> bfa_emit_program), the fasmg program
+#      it prints assembled, RUN, and its exit status / abort / stdout
+#      checked, then audited with --potestates Mundus,ambitus.
+#   4. run_program_tests: tests/programs/<name>/, Exsecutor sources compiled
+#      by exsc, assembled, run and audited the same way.
+#   Phases 3 and 4 are the first place in this script that executes code a
+#   compiler EMITTED; everything before them compares text or diagnostics.
 #
 # See tests/README.md for the directive format and how to add a fixture.
 #
@@ -42,6 +50,12 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # count still catches the failure mode that matters: a discovery mechanism
 # silently finding nothing. Drift costs precision, not the guarantee.
 UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-141}"
+
+# The same guarantee for the two run phases below: tests/ir/*.ir fixtures,
+# and tests/programs/*/ directories. Same rule -- `found < floor` fails --
+# and the same reason. Raise each in the commit that adds a fixture.
+IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-8}"
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-4}"
 
 PASS=0
 FAIL=0
@@ -426,9 +440,386 @@ run_conformance_tests() {
   fi
 }
 
+# ===========================================================================
+# Phases 3 and 4: RUN what a compiler emitted.
+#
+# Shared by both. A fixture's expectations are key=value tokens (the unit
+# directive's style, one section up); these keys mean the same thing in both
+# phases:
+#
+#   expect-exit=N   the program exits normally with status N. Its stderr
+#                   must be EMPTY.
+#   abort=N         spec 6.6's one abort shape instead: "`abortus N` on
+#                   fd 2, then SIGILL". Checked as exactly that -- killed by
+#                   signal 4, and a stderr line ending in `abortus N` -- not
+#                   as shell status 132, which `redde 132;` also produces
+#                   (spec 6.6 chose SIGILL precisely because every u8 is a
+#                   legitimate `initium` result). The number is the code;
+#                   the English before `abortus` is not promised
+#                   (prelude/README.md) and is not matched.
+#   stdout=PATH     stdout must be byte-identical to PATH, relative to the
+#                   repo root (so a fixture can point at examples/ rather
+#                   than copy it). Absent: stdout must be EMPTY.
+#
+# Exactly one of expect-exit= / abort= is required for anything that runs.
+# An UNKNOWN KEY FAILS THE FIXTURE: the unit directive ignores one, and a
+# typo there (`expect_exit=3`) silently falls back to the default and
+# passes -- a false green of exactly the kind UNIT_FIXTURE_FLOOR's header
+# lists. These two phases do not repeat it.
+#
+# Every binary runs with stdin </dev/null, an EMPTY environment, and a
+# 20-second limit (a hang -- a loop the emitter got wrong -- is a failure,
+# not a stuck suite). python3 runs it because bash cannot tell a signal from
+# an exit status >= 128; python3 is already required by tools/syscall-audit.sh.
+# Every binary is then audited with `--potestates Mundus,ambitus`, the
+# publish gate's own invocation for the hello world.
+# ===========================================================================
+
+# run_binary BIN OUT ERR -- prints "exit N", "signal N" or "timeout".
+run_binary() {
+  python3 - "$1" "$2" "$3" <<'PY'
+import subprocess, sys
+exe, out, err = sys.argv[1:4]
+with open(out, 'wb') as o, open(err, 'wb') as e:
+    try:
+        r = subprocess.run([exe], stdin=subprocess.DEVNULL, stdout=o,
+                           stderr=e, env={}, timeout=20)
+    except subprocess.TimeoutExpired:
+        print('timeout')
+        sys.exit(0)
+if r.returncode < 0:
+    print('signal %d' % -r.returncode)
+else:
+    print('exit %d' % r.returncode)
+PY
+}
+
+# check_run LABEL BIN WORK EXPECT_EXIT ABORT STDOUT_REF -- runs BIN, checks
+# the keys above, audits it. EXPECT_EXIT/ABORT/STDOUT_REF are "" when unset.
+# Returns 0 iff every check passed (each check also counts ok/bad itself).
+check_run() {
+  local label="$1" bin="$2" work="$3" want_exit="$4" want_abort="$5" ref="$6"
+  local out="$work.stdout" err="$work.stderr" status rcode=0
+  status="$(run_binary "$bin" "$out" "$err")"
+
+  if [[ -n "$want_abort" ]]; then
+    if [[ "$status" == "signal 4" ]] &&
+       grep -qE "(^|[^[:alnum:]_])abortus $want_abort\$" "$err"; then
+      ok "$label: aborts with abortus $want_abort, SIGILL"
+    else
+      bad "$label: expected abortus $want_abort then SIGILL, got '$status'; stderr:"
+      sed 's/^/         /' "$err"; rcode=1
+    fi
+  else
+    if [[ "$status" == "exit $want_exit" ]]; then
+      ok "$label: runs, exit=$want_exit"
+    else
+      bad "$label: got '$status', expected 'exit $want_exit'"
+      sed 's/^/         /' "$err"; rcode=1
+    fi
+    if [[ -s "$err" ]]; then
+      bad "$label: wrote to stderr, expected nothing:"
+      sed 's/^/         /' "$err"; rcode=1
+    fi
+  fi
+
+  if [[ -n "$ref" ]]; then
+    if cmp -s "$out" "$REPO_ROOT/$ref"; then
+      ok "$label: stdout byte-identical to $ref"
+    else
+      bad "$label: stdout differs from $ref"
+      cmp "$out" "$REPO_ROOT/$ref" 2>&1 | sed 's/^/         /' || true
+      rcode=1
+    fi
+  elif [[ -s "$out" ]]; then
+    bad "$label: wrote to stdout, expected nothing (no stdout= given)"
+    head -c 400 "$out" | sed 's/^/         /'; rcode=1
+  fi
+
+  if "$AUDIT" --potestates Mundus,ambitus "$bin" >"$work.auditlog" 2>&1; then
+    ok "$label: syscall surface within {Mundus, ambitus}"
+  else
+    bad "$label: syscall surface exceeds {Mundus, ambitus}"
+    sed 's/^/         /' "$work.auditlog"; rcode=1
+  fi
+  return "$rcode"
+}
+
+# parse_run_keys LABEL KV... -- sets k_expect_exit k_abort k_stdout k_emit_exit
+# k_exsc_exit k_sources from the tokens; returns 1 (having said why) on an
+# unknown key, a malformed number, or a stdout= that does not exist.
+parse_run_keys() {
+  local label="$1"; shift
+  k_expect_exit=""; k_abort=""; k_stdout=""; k_emit_exit="0"; k_exsc_exit="0"
+  k_sources=""
+  local kv
+  for kv in "$@"; do
+    case "$kv" in
+      expect-exit=*) k_expect_exit="${kv#expect-exit=}" ;;
+      abort=*)       k_abort="${kv#abort=}" ;;
+      stdout=*)      k_stdout="${kv#stdout=}" ;;
+      emit-exit=*)   k_emit_exit="${kv#emit-exit=}" ;;
+      exsc-exit=*)   k_exsc_exit="${kv#exsc-exit=}" ;;
+      sources=*)     k_sources="${kv#sources=}" ;;
+      *) bad "$label: unknown directive key '$kv'"; return 1 ;;
+    esac
+  done
+  local n
+  for n in "$k_expect_exit" "$k_abort" "$k_emit_exit" "$k_exsc_exit"; do
+    if [[ -n "$n" && ! "$n" =~ ^[0-9]+$ ]]; then
+      bad "$label: '$n' is not a decimal status"; return 1
+    fi
+  done
+  if [[ -n "$k_stdout" && ! -f "$REPO_ROOT/$k_stdout" ]]; then
+    bad "$label: stdout=$k_stdout does not exist (paths are repo-root-relative)"
+    return 1
+  fi
+  return 0
+}
+
+# want_one_outcome LABEL -- exactly one of expect-exit= / abort=.
+want_one_outcome() {
+  if [[ -n "$k_expect_exit" && -n "$k_abort" ]] ||
+     [[ -z "$k_expect_exit" && -z "$k_abort" ]]; then
+    bad "$1: needs exactly one of expect-exit= / abort="
+    return 1
+  fi
+  return 0
+}
+
+floor_check() {  # WHAT FOUND FLOOR VARNAME
+  if [[ "$2" -lt "$3" ]]; then
+    bad "discovered $2 $1, floor is $3"
+    note "a harness that finds nothing must not report success -- see"
+    note "UNIT_FIXTURE_FLOOR at the top of this file; the floor here is $4"
+  else
+    note "discovered $2 $1 (floor $3)"
+  fi
+}
+
+run_ir_tests() {
+  # -------------------------------------------------------------------------
+  # tests/ir/*.ir -- `; TEST:` on any line (parse.inc reads `;` to EOL as a
+  # comment, so the directive is part of the IR text itself), keys above
+  # plus:
+  #   emit-exit=N   emit_ir's own exit status (default 0). Non-zero means
+  #                 the fixture is a REJECTION -- 3 parse error, 5 verifier
+  #                 verdict (emit_ir.asm's header has the table) -- and
+  #                 nothing is assembled or run, so expect-exit=/abort=/
+  #                 stdout= are refused alongside it.
+  # -------------------------------------------------------------------------
+  echo "== IR run tests (tests/ir/) =="
+  if ! command -v "$FASMG" >/dev/null 2>&1; then
+    bad "fasmg not found on PATH -- cannot run IR tests"
+    return
+  fi
+  local workdir; workdir="$(mktemp -d)"
+  local emit="$workdir/emit_ir"
+  if "$FASMG" "$REPO_ROOT/tests/ir/emit_ir.asm" "$emit" >"$workdir/emit_ir.asmlog" 2>&1; then
+    chmod +x "$emit"
+    ok "emit_ir.asm: assembles"
+  else
+    bad "emit_ir.asm: assemble failed -- no IR test can run"
+    sed 's/^/         /' "$workdir/emit_ir.asmlog"
+    rm -rf "$workdir"
+    return
+  fi
+  # The harness is held to the compiler's own closed nine: it is built from
+  # the compiler's modules and is what every result below is trusted through.
+  if "$AUDIT" "$emit" >"$workdir/emit_ir.auditlog" 2>&1; then
+    ok "emit_ir: audit verdict=pass (the compiler's nine syscalls)"
+  else
+    bad "emit_ir: audit verdict=fail"
+    sed 's/^/         /' "$workdir/emit_ir.auditlog"
+  fi
+
+  local found=0 src
+  shopt -s nullglob
+  for src in "$REPO_ROOT"/tests/ir/*.ir; do
+    found=$((found + 1))
+    local name; name="$(basename "$src" .ir)"
+    local w="$workdir/$name"
+    echo "-- $name.ir"
+    local directive; directive="$(directive_of "$src")"
+    if [[ -z "$directive" ]]; then
+      bad "$name: no '; TEST:' directive"; continue
+    fi
+    # shellcheck disable=SC2086
+    parse_run_keys "$name" $directive || continue
+    if [[ -n "$k_sources" || "$k_exsc_exit" != "0" ]]; then
+      bad "$name: sources=/exsc-exit= belong to tests/programs/, not an IR fixture"
+      continue
+    fi
+
+    local erc=0
+    "$emit" <"$src" >"$w.asm" 2>"$w.emitlog" || erc=$?
+    if [[ "$k_emit_exit" != "0" ]]; then
+      if [[ -n "$k_expect_exit$k_abort$k_stdout" ]]; then
+        bad "$name: emit-exit=$k_emit_exit is a rejection; nothing runs, so no expect-exit=/abort=/stdout="
+        continue
+      fi
+      if [[ "$erc" == "$k_emit_exit" ]]; then
+        ok "$name: emit_ir refuses it, exit=$erc (expected $k_emit_exit)"
+        sed 's/^/         /' "$w.emitlog"
+      else
+        bad "$name: emit_ir exit=$erc, expected $k_emit_exit"
+        sed 's/^/         /' "$w.emitlog"
+      fi
+      continue
+    fi
+    want_one_outcome "$name" || continue
+    if [[ "$erc" -ne 0 ]]; then
+      bad "$name: emit_ir exit=$erc"
+      sed 's/^/         /' "$w.emitlog"; continue
+    fi
+    if "$FASMG" "$w.asm" "$w.bin" >"$w.asmlog" 2>&1; then
+      chmod +x "$w.bin"
+      ok "$name: emitted program assembles"
+    else
+      bad "$name: fasmg cannot assemble the emitted program"
+      sed 's/^/         /' "$w.asmlog"; continue
+    fi
+    check_run "$name" "$w.bin" "$w" "$k_expect_exit" "$k_abort" "$k_stdout" || true
+  done
+  shopt -u nullglob
+  rm -rf "$workdir"
+  floor_check "IR fixtures in tests/ir/" "$found" "$IR_FIXTURE_FLOOR" IR_FIXTURE_FLOOR
+}
+
+run_program_tests() {
+  # -------------------------------------------------------------------------
+  # tests/programs/<name>/ -- one directory per program. Its expectations
+  # are in <name>/TEST, the first line beginning `TEST:` (`#` lines are
+  # comments), keys above plus:
+  #   sources=A,B   the compilation unit, repo-root-relative, in this order
+  #                 (spec 12: the files form ONE unit). Used to point at
+  #                 sources that live elsewhere -- examples/ -- rather than
+  #                 copying them. Absent: the directory's own *.exsc, in
+  #                 byte order (LC_ALL=C, never the locale's collation).
+  #                 Both at once is refused as ambiguous.
+  #   exsc-exit=N   exsc's exit status (default 0), as the shell reports it
+  #                 (132 = an `rassert` in the compiler). Non-zero: nothing
+  #                 is assembled or run.
+  # A file <name>/expected.out is the stdout reference when present (as if
+  # stdout=tests/programs/<name>/expected.out); stdout= and expected.out
+  # together are refused as ambiguous.
+  #
+  # Compiled exactly as tools/publish-gate.sh compiles the hello world:
+  # `exsc aedifica --hospes x86_64-linux SRC... -o OUT`, then `fasmg OUT
+  # BIN` with the vendored INCLUDE.
+  # -------------------------------------------------------------------------
+  echo "== program run tests (tests/programs/) =="
+  if ! command -v "$FASMG" >/dev/null 2>&1; then
+    bad "fasmg not found on PATH -- cannot run program tests"
+    return
+  fi
+  local workdir; workdir="$(mktemp -d)"
+  local exsc="$workdir/exsc"
+  # Built here rather than taken from build/: the Nix check sandbox has no
+  # build/, and a stale build/exsc would test yesterday's compiler.
+  if "$FASMG" "$REPO_ROOT/compiler/x86_64/exsc.asm" "$exsc" >"$workdir/exsc.asmlog" 2>&1; then
+    chmod +x "$exsc"
+    note "built exsc from compiler/x86_64/exsc.asm for this phase"
+  else
+    bad "compiler/x86_64/exsc.asm failed to assemble -- no program test can run"
+    sed 's/^/         /' "$workdir/exsc.asmlog"
+    rm -rf "$workdir"
+    return
+  fi
+
+  local found=0 dir
+  shopt -s nullglob
+  for dir in "$REPO_ROOT"/tests/programs/*/; do
+    dir="${dir%/}"
+    found=$((found + 1))
+    local name; name="$(basename "$dir")"
+    local w="$workdir/$name"
+    echo "-- $name/"
+    if [[ ! -f "$dir/TEST" ]]; then
+      bad "$name: no TEST file"; continue
+    fi
+    local directive; directive="$(grep -m1 '^TEST:' "$dir/TEST" || true)"
+    directive="${directive#TEST:}"
+    if [[ -z "$directive" ]]; then
+      bad "$name: TEST has no 'TEST:' line"; continue
+    fi
+    # shellcheck disable=SC2086
+    parse_run_keys "$name" $directive || continue
+    if [[ "$k_emit_exit" != "0" ]]; then
+      bad "$name: emit-exit= belongs to tests/ir/, not a program"; continue
+    fi
+
+    local srcs=() s
+    local own; own="$(printf '%s\n' "$dir"/*.exsc | LC_ALL=C sort)"
+    if [[ -n "$k_sources" ]]; then
+      if [[ -n "$own" ]]; then
+        bad "$name: has its own *.exsc AND sources= -- which is the unit?"; continue
+      fi
+      local rel=()
+      IFS=',' read -r -a rel <<<"$k_sources"
+      for s in "${rel[@]}"; do srcs+=("$REPO_ROOT/$s"); done
+    elif [[ -n "$own" ]]; then
+      while IFS= read -r s; do srcs+=("$s"); done <<<"$own"
+    else
+      bad "$name: no *.exsc and no sources="; continue
+    fi
+    local missing=0
+    for s in "${srcs[@]}"; do
+      [[ -f "$s" ]] || { bad "$name: source $s does not exist"; missing=1; }
+    done
+    [[ "$missing" -eq 0 ]] || continue
+
+    local ref="$k_stdout"
+    if [[ -f "$dir/expected.out" ]]; then
+      if [[ -n "$ref" ]]; then
+        bad "$name: both expected.out and stdout= -- which is the reference?"; continue
+      fi
+      ref="tests/programs/$name/expected.out"
+    fi
+
+    local crc=0
+    "$exsc" aedifica --hospes x86_64-linux "${srcs[@]}" -o "$w.asm" \
+      >"$w.exsclog" 2>&1 || crc=$?
+    if [[ "$k_exsc_exit" != "0" ]]; then
+      if [[ -n "$k_expect_exit$k_abort$ref" ]]; then
+        bad "$name: exsc-exit=$k_exsc_exit means nothing runs, so no expect-exit=/abort=/stdout="
+        continue
+      fi
+      if [[ "$crc" == "$k_exsc_exit" ]]; then
+        ok "$name: exsc refuses it, exit=$crc (expected $k_exsc_exit)"
+      else
+        bad "$name: exsc exit=$crc, expected $k_exsc_exit"
+        sed 's/^/         /' "$w.exsclog"
+      fi
+      continue
+    fi
+    want_one_outcome "$name" || continue
+    if [[ "$crc" -ne 0 ]]; then
+      bad "$name: exsc exit=$crc"
+      sed 's/^/         /' "$w.exsclog"; continue
+    fi
+    if "$FASMG" "$w.asm" "$w.bin" >"$w.asmlog" 2>&1; then
+      chmod +x "$w.bin"
+      ok "$name: compiles and assembles (${#srcs[@]} source(s))"
+    else
+      bad "$name: fasmg cannot assemble exsc's output"
+      sed 's/^/         /' "$w.asmlog"; continue
+    fi
+    check_run "$name" "$w.bin" "$w" "$k_expect_exit" "$k_abort" "$ref" || true
+  done
+  shopt -u nullglob
+  rm -rf "$workdir"
+  floor_check "program directories in tests/programs/" "$found" \
+    "$PROGRAM_FIXTURE_FLOOR" PROGRAM_FIXTURE_FLOOR
+}
+
 run_unit_tests
 echo
 run_conformance_tests
+echo
+run_ir_tests
+echo
+run_program_tests
 echo
 echo "== summary =="
 echo "pass: $PASS  fail: $FAIL"

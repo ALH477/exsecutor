@@ -1,0 +1,33 @@
+// A read of a `u64:maior` field. It must NOT compile to a program today.
+//
+// The lowering hands `load` only the field's offset and writes `nativus`
+// into the IR (lower/cfg.inc's lwr_load), so before the guard in
+// lower/expr.inc's __lwr_field_off this compiled, and emitted
+//
+//     mov  rax, qword [rax+0]
+//
+// -- a little-endian read of a big-endian place, with nothing downstream able
+// to tell. The guard makes the lowering refuse (an `rassert`: exsc dies with
+// SIGILL, shell status 132) instead. That is a trap rather than a diagnostic
+// on purpose: the source is correct and no spec 13 code describes it; what is
+// missing is in the compiler, and docs/asm-conventions.md 1.3 routes "an
+// internal contract violation -- a compiler bug" to `rassert`, never to an
+// `EXS-E` code.
+//
+// Milestone M6 of the wire-codec plan carries the order into `load`/`store`
+// and removes the guard. Then this directory changes from `exsc-exit=132` to
+// a program that builds a `Par` and returns a byte of it, which is the test
+// the guard is standing in for.
+
+@transitus
+publica structura Par {
+    valor: u64:maior
+}
+
+functio lege(p: Par) -> u64:maior {
+    redde p.valor;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    redde 0;
+}

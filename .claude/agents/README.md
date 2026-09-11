@@ -1,6 +1,6 @@
 # Agent roster
 
-Eleven agents have covered this repo. Two of them own a generator in `tools/`
+Twelve agents have covered this repo. Two of them own a generator in `tools/`
 alongside their output tree, mirroring how `unicode` owns `tools/ucd-gen/`:
 spec tables are the normative source, the `.inc` is generated from them, and
 `tools/spec-check.sh` fails the build on drift (checks 1 and 4). Each owns exactly one directory for writes;
@@ -20,7 +20,8 @@ agent instead of making it.
 | `spec-guardian` | none — read-only, whole tree | all |
 | `ast` † | `compiler/x86_64/ast/` | §8.6, `docs/design/typed-ast.md` |
 | `driver` † | `compiler/x86_64/driver/`, `compiler/x86_64/exsc.asm` | §9.3, §9.5, §12, §18.2 |
-| `backend-fasmg` † | `compiler/x86_64/backend_fasmg/` | §9.2, `docs/design/ssa-ir.md` |
+| `backend-fasmg` † | `compiler/x86_64/backend_fasmg/`, `tests/ir/` | §9.2, `docs/design/ssa-ir.md` |
+| `lower` † | `compiler/x86_64/lower/`, `compiler/x86_64/prelude/`, `tests/programs/` | §4.7, §6.6, `docs/design/lowering.md`, `docs/design/runtime.md` |
 
 † briefed inline when spawned; no definition file in this directory yet. The
 scope was exclusive all the same, and stays so.

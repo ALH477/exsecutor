@@ -1,0 +1,25 @@
+; TEST: emit-exit=5
+;
+; The harness's own negative case: IR that PARSES and that the emitter would
+; happily lower, but that ssa-ir.md section 3 rule 4 forbids -- `%3` is
+; defined in b1 and used in b2, and b1 does not dominate b2 (b0 branches to
+; both). emit_ir must refuse it with the verifier's verdict (exit 5, "rule 4"
+; on stderr) instead of printing a program. `exsc` itself never runs the
+; verifier (driver/run.inc goes lwr_module -> bfa_emit_program), so this is
+; the only place in tests/run.sh where a lowering's-eye view of a rule-4
+; violation is refused on the way to a binary. If this fixture ever emits a
+; program, the verifier has left the pipeline and every other fixture in
+; this directory has silently stopped being a verifier test.
+
+functio @initium (ptr) -> u64 {
+b0:
+%0 = iconst u64 1
+%1 = iconst u64 2
+%2 = cmp.lt u64 %0 %1
+br %2 b1 b2
+b1:
+%3 = iconst u64 7
+jmp b2
+b2:
+ret %3
+}

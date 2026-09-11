@@ -1,0 +1,2 @@
+# Kind 1, numeric trap -- compiler/x86_64/prelude/README.md's abort table.
+TEST: abort=1

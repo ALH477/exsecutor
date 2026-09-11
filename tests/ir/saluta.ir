@@ -1,0 +1,59 @@
+; TEST: expect-exit=0 stdout=examples/saluta.expected
+;
+; The hello world as the LOWERING produces it: `tests/unit/lwr_saluta.asm`,
+; run with an argument, prints the module `lwr_module` builds from the three
+; typed trees of examples/{saluta,imprime,initium}.exsc -- this file is that
+; output, verbatim except for one trailing blank print.inc writes after a
+; valueless `ret`. It differs from tests/unit/bfa_emit_program.asm's
+; hand-written IR in exactly the ways lwr_saluta.asm's header names: the three
+; prelude declarations have NO body (ssa-ir.md 2.11's bodiless form).
+;
+; What this adds over tools/publish-gate.sh, which runs the same program:
+; the VERIFIER. The driver never calls it; emit_ir does, on every function,
+; including the three bodiless declarations (bfa_verify_func returns 0 for a
+; function with no blocks -- verify.inc says so, found by lower/). So this
+; is the one place the lowering's own output for a real program is held to
+; ssa-ir.md section 3 on the way to a binary that runs.
+;
+; Measured when this fixture was written: emit_ir's OUT for this file and
+; `build/exsc aedifica --hospes x86_64-linux examples/saluta.exsc
+; examples/imprime.exsc examples/initium.exsc -o OUT` were byte-identical
+; (33330 bytes). That equality is not re-checked here; exsc's own run of the
+; same program is checked by tools/publish-gate.sh and, in this suite, by
+; tests/programs/saluta.
+
+data $0 101 1 4176652c206d756e6475732e0a0a45782073696c656e74696f2073757267697420666f726d612e0a4578207369676e6f206e6173636974757220766f782e0a457820636f6469636520666974206c756d656e2e0a0a486f64696520696e636970696d75732e
+functio @exsrt_mundus_ambitus (ptr) -> ptr numeri ad_parem vetita explicita conservata externus sysv_amd64 {
+}
+functio @exsrt_scriptor_ad_exitum (ptr ptr) -> void numeri ad_parem vetita explicita conservata externus sysv_amd64 {
+}
+functio @exsrt_scriptor_scribe (ptr ptr) -> u64 numeri ad_parem vetita explicita conservata externus sysv_amd64 {
+}
+functio @saluta (ptr) -> void numeri ad_parem vetita explicita conservata {
+b0:
+%0 = param ptr 0
+%1 = gaddr 0
+store ptr %0 0 nativus %1
+%2 = iconst u64 101
+store u64 %0 8 nativus %2
+ret
+}
+functio @imprime_gutenbergio (ptr ptr) -> u64 numeri ad_parem vetita explicita conservata {
+b0:
+%0 = param ptr 0
+%1 = param ptr 1
+%2 = call u64 @exsrt_scriptor_scribe %0 %1
+ret %2
+}
+functio @initium (ptr) -> u8 numeri ad_parem vetita explicita conservata {
+b0:
+%0 = param ptr 0
+%1 = call ptr @exsrt_mundus_ambitus %0
+%2 = slot 16 8
+call void @exsrt_scriptor_ad_exitum %2 %1
+%3 = slot 16 8
+call void @saluta %3
+%4 = call u64 @imprime_gutenbergio %2 %3
+%5 = iconst u8 0
+ret %5
+}

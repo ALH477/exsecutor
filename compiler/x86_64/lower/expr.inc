@@ -2043,6 +2043,19 @@ endp
 ; `lwrd`, from `Ast.layout`. Traps on a field that is not whole bytes at a
 ; byte boundary: that needs `loadbits`/`storebits`, which nothing in this
 ; tree has a fixture for -- `[UNIMPLEMENTED]`, recorded rather than guessed.
+;
+; ALSO TRAPS ON A MULTI-BYTE FIELD WHOSE ORDER IS NOT `nativus`. Both callers
+; (`__lwr_member_read` below, the field store in stmt.inc) hand only the
+; OFFSET to `lwr_load`/`lwr_store`, which write `nativus` into the IR
+; (lower/cfg.inc) -- the field's own `AstLayout.order` is dropped here. For a
+; `u16:maior` field that is a little-endian read of a big-endian place, and
+; nothing downstream can tell. It is not hypothetical: before this guard, a
+; `u64:maior` field read compiled and emitted `mov rax, qword [rax+0]`, and
+; the only reason `u16:maior` did not was that the emitter still refuses
+; every width but 64 -- which M3 of the wire-codec plan removes. At or below
+; 8 bits there is one byte and no order (spec 5.2 rule 3), so those pass.
+; M6 deletes this guard, when field access carries its byte order into
+; `load`/`store` (docs/design/ssa-ir.md 2.3 already has the operand).
 proc __lwr_field_off, lwrsp, lwrd
 	locals
 	endl
@@ -2055,6 +2068,13 @@ proc __lwr_field_off, lwrsp, lwrd
 	movzx	ecx, byte [rax + AstLayout.width]
 	and	ecx, 7
 	rassert	ecx eq 0
+	; order == nativus, or width <= 8 (AST_ORD_NATIVUS is 0, ast/kinds.inc)
+	movzx	ecx, byte [rax + AstLayout.order]
+	cmp	ecx, AST_ORD_NATIVUS
+	je	.order_ok
+	movzx	ecx, byte [rax + AstLayout.width]
+	rassert	ecx le 8
+  .order_ok:
 	mov	eax, [rax + AstLayout.off]
 	return
 endp

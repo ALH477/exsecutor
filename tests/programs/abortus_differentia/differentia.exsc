@@ -1,0 +1,17 @@
+// `-` on unsigned integers traps; it does not wrap (spec 5.4). 3 - 5 in
+// u64 has no value, so the program must stop with spec 6.6's one abort
+// shape -- `abortus 1` (numeric trap) on fd 2, then SIGILL -- and never
+// reach the `redde`. A status of 7 means the subtraction wrapped and the
+// comparison below saw a huge number; 9 means it produced something small.
+
+functio differentia(a: u64, b: u64) -> u64 {
+    redde a - b;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    si differentia(3, 5) lt 10 {
+        redde 9;
+    } aliter {
+        redde 7;
+    }
+}
