@@ -1,0 +1,9 @@
+# HydraModem's transmitter, written in Exsecutor (examples/hydramodem/), on
+# dcf_loopback's frame d310123400a1ffffdeadbeef0a1b2ca961. Compiled from
+# examples/ where it lives, as saluta/ compiles the hello world: one copy of
+# the program. stdout is the WAV, compared with `cmp`, byte for byte, with
+# what HydraModem's own frame_tx rendered for the same frame
+# (vendor/hydramodem-tx/PROVENANCE.md). Exit 1 means some write did not
+# write its byte. docs/design/modem.md is the design; its section 6 lists
+# the mutants, each run against these three directories.
+TEST: expect-exit=0 stdout=vendor/hydramodem-tx/d310123400a1ffffdeadbeef0a1b2ca961.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/emitte.exsc,examples/hydramodem/loopback.exsc

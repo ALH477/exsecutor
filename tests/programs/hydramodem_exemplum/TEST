@@ -1,0 +1,5 @@
+# HydraModem's transmitter (examples/hydramodem/) on the DeModFrame example
+# frame d31312340001ffffdeadbeefab12cd24c0, §14 entry 23's anchor. stdout
+# is the WAV, compared with `cmp` against HydraModem's own rendering.
+# hydramodem_loopback/TEST says the rest.
+TEST: expect-exit=0 stdout=vendor/hydramodem-tx/d31312340001ffffdeadbeefab12cd24c0.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/emitte.exsc,examples/hydramodem/exemplum.exsc

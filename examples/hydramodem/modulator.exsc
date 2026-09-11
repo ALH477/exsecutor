@@ -1,0 +1,272 @@
+// examples/hydramodem/modulator.exsc -- HydraModem's transmitter, default
+// profile, as pure functions: given a frame's seventeen bytes, the tone of
+// each of its 356 symbols, and the 48 samples a tone becomes. No `poscit`
+// anywhere and no capability-bearing parameter: every `publica` function
+// here is pure in spec §4.1 rule 6's sense, the one private helper's row is
+// inferred from a body that touches nothing (rule 5), and nothing in this
+// file can reach the host. emitte.exsc walks the layout below and writes
+// the bytes; that is all it does.
+//
+// The reference is HydraMesh's hydramodem/ at fce2813 -- the C DSP
+// (hydra_dsp_ref.c), not the Faust one -- and vendor/hydramodem-tx/ holds
+// three WAVs its frame_tx rendered, which this program reproduces byte for
+// byte (tests/programs/hydramodem_*/). The profile (hydra_profile.c,
+// hydra_profile_default): 48 kHz, 1000 baud, 2-FSK at 2000 and 3000 Hz, a
+// 24-symbol preamble, sync word 0x2DD4, CRC-16, the K=7 rate-1/2
+// convolutional code, interleaved; gain 0.9. docs/design/modem.md is the
+// design.
+//
+// No bitwise and or or, no division, no remainder, no signed arithmetic and
+// no array literal appear below: each is `[OPEN]` (spec §5.4, §8.6), and a
+// transmitter needs none of them. A remainder is a walk. A bit is a
+// comparison with 0x80 and a `sursum 1`. A negative sample is `0 -% v` in
+// u16, which is its two's-complement bit pattern. A table is a `discerne`.
+
+// ---- the layout ------------------------------------------------------------
+
+// hydra_modem.c, hydra_modem_tx: 20 ms of silence (0.02 x 48000, exactly
+// 960.0 in binary64), the symbols, 20 ms of silence. 24 preamble + 16 sync
+// + 316 coded = 356 symbols of 48 samples: 960 + 17088 + 960 = 19008
+// samples, 38016 bytes of audio after a 44-byte header.
+publica firma silentium: mensura = 960;
+publica firma symbola: mensura = 356;
+publica firma exempla_symboli: mensura = 48;
+
+// ---- the WAV container (wav.c, hydra_wav_write) ----------------------------
+
+// One sample: a 16-bit PCM value, little-endian. The byte order is the
+// field's (spec §5.2), so writing a sample is a struct literal and a cast.
+@transitus
+publica structura Exemplum {
+    valor: u16:minor
+}
+
+// The 44-byte header, field by field. The four-character tags are their
+// ASCII in a `maior` field -- 0x52494646 is 'R' 'I' 'F' 'F' in that order on
+// the wire -- and every number is `minor`, as RIFF has it.
+@transitus
+publica structura Caput {
+    riff:           u32:maior   // "RIFF"
+    magnitudo:      u32:minor   // 36 + the data bytes
+    wave:           u32:maior   // "WAVE"
+    fmt:            u32:maior   // "fmt "
+    fmt_longitudo:  u32:minor   // 16, the size of what follows
+    codex:          u16:minor   // 1, PCM
+    canales:        u16:minor   // 1, mono
+    frequentia:     u32:minor   // 48000 samples a second
+    octeti_secundo: u32:minor   // 96000 bytes a second
+    passus:         u16:minor   // 2, bytes per sample frame
+    latitudo:       u16:minor   // 16 bits per sample
+    data:           u32:maior   // "data"
+    longitudo:      u32:minor   // 38016, the data bytes
+}
+
+publica functio caput() -> Caput {
+    redde Caput {
+        riff: 0x52494646,
+        magnitudo: 38052,
+        wave: 0x57415645,
+        fmt: 0x666d7420,
+        fmt_longitudo: 16,
+        codex: 1,
+        canales: 1,
+        frequentia: 48000,
+        octeti_secundo: 96000,
+        passus: 2,
+        latitudo: 16,
+        data: 0x64617461,
+        longitudo: 38016
+    };
+}
+
+// ---- the samples -------------------------------------------------------------
+
+// T[m], 0 <= m < 48, as a two's-complement u16. The reference computes
+// (float) sin(2 pi phase), multiplies it by 0.9f in float, and the WAV
+// writer takes lround(s * 32767.0) (hydra_dsp_ref.c, hydra_modem.c, wav.c),
+// so T[m] = lround(f32(f32(sin(2 pi m / 48)) * 0.9f) * 32767) -- and on this
+// profile the phase is always a whole number of 48ths (phasis, below), so
+// those 48 integers are all the audio there is.
+//
+// Quarter-wave symmetry folds m into 0..12: T[24 - m] = T[m] and
+// T[m + 24] = -T[m], both measured on all 48 entries. Only NINE first-
+// quarter values are ever read: tone 0 steps by 2 and tone 1 by 3, so the
+// folded index is never 1, 5, 7 or 11. Those four are not carried -- no
+// certificate could check them (docs/design/modem.md, D4) -- and the
+// `aliter` that would receive them is never reached.
+publica functio sinus(m: mensura) -> u16 {
+    mutabilis q: mensura = m;
+    mutabilis negativus: u1 = 0;
+    si q ge 24 {
+        q = q - 24;
+        negativus = 1;
+    }
+    si q gt 12 {
+        q = 24 - q;
+    }
+    mutabilis v: u16 = 0;
+    discerne q {
+        casus 0 { v = 0; }
+        casus 2 { v = 7633; }
+        casus 3 { v = 11285; }
+        casus 4 { v = 14745; }
+        casus 6 { v = 20853; }
+        casus 8 { v = 25539; }
+        casus 9 { v = 27245; }
+        casus 10 { v = 28485; }
+        casus 12 { v = 29490; }
+        aliter { v = 0; }
+    }
+    si negativus eq 1 {
+        v = 0 -% v;
+    }
+    redde v;
+}
+
+// The index into T of sample i (0 <= i < 48) of a symbol on tone k. The
+// reference's oscillator adds f / 48000 to a phase in [0, 1) and wraps it,
+// BEFORE each output (hydra_dsp_ref.c). Tone k is 2000 + 1000 k Hz, which
+// is c = 2 or 3 whole cycles per 48-sample symbol: the phase moves c / 48 of
+// a cycle a sample and is back at 0 at every symbol boundary. Counted in
+// 48ths of a cycle that is exact: sample i sits at (i + 1) c mod 48, walked
+// here rather than multiplied and divided.
+publica functio phasis(k: mensura, i: mensura) -> mensura {
+    mutabilis c: mensura = 2;
+    si k eq 1 {
+        c = 3;
+    }
+    mutabilis m: mensura = 0;
+    per n in 0..(i + 1) {
+        m = m + c;
+        si m ge 48 {
+            m = m - 48;
+        }
+    }
+    redde m;
+}
+
+// Sample i of a symbol on tone k.
+publica functio sona(k: mensura, i: mensura) -> u16 {
+    redde sinus(phasis(k, i));
+}
+
+// ---- the symbols ---------------------------------------------------------------
+
+// Bit u of the 158-bit stream the encoder reads: the frame's 17 bytes, the
+// CRC `c` big-endian, then six zero tail bits -- each byte MSB first
+// (hydra_frame.c, hydra_bytes_to_bits; hydra_conv.c's tail). A bit is read
+// by shifting it to the top of its byte and comparing: `sursum 1` discards
+// what passes the top (spec §5.4), so there is no mask. `u deorsum 3` is
+// the byte, a shift and not a division.
+publica functio datum(f: acies<u8, 17>, c: u16, u: mensura) -> u1 {
+    si u ge 152 {
+        redde 0;
+    }
+    si u ge 136 {
+        mutabilis w: u16 = c;
+        per k in 0..(u - 136) {
+            w = w sursum 1;
+        }
+        si w ge 0x8000 {
+            redde 1;
+        }
+        redde 0;
+    }
+    firma o: mensura = u deorsum 3;
+    mutabilis b: u8 = f[o];
+    per k in 0..(u - (o sursum 3)) {
+        b = b sursum 1;
+    }
+    si b ge 0x80 {
+        redde 1;
+    }
+    redde 0;
+}
+
+// The encoder's input `k` steps before step t. The register starts at zero
+// (hydra_conv.c: state = 0), so before the first bit there is nothing.
+functio ante(f: acies<u8, 17>, c: u16, t: mensura, k: mensura) -> u1 {
+    si t lt k {
+        redde 0;
+    }
+    redde datum(f, c, t - k);
+}
+
+// Coded bit j (0 <= j < 316) of the K=7 rate-1/2 convolutional code
+// (hydra_conv.c). Step t = j / 2 emits two bits, G0's first. The reference
+// forms reg = (b << 6) | state and shifts state = reg >> 1, so bit 6 of
+// `reg` is the current input and bit 6 - k the input k steps ago: those are
+// d1 .. d6 below, and each generator's taps read straight off its mask.
+// Parity of a masked register is the exclusive or of the tapped bits, so
+// each output is an `aut` of five -- no `and`, no parity instruction.
+//
+// It is evaluated feedforward, from the input bits, rather than by running
+// a register from bit 0: the interleaver asks for coded bit 0, then 19,
+// then 38, and a register would have to hold all 316 until asked, in a
+// buffer the language cannot yet create. An `acies` value is born only as a
+// `@transitus` struct's byte view or a copy of another array; a `mutabilis
+// a: acies<u8, 316>;` with no initialiser is EXS-E0307 at its first element
+// write, since that write reads `a` (docs/design/modem.md, D5, finding 6).
+publica functio codificatum(f: acies<u8, 17>, c: u16, j: mensura) -> u1 {
+    firma t: mensura = j deorsum 1;
+    firma b = ante(f, c, t, 0);
+    firma d1 = ante(f, c, t, 1);
+    firma d2 = ante(f, c, t, 2);
+    firma d3 = ante(f, c, t, 3);
+    firma d4 = ante(f, c, t, 4);    // tapped by neither: bit 2 is clear in both
+    firma d5 = ante(f, c, t, 5);
+    firma d6 = ante(f, c, t, 6);
+    si j eq (t sursum 1) {
+        redde b aut d1 aut d2 aut d3 aut d6;      // G0 = 0x79 = 1111001
+    }
+    redde b aut d2 aut d3 aut d5 aut d6;          // G1 = 0x5B = 1011011
+}
+
+// The interleaver (hydra_interleave.c) is a gather, out[d] = in[(19 d) mod
+// 316]: 19 is the first stride from 18 = ceil(sqrt(316)) coprime to 316.
+// The index is walked, 19 at a time, with one subtraction when it passes
+// 316 (19 < 316, so one is enough): no multiplication, no remainder.
+publica functio intertexe(d: mensura) -> mensura {
+    mutabilis j: mensura = 0;
+    per n in 0..d {
+        j = j + 19;
+        si j ge 316 {
+            j = j - 316;
+        }
+    }
+    redde j;
+}
+
+// Preamble symbol s: tone 0, 1, 0, 1 ... -- `k & 1 ? N - 1 : 0`
+// (hydra_frame.c). s - 2 (s / 2) is s mod 2, by shifts.
+publica functio praeambulum(s: mensura) -> mensura {
+    redde s - ((s deorsum 1) sursum 1);
+}
+
+// Sync symbol n: bit n of 0x2DD4, MSB first (hydra_frame_sync_bits).
+publica functio synchronia(n: mensura) -> mensura {
+    mutabilis w: u16 = 0x2dd4;
+    per k in 0..n {
+        w = w sursum 1;
+    }
+    si w ge 0x8000 {
+        redde 1;
+    }
+    redde 0;
+}
+
+// The tone of symbol s (0 <= s < 356) of the frame f whose modem CRC is c:
+// 24 preamble symbols, 16 sync symbols, then the 316 interleaved coded
+// bits, one bit a symbol -- 2-FSK, so the bit is the tone.
+publica functio tonus(f: acies<u8, 17>, c: u16, s: mensura) -> mensura {
+    si s lt 24 {
+        redde praeambulum(s);
+    }
+    si s lt 40 {
+        redde synchronia(s - 24);
+    }
+    si codificatum(f, c, intertexe(s - 40)) eq 1 {
+        redde 1;
+    }
+    redde 0;
+}

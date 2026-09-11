@@ -1,9 +1,19 @@
 # examples/
 
-Exsecutor source. Everything here lexes, parses and builds a typed AST
-(`exsc aedifica --hospes x86_64-linux --emitte ast FILE`); nothing here is
-type-checked or compiled to code yet (spec §16, Stages 2 and 3). This file
-said "nothing here compiles — there is no compiler" until 2026-09-10.
+Exsecutor source, two programs, both compiled and run by `tests/run.sh`:
+
+- **the hello world** — `saluta.exsc`, `imprime.exsc`, `initium.exsc`,
+  below; `tests/programs/saluta/` and `tools/publish-gate.sh` run it;
+- **`hydramodem/`** — a transmitter for HydraModem's acoustic modem that
+  writes, byte for byte, the WAV HydraModem's own reference transmitter
+  writes for the same frame. `hydramodem/README.md` has how to build and
+  run it; `tests/programs/hydramodem_*/` compare its output with the
+  vendored reference WAVs.
+
+This file said "nothing here compiles — there is no compiler" until
+2026-09-10, and then, until the hydramodem commit, that nothing here was
+type-checked or compiled to code, which the hello world's test had already
+made false.
 
 ## `saluta.exsc`
 
@@ -117,3 +127,18 @@ it.
 `forma` in the second line is also, now, a reserved word (§8.4). Inside a
 string literal that is no collision, but it is a coincidence worth having
 noticed rather than discovered later.
+
+## `hydramodem/`
+
+The second program: HydraModem's transmitter. Six files, one compilation
+unit per frame — `quantum.exsc` (the frame's type and its CRC),
+`modulator.exsc` (the transmitter, pure: no `poscit`, no capability),
+`emitte.exsc` (the writer) and one of three drivers, each an `initium`
+holding one frame as a `DeModFrame` struct literal. Only the driver names
+`Mundus`. `hydramodem/README.md` says how to build it, what it computes and
+what three frames do and do not prove; `docs/design/modem.md` is the design.
+
+It is written without bitwise and or or, division, remainder, signed
+arithmetic or array literals, none of which the language has settled. Its
+sine table is a `discerne`; designing it found that no `discerne` had ever
+compiled with `-o`, and that was fixed first (`tests/programs/discerne/`).

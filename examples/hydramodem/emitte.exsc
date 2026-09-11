@@ -1,0 +1,55 @@
+// examples/hydramodem/emitte.exsc -- the writer. It walks the layout
+// modulator.exsc defines and puts every byte of the WAV on a Scriptor, one
+// `scribe_octeto` per byte (docs/design/wire-codec.md D7): the 44-byte
+// header, then 19,008 samples of two bytes each. Nothing here decides a
+// byte; modulator.exsc decides them all.
+//
+// The authority is the writer's: whatever the Scriptor handed in carries,
+// these functions draw on, and nothing else. They write no `poscit`. They
+// are private, so spec §4.1 rule 5 infers each row from its body, and that
+// is the whole reason: declaring `poscit sicut s` on a function that calls
+// another so declared is refused today, EXS-E0421, which spec §4.2 says it
+// should not be -- a checker defect (wire-codec.md finding 9), and the same
+// arrangement tests/conformance/entry23/probatio.exsc uses.
+
+// One sample, little-endian, through `Exemplum`'s byte view.
+functio scribe_exemplum(s: Scriptor, v: u16) -> mensura {
+    firma b = Exemplum { valor: v } sicut acies<u8, 2>;
+    mutabilis n: mensura = s.scribe_octeto(b[0]);
+    n = n + s.scribe_octeto(b[1]);
+    redde n;
+}
+
+functio scribe_caput(s: Scriptor) -> mensura {
+    firma b = caput() sicut acies<u8, 44>;
+    mutabilis n: mensura = 0;
+    per i in 0..44 {
+        n = n + s.scribe_octeto(b[i]);
+    }
+    redde n;
+}
+
+functio scribe_silentium(s: Scriptor) -> mensura {
+    mutabilis n: mensura = 0;
+    per i in 0..silentium {
+        n = n + scribe_exemplum(s, 0);
+    }
+    redde n;
+}
+
+// The whole WAV for the frame whose bytes are f: header, silence, 356
+// symbols of 48 samples, silence. Returns the bytes written -- 38,060 when
+// every call wrote its byte.
+functio modula(s: Scriptor, f: acies<u8, 17>) -> mensura {
+    firma c: u16 = redundantia(f, 17);
+    mutabilis n: mensura = scribe_caput(s);
+    n = n + scribe_silentium(s);
+    per y in 0..symbola {
+        firma k: mensura = tonus(f, c, y);
+        per i in 0..exempla_symboli {
+            n = n + scribe_exemplum(s, sona(k, i));
+        }
+    }
+    n = n + scribe_silentium(s);
+    redde n;
+}

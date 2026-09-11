@@ -1,0 +1,27 @@
+// examples/hydramodem/exemplum.exsc -- the driver for the DeModFrame
+// example frame, d31312340001ffffdeadbeefab12cd24c0: §14 entry 23's anchor
+// (vendor/hydramesh-wire's exampleFrame_full), many bits set in every
+// field. It writes vendor/hydramodem-tx/<the frame>.wav to standard output,
+// byte for byte (tests/programs/hydramodem_exemplum/). loopback.exsc's
+// header says the rest; only the frame differs.
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma s = Scriptor.ad_exitum(a);
+    firma f = DeModFrame {
+        signum: 0xd3,
+        versio: 1,
+        genus: 3,
+        numerus: 0x1234,
+        fons: 0x0001,
+        meta: 0xffff,
+        onus: 0xdeadbeef,
+        tempus: 0xab12cd,
+        cursus: 0x24c0
+    };
+    si modula(s, f sicut acies<u8, 17>) ne 38060 {
+        redde 1;
+    }
+    redde 0;
+}

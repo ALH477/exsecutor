@@ -1,0 +1,5 @@
+# HydraModem's transmitter (examples/hydramodem/) on the all-zero body,
+# sealed: d310000000000000000000000000005b80. stdout is the WAV, compared
+# with `cmp` against HydraModem's own rendering. hydramodem_loopback/TEST
+# says the rest.
+TEST: expect-exit=0 stdout=vendor/hydramodem-tx/d310000000000000000000000000005b80.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/emitte.exsc,examples/hydramodem/vacuum.exsc

@@ -1,0 +1,48 @@
+// examples/hydramodem/quantum.exsc -- what the modem carries: spec §5.2's
+// DeModFrame, the 17-byte DCF quantum, and the CRC HydraModem appends to it.
+// Pure: no `poscit`, no capability, no `initium`.
+//
+// The declaration is §5.2's worked example verbatim, as tests/programs/
+// forma/ declares it: there is no module system yet to import §14 entry
+// 23's. The modem never reads a field -- it takes the frame's seventeen
+// bytes, `f sicut acies<u8, 17>` -- so the type is here for the drivers,
+// which write each frame as a struct literal, every field named.
+
+@transitus
+publica structura DeModFrame {
+    signum:  u8               // 0xD3, the first validity gate
+    versio:  u4               // packs MSB-first with genus
+    genus:   u4               // frame type
+    numerus: u16:maior
+    fons:    u16:maior
+    meta:    u16:maior
+    onus:    u32:maior
+    tempus:  u24:maior        // 24-bit microsecond offset
+    cursus:  u16:maior        // CRC-16/CCITT-FALSE over bytes 0..14
+}
+
+// CRC-16/CCITT-FALSE over b[0..n): init 0xFFFF, polynomial 0x1021, no
+// reflection, no final xor -- hydra_crc.c, and entry 23's `redundantia`
+// unchanged. `c sursum 1` discards the bit shifted past the top (spec §5.4),
+// so there is no mask; `c ge 0x8000` reads that bit before it goes.
+//
+// HydraModem computes it over all SEVENTEEN bytes (hydra_frame.c,
+// build_data_bits), cursus included. For a valid frame that is the CRC of a
+// word followed by its own CRC, which for this CRC is always 0x0000 -- so on
+// every valid frame the sixteen bits it appends are zeros. It is computed
+// here all the same: the modem does not know the frame is valid, and an
+// invalid one gets a nonzero CRC.
+publica functio redundantia(b: acies<u8, 17>, n: mensura) -> u16 {
+    mutabilis c: u16 = 0xffff;
+    per i in 0..n {
+        c = c aut ((b[i] sicut u16) sursum 8);
+        per k in 0..8 {
+            si c ge 0x8000 {
+                c = (c sursum 1) aut 0x1021;
+            } aliter {
+                c = c sursum 1;
+            }
+        }
+    }
+    redde c;
+}

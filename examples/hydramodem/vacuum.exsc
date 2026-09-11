@@ -1,0 +1,27 @@
+// examples/hydramodem/vacuum.exsc -- the driver for the all-zero body,
+// sealed: d310000000000000000000000000005b80. Every free field is 0; 0x5b80
+// is the CRC of the fifteen bytes before it (§14 entry 23, section 1
+// vector 0). It writes vendor/hydramodem-tx/<the frame>.wav to standard
+// output, byte for byte (tests/programs/hydramodem_vacuum/).
+// loopback.exsc's header says the rest; only the frame differs.
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma s = Scriptor.ad_exitum(a);
+    firma f = DeModFrame {
+        signum: 0xd3,
+        versio: 1,
+        genus: 0,
+        numerus: 0,
+        fons: 0,
+        meta: 0,
+        onus: 0,
+        tempus: 0,
+        cursus: 0x5b80
+    };
+    si modula(s, f sicut acies<u8, 17>) ne 38060 {
+        redde 1;
+    }
+    redde 0;
+}
