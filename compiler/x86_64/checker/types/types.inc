@@ -176,6 +176,10 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	je	.lambda
 	cmp	rcx, AST_STRUCTLIT
 	je	.structlit
+	cmp	rcx, AST_ARRAYLIT
+	je	.arraylit
+	cmp	rcx, AST_ARRAYREP
+	je	.arraylit
 	cmp	rcx, AST_ERROR
 	je	.err
 	; Anything else in expression position answers `unit`, AND THIS ARM IS A
@@ -422,6 +426,16 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	mov	rdi, rbx
 	mov	rsi, r12
 	call	__chk_ty_structlit
+	jmp	.out
+
+  .arraylit:
+	; `[e1, …, en]` and `[e; N]` -- spec §8.6. THIS position supplies no
+	; expectation; a position that does comes through `__chk_ty_want`,
+	; which hands it to the same routine before this one is reached.
+	mov	rdi, rbx
+	mov	rsi, r12
+	xor	rdx, rdx
+	call	__chk_ty_arraylit
 	jmp	.out
 
   .out:
@@ -712,10 +726,37 @@ endp
 proc __chk_ty_want, chkt_wW, chkt_nW, chkt_tW
 	uses	rbx, r12, r13
 	locals
+		slot chkt_yW, dq
 	endl
 	mov	rbx, [chkt_wW]
 	mov	r12, [chkt_nW]
 	mov	r13, [chkt_tW]
+	; AN ARRAY LITERAL TAKES THE EXPECTATION BEFORE IT IS TYPED, because
+	; what the expectation has to reach is its ELEMENTS -- see
+	; `__chk_ty_arraylit`'s header. Everything else is typed first and
+	; compared after, which is what the rest of this routine does.
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_arraykind
+	test	eax, eax
+	jz	.plain
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_ty
+	test	rax, rax
+	jnz	.plain			; typed already: compare, never re-type
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, r13
+	call	__chk_ty_arraylit
+	mov	[chkt_yW], rax
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, rax
+	call	__chk_ty_setty
+	mov	rax, [chkt_yW]
+	jmp	.have
+  .plain:
 	mov	rdi, rbx
 	mov	rsi, r12
 	call	__chk_ty_expr
@@ -966,6 +1007,446 @@ proc __chk_ty_index, chkt_wN, chkt_nN
 	call	__chk_ty_expr
 	mov	rdi, rbx
 	call	__chk_ty_err
+	return
+endp
+
+; __chk_ty_arraylit(w, n, want) -> rax = the type of an array literal, in
+; either of spec §8.6's two forms, given the EXPECTED type `want` (0 where the
+; position supplies none).
+;
+; WHY THE EXPECTATION IS AN ARGUMENT AND NOT A LATER CHECK. Everywhere else in
+; this pass an expectation reaches a pending literal through
+; `__chk_ty_expect`, which descends `Lit`, `Binary` and `Unary`. An array
+; literal is none of those and its ELEMENTS are what the expectation has to
+; reach: `firma a: acies<u8, 3> = [1, 2, 3];` must type three `u8`s, and
+; `firma a: acies<u8, 3> = [1, x, 3];` with `x: u16` must be `EXS-E0303` AT
+; `x` -- the offending element -- and not one mismatch at the whole literal.
+; So `__chk_ty_want` hands the expectation in here BEFORE the literal is
+; typed, and `__chk_ty_expr` passes 0 for a position that has none.
+;
+; THE ELEMENT TYPE, in the order the rules apply:
+;   1. the expected type's element type, if the expectation is an `acies`;
+;   2. otherwise the first element whose type is SETTLED -- every other
+;      element is then checked against it (`EXS-E0303` at that element) and
+;      every pending one takes it, exactly as the other operand of a `Binary`
+;      does;
+;   3. otherwise nothing settles it and the literal is `EXS-E0308` at itself,
+;      for the same reason a lone `1` in a position with no expectation is:
+;      "literal cannot be typed".
+;
+; THE COUNT IS PART OF THE TYPE (spec §5.4), so a length mismatch needs no
+; rule of its own: the literal's type is `acies<T, n>` with `n` the number of
+; elements written, and `__chk_ty_want`'s `__chk_ty_same` reports the
+; difference from `acies<T, 17>` as `EXS-E0303` by id inequality, like any
+; other pair of types.
+;
+; ADMITTED ELEMENT TYPES are the integer types (`uN`, `iN`, `mensura`) and
+; `@transitus` structs; anything else -- a `textus`, a float, a plain struct,
+; an `acies` (so a nested `[[1, 2], [3, 4]]` is refused today), a reference --
+; is `EXS-E0305` at the literal, once. The restriction is what the lowering
+; can actually store element by element; widening it is a lowering change
+; first and a checker change second.
+proc __chk_ty_arraylit, chkt_wAL, chkt_nAL, chkt_qAL
+	uses	rbx, r12, r13, r14
+	locals
+		slot chkt_kAL, dq	; the node kind
+		slot chkt_oAL, dq	; the element list offset / the element
+		slot chkt_cAL, dq	; the element count
+		slot chkt_eAL, dq	; the element type
+		slot chkt_iAL, dq
+		slot chkt_xAL, dq
+	endl
+	mov	rbx, [chkt_wAL]
+	mov	r12, [chkt_nAL]
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_node
+	movzx	ecx, word [rax + AstNode.kind]
+	mov	[chkt_kAL], rcx
+	mov	ecx, [rax + AstNode.a]
+	mov	[chkt_oAL], rcx
+	mov	ecx, [rax + AstNode.b]
+	mov	[chkt_cAL], rcx
+	mov	qword [chkt_eAL], 0
+
+	; ---- what the position expects ---------------------------------------
+	cmp	qword [chkt_qAL], 0
+	je	.count
+	cmp	qword [chkt_qAL], 1
+	je	.count			; the error type: no cascade
+	mov	rdi, rbx
+	mov	rsi, [chkt_qAL]
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_ACIES
+	je	.wantacies
+	; `firma x: u8 = [1, 2];` -- the expectation is not an array at all.
+	; `EXS-E0303` here, at the literal, rather than the `EXS-E0308` the
+	; element rule would give: nothing about the ELEMENTS is wrong.
+	mov	rdi, rbx
+	mov	rsi, 303
+	mov	rdx, r12
+	call	__chk_ty_raise
+	mov	rdi, rbx
+	call	__chk_ty_err
+	mov	[chkt_eAL], rax
+	jmp	.count
+  .wantacies:
+	mov	rdi, rbx
+	mov	rsi, [chkt_qAL]
+	mov	rdx, AstType.a
+	call	__chk_ty_field
+	mov	[chkt_eAL], rax
+
+	; ---- the repeat form's count ------------------------------------------
+  .count:
+	cmp	qword [chkt_kAL], AST_ARRAYREP
+	jne	.list
+	mov	rdi, rbx
+	mov	rsi, [chkt_cAL]
+	call	__chk_ty_kind
+	cmp	rax, AST_LIT
+	jne	.rep_bad
+	mov	rdi, rbx
+	mov	rsi, [chkt_cAL]
+	call	__chk_ty_node
+	movzx	ecx, word [rax + AstNode.aux]
+	cmp	ecx, AST_LIT_INT
+	jne	.rep_bad
+	mov	rdi, rbx
+	mov	rsi, [chkt_cAL]
+	call	chk_ty_litval
+	test	rdx, rdx
+	jz	.rep_bad
+	; a count of 0, or one past what `AstType.width` holds, is a literal
+	; this position cannot be typed with -- `EXS-E0308`, spec §13's
+	; "literal cannot be typed or does not fit its width". `[]` is refused
+	; by the parser and `[e; 0]` is the same array.
+	test	rax, rax
+	jz	.rep_bad
+	cmp	rax, 0x7FFFFFFF
+	ja	.rep_bad
+	mov	[chkt_cAL], rax
+	mov	qword [chkt_xAL], 1	; one element expression, `a`
+	jmp	.elems
+  .rep_bad:
+	mov	rdi, rbx
+	mov	rsi, [chkt_cAL]
+	call	__chk_ty_kind
+	cmp	rax, AST_ERROR
+	je	.rep_quiet		; the parser already said so
+	mov	rdi, rbx
+	mov	rsi, 308
+	mov	rdx, [chkt_cAL]
+	call	__chk_ty_raise
+  .rep_quiet:
+	mov	rdi, rbx
+	call	__chk_ty_err
+	mov	[chkt_eAL], rax
+	mov	qword [chkt_cAL], 1
+	mov	qword [chkt_xAL], 1
+	jmp	.elems
+
+  .list:
+	; `[]` -- the parser reported it (`EXS-E0201`); nothing more is owed
+	cmp	qword [chkt_cAL], 0
+	jne	.list_ok
+	mov	rdi, rbx
+	call	__chk_ty_err
+	return
+  .list_ok:
+	mov	qword [chkt_xAL], 0	; the elements are a list at `a`
+
+	; ---- the elements ------------------------------------------------------
+  .elems:
+	cmp	qword [chkt_eAL], 0
+	jne	.known
+	; No expectation: the first SETTLED element decides.
+	mov	qword [chkt_iAL], 0
+  .scan:
+	mov	rax, [chkt_iAL]
+	cmp	rax, [chkt_cAL]
+	jae	.scanned
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, [chkt_iAL]
+	call	__chk_ty_elemat
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	__chk_ty_expr
+	test	rax, rax
+	jz	.scan_next
+	cmp	qword [chkt_eAL], 0
+	jne	.scan_next
+	mov	[chkt_eAL], rax
+  .scan_next:
+	inc	qword [chkt_iAL]
+	cmp	qword [chkt_xAL], 0
+	jne	.scanned		; the repeat form has ONE element
+	jmp	.scan
+  .scanned:
+	cmp	qword [chkt_eAL], 0
+	jne	.settle
+	; every element still pending, and nothing to settle them with
+	mov	rdi, rbx
+	mov	rsi, 308
+	mov	rdx, r12
+	call	__chk_ty_raise
+	mov	rdi, rbx
+	call	__chk_ty_err
+	mov	[chkt_eAL], rax
+  .settle:
+	; second walk: a pending element takes the type, a settled one is
+	; compared with it (`EXS-E0303` at the element)
+	mov	qword [chkt_iAL], 0
+  .settle_one:
+	mov	rax, [chkt_iAL]
+	cmp	rax, [chkt_cAL]
+	jae	.admit
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, [chkt_iAL]
+	call	__chk_ty_elemat
+	mov	r13, rax
+	mov	rdi, rbx
+	mov	rsi, r13
+	call	__chk_ty_ty
+	mov	r14, rax
+	test	r14, r14
+	jnz	.settle_cmp
+	mov	rdi, rbx
+	mov	rsi, r13
+	mov	rdx, [chkt_eAL]
+	call	__chk_ty_expect
+	mov	rdi, rbx
+	mov	rsi, rax
+	mov	rdx, r13
+	call	__chk_ty_settled
+	jmp	.settle_next
+  .settle_cmp:
+	mov	rdi, rbx
+	mov	rsi, r14
+	mov	rdx, [chkt_eAL]
+	mov	rcx, r13
+	call	__chk_ty_same
+  .settle_next:
+	inc	qword [chkt_iAL]
+	cmp	qword [chkt_xAL], 0
+	jne	.admit			; the repeat form has ONE element
+	jmp	.settle_one
+	; An expectation was supplied: every element is typed against it
+	; directly, so a mismatch lands on the element.
+  .known:
+	mov	qword [chkt_iAL], 0
+  .known_one:
+	mov	rax, [chkt_iAL]
+	cmp	rax, [chkt_cAL]
+	jae	.admit
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, [chkt_iAL]
+	call	__chk_ty_elemat
+	mov	r13, rax
+	mov	rdi, rbx
+	mov	rsi, r13
+	mov	rdx, [chkt_eAL]
+	call	__chk_ty_want
+	inc	qword [chkt_iAL]
+	cmp	qword [chkt_xAL], 0
+	jne	.admit
+	jmp	.known_one
+
+	; ---- the element type, and the answer ----------------------------------
+  .admit:
+	mov	rdi, rbx
+	mov	rsi, [chkt_eAL]
+	call	__chk_ty_elemadm
+	test	eax, eax
+	jnz	.build
+	mov	rdi, rbx
+	mov	rsi, 305
+	mov	rdx, r12
+	call	__chk_ty_raise
+	mov	rdi, rbx
+	call	__chk_ty_err
+	return
+  .build:
+	cmp	qword [chkt_eAL], 1
+	je	.err			; the error type: no `acies` of it
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, AST_TY_ACIES
+	mov	rdx, [chkt_eAL]
+	mov	rcx, [chkt_cAL]
+	call	ast_type_una
+	return
+  .err:
+	mov	rdi, rbx
+	call	__chk_ty_err
+	return
+endp
+
+; __chk_ty_elemat(w, n, i) -> rax = element `i` of array literal `n`: the
+; `i`th entry of the list for `[e1, …, en]`, and `a` itself -- once -- for
+; `[e; N]`, whose single element expression is evaluated once however large
+; the count is (spec §8.6).
+proc __chk_ty_elemat, chkt_wEA, chkt_nEA, chkt_iEA
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [chkt_wEA]
+	mov	r12, [chkt_nEA]
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_node
+	movzx	ecx, word [rax + AstNode.kind]
+	mov	edx, [rax + AstNode.a]
+	cmp	ecx, AST_ARRAYREP
+	je	.one
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	lea	rsi, [rdx]
+	add	rsi, [chkt_iEA]
+	call	ast_extra_at
+	return
+  .one:
+	mov	rax, rdx
+	return
+endp
+
+; __chk_ty_rootmut(w, n) -> eax = 1 if the PLACE `n` may be written through,
+; judged on the binding at its root: `a[i] = v` and `s.f = v` write `a` and
+; `s`, so a `firma` root is `EXS-E0306` exactly as `a = v` on the same binding
+; is (spec §4.1 rule 7). `__chk_ty_isplace` (member.inc) answers a different
+; question -- whether the target is a place at all -- and answered `yes` for a
+; `firma` array's element, which is how `firma a: acies<u16, 4> = [0; 4];
+; a[2] = y;` type-checked until array literals gave anyone a way to write one.
+;
+; A DEREFERENCE STOPS THE WALK, and answers "writable": `*p = v` writes what
+; `p` points at, not `p`, and `firma p: *u8` is an immutable POINTER to a
+; mutable place.
+;
+; `[OPEN]`: a PARAMETER root is still writable here. Spec §6.3 rule 3 makes
+; parameters borrowed and `docs/design/ssa-ir.md` 2.9 makes an aggregate
+; argument read-only to the callee, so `functio f(v: acies<u8, 2>) { v[0] = 1;
+; }` should be refused too -- but that is a rule about parameters, not about
+; array literals, it needs its own reading of §6.3, and no fixture in this
+; tree exercises it either way. Widening this routine is that change, not
+; this one.
+proc __chk_ty_rootmut, chkt_wRM, chkt_nRM
+	uses	rbx, r12, r13
+	locals
+	endl
+	mov	rbx, [chkt_wRM]
+	mov	r12, [chkt_nRM]
+  .walk:
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_kind
+	cmp	rax, AST_MEMBER
+	je	.down
+	cmp	rax, AST_INDEX
+	je	.down
+	cmp	rax, AST_PATH
+	je	.path
+	jmp	.yes			; a dereference, or anything
+					; `__chk_ty_isplace` already refused
+  .down:
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_node
+	mov	ecx, [rax + AstNode.a]
+	mov	r12, rcx
+	jmp	.walk
+  .path:
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_seg0
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	__chk_ty_node
+	mov	r13d, [rax + AstNode.d]
+	test	r13, r13
+	jz	.yes			; unresolved: pass 1 said so already
+	mov	rdi, r13
+	call	__chk_ty_is_pre
+	test	eax, eax
+	jnz	.yes
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, r13
+	call	ast_decl_at
+	movzx	ecx, byte [rax + AstDecl.kind]
+	cmp	ecx, AST_D_BINDING
+	jne	.yes
+	movzx	ecx, byte [rax + AstDecl.flags]
+	test	ecx, AST_F_MUTABILIS
+	jz	.no
+  .yes:
+	mov	eax, 1
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
+; __chk_ty_arraykind(w, n) -> eax = 1 if node `n` is an array literal in
+; either form. The one question `__chk_ty_want` asks before it types anything.
+proc __chk_ty_arraykind, chkt_wAK, chkt_nAK
+	locals
+	endl
+	mov	rdi, [chkt_wAK]
+	mov	rsi, [chkt_nAK]
+	call	__chk_ty_kind
+	cmp	rax, AST_ARRAYLIT
+	je	.yes
+	cmp	rax, AST_ARRAYREP
+	je	.yes
+	xor	eax, eax
+	return
+  .yes:
+	mov	eax, 1
+	return
+endp
+
+; __chk_ty_elemadm(w, t) -> eax = 1 if `t` may be an array literal's element
+; type: an integer (`uN`/`iN`), `mensura`, a `@transitus` struct, or the error
+; type (no cascade). See `__chk_ty_arraylit`'s header for why the set is this
+; narrow.
+proc __chk_ty_elemadm, chkt_wEM, chkt_tEM
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [chkt_wEM]
+	mov	r12, [chkt_tEM]
+	test	r12, r12
+	jz	.no
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_INT
+	je	.yes
+	cmp	rax, AST_TY_MENSURA
+	je	.yes
+	cmp	rax, AST_TY_ERROR
+	je	.yes
+	cmp	rax, AST_TY_STRUCT
+	jne	.no
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, r12
+	call	ast_type_at
+	mov	r12d, [rax + AstType.a]		; the struct's declaration
+	mov	rdi, r12
+	call	__chk_ty_is_pre
+	test	eax, eax
+	jnz	.no				; the prelude's `Scriptor`
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, r12
+	call	ast_decl_at
+	movzx	ecx, byte [rax + AstDecl.flags]
+	test	ecx, AST_F_TRANSITUS
+	jz	.no
+  .yes:
+	mov	eax, 1
+	return
+  .no:
+	xor	eax, eax
 	return
 endp
 

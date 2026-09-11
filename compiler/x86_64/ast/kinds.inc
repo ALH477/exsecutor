@@ -108,7 +108,13 @@ AST_ERROR	= 50
 ; the same number, and nothing reads an order off these values.
 AST_STRUCTLIT	= 51
 AST_FIELDINIT	= 52
-AST_KIND_MAX	= 52
+; Spec §8.6's array literals, appended for the same reason: `[e1, …, en]` is
+; `AST_ARRAYLIT` and `[e; N]` is `AST_ARRAYREP`. Two kinds and not one with an
+; `aux` bit, because the two carry different operands -- a LIST of elements
+; against one element and one count -- and `ast_roles` below is per kind.
+AST_ARRAYLIT	= 53
+AST_ARRAYREP	= 54
+AST_KIND_MAX	= 54
 
 ; ---- operand roles ---------------------------------------------------------
 ; What one of `a b c d` holds, for one kind. `AST_R_LIST` and `AST_R_LIST2`
@@ -431,6 +437,14 @@ ast_roles:
 	; declaration once pass 2 has matched the name (0 until then, and 0 for
 	; a name the struct does not declare).
 	db AST_R_NAME,  AST_R_NODEQ, AST_R_NONE,  AST_R_DECL	; 52 FieldInit
+	; `ArrayLit.a`/`b` are the elements in SOURCE order, which is also
+	; ascending index order and therefore evaluation order (spec §8.6).
+	db AST_R_LIST,  AST_R_COUNT, AST_R_NONE,  AST_R_NONE	; 53 ArrayLit
+	; `ArrayRep.a` is the element expression, evaluated ONCE, and `b` the
+	; count -- an `INT` literal node, because the count is part of the type
+	; (spec §5.4) and a type may not depend on a value. `b` is an `Error`
+	; node when the parser refused what stood there.
+	db AST_R_NODEQ, AST_R_NODEQ, AST_R_NONE,  AST_R_NONE	; 54 ArrayRep
 AST_ROLES_LEN = $ - ast_roles
 assert AST_ROLES_LEN = AST_KIND_MAX * 4
 
@@ -501,6 +515,8 @@ ast_kind_names:
 	db 5,'Error'
 	db 9,'StructLit'
 	db 9,'FieldInit'
+	db 8,'ArrayLit'
+	db 8,'ArrayRep'
 AST_KIND_NAMES_LEN = $ - ast_kind_names
 
 ast_dkind_names:

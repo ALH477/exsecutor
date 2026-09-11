@@ -71,7 +71,7 @@ calls):
    48 fixtures (`IR_FIXTURE_FLOOR`).
 4. **`tests/programs/`** — Exsecutor sources, RUN. Each directory is one
    program: `exsc aedifica --hospes x86_64-linux SRC... -o OUT`, `fasmg OUT
-   BIN`, run, check. 13 programs run (`PROGRAM_FIXTURE_FLOOR`); none is
+   BIN`, run, check. 14 programs run (`PROGRAM_FIXTURE_FLOOR`); none is
    deferred (the `status=deferred` mechanism below stays for the next one).
    Four are HydraModem's transmitter, `examples/hydramodem/`: three WAVs
    (`hydramodem_{loopback,exemplum,vacuum}/`) and the 137-word symbol-stream
@@ -227,7 +227,12 @@ named `TEST` in the directory (`#` lines are comments). The compilation
 unit is the directory's own `*.exsc` in byte order (`LC_ALL=C`), or
 `sources=A,B,...` — repo-relative, in that order — to compile sources that
 live elsewhere; `saluta/` uses it to build the hello world from `examples/`
-rather than keep a second copy. A file `expected.out` is the stdout
+rather than keep a second copy. `sources=` names the whole unit, so a
+directory that uses it may still hold its own source, **provided `sources=`
+lists it**: `acies/` compiles `examples/hydramodem/`'s modulator (a library
+— it has no `initium` and cannot be a unit by itself) together with its own
+`acies.exsc`. An own `*.exsc` that `sources=` does not list is refused, which
+is the ambiguity the rule was written for. A file `expected.out` is the stdout
 reference when present. `exsc-exit=N` expects `exsc` itself to fail with
 shell status `N` and runs nothing; `ordo_maior_custodia/` used it for the
 lowering's byte-order guard until milestone M6 removed the guard, and the

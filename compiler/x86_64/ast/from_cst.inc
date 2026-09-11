@@ -1727,6 +1727,109 @@ proc __ast_w_fieldinit, w, red
 	return
 endp
 
+; ---- array literals --------------------------------------------------------
+; Spec §8.6. `[e1, …, en]` -> `AST_ARRAYLIT` (a/b = the elements in source
+; order and their count); `[e; N]` -> `AST_ARRAYREP` (a = the element, b = the
+; count literal).
+;
+; THE ELEMENTS ARE EXACTLY THE INTERIOR CHILDREN: the brackets, the commas and
+; the `;` are leaves, so `__ast_w_inners` is the list and no filtering by kind
+; is needed. A `CST_ERROR` the parser left where an element should be comes
+; through as an `AST_ERROR` element, which is what keeps `ArrayLit`'s list
+; slots honest when recovery ran.
+proc __ast_w_arraylit, w, red
+	uses	rbx, r12, r13, r14
+	locals
+	endl
+	mov	rbx, [w]
+	mov	r12, [red]
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__ast_w_inners
+	mov	r13, rax
+	mov	r14, rdx
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, AST_ARRAYLIT
+	xor	rcx, rcx
+	mov	r8, r13
+	mov	r9, r14
+	call	__ast_w_mk
+	return
+endp
+
+; The repeat form. Both operands are `AST_R_NODEQ`, so an absent one -- the
+; parser refused the count and put the token in a `CST_ERROR`, or the whole
+; thing is `[;`-shaped wreckage -- becomes an `AST_ERROR` rather than a 0 the
+; verifier would trap on. The parser has already reported it.
+proc __ast_w_arrayrep, w, red
+	uses	rbx, r12, r13, r14
+	locals
+		slot wa_i,   dq
+	endl
+	mov	rbx, [w]
+	mov	r12, [red]
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, -1
+	call	__ast_w_kid_node
+	mov	[wa_i], rdx
+	mov	r13, rax
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, [wa_i]
+	call	__ast_w_kid_node
+	mov	r14, rax
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, AST_ARRAYREP
+	xor	rcx, rcx
+	mov	r8, r13
+	mov	r9, r14
+	call	__ast_w_mk
+	return
+endp
+
+; __ast_w_kid_node(w, red, after) -> rax = the interior child strictly after
+; index `after` built as a node (an `AST_ERROR` if there is none), rdx = the
+; index it was found at (or `after` unchanged, so a second call cannot loop).
+proc __ast_w_kid_node, w, red, after
+	uses	rbx, r12, r13
+	locals
+		slot wk_sub, sizeof.CstRed
+		slot wk_i,   dq
+	endl
+	mov	rbx, [w]
+	mov	r12, [red]
+	mov	r13, [after]
+	mov	[wk_i], r13
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, r13
+	call	__ast_w_nexti
+	cmp	rax, 0
+	jl	.none
+	mov	[wk_i], rax
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, rax
+	lea	rcx, [wk_sub]
+	call	__ast_w_child
+	mov	rdi, rbx
+	lea	rsi, [wk_sub]
+	call	__ast_w_node
+	test	rax, rax
+	jz	.none
+	mov	rdx, [wk_i]
+	return
+  .none:
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__ast_w_err
+	mov	rdx, [wk_i]
+	return
+endp
+
 ; ---- literals --------------------------------------------------------------
 ; typed-ast.md section 2.3: a `Lit` keeps TEXT, not value -- spec §8.4's
 ; numeric grammar is `[OPEN]` and a value needs a width the checker supplies,
@@ -4427,6 +4530,10 @@ proc __ast_w_node, w, red
 	je	.path
 	cmp	r13, CST_FIELD_INIT
 	je	.fieldinit
+	cmp	r13, CST_ARRAY_LIT
+	je	.arraylit
+	cmp	r13, CST_ARRAY_REPEAT
+	je	.arrayrep
 	cmp	r13, CST_ERROR
 	je	.error
 	; Consumed by a parent: PARAM_LIST, ANNOTATION, INTERFACE_BODY,
@@ -4439,6 +4546,16 @@ proc __ast_w_node, w, red
 	mov	rdi, rbx
 	mov	rsi, r12
 	call	__ast_w_fieldinit
+	return
+  .arraylit:
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__ast_w_arraylit
+	return
+  .arrayrep:
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__ast_w_arrayrep
 	return
 
   .module:

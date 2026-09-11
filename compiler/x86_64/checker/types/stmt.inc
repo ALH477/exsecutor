@@ -589,7 +589,17 @@ proc __chk_ty_lvalue, chkt_wLV, chkt_nLV
 	mov	rsi, r12
 	call	__chk_ty_isplace
 	test	eax, eax
+	jz	.notaplace
+	; ... and only inside a MUTABLE one: `firma a: acies<u16, 4>` admits no
+	; `a[2] = y` any more than it admits `a = b` (spec §4.1 rule 7,
+	; types.inc's `__chk_ty_rootmut`, which records what it does not yet
+	; reach)
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_rootmut
+	test	eax, eax
 	jnz	.place
+  .notaplace:
 	mov	rdi, rbx
 	mov	rsi, 306
 	mov	rdx, r12

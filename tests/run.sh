@@ -50,7 +50,7 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # this -- the test is `found < floor` -- so a floor that drifts below the real
 # count still catches the failure mode that matters: a discovery mechanism
 # silently finding nothing. Drift costs precision, not the guarantee.
-UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-163}"
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-166}"
 
 # The same guarantee for the two run phases below: tests/ir/*.ir fixtures,
 # and tests/programs/*/ directories. Same rule -- `found < floor` fails --
@@ -65,7 +65,7 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-163}"
 # positive test of what it compiles to is tests/unit/lwr_transitus.asm
 # (`load u64 %0 0 maior`), because the emitter cannot run a `maior` load yet.
 IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-48}"
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-15}"
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-16}"
 
 PASS=0
 FAIL=0
@@ -1118,12 +1118,32 @@ run_program_tests() {
     local srcs=() s
     local own; own="$(printf '%s\n' "$dir"/*.exsc | LC_ALL=C sort)"
     if [[ -n "$k_sources" ]]; then
-      if [[ -n "$own" ]]; then
-        bad "$name: has its own *.exsc AND sources= -- which is the unit?"; continue
-      fi
       local rel=()
       IFS=',' read -r -a rel <<<"$k_sources"
       for s in "${rel[@]}"; do srcs+=("$REPO_ROOT/$s"); done
+      # `sources=` names the unit, so a directory may hold its own source too
+      # -- a program that needs a LIBRARY from elsewhere (examples/hydramodem/
+      # is one: no `initium`, so it cannot be a unit by itself) and has a main
+      # source of its own otherwise has no way to say so. What stays refused
+      # is the ambiguity the rule was written for: an own `*.exsc` that
+      # `sources=` does not list would be silently ignored, and "which is the
+      # unit?" would again have two answers.
+      if [[ -n "$own" ]]; then
+        local o listed stray=0
+        while IFS= read -r o; do
+          listed=0
+          # an `if`, not `[[ … ]] && listed=1`: under `set -e` a loop whose
+          # last command is a failing `&&` list takes the whole script down
+          for s in "${srcs[@]}"; do
+            if [[ "$s" == "$o" ]]; then listed=1; fi
+          done
+          if [[ "$listed" -eq 0 ]]; then
+            bad "$name: $(basename "$o") is in the directory and not in sources= -- which is the unit?"
+            stray=1
+          fi
+        done <<<"$own"
+        [[ "$stray" -eq 0 ]] || continue
+      fi
     elif [[ -n "$own" ]]; then
       while IFS= read -r s; do srcs+=("$s"); done <<<"$own"
     else

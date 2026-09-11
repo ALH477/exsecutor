@@ -90,6 +90,18 @@
 ;      cannot yet be lexed." A parser for a production whose terminals do not
 ;      exist would be prose, not code. `cst_parse` is the module entry point
 ;      only; the `ego` entry point is `[OPEN]` and blocked on §8.4.
+;   8. ARRAY LITERALS ARE A PRIMARY, NOT A SUFFIX, and that is the whole of
+;      what §8.6 needed to admit them. `__cst_primary` takes a `[` where an
+;      OPERAND is expected and `__cst_postfix` takes the same token after one,
+;      so `a[0]` is an index and `[a][0]` is a one-element literal indexed --
+;      "position decides, never the token", which §8.6 states of `&` and `*`
+;      and which this is the third use of. No new peek is owed: §8.6's own
+;      `[OPEN]` entry for array literals says as much, and the two forms share
+;      their prefix (`'[' Expr`) and are told apart by the token AFTER it,
+;      the way `sub … ;` and `sub … {` are. The decisions the productions
+;      implement -- two forms, commas mandatory, no trailing comma, `[]`
+;      refused, an `INT` count -- are §8.6's; `__cst_array_lit`'s header
+;      states each one and what it is refused with.
 ;
 ; §8.6 WAS AMENDED WHILE THIS FILE WAS BEING WRITTEN, and this file follows the
 ; amended text: `ForStmt`'s reduction clause became `['forma' IDENT [INT]]`
@@ -2370,6 +2382,15 @@ proc __cst_expr_starts, p
 	call	__cst_pun
 	test	eax, eax
 	jnz	.yes
+	; `[` in OPERAND position opens an array literal (spec §8.6). After an
+	; operand the same token is the index suffix, and `__cst_postfix` reads
+	; it there; the position decides, never the token -- the rule §8.6
+	; already states for `&` and `*`.
+	mov	rdi, rbx
+	mov	esi, PUN_LBRACKET
+	call	__cst_pun
+	test	eax, eax
+	jnz	.yes
 	xor	eax, eax
 	return
   .yes:
@@ -2488,10 +2509,23 @@ proc __cst_primary, p
 	test	eax, eax
 	jnz	.paren
 	mov	rdi, rbx
+	mov	esi, PUN_LBRACKET
+	call	__cst_pun
+	test	eax, eax
+	jnz	.array
+	mov	rdi, rbx
 	xor	esi, esi
 	call	__cst_err
 	mov	rdi, rbx
 	call	__cst_missing
+	xor	eax, eax
+	return
+  .array:
+	; spec §8.6's array literal, in OPERAND position -- see
+	; `__cst_array_lit`. It is not a path segment, so no generic arguments
+	; and no struct literal may follow it.
+	mov	rdi, rbx
+	call	__cst_array_lit
 	xor	eax, eax
 	return
   .literal:
@@ -2862,6 +2896,158 @@ proc __cst_struct_lit, p
 	call	__cst_xpun
 	mov	rdi, [rbx + CstParser.tree]
 	mov	esi, CST_STRUCT_LIT_SUFFIX
+	mov	rdx, r12
+	call	cst_close
+	return
+endp
+
+; __cst_array_lit(p) -- spec §8.6's array literal, both forms, entered with the
+; cursor on the `[` that opens it:
+;
+;	ArrayLit    ::= '[' Expr (',' Expr)* ']'      -> `CST_ARRAY_LIT`
+;	ArrayRepeat ::= '[' Expr ';' INT ']'          -> `CST_ARRAY_REPEAT`
+;
+; ONE TOKEN DECIDES BETWEEN THEM, and it is not the first: both open `[ Expr`,
+; and the token after that first expression -- `,` or `]` for the list, `;` for
+; the repeat -- selects the production. That is still LL(1) in §8.6's sense
+; (the peek table is about deciding a production from tokens not yet consumed;
+; here the parser has already consumed the shared prefix and is choosing a
+; TAIL, exactly as `sub … ;` vs `sub … {` does), so no new peek is owed.
+;
+; POSITION, NOT TOKEN. This routine is reached from `__cst_primary` only, where
+; an operand is expected; after an operand `[` is the index suffix and
+; `__cst_postfix` takes it. `a[0]` is therefore still an index and `[a][0]` is
+; a one-element literal indexed -- the rule §8.6 states for `&` and `*`
+; ("position decides, never the token"), applied to a third sigil.
+;
+; THREE MALFORMED FORMS, all `EXS-E0201` and all left in the tree so the round
+; trip stays byte-exact:
+;   - `[]`: the empty literal. §6.3 makes an `acies` a flat buffer of a count
+;     that is part of its type, and there is no type an empty one could have
+;     that the element rule could ever settle -- the diagnostic is at the `]`.
+;   - `[1, 2,]`: a trailing comma, at the `]` it runs into, exactly as a struct
+;     literal's is ("no trailing comma, as in every other list here").
+;   - `[e; n]` with `n` not an `INT`: the count is part of the TYPE (spec §5.4:
+;     "the lane count is in the type, so it can never come from the host"), so
+;     a non-literal there is refused at the token, which then goes into a
+;     `CST_ERROR` by the ordinary list recovery.
+;
+; The elements are `__cst_expr_lit`: brackets re-admit the struct literal
+; `ExprNS` excludes, which is the rule §8.6 already states for `[ ]`.
+proc __cst_array_lit, p
+	uses	rbx, r12, r13
+	locals
+	endl
+	mov	rbx, [p]
+	mov	rdi, [rbx + CstParser.tree]
+	call	cst_open
+	mov	r12, rax
+	mov	rdi, rbx
+	mov	esi, PUN_LBRACKET
+	call	__cst_xpun
+
+	; `[]`
+	mov	rdi, rbx
+	mov	esi, PUN_RBRACKET
+	call	__cst_pun
+	test	eax, eax
+	jz	.first
+	mov	rdi, rbx
+	mov	esi, 201
+	call	__cst_err
+	jmp	.close_list
+
+  .first:
+	mov	rdi, rbx
+	call	__cst_expr_starts
+	test	eax, eax
+	jz	.bad
+	mov	rdi, rbx
+	call	__cst_expr_lit
+	; `;` -- the repeat form
+	mov	rdi, rbx
+	mov	esi, PUN_SEMI
+	call	__cst_pun
+	test	eax, eax
+	jnz	.repeat
+	jmp	.sep
+
+  .bad:
+	mov	rdi, rbx
+	mov	esi, CST_SYNC_LIST
+	mov	edx, PUN_RBRACKET
+	call	__cst_error_skip
+  .sep:
+	mov	rdi, rbx
+	mov	esi, PUN_COMMA
+	call	__cst_pun
+	test	eax, eax
+	jz	.close_list
+	mov	rdi, rbx
+	call	__cst_bump
+	; `[1, 2,]` -- the list ended on a comma
+	mov	rdi, rbx
+	mov	esi, PUN_RBRACKET
+	call	__cst_pun
+	test	eax, eax
+	jz	.elem
+	mov	rdi, rbx
+	mov	esi, 201
+	call	__cst_err
+	jmp	.close_list
+  .elem:
+	mov	rdi, rbx
+	xor	esi, esi
+	call	__cst_kindn
+	cmp	eax, TOK_EOF
+	je	.close_list
+	mov	rdi, rbx
+	call	__cst_expr_starts
+	test	eax, eax
+	jz	.bad
+	mov	rdi, rbx
+	call	__cst_expr_lit
+	jmp	.sep
+
+  .close_list:
+	mov	rdi, rbx
+	mov	esi, PUN_RBRACKET
+	call	__cst_xpun
+	mov	rdi, [rbx + CstParser.tree]
+	mov	esi, CST_ARRAY_LIT
+	mov	rdx, r12
+	call	cst_close
+	return
+
+  .repeat:
+	mov	rdi, rbx
+	call	__cst_bump		; the `;`
+	mov	rdi, rbx
+	xor	esi, esi
+	call	__cst_kindn
+	cmp	eax, TOK_NUMBER
+	jne	.count_bad
+	mov	rdi, [rbx + CstParser.tree]
+	call	cst_open
+	mov	r13, rax
+	mov	rdi, rbx
+	call	__cst_bump
+	mov	rdi, [rbx + CstParser.tree]
+	mov	esi, CST_LITERAL
+	mov	rdx, r13
+	call	cst_close
+	jmp	.close_rep
+  .count_bad:
+	mov	rdi, rbx
+	mov	esi, CST_SYNC_LIST
+	mov	edx, PUN_RBRACKET
+	call	__cst_error_skip
+  .close_rep:
+	mov	rdi, rbx
+	mov	esi, PUN_RBRACKET
+	call	__cst_xpun
+	mov	rdi, [rbx + CstParser.tree]
+	mov	esi, CST_ARRAY_REPEAT
 	mov	rdx, r12
 	call	cst_close
 	return

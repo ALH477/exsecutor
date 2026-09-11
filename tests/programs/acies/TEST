@@ -1,0 +1,14 @@
+# acies.exsc's header lists what each exit status means. It builds array
+# literals at every admitted element type, indexes them, copies one, passes
+# one, returns one, zeroes a 316-element buffer with `[0; 316]` and writes it
+# by index, builds a 20000-element i64 buffer the same way and sums it, and
+# -- the reason the directory exists -- tabulates examples/hydramodem/
+# modulator.exsc's `sinus` as a 48-entry literal and compares all 48 entries
+# with the function itself. modulator.exsc is compiled in as a source (it is
+# a library: no `initium`), exactly as tests/programs/hydramodem_basis/ does,
+# so the comparison is against the transmitter's own code and not a copy of
+# it. quantum.exsc comes first because modulator.exsc reads its constants.
+#
+# tests/unit/lwr_acies.asm pins the IR the same constructs lower to; this
+# directory runs them. A status in 10..57 names the table entry that differs.
+TEST: expect-exit=0 sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,tests/programs/acies/acies.exsc

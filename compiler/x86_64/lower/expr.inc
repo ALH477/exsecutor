@@ -1902,6 +1902,10 @@ proc lwr_expr_into, lwrsp, lwrn, lwrdst
 	je	.call
 	cmp	eax, AST_STRUCTLIT
 	je	.structlit
+	cmp	eax, AST_ARRAYLIT
+	je	.arraylit
+	cmp	eax, AST_ARRAYREP
+	je	.arrayrep
 	; a Path, Member, Index or aggregate Cast: its storage exists already,
 	; so this is a byte copy plus one `retain` per reference field (IR 2.7)
 	; -- the retain half is [UNIMPLEMENTED], see __lwr_copy. For a Cast
@@ -1938,6 +1942,18 @@ proc lwr_expr_into, lwrsp, lwrn, lwrdst
 	mov	esi, [lwrn]
 	mov	edx, [lwrdst]
 	call	__lwr_structlit
+	return
+  .arraylit:
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	mov	edx, [lwrdst]
+	call	__lwr_arraylit
+	return
+  .arrayrep:
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	mov	edx, [lwrdst]
+	call	__lwr_arrayrep
 	return
 endp
 
@@ -2214,6 +2230,373 @@ proc __lwr_structlit, lwrsp, lwrn, lwrdst
 	mov	rdi, [rbx + LwrState.tmpv]
 	mov	rax, [lwrbase]
 	mov	[rdi + Vec.len], rax
+	return
+endp
+
+; ---- array literals (spec §8.6) --------------------------------------------
+; `[e1, …, en]` writes its elements into the destination one store at a time,
+; ascending; `[e; N]` evaluates its element ONCE and writes that one value N
+; times. There is no `acies` value in a register to build first: spec §6.3
+; makes an array "a flat buffer", so a literal IS its stores, exactly as a
+; struct literal is (`__lwr_structlit`).
+;
+; THE LIST FORM EVALUATES EVERY ELEMENT BEFORE IT STORES ANY, through
+; `LwrState.tmpv`, for the reason `__lwr_structlit` gives: `a = [a[1], a[0]];`
+; must read both old elements before it writes either. Source order and
+; ascending index order are the same order here, so the separation costs
+; nothing but a staging slot per element and buys the aliasing case.
+;
+; THE REPEAT FORM IS A LOOP, NOT AN UNROLL, PAST `LWR_ARRAY_UNROLL` ELEMENTS,
+; and the threshold is a measured frame cost rather than a taste: the emitter
+; gives EVERY instruction id its own eight bytes of frame, the void ones
+; included (backend_fasmg/emit.inc's frame layout), so an unrolled `[0; 19008]`
+; would carve ~152 KB of dead value slots on top of the array's own 152 KB and
+; the default 8 MiB `RLIMIT_STACK` would be in sight. The loop is four blocks
+; and a counter whatever N is. Below the threshold the unroll is strictly
+; smaller -- no counter, no `index`, no branch -- and it is what the small
+; `[0; 4]` in a fixture prints.
+;
+; WHAT BOUNDS AN ARRAY IS THE STACK, AND NOTHING SAYS SO. Measured on
+; x86_64-linux with the default 8 MiB `RLIMIT_STACK`: `[0; 1000000]` of `i64`
+; -- 8,000,000 bytes of frame -- builds, runs and exits 0, and `[0; 2000000]`
+; is a SIGSEGV with no diagnostic at all. The emitter emits `sub rsp, N` and
+; no stack probe, and no `EXS-E` code exists for "this frame is too large"
+; (spec §13), so the limit is the ulimit's and the failure mode is a crash.
+; REPORTED here rather than guessed at: a cap would need a spec code and a
+; target-dependent number, and `tests/programs/acies/` runs 20000 elements
+; (160 KB), which is the size the modem's buffers are.
+LWR_ARRAY_UNROLL = 8
+
+; __lwr_array_ety(st, lwrn) -> eax = the element's AST type id, edx = its size
+; in bytes, which is the stride (spec §6.3: unboxed and contiguous, no padding
+; between elements -- `lwr_ty_size`'s `acies` arm and `__lwr_elem`'s `index`
+; already agree on this).
+proc __lwr_array_ety, lwrsp, lwrn
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [lwrsp]
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_nty
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, eax
+	call	ast_type_at
+	movzx	ecx, byte [rax + AstType.kind]
+	rassert	ecx eq AST_TY_ACIES
+	mov	r12d, [rax + AstType.a]
+	mov	rdi, rbx
+	mov	esi, r12d
+	call	lwr_ty_size
+	mov	rdx, rax
+	mov	rax, r12
+	return
+endp
+
+; __lwr_elem_store(st, lwrety, lwrp, lwroffs, lwrv) -- one element, written at
+; byte offset `lwroffs` from `lwrp`. A scalar element is one `store` in
+; NATIVUS order (spec §5.2 D2: an order belongs to a `@transitus` field's
+; place, and an array literal has no field); an aggregate element -- a
+; `@transitus` struct -- is `addr` plus `copy`, as an aggregate struct field
+; is in `__lwr_structlit`.
+proc __lwr_elem_store, lwrsp, lwrety, lwrp, lwroffs, lwrv
+	uses	rbx
+	locals
+	endl
+	mov	rbx, [lwrsp]
+	mov	rdi, rbx
+	mov	esi, [lwrety]
+	call	lwr_ty_scalar
+	test	eax, eax
+	jz	.agg
+	mov	rdi, rbx
+	mov	esi, [lwrety]
+	call	lwr_ty_ir
+	mov	rdi, rbx
+	mov	esi, eax
+	mov	edx, [lwrp]
+	mov	ecx, [lwroffs]
+	mov	r8d, [lwrv]
+	xor	r9, r9			; BFA_ORDER_NATIVUS
+	call	lwr_store
+	return
+  .agg:
+	mov	rdi, rbx
+	mov	esi, BFA_OP_ADDR
+	xor	rdx, rdx
+	mov	ecx, [rbx + LwrState.tptr]
+	mov	r8d, [lwrp]
+	mov	r9d, [lwroffs]
+	call	lwr_emit
+	mov	rdi, rbx
+	mov	esi, [lwrety]
+	mov	edx, eax
+	mov	ecx, [lwrv]
+	call	__lwr_copy
+	return
+endp
+
+; __lwr_arraylit(st, lwrn, lwrdst) -- `[e1, …, en]`.
+proc __lwr_arraylit, lwrsp, lwrn, lwrdst
+	uses	rbx, r12, r13, r14
+	locals
+		slot lwroff, dd
+		slot lwrcnt, dd
+		slot lwrety, dd
+		slot lwrstr, dd
+		slot lwrbase, dq
+	endl
+	mov	rbx, [lwrsp]
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_node
+	mov	ecx, [rax + AstNode.a]
+	mov	[lwroff], ecx
+	mov	ecx, [rax + AstNode.b]
+	mov	[lwrcnt], ecx
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_array_ety
+	mov	[lwrety], eax
+	mov	[lwrstr], edx
+
+	; ---- evaluate, in SOURCE order ----
+	mov	rdi, [rbx + LwrState.tmpv]
+	mov	rax, [rdi + Vec.len]
+	mov	[lwrbase], rax
+	xor	r12d, r12d
+  .eval:
+	cmp	r12d, [lwrcnt]
+	jge	.evaled
+	mov	rdi, rbx
+	mov	esi, [lwroff]
+	mov	edx, r12d
+	call	__lwr_listat
+	mov	rdi, rbx
+	mov	esi, eax
+	call	lwr_expr_arg		; a scalar's value, an aggregate's `ptr`
+	mov	rdi, rbx
+	mov	esi, eax
+	call	__lwr_stage
+	inc	r12d
+	jmp	.eval
+  .evaled:
+
+	; ---- store, ASCENDING ----
+	xor	r12d, r12d
+  .store:
+	cmp	r12d, [lwrcnt]
+	jge	.done
+	mov	rdi, [rbx + LwrState.tmpv]
+	mov	rsi, [lwrbase]
+	add	rsi, r12
+	call	vec_get
+	mov	r13d, [rax]
+	mov	eax, r12d
+	imul	eax, [lwrstr]
+	mov	r14d, eax
+	mov	rdi, rbx
+	mov	esi, [lwrety]
+	mov	edx, [lwrdst]
+	mov	ecx, r14d
+	mov	r8d, r13d
+	call	__lwr_elem_store
+	inc	r12d
+	jmp	.store
+  .done:
+	mov	rdi, [rbx + LwrState.tmpv]
+	mov	rax, [lwrbase]
+	mov	[rdi + Vec.len], rax
+	return
+endp
+
+; __lwr_arrayrep(st, lwrn, lwrdst) -- `[e; N]`. The count is read off the
+; TYPE, not off the count literal: spec §5.4 puts the lane count in the type,
+; the checker has already refused a count that is not a literal or is zero,
+; and the type is the one place both agree.
+;
+;	cur:  %v = <e>              ; ONCE, whatever N is
+;	      <write i 0> ; jmp hdr
+;	hdr:  %i = <read i>         ; the phi
+;	      %c = cmp.lt u64 %i N ; br %c body exit
+;	body: %p = index %dst %i STRIDE ; store T %p 0 %v nativus
+;	      %i1 = addw u64 %i 1 ; <write i %i1> ; jmp hdr
+;	exit:
+proc __lwr_arrayrep, lwrsp, lwrn, lwrdst
+	uses	rbx, r12, r13, r14
+	locals
+		slot lwrety, dd
+		slot lwrstr, dd
+		slot lwrcnt, dd
+		slot lwrv, dd
+		slot lwrctr, dd
+		slot lwrhdr, dd
+		slot lwrbb, dd
+		slot lwrexit, dd
+		slot lwri, dd
+		slot lwroffs, dd
+	endl
+	mov	rbx, [lwrsp]
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_node
+	mov	r12d, [rax + AstNode.a]		; the element expression
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_nty
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, eax
+	call	ast_type_at
+	mov	ecx, [rax + AstType.width]
+	mov	[lwrcnt], ecx
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_array_ety
+	mov	[lwrety], eax
+	mov	[lwrstr], edx
+
+	mov	rdi, rbx
+	mov	esi, r12d
+	call	lwr_expr_arg		; the element, evaluated ONCE
+	mov	[lwrv], eax
+
+	mov	eax, [lwrcnt]
+	cmp	eax, LWR_ARRAY_UNROLL
+	ja	.loop
+
+	; ---- unrolled ----
+	xor	r12d, r12d
+  .one:
+	cmp	r12d, [lwrcnt]
+	jge	.out
+	mov	eax, r12d
+	imul	eax, [lwrstr]
+	mov	[lwroffs], eax
+	mov	rdi, rbx
+	mov	esi, [lwrety]
+	mov	edx, [lwrdst]
+	mov	ecx, [lwroffs]
+	mov	r8d, [lwrv]
+	call	__lwr_elem_store
+	inc	r12d
+	jmp	.one
+  .out:
+	return
+
+	; ---- the loop ----
+  .loop:
+	mov	rdi, rbx
+	mov	esi, [rbx + LwrState.tu64]
+	call	lwr_synth_var
+	mov	[lwrctr], eax
+	mov	rdi, rbx
+	mov	esi, [rbx + LwrState.tu64]
+	xor	rdx, rdx
+	xor	rcx, rcx
+	call	lwr_iconst
+	mov	r13d, eax
+	mov	rdi, rbx
+	mov	esi, [lwrctr]
+	mov	edx, [rbx + LwrState.cur]
+	mov	ecx, r13d
+	call	lwr_write_var
+
+	mov	rdi, rbx
+	call	lwr_blk_new
+	mov	[lwrhdr], eax
+	mov	rdi, rbx
+	mov	esi, eax
+	call	lwr_jmp
+	mov	eax, [lwrhdr]
+	mov	[rbx + LwrState.cur], eax
+
+	mov	rdi, rbx
+	mov	esi, [lwrctr]
+	mov	edx, [lwrhdr]
+	call	lwr_read_var
+	mov	[lwri], eax
+	mov	rdi, rbx
+	mov	esi, [rbx + LwrState.tu64]
+	mov	edx, [lwrcnt]
+	xor	rcx, rcx
+	call	lwr_iconst
+	mov	r13d, eax
+	mov	rdi, rbx
+	mov	esi, BFA_OP_CMP
+	mov	edx, BFA_PRED_LT
+	mov	ecx, [rbx + LwrState.tu64]
+	mov	r8d, [lwri]
+	mov	r9d, r13d
+	call	lwr_emit
+	mov	r14d, eax
+	mov	rdi, rbx
+	call	lwr_blk_new
+	mov	[lwrbb], eax
+	mov	rdi, rbx
+	call	lwr_blk_new
+	mov	[lwrexit], eax
+	mov	rdi, rbx
+	mov	esi, r14d
+	mov	edx, [lwrbb]
+	mov	ecx, [lwrexit]
+	call	lwr_br
+	mov	rdi, rbx
+	mov	esi, [lwrbb]
+	call	lwr_seal
+	mov	rdi, rbx
+	mov	esi, [lwrexit]
+	call	lwr_seal
+	mov	eax, [lwrbb]
+	mov	[rbx + LwrState.cur], eax
+
+	; the element's address: no `chk`, because the counter is this
+	; lowering's own and `%i < N` is the branch that got here
+	mov	rdi, rbx
+	mov	esi, [lwrdst]
+	mov	edx, [lwri]
+	mov	ecx, [lwrstr]
+	call	lwr_extra3
+	mov	rdi, rbx
+	mov	esi, BFA_OP_INDEX
+	xor	rdx, rdx
+	mov	ecx, [rbx + LwrState.tptr]
+	mov	r8d, eax
+	mov	r9d, 3
+	call	lwr_emit
+	mov	r13d, eax
+	mov	rdi, rbx
+	mov	esi, [lwrety]
+	mov	edx, r13d
+	xor	ecx, ecx
+	mov	r8d, [lwrv]
+	call	__lwr_elem_store
+
+	mov	rdi, rbx
+	mov	esi, [rbx + LwrState.tu64]
+	mov	edx, 1
+	xor	rcx, rcx
+	call	lwr_iconst
+	mov	r13d, eax
+	mov	rdi, rbx
+	mov	esi, BFA_OP_ADDW
+	xor	rdx, rdx
+	mov	ecx, [rbx + LwrState.tu64]
+	mov	r8d, [lwri]
+	mov	r9d, r13d
+	call	lwr_emit
+	mov	rdi, rbx
+	mov	esi, [lwrctr]
+	mov	edx, [rbx + LwrState.cur]
+	mov	ecx, eax
+	call	lwr_write_var
+	mov	rdi, rbx
+	mov	esi, [lwrhdr]
+	call	lwr_goto
+	mov	rdi, rbx
+	mov	esi, [lwrhdr]
+	call	lwr_seal
+	mov	eax, [lwrexit]
+	mov	[rbx + LwrState.cur], eax
 	return
 endp
 

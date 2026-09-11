@@ -1,0 +1,192 @@
+// acies -- spec §8.6's array literals, both forms, run end to end: built,
+// indexed, copied, passed, returned and summed, at every element type the
+// checker admits.
+//
+// THE 48-ENTRY TABLE IS THE POINT OF THE DIRECTORY. examples/hydramodem/
+// modulator.exsc computes T[m] -- the one symbol's worth of audio the whole
+// transmitter is made of -- with a `discerne` over nine values and a
+// quarter-wave fold, because there was no way to write an array down
+// (`modulator.exsc`'s own header: "no array literal appears below: each is
+// `[OPEN]`"). `tabula` below is that function tabulated, and every one of
+// the 48 entries is compared with `sinus(m)` itself. Agreement is the direct
+// evidence that a table can now be written as a table, which is what the
+// planned M5 needs; it does not change modulator.exsc, which still computes.
+//
+// The four entries that are zero where a sine is not (m = 1, 5, 7, 11 and
+// their reflections) are zero in `sinus` too: `discerne` carries only the
+// nine folded indices the modem ever reads, and docs/design/modem.md D4
+// records that no certificate could check the other four. `tabula` is
+// `sinus`, not the ideal sine, and a fixture that pinned the ideal values
+// would be pinning something this program cannot check.
+//
+// Exit 0 is all of it. Every other status names the first check that failed:
+//
+//   10 + m   tabula[m] ne sinus(m), 0 <= m < 48   (10..57)
+//   60       the u8 array
+//   61       the u16 array
+//   62       the i32 array
+//   63       the i64 array
+//   64       the mensura array
+//   65       an array returned from a function
+//   66       an array passed to a function
+//   70       `[0; N]` did not zero every element
+//   71       a `mutabilis` array written by index and read back
+//   72       the `@transitus` struct array
+//   73       copy semantics: writing the copy changed the original
+//   74       the large buffer's sum
+//   75       the large buffer's last element
+//   76       `[Par { .. }; 12]` -- an aggregate element through the loop
+//   77       `a = [a[1], a[0]]` -- a literal that reads what it writes
+
+@transitus
+structura Par {
+    primum: u8
+    secundum: u8
+}
+
+// `acies<u16, 48>` by value, returned: spec §6.3's unboxed array travels
+// like any other aggregate.
+functio tabulam() -> acies<u16, 48> {
+    redde [
+        0, 0, 7633, 11285, 14745, 0, 20853, 0,
+        25539, 27245, 28485, 0, 29490, 0, 28485, 27245,
+        25539, 0, 20853, 0, 14745, 11285, 7633, 0,
+        0, 0, 57903, 54251, 50791, 0, 44683, 0,
+        39997, 38291, 37051, 0, 36046, 0, 37051, 38291,
+        39997, 0, 44683, 0, 50791, 54251, 57903, 0
+    ];
+}
+
+// An array as a parameter, indexed by the callee.
+functio summa(v: acies<u8, 4>) -> u16 {
+    mutabilis s: u16 = 0;
+    per i in 0..4 {
+        s = s + (v[i] sicut u16);
+    }
+    redde s;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    // ---- the modem's table, entry by entry -------------------------------
+    firma tabula: acies<u16, 48> = tabulam();
+    per k in 0..48 {
+        si tabula[k] ne sinus(k) {
+            redde 10 + (k sicut u8);
+        }
+    }
+
+    // ---- one literal per admitted element type ---------------------------
+    firma oct: acies<u8, 4> = [0, 1, 127, 255];
+    si oct[0] ne 0 {
+        redde 60;
+    }
+    si oct[3] ne 255 {
+        redde 60;
+    }
+    firma duo: acies<u16, 3> = [0, 1000, 65535];
+    si duo[2] ne 65535 {
+        redde 61;
+    }
+    firma qua: acies<i32, 3> = [-2147483647, 0, 2147483647];
+    si qua[0] ne -2147483647 {
+        redde 62;
+    }
+    si qua[2] ne 2147483647 {
+        redde 62;
+    }
+    firma oct8: acies<i64, 3> = [-9, 0, 9];
+    si oct8[0] ne -9 {
+        redde 63;
+    }
+    firma men: acies<mensura, 3> = [0, 65536, 4294967296];
+    si men[2] ne 4294967296 {
+        redde 64;
+    }
+    si tabula[12] ne 29490 {
+        redde 65;
+    }
+    si summa([1, 2, 3, 4]) ne 10 {
+        redde 66;
+    }
+
+    // ---- the repeat form, and an element store through an index ----------
+    mutabilis vacuum: acies<u16, 316> = [0; 316];
+    per i in 0..316 {
+        si vacuum[i] ne 0 {
+            redde 70;
+        }
+    }
+    per i in 0..316 {
+        vacuum[i] = (i sicut u16) + 7;
+    }
+    per i in 0..316 {
+        si vacuum[i] ne (i sicut u16) + 7 {
+            redde 71;
+        }
+    }
+
+    // ---- an array of `@transitus` structs ---------------------------------
+    firma paria: acies<Par, 3> = [
+        Par { primum: 1, secundum: 2 },
+        Par { primum: 3, secundum: 4 },
+        Par { primum: 5, secundum: 6 }
+    ];
+    si paria[2].primum ne 5 {
+        redde 72;
+    }
+    si paria[1].secundum ne 4 {
+        redde 72;
+    }
+    // the same element type through the repeat form's LOOP (12 elements is
+    // past the lowering's unroll threshold), so the loop body is `index` +
+    // `copy` and not `index` + `store`
+    firma multa: acies<Par, 12> = [Par { primum: 3, secundum: 4 }; 12];
+    per i in 0..12 {
+        si multa[i].primum ne 3 {
+            redde 76;
+        }
+        si multa[i].secundum ne 4 {
+            redde 76;
+        }
+    }
+
+    // ---- a literal reads the array it is assigned to ----------------------
+    // Every element is evaluated before any is stored, so this is a swap and
+    // not `[a[1], a[1]]`.
+    mutabilis alia: acies<u8, 2> = [1, 2];
+    alia = [alia[1], alia[0]];
+    si alia[0] ne 2 {
+        redde 77;
+    }
+    si alia[1] ne 1 {
+        redde 77;
+    }
+
+    // ---- a binding COPIES (spec §6.3 rule 4/5: a value, not a reference) --
+    mutabilis exemplar: acies<u8, 4> = oct;
+    exemplar[0] = 99;
+    si oct[0] ne 0 {
+        redde 73;
+    }
+    si exemplar[0] ne 99 {
+        redde 73;
+    }
+
+    // ---- a large buffer: 20000 x i64, zeroed by one loop, then summed ----
+    mutabilis magna: acies<i64, 20000> = [0; 20000];
+    per i in 0..20000 {
+        magna[i] = (i sicut i64);
+    }
+    mutabilis s: i64 = 0;
+    per i in 0..20000 {
+        s = s + magna[i];
+    }
+    si s ne 199990000 {
+        redde 74;
+    }
+    si magna[19999] ne 19999 {
+        redde 75;
+    }
+
+    redde 0;
+}
