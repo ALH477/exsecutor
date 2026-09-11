@@ -61,13 +61,22 @@ include 'compute.inc'
 ; statement about a compilation and never about the build machine.
 ;
 ; A kind with no fixed width -- `textus` `octeti` `scalares` `grapha`
-; `eventus` `iface` `dyn` `fn` `param` `brand` `red` -- answers 0 and is
-; `[UNIMPLEMENTED]`: spec §5.1 gives the four text types no representation,
-; §6.5 leaves refcount representation to §6, and a struct that contains one
-; therefore gets a layout that is wrong rather than absent. It cannot appear
-; in a `@transitus` type (spec §5.2 admits only the integer widths), which is
-; where a wrong offset would be observable, so the gap is recorded rather
-; than trapped.
+; `eventus` `iface` `dyn` `fn` `param` `brand` `red` -- answers width 0 (and
+; its real byte order, for the check below) and is `[UNIMPLEMENTED]`: spec
+; §5.1 gives the four text types no representation, §6.5 leaves refcount
+; representation to §6, and a NON-`@transitus` struct that contains one
+; therefore gets a layout that is wrong rather than absent. In a
+; `@transitus` type it is rejected outright -- spec §5.2, "The one aggregate
+; cast": "every field of a `@transitus` type is an unsigned integer...
+; nothing else" -- so `__chk_lay_struct` below never lets a width-0 field's
+; wrong offset become observable: unannotated, it is `EXS-E0321` ("an
+; unannotated non-integer field is `:nativus`... already `EXS-E0321`");
+; explicitly ordered, `EXS-E0309` ("an annotation not applicable to the
+; type"). A width-0 field used to be silently treated as an admitted
+; sub-8-bit integer (rule 3's exemption applied to width <= 8 without
+; excluding width == 0) and passed unrejected; that was the bug, not the
+; rule -- this file's `EXS-E0322` and `EXS-E0321` fixture predates the fix
+; and only ever exercised whole-byte-or-wider `uN` fields.
 proc __chk_lay_ty, chkl_wk, chkl_ty, chkl_dp
 	uses	rbx, r12, r13
 	locals
@@ -104,6 +113,18 @@ proc __chk_lay_ty, chkl_wk, chkl_ty, chkl_dp
 	je	.struc
 	cmp	ecx, AST_TY_ACIES
 	je	.acies
+	; a kind `__chk_lay_ty` cannot size -- `textus` `octeti` `scalares`
+	; `grapha` `eventus` `iface` `dyn` `fn` `param` `brand` `red`, and
+	; anything else outside this switch -- has no fixed WIDTH, but its
+	; declared byte ORDER is real: the `@transitus` field check below
+	; (`__chk_lay_struct`) must be able to tell `t: textus` (order
+	; `:nativus` by default, `EXS-E0321`) from `t: textus:maior` (order
+	; explicit, `EXS-E0309` -- an annotation not applicable to a
+	; non-integer type) apart, and could not while this path discarded
+	; the order along with the width.
+	movzx	edx, byte [rax + AstType.order]
+	xor	eax, eax
+	return
   .none:
 	xor	eax, eax
 	xor	edx, edx
@@ -159,6 +180,8 @@ proc __chk_lay_struct, chkl_wk, chkl_sd, chkl_dp
 		slot chkl_w,    dq
 		slot chkl_or,   dq
 		slot chkl_sn,   dq
+		slot chkl_ft,   dq
+		slot chkl_kd,   dq
 	endl
 	mov	rbx, [chkl_wk]
 	mov	r14, [rbx + ChkRowWork.wtree]
@@ -214,6 +237,11 @@ proc __chk_lay_struct, chkl_wk, chkl_sd, chkl_dp
 	mov	rsi, rcx
 	call	ast_decl_at
 	mov	esi, [rax + AstDecl.ty]
+	mov	[chkl_ft], rsi			; the field's TYPE id, for the
+						; kind check below -- `chkl_or`
+						; already carries its order, but
+						; `__chk_lay_ty` never returns
+						; kind
 	mov	rdi, rbx
 	mov	rdx, [chkl_dp]
 	inc	rdx
@@ -221,18 +249,67 @@ proc __chk_lay_struct, chkl_wk, chkl_sd, chkl_dp
 	mov	[chkl_w], rax
 	mov	[chkl_or], rdx
 
-	; ---- spec §5.2's rules 2 and 3, `@transitus` only ----
+	; ---- spec §5.2 rules 2 and 3, and "every field of a `@transitus`
+	; type is an unsigned integer... nothing else" (§5.2, "The one
+	; aggregate cast"), `@transitus` only ----
 	cmp	qword [chkl_tr], 0
 	je	.record
+	mov	rdi, r14
+	mov	rsi, [chkl_ft]
+	call	ast_type_at
+	movzx	ecx, byte [rax + AstType.kind]
+	mov	[chkl_kd], rcx
 	mov	rax, [chkl_w]
+	test	rax, rax
+	jz	.ckorder			; width 0: a kind `__chk_lay_ty`
+						; cannot size (textus, a
+						; capability-bearing type, ...)
+						; is never exempt from the order
+						; check below -- rule 3's "at or
+						; below eight bits" describes a
+						; real sub-byte or whole-byte
+						; INTEGER, and a field this pass
+						; cannot size is never one
 	cmp	rax, 8
 	jle	.record				; §5.2 rule 3: byte order is
 						; not part of the grammar at or
 						; below eight bits
+  .ckorder:
 	cmp	qword [chkl_or], AST_ORD_NATIVUS
-	jne	.rule2
+	jne	.annotated
+	; unannotated: rule 3's ":nativus by default" is `EXS-E0321`,
+	; whether the field is `u16` (multi-byte, this check's original
+	; case) or `textus` / a nested struct / an `acies` (width 0, or
+	; order forced to `AST_ORD_NATIVUS` by `__chk_lay_ty`'s `.struc` --
+	; a struct-typed field can never itself carry an order). §5.2, "The
+	; one aggregate cast": "an unannotated non-integer field is
+	; `:nativus` by rule 3 and is `EXS-E0321`."
 	mov	rdi, rbx
 	mov	rsi, 321
+	mov	rdx, [chkl_i]
+	call	__chk_lay_atfield
+	jmp	.rule2
+  .annotated:
+	; explicitly ordered. §5.2, "The one aggregate cast": an order
+	; annotation applies only to an `AST_TY_INT` field -- `textus:maior`
+	; is `EXS-E0309`, "an annotation not applicable to the type."
+	; `checker/types/sig.inc`'s `__chk_ty_suffix` already raises this
+	; same code for the same reason at every type position in real
+	; source (Pass 2, before `Decl.ty` exists); this pass's fixtures
+	; build `Decl.ty` by hand and never run Pass 2 (this file's own
+	; header), so this is not a second diagnostic for one source
+	; annotation -- it is this pass's own check of input Pass 2 never
+	; saw. A SIGNED `iN:maior` is still `AST_TY_INT` and is NOT rejected
+	; here: the enforcement text ("an order annotation on a type that is
+	; not an integer... EXS-E0309") distinguishes only integer from
+	; non-integer and never revisits signedness against "every field...
+	; is an unsigned integer," so whether a signed, explicitly-ordered
+	; field belongs in a `@transitus` struct is `[OPEN]` -- this pass
+	; does not invent a code for it.
+	cmp	qword [chkl_kd], AST_TY_INT
+	je	.rule2
+	mov	rdi, rbx
+	mov	rsi, 309
 	mov	rdx, [chkl_i]
 	call	__chk_lay_atfield
   .rule2:

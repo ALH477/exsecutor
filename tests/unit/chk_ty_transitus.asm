@@ -50,6 +50,15 @@
 ; `__chk_ty_settled` returned junk after its E0308 and the loop then added an
 ; E0305 (types.inc, that routine's header).
 ;
+; Row c15 expects TWO diagnostics, not one: `structura T { t: textus }` is
+; already malformed under §5.2 regardless of the cast (`EXS-E0321`, pass 4 --
+; a `textus` field has no fixed width and used to let a width-0 field skip
+; pass 4's order check entirely, `checker/rows/layout.inc`'s fix), and the
+; `sicut` on it separately fails the cast's own "every field is an unsigned
+; integer" condition (`EXS-E0305`, pass 2, checked first by `chk_run`'s pass
+; order). Two different rules, over the same field, neither implied by the
+; other -- not a double report of one.
+;
 ; THE LAST CHECKS READ TYPES: the `Member` in `fx_a01` must be an unordered
 ; sixteen-bit integer, and the range in `fx_a08` must be `mensura`.
 ;
@@ -802,9 +811,17 @@ segment readable
 	; c14: 321 at 'v: u32'
 	dq fx_c14, fx_c14_LEN
 	dd 1, 321, 26, 0, 0, 0
-	; c15: 305 at 't sicut'
+	; c15: 305 at 't sicut', AND (`checker/rows/layout.inc`'s own fix)
+	; 321 at 't: textus' -- `T` itself is already malformed under §5.2
+	; ("every field of a `@transitus` type is an unsigned integer...
+	; no textus"), independently of whether anything ever casts it. Pass
+	; 2 raises 305 first (the cast's own check), pass 4 raises 321
+	; second (`chk_run`'s fixed pass order, checker/checker.inc). This
+	; row used to accept 305 alone, from when pass 4 let a width-0 field
+	; (textus has none) skip its order check entirely -- the same bug
+	; `tests/unit/chk_row_layout_kind.asm` pins directly.
 	dq fx_c15, fx_c15_LEN
-	dd 1, 305, 73, 0, 0, 0
+	dd 2, 305, 73, 321, 26, 0
 	; c16: 305 at 't sicut'
 	dq fx_c16, fx_c16_LEN
 	dd 1, 305, 69, 0, 0, 0
