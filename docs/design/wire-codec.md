@@ -320,13 +320,14 @@ skips it):
 The directive becomes `status=run sources=entry23/codex.exsc,entry23/probatio.exsc`.
 
 `codex.exsc` provides four functions (names per §3: `redundantia` is the
-CRC, `syndroma` the affine validity map, `obsigna` "seal", `lege` "read"):
+CRC, `syndroma` the affine validity map, `obsigna` "seal", `lege` "read"),
+plus `vacuum()`, the all-zero frame the driver starts every input from:
 
 | function | contract |
 |---|---|
 | `redundantia(b: acies<u8, 17>, n: mensura) -> u16` | CRC-16/CCITT-FALSE over `b[0..n)`: init `0xFFFF`, polynomial `0x1021`, no reflection, no final xor |
 | `syndroma(w: acies<u8, 17>) -> u16` | `redundantia(w, 15) aut (w sicut DeModFrame).cursus`; zero iff the CRC holds |
-| `obsigna(genus: u4, numerus: u16, fons: u16, meta: u16, onus: u32, tempus: u24) -> DeModFrame` | the frame with `signum = 0xd3`, `versio = 1`, the six free fields as given, `cursus` computed |
+| `obsigna(f: DeModFrame) -> DeModFrame` | the frame with its six free fields (`genus` … `tempus`) as given, `signum = 0xd3`, `versio = 1`, and `cursus` computed; whatever `f` held in those three is overwritten |
 | `lege(w: acies<u8, 17>) -> u8` | `0` valid, `1` bad sync, `2` bad version, `3` bad CRC, checked **in that order** |
 
 **Where the decode order comes from.** The vendored spec's *Validity*
@@ -390,7 +391,7 @@ same-type rule never needs a narrowing cast — which is `[OPEN]` (IR 2.3).
 |---|---|---|---|
 | 1 | 109 × 17 = 1,853 | `obsigna` of input 0 (all zero), then of input bit `i` set, `i = 0..107`; each frame written byte 0..16 through `f sicut acies<u8, 17>` | `encode_basis[k].frame` |
 | 2 | 137 × 2 = 274 | `syndroma` of the zero word, then of the word with wire bit `i` set, `i = 0..135`; each written big-endian through `Syndroma { valor: y } sicut acies<u8, 2>` where `@transitus structura Syndroma { valor: u16:maior }` | `syndrome_basis[k].syndrome`, big-endian |
-| 3 | 2 + 2 + 17 = 21 | `redundantia("123456789")`, `redundantia(0^15)`, big-endian; then `obsigna(3, 0x1234, 1, 0xffff, 0xdeadbeef, 0xab12cd)` | `anchors.crc_123456789`, `anchors.crc_zero15`, `anchors.exampleFrame_full` |
+| 3 | 2 + 2 + 17 = 21 | `redundantia("123456789")`, `redundantia(0^15)`, big-endian; then `obsigna` of the frame with `genus 3, numerus 0x1234, fons 1, meta 0xffff, onus 0xdeadbeef, tempus 0xab12cd` | `anchors.crc_123456789`, `anchors.crc_zero15`, `anchors.exampleFrame_full` |
 | 4 | 109 + 109 = 218 | for each frame of section 1, in order: `lege(frame)` — 109 verdict bytes; then, for each, `1` if the six free fields read back through `frame sicut DeModFrame` equal the inputs and `0` otherwise — 109 flag bytes | 109 × `00` then 109 × `01`: decode∘encode = id, the vendored spec's first formal property |
 | 5 | 136 | the example frame from section 3; for wire bit `i = 0..135`: flip it with `aut`, `lege`, flip it back | derived by `expecta.py` from the reference decode: `01` × 8 (sync), `02` × 4 (version nibble), `03` × 124 (every other single-bit flip breaks the CRC) |
 
@@ -481,24 +482,33 @@ publica functio syndroma(w: acies<u8, 17>) -> u16 {
     redde redundantia(w, 15) aut f.cursus;
 }
 
-// Seal: the six free fields in, the frame out. Every field is named once
-// and the commas are mandatory (D3); `cursus` is written twice, once as a
-// placeholder the literal requires and once with the answer.
-publica functio obsigna(genus: u4, numerus: u16, fons: u16, meta: u16,
-                        onus: u32, tempus: u24) -> DeModFrame {
-    mutabilis f = DeModFrame {
-        signum: 0xd3,
-        versio: 1,
-        genus: genus,
-        numerus: numerus,
-        fons: fons,
-        meta: meta,
-        onus: onus,
-        tempus: tempus,
+// Seal: a frame whose six free fields are set goes in; the same frame with
+// its sync byte, version and CRC written comes out. It takes the frame, not
+// six scalars, because six scalars plus the hidden result pointer are seven
+// words and the IR calling convention passes six (emit.inc's call path;
+// finding 8). `f` is borrowed (IR 2.9), so the seal works on a copy.
+publica functio obsigna(f: DeModFrame) -> DeModFrame {
+    mutabilis g = f;
+    g.signum = 0xd3;
+    g.versio = 1;
+    g.cursus = redundantia(g sicut acies<u8, 17>, 15);
+    redde g;
+}
+
+// The all-zero frame. A struct literal names every field (D3); this is the
+// one place the driver has to.
+publica functio vacuum() -> DeModFrame {
+    redde DeModFrame {
+        signum: 0,
+        versio: 0,
+        genus: 0,
+        numerus: 0,
+        fons: 0,
+        meta: 0,
+        onus: 0,
+        tempus: 0,
         cursus: 0,
     };
-    f.cursus = redundantia(f sicut acies<u8, 17>, 15);
-    redde f;
 }
 
 // Read: 0 valid, 1 bad sync, 2 bad version, 3 bad CRC -- the reference
@@ -540,7 +550,9 @@ is avoided:
     // input bits 4..19 are numerus bits 0..15
     mutabilis n: u16 = 1;
     per i in 0..16 {
-        scribe_quantum(s, obsigna(0, n, 0, 0, 0, 0));
+        mutabilis f = vacuum();
+        f.numerus = n;
+        scribe_quantum(s, obsigna(f));
         n = n sursum 1;
     }
 ```
@@ -591,9 +603,15 @@ one that was wrong, the amendment is in the same commit as this file.
    directive stays `deferred`.
 8. **Nothing in the language passes an aggregate by value in a certified
    program yet.** `obsigna` returns a `DeModFrame`; LOW 2.7's aggregate
-   return convention is what it lands on. If M6 finds that convention
-   unimplemented, `obsigna` takes a `&DeModFrame` out-parameter instead and
-   this section is amended — the codec's bytes do not change.
+   return convention is what it lands on. The first draft of this file gave
+   `obsigna` the six free fields as scalar parameters; with the hidden
+   result pointer that is seven words, and the emitter's call path refuses a
+   seventh (`emit.inc:1552-1579`, which counts the result pointer). So
+   `obsigna` takes the frame and seals it, which is also what "seal" means.
+   Stack-passed arguments are a backend extension nothing here needs. If M6
+   finds the aggregate-return convention unimplemented, `obsigna` takes a
+   `&DeModFrame` out-parameter instead and this section is amended — the
+   codec's bytes do not change.
 
 ## 10. What retires each marker
 
