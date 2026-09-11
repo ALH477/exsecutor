@@ -187,13 +187,22 @@ proc lwr_ty_ir, lwrsp, lwrt
 	mov	eax, [rbx + LwrState.tptr]
 	return
   .int:
+	; `iN` is (BFA_TK_I, sign 1), `uN` (BFA_TK_U, sign 0) -- the pair
+	; backend_fasmg/parse.inc builds from the text `i8`/`u8`. The sign byte
+	; is part of the interning key (ir.inc's `bfa_type_intern`), so this
+	; used to make a SECOND `i8` -- (BFA_TK_I, sign 0) -- that printed the
+	; same as the parser's and compared unequal to it, and that anything
+	; reading `BfaType.sign` (print.inc's `iconst`, emit.inc's
+	; `__bfa_ty_is_signed`) took for unsigned. Found by the M3 emitter
+	; work; tests/unit/lwr_signum.asm pins it.
 	mov	rdi, [rbx + LwrState.mdl]
 	mov	esi, BFA_TK_U
+	xor	edx, edx
 	cmp	dword [lwrs], AST_SIGN_I
 	jne	.unsigned
 	mov	esi, BFA_TK_I
+	mov	edx, 1
   .unsigned:
-	xor	rdx, rdx
 	mov	ecx, [lwrw]
 	xor	r8, r8
 	call	bfa_type_intern

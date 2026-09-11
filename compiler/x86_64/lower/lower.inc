@@ -167,9 +167,14 @@ proc __lwr_iface_ir, lwrsp, lwrc
 	mov	eax, [rbx + LwrState.tu64]
 	return
   .i32:
+	; sign 1, as ty.inc's `.int` and parse.inc give every `iN` -- the sign
+	; byte is part of the interning key. No prelude signature uses this code
+	; today (interface.inc's part B has no `EXS_IFACE_T_I32` entry), so this
+	; line is unreachable and untested; it is kept consistent rather than
+	; left to be found the way ty.inc's was.
 	mov	rdi, [rbx + LwrState.mdl]
 	mov	esi, BFA_TK_I
-	xor	rdx, rdx
+	mov	edx, 1
 	mov	ecx, 32
 	xor	r8, r8
 	call	bfa_type_intern
