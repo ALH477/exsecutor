@@ -238,7 +238,7 @@ are byte-exact exceptions and why).
      Every figure is from running the named command at the named commit.
      Refresh it here and nowhere else. -->
 
-## Status as of `db48b27` (2026-09-11)
+## Status as of `ad30abb` (2026-09-11)
 
 Every figure here was produced by running the named command at this commit, in
 the `nix develop` shell, on `x86_64-linux`.
@@ -277,8 +277,10 @@ entry 23: anchors: 3/3 (section 3)
 entry 23: laws: 218/218 (section 4), 136/136 (section 5)
 ```
 
-The codec declares no capability; the 8,601-byte certificate binary writes a
-2,502-byte stream and its syscalls are `write` and `exit_group`. Three
+The codec declares no capability; the 8,671-byte certificate binary writes a
+2,502-byte stream and its syscalls are `write`, `exit_group` and the `read`
+the `ambitus` gate carries whether or not a program calls it (the gate is per
+atom, not per call — `docs/design/runtime.md` 2.6). Three
 mechanical mutants (the CRC polynomial, one field's byte order, two fields
 swapped) each fail at the vector `docs/design/wire-codec.md` predicts. The
 certificate's theorem extends 246 vectors to all 2^108 frames *given* that the
@@ -308,11 +310,12 @@ byte-identical audio for every one of 2^136 inputs, *given* that the stream is
 affine over GF(2). That is argued from the code, not measured
 (`docs/design/modem.md` §13 lists the premises). It uses no floating point, no
 signed arithmetic, no bitwise and/or and no remainder, and each program's
-syscalls are `write` and `exit_group`. The receiver is not written yet.
+syscalls are `write`, `exit_group` and `ambitus`'s `read`. The receiver is
+not written yet.
 
 **What runs:**
 
-- `make all` → `build/exsc`, **416,942 bytes**, freestanding, no libc.
+- `make all` → `build/exsc`, **422,035 bytes**, freestanding, no libc.
 - **All three stages of §16 reach end to end.** Stage 1: the §8.1 source gate,
   the lexer, the lossless CST, the typed AST. Stage 2: name resolution, types,
   capability rows, packed layout — the lexicon pass is built and **not
@@ -327,8 +330,8 @@ syscalls are `write` and `exit_group`. The receiver is not written yet.
   corpus — `docs/design/diagnostics-review.md`, final section, and
   `tests/diagnostics/`. Stage 2's (`sub` resolution needing a search) does not
   fire, argued first in `docs/design/checker.md` §2.1.
-- `tests/run.sh`: **653 pass, 0 fail** — 162 unit fixtures; 48 IR fixtures and
-  13 Exsecutor programs, each compiled, assembled, **run**, and syscall-audited;
+- `tests/run.sh`: **663 pass, 0 fail** — 163 unit fixtures; 48 IR fixtures and
+  15 Exsecutor programs, each compiled, assembled, **run**, and syscall-audited;
   10 of 24 conformance entries running, each required to emit exactly its
   expected code and nothing else (the other 14 report `DEFERRED` and are never
   counted as passing).
