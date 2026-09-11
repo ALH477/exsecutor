@@ -4,9 +4,11 @@ Status: **implemented, M2 through M7; §14 entry 23 runs.** Section 11
 records what M7 ran and what it found. The status this line first carried
 -- "design only; nothing implemented. Nothing here has lexed, parsed,
 checked, lowered or run" -- was true when it was written and stopped being
-true milestone by milestone; the `[UNTESTED]` markers below still name the
-milestone whose test retires each, and are left for the marker-retirement
-pass rather than dropped here one by one. `spec §N` cites
+true milestone by milestone. Every `[UNTESTED]` this file carried has been
+retired against a named, merged test (section 10 lists each); what remains
+marked is `[OPEN]` and is open on purpose: `&T:o`, `:o` on a non-field
+place, nested `@transitus` structs, signed shifts, bitwise and/or, a code for
+a signed explicitly-ordered field, and narrowing `sicut`'s spec text. `spec §N` cites
 `docs/spec/exsecutor-spec-v0.4.md` as amended in the same commit as this
 file; `IR n.m` cites `docs/design/ssa-ir.md`; `CHK n.m`
 `docs/design/checker.md`; `LOW n.m` `docs/design/lowering.md`; ADR 0011 is
@@ -23,12 +25,13 @@ certificate's own theorem an implementation that is bit placement plus a CRC
 — hence affine over GF(2) — and matches all 246 agrees with the reference on
 every one of 2^108 frames and classifies every one of 2^136 words. The
 fixture `tests/conformance/entry23_demodframe_golden_vectors.exsc` holds
-§5.2's declaration verbatim and is `status=deferred needs=backend,wire_codec`.
+§5.2's declaration verbatim and is `status=run` since M7 (it was
+`status=deferred needs=backend,wire_codec` when this was written).
 
-The work is to make it `status=run` **with the codec written in Exsecutor**.
-The constraint is that the language could not yet express the codec. The
+The work was to make it run **with the codec written in Exsecutor**. The
+constraint was that the language could not yet express the codec. The
 survey that preceded this document (recorded in the plan, repeated here so
-the doc stands alone) found:
+the doc stands alone) found, at M0 — every row since closed:
 
 | gap | where |
 |---|---|
@@ -104,8 +107,26 @@ tokens; `<<` and `>>` would undo that. `^` is free but a third sigil
 convention (arithmetic is punctuation, comparison is words, then xor is
 punctuation again) reads worse than one more contextual word.
 
-`[UNTESTED]` — retired by **M5** (`redundantia`: CRC of `"123456789"` is
-`0x29B1`, CRC of fifteen zero bytes is `0x4EC3`).
+**Retired by M5 and M3.** Parsed: `tests/unit/cst_shift_xor.asm`
+(precedence as five dump lines, the chained shift `EXS-E0201` at the second
+word with its parenthesised twin accepted, the words as names, `autem` is
+not `aut`). Typed: `tests/unit/chk_ty_bitops.asm`, seventeen rows, each
+rule with a rejected row and an accepted twin. Lowered:
+`tests/unit/lwr_bitops.asm` (`xor u16`, `shl u16`, `shr u16`). Run:
+`tests/ir/bitwise.ir`, `shift_narrow.ir`, `trap_shl_u8.ir` (count 8 in
+`u8` aborts), `trap_shr_u32.ir`; `tests/programs/redundantia/` — CRC of
+`"123456789"` is `0x29B1`, of fifteen zero bytes `0x4EC3`, exit 0.
+
+Three things the implementer decided where the text above was silent, now
+in spec §5.4 and pinned by `chk_ty_bitops.asm`:
+
+- each operand is judged on its own, so `i8 sursum i8` is **two**
+  `EXS-E0305`, one per operand, and a pending literal is never blamed;
+- when neither side is wrong alone — `1 aut 2` where an `i8` is expected —
+  the expectation is judged, and the one `EXS-E0305` is at the operator;
+- `mensura` is admitted as an unsigned operand (§5.2 calls it `usize`) and
+  keeps its own type, so `mensura aut u64` is `EXS-E0303` and
+  `mensura deorsum 1` is fine.
 
 ### D2 Byte order belongs to places, not values
 
@@ -140,8 +161,16 @@ carrying an order — and say "no *value* has one". Take `&` of the struct or
 use D4's byte view. Admitting `&T:o` later, with dereference as a place
 read in that order, is `[OPEN]` and would be an extension, not a reversal.
 
-`[UNTESTED]` — retired by **M6** (`forma`: build the example frame from a
-literal, take its CRC through the byte view, decode it back).
+**Retired by M6 and M4.** `tests/unit/chk_ty_transitus.asm` (a `u16:maior`
+field reads as `u16` and is written with a `u16`; `&w.n`, `&w.h` are
+`EXS-E0305`, `&w` is not); `tests/unit/lwr_transitus.asm` (the three
+orders as `load`/`store … maior|minor|nativus`, `loadbits 1 0` / `1 4`,
+`store u16 %p 15 maior`); `tests/ir/byte_order.ir` and `bits.ir` (the
+emitter, every order at every whole-byte width, both nibbles);
+`tests/programs/forma/` (build the example frame from a literal, take its
+CRC through the byte view, decode it back — exit 0); §14 entry 23. The
+`u24` answer for ADR 0011 is read back in `forma` and in
+`tests/ir/demodframe_decode.ir`. The two `[OPEN]`s above stay open.
 
 ### D3 Struct literals
 
@@ -168,7 +197,22 @@ the gap with zeros would change what `EXS-E0307` means and, in a
 wrote — the disclosure class `@transitus` exists to close, reintroduced at
 the literal.
 
-`[UNTESTED]` — retired by **M6**.
+**Retired by M6.** Parsed: `tests/unit/cst_structlit.asm` (ten rows: the
+literal counted per tree, all seven `ExprNS` positions, trailing and
+missing commas `EXS-E0201`, no literal after `f(1)`). Typed:
+`tests/unit/chk_ty_structlit.asm` (eighteen rows: `E0301`/`E0302`/`E0304`/
+`E0303`/`E0308`/`E0305` each with a twin; the D2 literal `0x1234` an
+unordered `u16`). Lowered: `tests/unit/lwr_transitus.asm` (a reversed
+literal: source-order `iconst`s, declaration-order stores). Run:
+`tests/programs/forma/`, and `vacuum()` in entry 23.
+
+Two things the implementer decided where the text above was silent, now in
+spec §8.6: inside an `ExprNS` position the literal is **re-admitted** by
+`( )`, `[ ]`, a call's arguments, a literal's own braces and the statements
+of any nested block — the rule Rust uses; `cst_structlit.asm` rows 6–8 pin
+`si (S { a: 1 }).a eq 1 {`. And `EXS-E0304` for missing fields is reported
+**once per literal**, not once per field; two different faults in one
+literal are both reported, in source order.
 
 ### D4 The one aggregate `sicut`
 
@@ -179,7 +223,12 @@ whole-byte width with its order). Nothing else aggregate casts: any other
 aggregate `sicut`, including one whose `N` is not `S`'s size or whose `S`
 fails the field condition, is `EXS-E0305`, which is `types.inc:305`'s
 existing class-E answer to "are these two related". The size equality is
-checked where sizes are known, pass 4 (`checker/rows/layout.inc`).
+checked **in pass 2, by the cast itself** (`checker/types/member.inc`,
+`__chk_ty_wirebytes`): a packed `@transitus` size is the sum of the
+declared widths, which the type checker already has, and pass 4 runs after
+the bodies are typed — so waiting for it, as the first draft of this
+paragraph said, would have been waiting for nothing (M6, finding 5 of its
+commit). Spec §5.2 says the same.
 
 **The field condition is the load-bearing part, and §5.2 had not stated
 it.** §5.2 said a field *may* declare any admitted `uN` and never said a
@@ -193,10 +242,23 @@ admitting them makes this condition recursive and needs rule 2's byte
 alignment for the nested struct), and the cast checks it **itself** rather
 than trusting the layout pass. Enforcement of the restriction on the
 declaration reuses existing codes: an unannotated non-integer field is
-`:nativus` by rule 3 and already `EXS-E0321` at `layout.inc:235`; an order
-annotation on a non-integer type (`textus:maior`) is `EXS-E0309`, an
-annotation not applicable to the type — the latter `[UNTESTED]`, since
-`sig.inc:251` re-interns any type with an order byte today.
+`:nativus` by rule 3 and is `EXS-E0321`; an order annotation on a
+non-integer type (`textus:maior`) is `EXS-E0309`, an annotation not
+applicable to the type. Both are pinned by
+`tests/unit/chk_row_layout_kind.asm` (commit 622a541: `textus`,
+`acies<u8, 4>`, `refero<u8>`, a nested struct and a capability-bearing
+type each `E0321` unannotated; `textus:maior` `E0309`) — a fixture that
+exists because the width-0 exemption in `layout.inc` had let
+`@transitus structura T { t: textus }` check clean, which `exsc` confirmed
+before the fix. Two gaps that fixture recorded rather than closed, now
+also in spec §5.2: a **signed** field with an explicit order
+(`i32:maior`) has no code assigned — the enforcement text distinguishes
+integer from non-integer and never revisits signedness — so it checks
+clean, pinned as a zero-diagnostic row, `[OPEN]`; and `textus:maior` in
+real source draws **two** diagnostics, `EXS-E0309` from pass 2 and
+`EXS-E0321` from pass 4 (measured: `exsc aedifica --diagnostica json` on
+exactly that field), which §8.3 neither forbids nor addresses — it states
+no cascade discipline — so whether to suppress the second is `[OPEN]`.
 
 Under that condition it is **total**, which is why it can be a cast and not
 an `eventus`: a `@transitus` layout is packed (§5.2), every multi-byte field
@@ -225,7 +287,13 @@ or a generic the prelude has no dictionary for; and an implicit view (an
 `acies<u8, N>` parameter accepting an `S`) — §5.4's "no implicit promotion"
 covers aggregates as much as integers.
 
-`[UNTESTED]` — retired by **M6** (`forma`).
+**Retired by M6.** `tests/unit/chk_ty_transitus.asm` (both directions;
+`N = 5`, `acies<u16, 2>`, a plain struct, two structs and the same struct
+all `EXS-E0305`; a `textus` field and an `i8` field refused by the cast's
+own check; `EXS-E0306` through a cast, `a[0] = 1` accepted on a bound
+copy); `tests/unit/lwr_transitus.asm` (a cast read with no copy, a bound
+cast as `slot 17 1` + `copy 17`, and mutants M20/M21 — a read that copies,
+a binding that shares — each caught); `tests/programs/forma/`; entry 23.
 
 ### D5 Narrow integers have one canonical form
 
@@ -250,9 +318,18 @@ are canonical and the verifier has nothing to check; the alternative
 (masking on read) puts the mask at every use instead of every definition,
 and a use is more common than a definition.
 
-`[UNTESTED]` — retired by **M3** (wrap and trap at `u4 u8 u24 u32 i8`, a
-`u40` multiply whose product is exactly 2^64 and one just below it, the
-constant `3735928559`, shift by `N`, `chk` out of bounds).
+**Retired by M3.** `tests/ir/`: `narrow_wrap.ir` (wrapping at
+`u4 u8 u24 u32 i8`, and the trapping forms at the edge that must not
+trap), `trap_add_{u4,u8,u24,u32,i8}.ir`, `trap_sub_u8.ir`,
+`trap_mul_u8.ir`, `trap_mul_u40_2p64.ir` and `trap_mul_i40_2p64.ir` (the
+flag-only case), `trap_mul_u40_below_2p64.ir` (the compare-only case),
+`mul_u40.ir` (in-range products that must not trap), `iconst_wide.ir`
+(`3735928559` and five more outside simm32), `trap_shl_u8.ir`,
+`trap_shr_u32.ir`, `trap_chk.ir`, `conv_roundtrip.ir`, `cmp_signedness.ir`;
+`tests/unit/bfa_emit_narrow.asm` and `bfa_emit_bitwise.asm` pin the emitted
+text; `tests/programs/angusta/` runs it from source. M3 also corrected IR
+2.2 (a `sext` into a `uN` normalises; a `zext` of an `iN` extends from the
+source width first), which is in `ssa-ir.md` and stays.
 
 ### D6 Hex literals
 
@@ -267,7 +344,12 @@ value is typed by expectation exactly as a decimal literal is
 already answers for decimal. Binary and octal bases, digit separators and
 floats stay `[OPEN]`.
 
-`[UNTESTED]` — retired by **M5**.
+**Retired by M5.** `tests/unit/lex_hex_literal.asm` (accepted: `0x0`,
+`0xd3`, `0xDEADBEEF`, `0xffffffffffffffff`, exact kind and span, no
+diagnostic; rejected: `0X10`, `0x`, `0x1G`, `0b101`, exactly `EXS-E0210`
+with its span); `tests/unit/chk_ty_hexlit.asm` (the value, upper-case
+digits folded, a seventeenth digit `EXS-E0308`); `tests/programs/redundantia/`
+runs on `0x1021` and `0xffff`.
 
 ### D7 Byte output
 
@@ -290,12 +372,19 @@ and an `acies<u8, N>` writer — generic over `N`, which the prelude cannot be
 costs 2,502 syscalls for the certificate stream; the audit counts kinds, not
 calls, and the output bytes are the same.
 
-`[UNTESTED]` — retired by **M7** (unit fixture, `audit=pass`).
+**Retired by M7.** `tests/unit/prelude_scribe_octeto.asm` (`audit=pass`:
+seven bytes including `0xff` and two with garbage above bit 7, each
+returning 1 and moving the descriptor's offset by exactly one; a
+descriptor of −1 returns 0); `tests/unit/prelude_sine_ambitus.asm` (with
+`ambitus` at 0 none of the four `ambitus` routines is defined — the gate,
+which nothing had measured before); `tests/programs/octeti/` (26 raw bytes
+compared with `cmp`); entry 23's binary audits to `write` and `exit_group`
+only.
 
 ### D8 Phi lowering: a parallel copy on each edge, through the stack
 
-The Tier-1 emitter keeps every value in a stack slot and aborts on any phi
-(`emit.inc:2165`). Phis are lowered as a **parallel copy on each incoming
+The Tier-1 emitter keeps every value in a stack slot and, until M2, aborted
+on any phi (`emit.inc:2165` at M0). Phis are lowered as a **parallel copy on each incoming
 edge**: push each phi's operand for that edge, in phi order; then pop into
 each phi's slot in reverse order. All reads precede all writes, so a swap
 (`%a = phi [%b …]; %b = phi [%a …]`) and the lost-copy case are correct with
@@ -311,8 +400,16 @@ Rejected: Boissinot-style sequentialisation with one spare register —
 shorter code and a real algorithm to get wrong, in a Tier-1 emitter whose
 brief is correctness before size.
 
-`[UNTESTED]` — retired by **M2** (IR tests: sum loop, swap, lost copy;
-program `phi_loops`).
+**Retired by M2.** `tests/ir/phi_sum_loop.ir`, `phi_swap.ir` (two phis
+naming each other on the back edge; redesigned after its first form
+passed under the forward-pop mutation), `phi_lost_copy.ir` (the only
+fixture sensitive to the per-edge stub: every latch the lowering emits
+today ends in `jmp`), `phi_same_target.ir` (a `br` with both targets one
+block); `tests/unit/bfa_emit_phi.asm` (exact text of a `jmp` into phis, a
+swapping self-loop through stub `e0`, a false edge through `e1`);
+`tests/programs/phi_loops/` (seven checks, exit 77). The requirement above
+held: `bfa_emit_tier1/tier2/program.asm` and the hello world through the
+gate were byte-identical before and after.
 
 ## 3. Why field access is the whole bit-manipulation story
 
@@ -500,23 +597,25 @@ bug.
   exists in the IR (`shr` is arithmetic for `iN`) and is deliberately not
   reachable from the language yet: signed shifts have two sensible
   semantics and no program here needs either. `[OPEN]`
-- Must not type `f.numerus` as `u16:maior`. That is the status quo, and the
-  status quo is why every field access is `EXS-E0303` today.
+- Must not type `f.numerus` as `u16:maior`. That was the status quo before
+  M6, and it was why every field access was `EXS-E0303`
+  (`chk_ty_transitus.asm` mutant M4 puts it back and fails).
 - Must not fold a literal shift count ≥ N into a compile-time diagnostic
   without a §13 code for it; IR 6 already lists the constant-folded trap as
   open and unnumbered. It traps at runtime, like `1 + 255` in `u8`.
 - Must not let `ExprNS` admit the literal. `dum f eq DeModFrame {` must be a
   parse error at `{`'s contents, not a literal.
 
-## 8. Worked example, as it will be written once M5–M6 land
+## 8. Worked example, as written and as it runs
 
-`[UNTESTED]` — this has been compiled by nothing. It is the target the
-milestones implement against, written in D1/D3/D4/D6 syntax: struct literal
-with every field and mandatory commas, `sicut acies<u8, 17>` for the byte
-view, `sursum 1` for the shift, `aut 0x1021` for the xor, `ge 0x8000` for
-the top bit, `mensura` indices. `redundantia` is what M5's `redundantia`
-program builds without aggregates; `obsigna` and `lege` are M6's `forma` and
-M7's `codex.exsc`.
+Written at M0 as the target the milestones implemented against, in
+D1/D3/D4/D6 syntax: struct literal with every field and mandatory commas,
+`sicut acies<u8, 17>` for the byte view, `sursum 1` for the shift,
+`aut 0x1021` for the xor, `ge 0x8000` for the top bit, `mensura` indices.
+The `codex.exsc` block below is, but for comments, the file
+`tests/conformance/entry23/codex.exsc` that passes the certificate
+(section 11); `redundantia` is also `tests/programs/redundantia/` and
+`obsigna`/`lege` are also exercised by `tests/programs/forma/`.
 
 ```exsecutor
 // entry23/codex.exsc -- pure; no `poscit`, no `initium`.
@@ -628,18 +727,21 @@ is avoided:
     }
 ```
 
-Things this example leans on that are settled elsewhere and are also
-`[UNTESTED]`: `per i in 0..n` binds `i: mensura` (the range partner's type;
+Things this example leans on that are settled elsewhere, each since run:
+`per i in 0..n` binds `i: mensura` (the range partner's type;
 `__chk_ty_index` wants `mensura` for `acies`); **`per k in 0..8`, `0..16`,
 `0..17` — a range of two pending literals — binds `mensura` by the §8.5
-rule added for it** (today `__chk_ty_for` → `__chk_ty_settled` makes every
-such loop `EXS-E0308`, the review's M4; the rule is in the spec rather than
-the loops rewritten with a typed bound, because `per i in 0..17` is what
-anyone writes over an array); `b[i] sicut u16` is §5.2's explicit widening;
-a literal takes the other operand's type (`types.inc:57`); assignment
-through an index `x[b] = …` on a `mutabilis` `acies` binding is an lvalue
-(§8.6, lvalue check semantic); `mutabilis g = f` copies the struct (§5.2,
-the cast paragraph: binding an aggregate value is by value).
+rule added for it** (before M6, `__chk_ty_for` → `__chk_ty_settled` made
+every such loop `EXS-E0308`, the review's M4; the rule went into the spec
+rather than the loops being rewritten with a typed bound, because
+`per i in 0..17` is what anyone writes over an array;
+`tests/unit/chk_ty_transitus.asm` pins it and `forma` and entry 23 write
+it); `b[i] sicut u16` is §5.2's explicit widening (`redundantia`, a
+`zext`); a literal takes the other operand's type (`types.inc:57`;
+`chk_ty_bitops.asm`'s last check reads the ids); assignment through an
+index `x[b] = …` on a `mutabilis` `acies` binding is an lvalue (§8.6;
+`probatio.exsc`'s `verte`); `mutabilis g = f` copies the struct (§5.2, the
+cast paragraph; `obsigna` runs on it in entry 23).
 
 **What M6 checked of this section, and what it did not.** The `codex.exsc`
 block above, with the fixture's `DeModFrame`; the two `probatio.exsc`
@@ -651,13 +753,14 @@ calling them, was compiled by the M6 compiler: it type-checks clean, and
 `Syndroma { valor: v } sicut acies<u8, 2>` a `store u16 ... 0 maior` and a
 two-byte `copy`, `per i in 0..17 { ... b[i] ... }` a `u64` loop with `chk`
 and `index` on the bound copy. So nothing in the example needed changing.
-It has not RUN: the emitter lacks the opcodes M3 and M4 add, and every
-marker in this file stays `[UNTESTED]` until `tests/programs/forma/` (the
-M6 program, deferred) and entry 23 do. One placement differs from D4's
-text: the size equality `N` = size of `S` is checked in pass 2, inside the
-cast's own check (`checker/types/member.inc`, `__chk_ty_wirebytes`), not in
-pass 4 -- pass 4 runs after the bodies are typed, and a packed `@transitus`
-size is the sum of the declared widths, which pass 2 already has.
+At M6 it had not run — the emitter lacked the opcodes M3 and M4 add; after
+them `tests/programs/forma/` (aca9755) and entry 23 (07bc8d5) ran it, and
+the markers this paragraph once deferred are retired above. One placement
+differed from D4's first text: the size equality `N` = size of `S` is
+checked in pass 2, inside the cast's own check (`checker/types/member.inc`,
+`__chk_ty_wirebytes`), not in pass 4 -- pass 4 runs after the bodies are
+typed, and a packed `@transitus` size is the sum of the declared widths,
+which pass 2 already has. D4 and spec §5.2 now say so.
 
 ## 9. Findings
 
@@ -684,18 +787,18 @@ one that was wrong, the amendment is in the same commit as this file.
    in its precedence table and shifts as `[OPEN]`; spec §8.6 wins where
    they disagree (§8.6 says so itself) and is now the one with shifts and
    `aut`. The design record is not edited here; it is a record.
-5. **IR 2.7, "Spec §5.2 admits `u12:maior` … `[OPEN]`"** is stale: §5.2
-   rule 2 now says `u12` does not parse, and §8.6 makes `BitType` a table
-   lookup. IR 7 item 1 is likewise already done by §5.2. Not edited here
-   (outside the sections this milestone owns); the backend agent should
-   drop both.
+5. **IR 2.7, "Spec §5.2 admits `u12:maior` … `[OPEN]`"** was stale: §5.2
+   rule 2 says `u12` does not parse, and §8.6 makes `BitType` a table
+   lookup. IR 7 item 1 was likewise already done by §5.2. Both corrected
+   in the marker-retirement commit; the verifier refuses `load u12`
+   (`tests/ir/reject_verify_load_width.ir`, M4).
 6. **`sig.inc:822`'s `chk_ty_litval` admits `_` as a digit separator** while
    §8.4 leaves separators `[OPEN]` and `lex.inc:335` rejects `1_000` as
    `EXS-E0210` before the checker sees it. Unreachable today; when
    separators are settled one of the two is wrong. D6 does not touch it.
-7. **`tests/run.sh`'s `cert` branch** currently fails any `status=run`
-   fixture of that shape by design. M7 replaces that branch; until then the
-   directive stays `deferred`.
+7. **`tests/run.sh`'s `cert` branch** failed any `status=run` fixture of
+   that shape by design until M7 replaced it with `cert_entry23`
+   (07bc8d5); the directive is `status=run`.
 8. **Nothing in the language passes an aggregate by value in a certified
    program yet.** `obsigna` returns a `DeModFrame`; LOW 2.7's aggregate
    return convention is what it lands on. The first draft of this file gave
@@ -703,10 +806,11 @@ one that was wrong, the amendment is in the same commit as this file.
    result pointer that is seven words, and the emitter's call path refuses a
    seventh (`emit.inc:1552-1579`, which counts the result pointer). So
    `obsigna` takes the frame and seals it, which is also what "seal" means.
-   Stack-passed arguments are a backend extension nothing here needs. If M6
-   finds the aggregate-return convention unimplemented, `obsigna` takes a
-   `&DeModFrame` out-parameter instead and this section is amended — the
-   codec's bytes do not change.
+   Stack-passed arguments are a backend extension nothing here needs. The
+   aggregate-return convention turned out to be implemented: `obsigna`
+   takes and returns a `DeModFrame` by value in entry 23 (section 11), so
+   the `&DeModFrame` fallback this finding once held in reserve was not
+   needed.
 
 9. **`poscit sicut s` does not compose: a function declared `poscit sicut
    s` that calls another declared `poscit sicut s` with the same `s` is
@@ -732,28 +836,34 @@ one that was wrong, the amendment is in the same commit as this file.
    declared ATOMS (`wrat`) from a contribution that substitution has already
    turned into atoms; the caller's declared ordinals (`wror`) are subtracted
    only from leftover ordinals, never expanded to the mark of the parameter
-   they name. The spec is right and the checker is wrong. Not fixed here: it
-   is a soundness-relevant change to capability rows in the checker's tree,
-   not a small obviously-right one. `probatio.exsc` does what §4.1 rule 5
+   they name. **The spec is right and the checker is wrong**, and it is
+   still wrong at the marker-retirement commit: nothing in the spec — §4.2's
+   substitution table included — should be read as the checker composing
+   `sicut` today, and §4.2 now carries a sentence saying so. Not fixed
+   here: it is a soundness-relevant change to capability rows in the
+   checker's tree, not a small obviously-right one. `probatio.exsc` does what §4.1 rule 5
    already provides for a private function -- it writes no `poscit` and the
    rows are inferred -- which is not a workaround in the language, only a
    departure from section 8's drawing; `initium` still binds `sub ambitus`
    and the binary's audit is unchanged.
 
-## 10. What retires each marker
+## 10. What retired each marker
 
-| decision | milestone | the test |
-|---|---|---|
-| D8 phi | M2 | IR: sum loop, swap, lost copy; program `phi_loops` |
-| D5 canonical form; IR 2.3's shift trap | M3 | IR: wrap and trap at `u4 u8 u24 u32 i8`, `u40` multiply at and just below 2^64, `3735928559`, shift by `N`, `chk` |
-| byte order and bit fields in the emitter | M4 | hand-written IR encoder producing `d31312340001ffffdeadbeefab12cd24c0` |
-| D1 operators, D6 hex | M5 | program `redundantia`: `0x29B1`, `0x4EC3` |
-| D2 places, D3 literals, D4 the cast | M6 | program `forma`: literal → CRC through the view → decode |
-| D7 `scribe_octeto`; the stream; the mutants | M7 | entry 23 `status=run`, 246/246, anchors, laws, three mutants failing |
+Every row's tests are merged on `wire-codec` and were seen passing in
+`tests/run.sh` at 07bc8d5 (626 pass, 0 fail, per the integrator's run).
 
-Until M7 passes, §14 entry 23 remains `status=deferred`, ADR 0011's status
-line remains "no Exsecutor implementation exists", and everything in this
-file is a hypothesis.
+| decision | milestone | the test as planned | what retired it |
+|---|---|---|---|
+| D8 phi | M2 (1b238c1) | IR: sum loop, swap, lost copy; program `phi_loops` | `tests/ir/phi_sum_loop.ir`, `phi_swap.ir`, `phi_lost_copy.ir`, `phi_same_target.ir`; `tests/unit/bfa_emit_phi.asm`; `tests/programs/phi_loops/` |
+| D5 canonical form; IR 2.3's shift trap; the `mul` flag at 33–63 | M3 (6955adf) | IR: wrap and trap at `u4 u8 u24 u32 i8`, `u40` multiply at and just below 2^64, `3735928559`, shift by `N`, `chk` | `tests/ir/narrow_wrap.ir`, `trap_add_{u4,u8,u24,u32,i8}.ir`, `trap_sub_u8.ir`, `trap_mul_u8.ir`, `trap_mul_u40_2p64.ir`, `trap_mul_i40_2p64.ir`, `trap_mul_u40_below_2p64.ir`, `mul_u40.ir`, `iconst_wide.ir`, `trap_shl_u8.ir`, `trap_shr_u32.ir`, `trap_chk.ir`, `conv_roundtrip.ir`; `tests/unit/bfa_emit_narrow.asm`, `bfa_emit_bitwise.asm`; `tests/programs/angusta/` |
+| byte order and bit fields in the emitter | M4 (8c852b0) | hand-written IR encoder producing `d31312340001ffffdeadbeefab12cd24c0` | `tests/ir/demodframe_encode.ir`, `demodframe_decode.ir`, `byte_order.ir`, `bits.ir`, `reject_verify_load_width.ir`, `reject_emit_straddle.ir`; `tests/unit/bfa_emit_bytes.asm` |
+| D1 operators, D6 hex | M5 (6a3bb2b, b1f0042) | program `redundantia`: `0x29B1`, `0x4EC3` | `tests/unit/lex_hex_literal.asm`, `cst_shift_xor.asm`, `chk_ty_bitops.asm`, `chk_ty_hexlit.asm`, `lwr_bitops.asm`; `tests/programs/redundantia/` |
+| D2 places, D3 literals, D4 the cast, §8.5's literal range | M6 (36ff767, aca9755) | program `forma`: literal → CRC through the view → decode | `tests/unit/cst_structlit.asm`, `chk_ty_structlit.asm`, `chk_ty_transitus.asm`, `lwr_transitus.asm`, `lwr_forma.asm`; `tests/programs/forma/` |
+| §5.2's field restriction | 622a541 | — (found by review H1) | `tests/unit/chk_row_layout_kind.asm` |
+| D7 `scribe_octeto`; the stream; the mutants | M7 (f8e0cd9, 2188b9f, 07bc8d5) | entry 23 `status=run`, 246/246, anchors, laws, three mutants failing | `tests/unit/prelude_scribe_octeto.asm`, `prelude_sine_ambitus.asm`; `tests/programs/octeti/`; `tests/conformance/entry23/` through `tests/run.sh`'s `cert_entry23` |
+
+§14 entry 23 is `status=run`; ADR 0011's status line says implemented and
+certified; what is still a hypothesis in this file is marked `[OPEN]`.
 
 ## 11. What M7 ran
 

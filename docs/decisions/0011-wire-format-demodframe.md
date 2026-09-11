@@ -82,8 +82,10 @@ it is equivalent to agreeing with the reference on all 2^108 frames.
 - A second vendored tree to keep digest-checked and to re-vendor when upstream
   moves. Its provenance discipline is now this repository's problem.
 - `u24` and friends have no obvious in-register representation. The wire layout
-  is settled; **how a 24-bit field is held in memory between decode and use is
-  not**, and §5.2 says nothing about it. `[OPEN]`
+  is settled; **how a 24-bit field is held in memory between decode and use
+  was not**, and §5.2 said nothing about it. Since answered — see Open,
+  below: a `u24` value, zero-extended in the reference backend, three bytes
+  on the wire.
 - Adopting an external format as a conformance target means an upstream change
   becomes a change here. Mitigated by pinning a commit, not a branch.
 
@@ -97,27 +99,41 @@ it is equivalent to agreeing with the reference on all 2^108 frames.
 
 ## Open
 
-- **Nothing is implemented.** `[UNTESTED]` — there is no Exsecutor compiler, so
-  the declaration in §5.2 has never been read by one. Phase 1 of the probe is a
-  real test that really passes; phases 2 and 3 are analyses.
-- In-memory representation of non-power-of-two widths. `[OPEN]`
+Closed, as of the M7 bullet at the end: the implementation itself, and the
+in-memory representation (for the reference backend). Still open: adapters
+above the quantum; the `certus` codec/transport boundary as a worked
+example; the C backend's own answer to the representation, which ADR
+0012's differential test will give. Bullets are kept in order as the
+record.
+
+- **Nothing is implemented.** (Was `[UNTESTED]`; superseded by the M7
+  bullet below.) When written there was no Exsecutor compiler, so the
+  declaration in §5.2 had never been read by one. Phase 1 of the probe is a
+  real test that really passes; phases 2 and 3 were analyses.
+- In-memory representation of non-power-of-two widths. **Closed for the
+  reference backend**: a `uN` is held zero-extended in 64 bits
+  (`docs/design/ssa-ir.md` §2.2); `tests/ir/byte_order.ir` reads `u24`,
+  `u40`, `u48` and `u56` in both orders, `tests/ir/demodframe_decode.ir`
+  reads `tempus` back, and `tests/programs/forma/` does it from source.
+  The C backend's answer is `[OPEN]` until ADR 0012's differential test
+  covers it.
 - Whether adapters above the quantum (DCF-Audio and the rest) are worth
   expressing at all is not decided and is not needed for the point being made.
 - The `certus` profile (ADR 0010) forbids `rete` outright. A DeModFrame *codec*
   is pure and profile-clean; a *transport* is not. That boundary looks like a
   good worked example for the profile and has not been written.
-- **Appended 2026-09-11.** The in-memory question three bullets up is
-  **answered in the spec as `[UNTESTED]`** — settled as text, unverified:
+- **Appended 2026-09-11.** The in-memory question three bullets up was
+  answered in the spec as text before anything ran (it carried
+  `[UNTESTED]` then; the bullet above records what has since verified it):
   `docs/design/wire-codec.md` D2 and D5, now in spec §5.2 and §5.4. Byte
   order belongs to the *place*, so a read of `tempus: u24:maior` yields a
   `u24` — an integer in [0, 2^24) — and the reference backend holds every
   `uN` zero-extended in 64 bits (`docs/design/ssa-ir.md` §2.2). Exactly
   three bytes on the wire, exactly a `u24` in the program, and no value has
   a byte-ordered type (`&` of a `@transitus` field is refused, so no address
-  carries one either). The bullet above keeps its `[OPEN]` marker as the
-  record of the question; what retires it is that design's M6 reading a
-  `u24` back through a compiled program. Nothing is implemented, and the
-  status line is unchanged.
+  carries one either). When this was appended nothing was implemented; M6's
+  `forma` (aca9755) then read a `u24` back through a compiled program, and
+  the bullet above records the closure.
 - **Appended 2026-09-11, M7 of `docs/design/wire-codec.md`.** An Exsecutor
   implementation exists and the certificate runs: §14 entry 23 is
   `status=run`. `tests/conformance/entry23/codex.exsc` is the codec — the

@@ -80,8 +80,12 @@ atomicity, placement) the type carries. No aggregates (section 2.7), no
 size-polymorphic instruction: generic code (spec §7.1) sees a type parameter
 as `ptr` plus a dictionary and copies or destroys through it `[OPEN]`.
 
-**Canonical form of a narrow integer** (`[UNTESTED]` — `wire-codec.md` D5,
-retired by its M3). In a 64-bit register or slot a `uN` with N < 64 is held
+**Canonical form of a narrow integer** (`wire-codec.md` D5; exercised by
+`tests/ir/narrow_wrap.ir`, `trap_add_{u4,u8,u24,u32,i8}.ir`,
+`trap_sub_u8.ir`, `trap_mul_u8.ir`, `trap_mul_u40_2p64.ir`,
+`trap_mul_u40_below_2p64.ir`, `mul_u40.ir`, `conv_roundtrip.ir`,
+`tests/unit/bfa_emit_narrow.asm` and `tests/programs/angusta/`). In a
+64-bit register or slot a `uN` with N < 64 is held
 **zero-extended**: bits N..63 are zero. An `iN` is held **sign-extended**:
 bits N..63 equal bit N−1. `u1` is 0 or 1. Every instruction may assume its
 operands are canonical and must leave its result canonical. The emitter
@@ -122,7 +126,7 @@ is that type unless shown. Text form: `%n = op T operands`.
 | integer, wrapping | `addw subw mulw` | `+%`, modulo 2^N |
 | integer, saturating | `adds subs muls` | `+\|`, clamped to `T` |
 | overflow predicate | `addov subov mulov → u1` | true iff the trapping form would trap; `+?` is `addov` + `addw` |
-| bitwise | `and or xor shl shr` | `shr` arithmetic for `iN`; bits shifted beyond N discarded, result normalised (section 2.2); **a count ≥ N traps** (spec §5.4 as amended, `[UNTESTED]` → `wire-codec.md` M3), so `shl`/`shr` are **side-effecting** like the trapping group: never removed if unused, never reordered across another side effect. The `[OPEN]` this row carried is closed by that sentence |
+| bitwise | `and or xor shl shr` | `shr` arithmetic for `iN`; bits shifted beyond N discarded, result normalised (section 2.2; `tests/ir/shift_narrow.ir`, `bitwise.ir`, `tests/unit/bfa_emit_bitwise.asm`); **a count ≥ N traps** (spec §5.4; `tests/ir/trap_shl_u8.ir` count 8 in `u8`, `trap_shr_u32.ir` count 32 in `u32`), so `shl`/`shr` are **side-effecting** like the trapping group: never removed if unused, never reordered across another side effect. The `[OPEN]` this row carried is closed by that sentence |
 | compare | `cmp.eq .ne .lt .le .gt .ge → u1` | signedness from `T` |
 | convert | `zext sext trunc` | `zext`/`sext` by source sign; `trunc` keeps low bits (narrowing `sicut` `[OPEN]`) |
 | float | `fadd fsub fmul fdiv fneg` | one IEEE rounding each, in the function's `rotundatio`, subnormals per `subnormales` |
@@ -158,9 +162,11 @@ reducible and Braun's irreducible-graph step is not needed. A `quisque` header
 carries a flag and its induction phi is its first phi — the independence bit
 spec §8.5 says everything downstream consumes; its use is Stage 3 `[OPEN]`.
 
-**How the reference backend lowers a phi list** (`[UNTESTED]` —
-`wire-codec.md` D8, retired by its M2; today `emit.inc` aborts on any phi).
-Each incoming edge into a block with phis is a **parallel copy**, done
+**How the reference backend lowers a phi list** (`wire-codec.md` D8;
+`emit.inc` aborted on any phi until M2, 1b238c1; exercised by
+`tests/ir/phi_sum_loop.ir`, `phi_swap.ir`, `phi_lost_copy.ir`,
+`phi_same_target.ir`, `tests/unit/bfa_emit_phi.asm` and
+`tests/programs/phi_loops/`). Each incoming edge into a block with phis is a **parallel copy**, done
 through the stack: push each phi's operand for that edge, in phi order; then
 pop into each phi's slot in reverse order. Every read precedes every write,
 so a swap (`%a = phi [%b …]`, `%b = phi [%a …]`) and the lost-copy case are
@@ -168,9 +174,13 @@ correct with no cycle analysis and no scratch register. A `jmp` emits the
 copies before the jump. A `br` has two targets whose copies differ, so each
 edge from a `br` into a block with phis goes through a **per-edge stub** —
 `jcc stub_T; jmp stub_F`, each stub doing its copies and jumping on. A block
-with no phis **must** produce exactly the text it produces today: the
+with no phis **must** produce exactly the text it produced before: the
 fixtures that pin emitted text are a requirement on the change, and a diff
-in one is a defect in the change rather than a fixture to update.
+in one is a defect in the change rather than a fixture to update. M2 met
+it: `bfa_emit_tier1/tier2/program.asm` and the hello world through the
+publish gate were byte-identical before and after (1b238c1). A `br` whose
+two targets are one block reads the phi's second pair naming that
+predecessor on its false edge, in edge order (`phi_same_target.ir`).
 
 ### 2.5 Construction on `rt/`: Braun's structures, mapped
 
@@ -230,11 +240,14 @@ types. A `structura` is a `slot` or heap bytes behind a `ptr`, and a field is
 
 `load`/`store` take whole-byte widths at a byte boundary with order `nativus`,
 `maior` or `minor`; `loadbits`/`storebits` any width ≤ 8 at any bit offset,
-straddling a byte if the declaration did. Spec §5.2 admits `u12:maior` (above
-8, byte-aligned, not a multiple of 8) but does not say how it packs under
-`:minor` or how its trailing bits share a byte with the next field — a gap
-the IR cannot paper over; the verifier rejects the case until it closes
-`[OPEN]`. `copy n` is bytes only; a struct holding references is copied as
+straddling a byte if the declaration did. (An earlier draft said spec §5.2
+admitted `u12:maior` and left its packing open; §5.2 rule 2 now says `u12`
+does not parse, so there is no such case. The verifier refuses a `load` or
+`store` that is not a whole number of bytes —
+`tests/ir/reject_verify_load_width.ir` — and admits a straddling
+`loadbits`, which the emitter then refuses, the two layers disagreeing on
+purpose: `tests/ir/reject_emit_straddle.ir`. `DeModFrame` never
+straddles.) `copy n` is bytes only; a struct holding references is copied as
 bytes plus one `retain` per reference field known from the layout. Bounds are
 explicit `chk` instructions, so both backends trap at the same point.
 
@@ -391,10 +404,12 @@ type interning and is never iterated.
 
 ## 6. Unresolved
 
-`arborea w` when `n` is not a multiple of `w`; `u12:maior`-class fields under
-`:minor`; narrowing `sicut`; `/`, `rem`, `ftoi` edges (downstream of spec
-§8.4's open operator set — shifts ≥ width were on this list and are settled
-in section 2.3, `[UNTESTED]`); whether a `contrahe` variable is
+`arborea w` when `n` is not a multiple of `w`; narrowing `sicut`'s spec
+text (the lowering emits `trunc` and `tests/programs/angusta/` runs one,
+but spec §5.2 has only the widening sentence); `/`, `rem`, `ftoi` edges
+(downstream of spec §8.4's open operator set — shifts ≥ width were on this
+list and are settled in section 2.3, `tests/ir/trap_shl_u8.ir`;
+`u12:maior`-class fields were on it and no longer parse); whether a `contrahe` variable is
 readable in its body; `rumpe` in a reduction loop; the `+?` optional's
 representation; object header, weak references, destructor dispatch;
 dictionary layout (spec §15, item 5); which capabilities carry runtime values;
@@ -404,8 +419,9 @@ is proposed).
 
 ## 7. Spec amendments this design implies (owner's job, not done here)
 
-1. Spec §5.2: define packing for byte-aligned widths above 8 that are not a
-   multiple of 8, under both byte orders.
+1. Closed by spec §5.2 rule 2 the other way: widths above 8 that are not a
+   multiple of 8 do not parse, so there is no packing to define. (Was:
+   define packing for such widths under both byte orders.)
 2. Spec §5.4: define `arborea w` exactly, tail included; say whether the
    accumulator is readable inside the body and what `rumpe` yields.
 3. Spec §9.1: the SSA line should point here, as the amended spec §9.2 does.
