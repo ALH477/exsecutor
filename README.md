@@ -238,7 +238,7 @@ are byte-exact exceptions and why).
      Every figure is from running the named command at the named commit.
      Refresh it here and nowhere else. -->
 
-## Status as of `2e257f0` (2026-09-10)
+## Status as of `ed16563` (2026-09-11)
 
 Every figure here was produced by running the named command at this commit, in
 the `nix develop` shell, on `x86_64-linux`.
@@ -261,41 +261,71 @@ $ ./hello | cmp - examples/saluta.expected && echo BYTES MATCH
 BYTES MATCH
 ```
 
-101 bytes, no trailing newline. The binary is 1,074 bytes, statically linked,
-and its entire syscall surface is one `write(1)` and `exit_group` — audited
-against `{Mundus, ambitus}`, the capabilities the program actually has, with
-the socket family a hard failure because `rete` is not among them.
+101 bytes, no trailing newline. Its entire syscall surface is one `write(1)`
+and `exit_group` — audited against `{Mundus, ambitus}`, the capabilities the
+program actually has, with the socket family a hard failure because `rete` is
+not among them.
+
+**A real wire format, certified.** HydraMesh's DCF `DeModFrame` — a 17-byte
+production quantum with eleven independent implementations — is written in
+Exsecutor (`tests/conformance/entry23/codex.exsc`) and passes §14 entry 23,
+the external certificate vendored at `vendor/hydramesh-wire/`:
+
+```
+entry 23: certificate: 246/246 vectors (encode basis 109/109, syndrome basis 137/137)
+entry 23: anchors: 3/3 (section 3)
+entry 23: laws: 218/218 (section 4), 136/136 (section 5)
+```
+
+The codec declares no capability; the 8,601-byte certificate binary writes a
+2,502-byte stream and its syscalls are `write` and `exit_group`. Three
+mechanical mutants (the CRC polynomial, one field's byte order, two fields
+swapped) each fail at the vector `docs/design/wire-codec.md` predicts. The
+certificate's theorem extends 246 vectors to all 2^108 frames *given* that the
+codec is affine, which is argued from reading it, not measured. The codec needs
+no bitwise and or or: `@transitus` field access is the mask, shift and byte
+swap, so the language gained only `aut` (xor), `sursum`/`deorsum` (shifts),
+hex literals, struct literals and one aggregate cast — spec §5.2, §5.4, §8.4,
+§8.6.
 
 **What runs:**
 
-- `make all` → `build/exsc`, **397,785 bytes**, freestanding, no libc.
-- **All three stages of §16 reach end to end for this program.** Stage 1: the
-  §8.1 source gate, the lexer, the lossless CST, the typed AST. Stage 2: name
-  resolution, types, capability rows, packed layout — the lexicon pass is built
-  and **not enabled**, because §3.3's root table is illustrative and rejects the
+- `make all` → `build/exsc`, **416,880 bytes**, freestanding, no libc.
+- **All three stages of §16 reach end to end.** Stage 1: the §8.1 source gate,
+  the lexer, the lossless CST, the typed AST. Stage 2: name resolution, types,
+  capability rows, packed layout — the lexicon pass is built and **not
+  enabled**, because §3.3's root table is illustrative and rejects the
   language's own canonical names, which its fixture asserts. Stage 3: the
-  lowering to SSA IR, the verifier, and the fasmg reference backend with its
-  runtime prelude.
+  lowering to SSA IR, the verifier, and the fasmg reference backend — phi,
+  narrow integers at any width with trapping and wrapping arithmetic, byte
+  order and sub-byte bit fields, arrays with bounds checks — with its runtime
+  prelude.
 - **Both kill criteria that could fire have been evaluated.** Stage 1's
   (diagnostics) fired, was fixed, and was re-measured against a checked-in
   corpus — `docs/design/diagnostics-review.md`, final section, and
   `tests/diagnostics/`. Stage 2's (`sub` resolution needing a search) does not
   fire, argued first in `docs/design/checker.md` §2.1.
-- `tests/run.sh`: **578 pass, 0 fail**, 155 unit fixtures, 10 of 24 conformance
-  entries running (the other 14 report `DEFERRED` and are never counted as
-  passing).
+- `tests/run.sh`: **628 pass, 0 fail** — 160 unit fixtures; 48 IR fixtures and
+  8 Exsecutor programs, each compiled, assembled, **run**, and syscall-audited;
+  10 of 24 conformance entries running, each required to emit exactly its
+  expected code and nothing else (the other 14 report `DEFERRED` and are never
+  counted as passing).
 - `make audit`: PASS — the nine allowlisted syscalls and nothing else, on the
   real binary. `make reproduce`: PASS, byte-identical across directory, `TZ`,
   locale, `SOURCE_DATE_EPOCH`, umask and hostname. `tools/spec-check.sh`: PASS,
   49 error codes in sync with §13. `nix flake check`: green.
 
-**What does not run yet.** Only one program has been compiled end to end, and
-most of the language is `rassert`-refused rather than lowered: `contrahe` and
-its reduction triple, lambdas, `eventus`, generics, and every `numeri` but the
-default. The C backend (§9.2's reach backend) does not exist; neither does the
-`ego` reader, the module system, the LSP, or `exsc emenda`. `EXS-E0105`
-(confusables) has no hermetic data source. The emitted program's capability
-mask is an over-approximation with the exact fix recorded beside it.
+**What does not run yet.** Most of the language beyond what these programs use
+is `rassert`-refused rather than lowered: `contrahe` and its reduction triple,
+lambdas, `eventus`, generics, floating point, and every `numeri` but the
+default. Bitwise and/or, division, remainder and narrowing `sicut` are
+unspecified (`[OPEN]`). The checker refuses a correct program where a
+`poscit sicut s` function calls another with the same `s` (`EXS-E0421`; the
+spec is right, `docs/design/wire-codec.md` finding 9). The C backend (§9.2's
+reach backend) does not exist; neither does the `ego` reader, the module
+system, the LSP, or `exsc emenda`. `EXS-E0105` (confusables) has no hermetic
+data source. The emitted program's capability mask is an over-approximation
+with the exact fix recorded beside it.
 
 <!-- END STATUS BLOCK -->
 
