@@ -84,11 +84,17 @@
 ;     type table with a small ordinal -> type-id vector") is not implemented.
 ;     A generic body still type-checks against the interface, which is the
 ;     half section 2.7 says must never consult an impl.
-;   - PATTERNS. `Discerne`/`Casus` type the scrutinee and each arm's block; a
-;     pattern is not checked against the scrutinee's type. Spec §8.6's
-;     `Pattern` is a `Path`, a literal or `_`, and what a `Path` pattern MEANS
-;     (a binding? a constant? a variant of a sum type the language does not
-;     have?) is not decided anywhere.
+;   - PATTERNS. `Discerne`/`Casus` type the scrutinee, each arm's block, and
+;     each arm's pattern AGAINST the scrutinee's type, as the right operand
+;     of `s eq p` (stmt.inc's `.discerne`). Spec §8.6's `Pattern` is a
+;     `Literal` or a `Path`; what a `Path` pattern MEANS beyond "a value of
+;     the scrutinee's type" (a binding? a constant? a variant of a sum type
+;     the language does not have?) is not decided anywhere, and the lowering
+;     admits only a `firma` with a literal initializer (lowering.md,
+;     `discerne`; a `mutabilis` or a parameter traps there, for want of a
+;     spec §13 code to refuse it with here). Duplicate `casus` values and a
+;     missing `aliter` are not diagnosed: spec §8.5's exhaustiveness
+;     presupposes an enumeration §8.6 lists as `[OPEN]`.
 ;   - DEFINITE ASSIGNMENT is the straight-line form only: a binding declared
 ;     with an annotation and no initializer is unassigned until an `Assign`
 ;     names it, and a read before that is `EXS-E0307`. An assignment inside a

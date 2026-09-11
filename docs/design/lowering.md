@@ -344,12 +344,23 @@ to this chain anyway. A `Lit` pattern is `iconst T konst[p]`; a `Path`
 pattern resolves (`Path.d`) to a module-level `firma` whose initializer is a
 `Lit`, and lowers to that literal's `iconst` — the only constant a `Path`
 can name today (spec §8.6 decision 5: "module `firma` is a constant"; sum
-types and constructors are `[OPEN]` in §8.6). A scrutinee of any type but
-integer or `u1` needs a runtime comparison this pass has no callee for —
-`textus` equality is a prelude routine that does not exist — and is
-`[OPEN]` (section 7). With no `aliter` the last false edge goes to `join`:
-spec §8.5 makes the arms exhaustive and the checker enforces it, so the
-edge is unreachable in fact and needs no `trap`.
+types and constructors are `[OPEN]` in §8.6). `konst[p]` and `T` exist
+because the checker types each pattern as the right operand of `s eq p`
+against the scrutinee's type (`checker/types/stmt.inc`, `.discerne`); until
+it did, a `Lit` pattern reached this pass with `Node.ty` 0 and every
+`discerne` trapped under `-o` (`tests/programs/discerne/`). A local `firma`
+with a `Lit` initializer is inlined the same way — the same value at every
+point of its scope — and a `mutabilis` binding or a parameter traps: it is
+not a constant, inlining its initializer answered the value it was declared
+with rather than the one it holds, and spec §13 has no code the checker
+could refuse it with (`[OPEN]`). A scrutinee of any type but an integer
+(`iN`, `uN`, `u1`) or `mensura` needs a runtime comparison this pass has no
+callee for — `textus` equality is a prelude routine that does not exist —
+and is `[OPEN]` (section 7). With no `aliter` the last false edge goes to
+`join`, so a scrutinee that matches no arm **runs nothing**, as `si`
+without `aliter` does. This paragraph said the edge was unreachable because
+"the checker enforces" spec §8.5's exhaustiveness; it does not, and cannot
+until §8.6's enumeration exists and §13 has a code for a missing arm.
 
 **`rumpe;` / `perge;`** (`Rumpe`, `Perge`, no operands). The loop stack
 records `{exit, continue target (header for dum, latch for per), scope

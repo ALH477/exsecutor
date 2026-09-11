@@ -1,0 +1,4 @@
+# discerne.exsc's header lists the thirty checks; 1-30 names the first wrong
+# one, 200 is classis(3) -- a u8 discerne whose matching arm is a module
+# constant -- after all are right.
+TEST: expect-exit=200

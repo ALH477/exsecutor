@@ -1,0 +1,232 @@
+// `discerne`, compiled with `-o`, assembled and run. Until the checker typed
+// each `casus` pattern against the scrutinee (checker/types/stmt.inc,
+// `.discerne`) EVERY `discerne` with a literal pattern killed exsc with
+// SIGILL under `-o` -- a literal pattern reached the lowering with `Node.ty`
+// 0 -- while the same source passed without `-o`, which never lowers. And a
+// `mensura` scrutinee trapped on the lowering's `AST_TY_INT` assert.
+// `initium` returns the number of the first check that is wrong, or 200 --
+// `classis(3)`, a u8 `discerne` -- when all are right.
+//
+//    1-3  lata(1 / 3 / 4)      u64, a literal and a module `firma` pattern,
+//                              `aliter`; arms assign             10 30 99
+//    4-7  octo(7 / 0 / 9 / 255) u8, NO `aliter`, an empty arm, a u8 module
+//                              constant; 9 matches nothing and runs
+//                              nothing (see below)                70 1 1 2
+//    8-10 sedecim(...)         u16, every arm and `aliter` `redde`: the
+//                              join is never made                 2 1 3
+//   11-13 triginta(...)        u32, every arm `redde`, no `aliter`: the
+//                              last false edge is the only way on 5 6 7
+//   14-15 mens(8 / 9)          `mensura`, an empty `aliter`       80 0
+//   16-18 signa(...)           i32, a hex pattern at the top      50 60 9
+//   19-20 veritas(5 / 1)       u1 -- a comparison as scrutinee    1 2
+//   21    duplex(4)            two arms for one value: the first  1
+//   22-25 nidus(a, b)          a `discerne` inside an arm         11 12 20 0
+//   26    vacua(1)             no arms at all, then only `aliter` 9
+//   27    localis(5)           a LOCAL `firma` with a literal     1
+//   28    ansa(10)             inside a `per`: arms reassign the  4121
+//                              loop-carried `s` (phis at the join
+//                              and the header), `perge`, `rumpe`
+//   29    circuit(10)          inside a `dum ... terminus`, the   321
+//                              scrutinee an expression, three
+//                              bindings reassigned in different arms,
+//                              one arm writing the loop variable
+//   30    quaere(10)           a `redde` from an arm inside a loop 12
+//
+// NO `aliter` AND NO MATCH RUNS NOTHING (checks 6, 13, 15, 25): the chain's
+// last false edge goes to the join. Spec 8.5 says `discerne` is exhaustive,
+// but 8.6 lists exhaustiveness as presupposing an enumeration that is
+// `[OPEN]`, and 13 has no code for a missing arm, so nothing refuses these.
+// Pinned here as what the compiler does, not as what the spec settles.
+//
+// Every constant is declared BEFORE its first use. A module `firma` named
+// above its declaration is typed as the error type with no diagnostic (its
+// `Decl.ty` is still 0 when the body is checked), so a mismatch there is
+// not caught -- a checker ordering bug that is not `discerne`'s, and that
+// this program therefore does not lean on.
+//
+// Mutations (run): in lower/stmt.inc's `__lwr_discerne`, BFA_PRED_EQ ->
+// BFA_PRED_NE -> exit 1; swapping `casus 1` and `casus TRES`'s bodies in
+// `lata` -> exit 1.
+
+firma TRES: u64 = 3;
+firma SEPTEM: u8 = 7;
+firma TRES_OCTETI: u8 = 3;
+
+functio lata(x: u64) -> u64 {
+    mutabilis r: u64 = 0;
+    discerne x {
+        casus 1 { r = 10; }
+        casus TRES { r = 30; }
+        aliter { r = 99; }
+    }
+    redde r;
+}
+
+functio octo(x: u8) -> u8 {
+    mutabilis r: u8 = 1;
+    discerne x {
+        casus 0 { }
+        casus SEPTEM { r = 70; }
+        casus 255 { r = 2; }
+    }
+    redde r;
+}
+
+functio sedecim(x: u16) -> u16 {
+    discerne x {
+        casus 1000 { redde 1; }
+        casus 65535 { redde 2; }
+        aliter { redde 3; }
+    }
+}
+
+functio triginta(x: u32) -> u32 {
+    discerne x {
+        casus 4294967295 { redde 5; }
+        casus 0 { redde 6; }
+    }
+    redde 7;
+}
+
+functio mens(x: mensura) -> mensura {
+    mutabilis r: mensura = 0;
+    discerne x {
+        casus 8 { r = 80; }
+        aliter { }
+    }
+    redde r;
+}
+
+functio signa(x: i32) -> i32 {
+    discerne x {
+        casus 5 { redde 50; }
+        casus 0x7FFFFFFF { redde 60; }
+    }
+    redde x;
+}
+
+functio veritas(x: u64) -> u64 {
+    discerne x gt 3 {
+        casus 1 { redde 1; }
+        casus 0 { redde 2; }
+    }
+    redde 3;
+}
+
+functio duplex(x: u64) -> u64 {
+    mutabilis r: u64 = 0;
+    discerne x {
+        casus 4 { r = 1; }
+        casus 4 { r = 2; }
+        aliter { r = 3; }
+    }
+    redde r;
+}
+
+functio nidus(a: u64, b: u64) -> u64 {
+    mutabilis r: u64 = 0;
+    discerne a {
+        casus 1 {
+            discerne b {
+                casus 1 { r = 11; }
+                aliter { r = 12; }
+            }
+        }
+        casus 2 { r = 20; }
+    }
+    redde r;
+}
+
+functio vacua(x: u64) -> u64 {
+    discerne x { }
+    discerne x { aliter { redde 9; } }
+}
+
+functio localis(x: u64) -> u64 {
+    firma k: u64 = 5;
+    discerne x {
+        casus k { redde 1; }
+    }
+    redde 2;
+}
+
+functio ansa(n: u64) -> u64 {
+    mutabilis s: u64 = 0;
+    per i in 0..n {
+        discerne i {
+            casus 0 { s = s + 100; }
+            casus 1 { }
+            casus 2 { s = s + 1; perge; }
+            casus 5 { rumpe; }
+            aliter { s = s + 10; }
+        }
+        s = s + 1000;
+    }
+    redde s;
+}
+
+functio circuit(n: u64) -> u64 {
+    mutabilis a: u64 = 0;
+    mutabilis b: u64 = 0;
+    mutabilis k: u64 = 0;
+    dum k lt n terminus 64 {
+        discerne k + 1 {
+            casus 2 { a = a + 1; }
+            casus 3 { b = b + 1; a = a + 2; }
+            casus 7 { k = n; }
+        }
+        k = k + 1;
+    }
+    redde a * 100 + b * 10 + k;
+}
+
+functio quaere(n: u64) -> u64 {
+    per i in 0..n {
+        discerne i {
+            casus 6 { redde i * 2; }
+        }
+    }
+    redde 0;
+}
+
+functio classis(x: u8) -> u8 {
+    discerne x {
+        casus 1 { redde 100; }
+        casus TRES_OCTETI { redde 200; }
+    }
+    redde 0;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    si lata(1) ne 10 { redde 1; }
+    si lata(3) ne 30 { redde 2; }
+    si lata(4) ne 99 { redde 3; }
+    si octo(7) ne 70 { redde 4; }
+    si octo(0) ne 1 { redde 5; }
+    si octo(9) ne 1 { redde 6; }
+    si octo(255) ne 2 { redde 7; }
+    si sedecim(65535) ne 2 { redde 8; }
+    si sedecim(1000) ne 1 { redde 9; }
+    si sedecim(0) ne 3 { redde 10; }
+    si triginta(4294967295) ne 5 { redde 11; }
+    si triginta(0) ne 6 { redde 12; }
+    si triginta(1) ne 7 { redde 13; }
+    si mens(8) ne 80 { redde 14; }
+    si mens(9) ne 0 { redde 15; }
+    si signa(5) ne 50 { redde 16; }
+    si signa(2147483647) ne 60 { redde 17; }
+    si signa(9) ne 9 { redde 18; }
+    si veritas(5) ne 1 { redde 19; }
+    si veritas(1) ne 2 { redde 20; }
+    si duplex(4) ne 1 { redde 21; }
+    si nidus(1, 1) ne 11 { redde 22; }
+    si nidus(1, 5) ne 12 { redde 23; }
+    si nidus(2, 1) ne 20 { redde 24; }
+    si nidus(3, 1) ne 0 { redde 25; }
+    si vacua(1) ne 9 { redde 26; }
+    si localis(5) ne 1 { redde 27; }
+    si ansa(10) ne 4121 { redde 28; }
+    si circuit(10) ne 321 { redde 29; }
+    si quaere(10) ne 12 { redde 30; }
+    redde classis(3);
+}

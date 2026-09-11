@@ -1494,13 +1494,22 @@ endp
 ; resolves to a module-level `firma` whose initializer is a `Lit` -- the only
 ; constant a `Path` can name today (spec section 8.6 decision 5).
 ;
-; A scrutinee of any type but an integer or `u1` needs a runtime comparison
-; this pass has no callee for (`textus` equality is a prelude routine that
-; does not exist) and traps: `[OPEN]`, lowering.md section 7.
+; A scrutinee of any type but an integer (`iN`, `uN`, `u1`) or `mensura`
+; needs a runtime comparison this pass has no callee for (`textus` equality
+; is a prelude routine that does not exist) and traps: `[OPEN]`, lowering.md
+; section 7. `mensura` is its own `AST_TY_*` kind (spec 5.2's `usize`), and
+; asserting `AST_TY_INT` alone trapped on it.
 ;
-; With no `aliter` the last false edge goes to the join: spec section 8.5
-; makes the arms exhaustive and the checker enforces it, so that edge is
-; unreachable in fact and needs no `trap`.
+; With no `aliter` the last false edge goes to the join, so a scrutinee that
+; matches no arm RUNS NOTHING -- `si` without `aliter`'s behaviour. This said
+; the edge was unreachable because "the checker enforces" spec 8.5's
+; exhaustiveness; it does not and cannot yet (spec 8.6 lists exhaustiveness
+; as presupposing an enumeration that is `[OPEN]`, and 13 has no code for a
+; missing arm), and tests/programs/discerne/ reaches the edge on purpose.
+;
+; Each test and each body has exactly one predecessor and is sealed when the
+; `br` that made its edge is emitted, as in `__lwr_si`; the join's phis are
+; Braun's ordinary join phis, filled at its seal.
 proc __lwr_discerne, lwrsp, lwrn
 	uses	rbx, r12, r13
 	locals
@@ -1537,7 +1546,10 @@ proc __lwr_discerne, lwrsp, lwrn
 	mov	rdi, rbx
 	mov	esi, eax
 	call	lwr_ty_kind
+	cmp	eax, AST_TY_MENSURA		; spec 5.2's `usize`: its own kind,
+	je	.intscr				; an integer all the same
 	rassert	eax eq AST_TY_INT
+  .intscr:
 	mov	rdi, rbx
 	mov	esi, r12d
 	call	lwr_ty_ir
@@ -1674,8 +1686,24 @@ proc __lwr_discerne, lwrsp, lwrn
 endp
 
 ; __lwr_pattern(st, lwrn) -> eax = the constant a `casus` pattern names.
+;
+; The checker has typed the pattern as the scrutinee's type
+; (checker/types/stmt.inc, `.discerne`), so a `Lit`'s `iconst` is already at
+; the width the `cmp.eq` wants, and a `Path`'s constant is of that type or the
+; checker said `E0303`.
+;
+; A `Path` must name a `firma` whose initializer is a `Lit`. Module-level is
+; the case lowering.md designs; a LOCAL `firma` with a literal initializer is
+; the same value at every point of its scope and is inlined the same way, as
+; it was before this routine asserted anything. A `mutabilis` binding is NOT
+; a constant: inlining its initializer compared against the value it was
+; declared with rather than the one it holds -- measured, a silent wrong
+; answer -- so it traps here. So does a parameter (`__lwr_module_const`'s
+; `AST_D_BINDING` assert). Spec 13 has no code for "a pattern that is not a
+; constant", so the checker cannot refuse either one; until it has, this is
+; an `[OPEN]` hole that traps rather than miscompiles.
 proc __lwr_pattern, lwrsp, lwrn
-	uses	rbx
+	uses	rbx, r12
 	locals
 	endl
 	mov	rbx, [lwrsp]
@@ -1688,10 +1716,16 @@ proc __lwr_pattern, lwrsp, lwrn
 	mov	rdi, rbx
 	mov	esi, [lwrn]
 	call	__lwr_node
-	mov	ecx, [rax + AstNode.d]
-	rassert	ecx ne 0
+	mov	r12d, [rax + AstNode.d]
+	rassert	r12d ne 0
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, r12d
+	call	ast_decl_at
+	movzx	ecx, byte [rax + AstDecl.flags]
+	and	ecx, AST_F_MUTABILIS
+	rassert	ecx eq 0
 	mov	rdi, rbx
-	mov	esi, ecx
+	mov	esi, r12d
 	call	__lwr_module_const
 	return
   .lit:
