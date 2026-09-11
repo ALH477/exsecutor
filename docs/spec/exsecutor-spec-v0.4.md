@@ -561,6 +561,47 @@ rules above are what closed it, and the same probe checks that they do.
 
 `mensura` (`usize`) is target-dependent. Mixing it with a fixed-width type requires an explicit widening that names the target assumption.
 
+### Byte order belongs to places, not values
+
+`[UNTESTED]` — decided in `docs/design/wire-codec.md` (D2); nothing has
+type-checked a field access under it.
+
+A field declared `T:o` is a **place** whose bytes lie in order `o`. A read
+from it has type `T`; a write to it accepts a value of type `T`. The
+conversion *is* the field access: on the `DeModFrame` above, `f.numerus` is
+the big-endian 16-bit load and has type `u16`; `f.numerus = n` with
+`n: u16` is the big-endian store. The declaration's type is still
+`u16:maior` — that is what `EXS-E0321` and the layout rules are stated
+over — but a value in a register has no byte order, so no expression ever
+has a type carrying one. The alternative, an explicit `sicut` at every
+access, would bury a codec in casts that repeat what the declaration
+already says. Whether `:o` on a place that is not a field — a binding, a
+parameter — means anything is `[OPEN]`; nothing yet writes one.
+
+This also settles the in-memory form ADR 0011 left `[OPEN]`: a read of
+`tempus: u24:maior` yields a `u24`, an integer in [0, 2^24), exactly three
+bytes on the wire and exactly a `u24` in the program. How a `u24` is held in
+a register is the backend's (§5.4, *Integers*; `docs/design/ssa-ir.md` §2.2).
+
+### The one aggregate cast
+
+`[UNTESTED]` — `docs/design/wire-codec.md` D4; retired by its M6.
+
+`sicut` is admitted between a `@transitus` struct `S` and `acies<u8, N>`,
+where `N` is `S`'s size in bytes, in **both** directions. It is **total**,
+which is why it is a cast and not an `eventus`: the layout is packed, every
+multi-byte field carries an order, `:nativus` is rejected, there is no
+padding, and every field is an unsigned integer of its declared width — so
+every `N`-byte pattern is a valid `S` and every `S` is exactly `N` bytes. It
+is a **pointer passthrough**: the same bytes, no copy; `w sicut DeModFrame`
+aliases `w`. It is the byte view a checksum is computed over
+(`f sicut acies<u8, 17>`) and the way a received buffer becomes a frame.
+
+No other aggregate `sicut` exists. Any other — between two structs, to an
+`acies` of the wrong length, from a struct that is not `@transitus` — is
+`EXS-E0305`, which is already the answer to "are these two types related"
+for a cast.
+
 ## 5.3 FFI
 
 ```exsecutor
@@ -677,6 +718,36 @@ performance and never changes the value.
   whether arithmetic traps is ambient state by another name.
 - `@transitus` extends to explicit **bit** offsets. No implicit bit padding, for
   the same reason §5.2 forbids implicit byte padding.
+- **A value of `uN` is an integer in [0, 2^N).** `[UNTESTED]` The trapping
+  operators are exact on it; the wrapping operators are arithmetic modulo
+  2^N; the shifts below discard. That is the whole language-level
+  statement. How the value is *held* — zero-extended in a wider register,
+  masked on read, anything else — is the backend's, and the reference
+  backend's answer is recorded in `docs/design/ssa-ir.md` §2.2, not here
+  (`docs/design/wire-codec.md`, D5).
+- **Exclusive or and shifts** are the contextual words `aut`, `sursum`,
+  `deorsum` (§8.4 tier 2; precedence in §8.6). `[UNTESTED]` —
+  `docs/design/wire-codec.md` D1, retired by its M5.
+  - `a aut b` is exclusive or. It is **strict**: both operands are always
+    evaluated, left first. Only `et` and `vel` short-circuit (§8.6), and
+    they are logical; `aut` is arithmetic and its result depends on both
+    operands always.
+  - `a sursum n` shifts `a` toward **more** significance by `n` bits,
+    `a deorsum n` toward less. Not "left" and "right": byte order lives in
+    the type (§5.2) and a direction on paper would ask which paper.
+    Significance is order-free.
+  - **Unsigned operands only.** An `iN`, a float, or anything else on
+    either side is `EXS-E0305`. Signed shifts have two sensible meanings and
+    no program here has needed either; they stay `[OPEN]`.
+  - **Both operands have the same type, including the shift count**, or
+    `EXS-E0303`. The result has that type. A literal on either side takes
+    the other side's type, as it does for `+`.
+  - **Bits shifted beyond the width are discarded.** That is the
+    definition, not an overflow, so there is no `sursum%` or `sursum|`.
+  - **A count ≥ the width traps**, as `+` traps on overflow. The hardware's
+    answer to an out-of-range count is target-dependent — x86 masks the
+    count — and a target-dependent answer is the ambient state §1 exists
+    to remove.
 
 ---
 
@@ -984,6 +1055,9 @@ ordinary identifiers everywhere else.
   `et` `vel` — contextual because operator position is never operand
   position (§8.6), which is what lets `<` mean generic arguments and
   nothing else
+- exclusive or and shifts (§5.4, §8.6): `aut` `sursum` `deorsum` — on the
+  same rule, and `[UNTESTED]`: added by `docs/design/wire-codec.md` D1,
+  lexed by nothing yet
 - byte order (§5.2): `maior` `minor` `nativus`; FFI (§5.3): `abi`
 
 These are contextual on purpose. `versio`, `numeri` and `forma` are good Latin
@@ -1026,11 +1100,15 @@ uses four of them in one line. Found by the lexer, which had to tokenize `(`
 and discovered §8.4 did not admit it. A closed token set that omits its own
 examples' tokens is not closed; it is merely short.
 
-The comparison words (`lt le gt ge eq ne`) and the connectives (`et vel`) are
-**contextual** — §8.6 settles their precedence and shows why they can stay
-contextual: operator position is never operand position. `/`, remainder,
-shifts, negation and the `*%`/`*|` families remain `[OPEN]`, as does the
-numeric literal grammar.
+The comparison words (`lt le gt ge eq ne`), the connectives (`et vel`), and
+the exclusive-or and shift words (`aut sursum deorsum`) are **contextual** —
+§8.6 settles their precedence and shows why they can stay contextual:
+operator position is never operand position. Shifts and exclusive or are
+settled as those words, `[UNTESTED]` (§5.4, §8.6; `docs/design/wire-codec.md`
+D1), and shifts did not become `<<`/`>>` tokens. `/`, remainder, negation,
+the `*%`/`*|` families, and bitwise and/or remain `[OPEN]`. The numeric
+literal grammar is settled for hexadecimal only (below) and otherwise
+remains `[OPEN]`.
 
 ### Literals, comments, layout
 
@@ -1045,10 +1123,20 @@ numeric literal grammar.
   would mean the value depends on the source's leading whitespace, which is
   the ambient-state class §1 exists to remove.
 - A malformed literal is `EXS-E0210`; an unterminated one is `EXS-E0202`.
+- **Integer literals are a run of decimal digits, or `0x` followed by one or
+  more hexadecimal digits in either case** — `0xd3` and `0xD3` are the same
+  literal. `[UNTESTED]` (`docs/design/wire-codec.md` D6, retired by its M5).
+  `0X` is `EXS-E0210`: one spelling of the prefix, so a formatter has
+  nothing to normalise. `0x` with no digit, and a hex or decimal run that
+  runs into an identifier character (`0x1G`, `10u32`), are `EXS-E0210`. The
+  token class is `INT` for both forms; the value is typed by its
+  expectation exactly as a decimal literal is, so a literal too wide for
+  the type it lands in, or beyond 64 bits, is `EXS-E0308`.
 - Layout is not significant. Blocks are `{ }`.
 
-`[OPEN]` Numeric literal grammar — bases, separators, and float syntax — is not
-settled and is deliberately not invented here.
+`[OPEN]` The rest of the numeric literal grammar — binary and octal bases,
+digit separators, and float syntax — is not settled and is deliberately not
+invented here. Hexadecimal is settled above; nothing else is.
 
 ## 8.5 Control flow
 
@@ -1302,6 +1390,8 @@ Precedence climbing over a fixed table, one-token peek per step.
 | 3 cast | `sicut Type` | left |
 | 4 multiplicative | `*` — `/`, remainder, and the `*%` `*\|` overflow forms are `[OPEN]` | left |
 | 5 additive | `+` `+%` `+\|` `-` `-%` `-\|` | left |
+| 5a shift | `sursum` `deorsum` — `[UNTESTED]`, §5.4 | none |
+| 5b exclusive or | `aut` — `[UNTESTED]`, §5.4 | left |
 | 6 range | `..` | none |
 | 7 comparison | `lt` `le` `gt` `ge` `eq` `ne` | none |
 | 8 conjunction | `et` | left, short-circuit |
@@ -1311,24 +1401,42 @@ Precedence climbing over a fixed table, one-token peek per step.
 left has not decided the result. A call on the right makes the difference
 observable, which is why it is stated (`docs/design/lowering.md`, finding 13).
 
+Levels 5a and 5b are lettered so that the level numbers already cited in
+code comments do not move. `[UNTESTED]` Shifts are non-associative like
+comparison: `a sursum 1 sursum 2` is `EXS-E0201` at the second word by the
+mechanism that rejects `a lt b lt c` — the production takes one operator,
+and the next word is then unexpected where `;` or a lower-level operator was
+required. `aut` does **not** short-circuit: it is arithmetic on unsigned
+integers (§5.4), and both operands are always evaluated, left first.
+
 `&` and `*` are prefix in operand position and binary or type sigils
 elsewhere; the position decides, never the token. Logical negation is
 `[OPEN]`: no §8.4 token exists for it, and a word cannot serve — prefix
-position *is* operand position, so `non(x)` would be a call. `et` and `vel`
-are contextual words like `lt`, and are the only operators here not already
-attested elsewhere in this document; they and the comparison words need a
-§8.4 tier-2 entry. Assignment `=` is a **statement**, never an operator: it is
-excluded from conditions, and the lvalue check is semantic.
+position *is* operand position, so `non(x)` would be a call. `et`, `vel`,
+`aut`, `sursum` and `deorsum` are contextual words like `lt` and have their
+§8.4 tier-2 entries. Assignment `=` is a **statement**, never an operator: it
+is excluded from conditions, and the lvalue check is semantic.
 
-Generic arguments and, when they exist, struct literals attach only directly
-after a path segment (`IDENT`, `. IDENT`, or `<…>`). Struct-literal syntax is
-`[OPEN]`; its position — `{` after a path segment — is reserved now, and
-**`ExprNS`** (the expression grammar with that suffix disabled) is defined now,
-so admitting it later touches nothing outside level 1. `ExprNS` is used in
-every position where a `{` block follows an expression: `si`, `sin`, `dum`,
-`terminus`, the `per`/`quisque` range, `discerne`, and the right-hand side of
-`sub`. Array literals, tuples, slices, open-ended ranges, named arguments and
-compound assignment are `[OPEN]`; none of them needs a new peek.
+Generic arguments and struct literals attach only directly after a path
+segment (`IDENT`, `. IDENT`, or `<…>`). **A struct literal is
+`Path '{' [IDENT ':' Expr (',' IDENT ':' Expr)*] '}'`** — `[UNTESTED]`,
+`docs/design/wire-codec.md` D3, retired by its M6. Every field of the
+`structura` appears exactly once, in any order; commas between; no trailing
+comma, as in every other list here. A field the struct does not declare is
+`EXS-E0301`; a field named twice is `EXS-E0302`; a field left out is
+`EXS-E0304`; a path that is not a `structura` is `EXS-E0305`. Initialisers
+are evaluated in source order and stored in declaration order, so the
+emitted stores are a function of the declaration, not of the spelling.
+Missing fields are **not** zero-filled: a binding read before assignment is
+`EXS-E0307`, and zero-filling a `@transitus` literal would put bytes on the
+wire that no source line wrote — the disclosure class `@transitus` exists
+to close. **`ExprNS`** is the expression grammar with that suffix disabled,
+and is used in every position where a `{` block follows an expression:
+`si`, `sin`, `dum`, `terminus`, the `per`/`quisque` range, `discerne`, and
+the right-hand side of `sub` — so `si x {` is a condition and a block, and a
+literal in one of those positions is parenthesised. Array literals, tuples,
+slices, open-ended ranges, named arguments and compound assignment are
+`[OPEN]`; none of them needs a new peek.
 
 ### Types
 
@@ -1418,7 +1526,10 @@ Terminals are §8.4's tokens; `IDENT` `INT` `STRING` are the lexer's classes.
     And           ::= Cmp ('et' Cmp)*
     Cmp           ::= Range [CmpOp Range]
     CmpOp         ::= 'lt' | 'le' | 'gt' | 'ge' | 'eq' | 'ne'
-    Range         ::= Add ['..' Add]
+    Range         ::= Xor ['..' Xor]
+    Xor           ::= Shift ('aut' Shift)*                   (* [UNTESTED] *)
+    Shift         ::= Add [ShiftOp Add]                      (* [UNTESTED] *)
+    ShiftOp       ::= 'sursum' | 'deorsum'
     Add           ::= Mul (('+' | '+%' | '+|' | '-' | '-%' | '-|') Mul)*
     Mul           ::= Cast ('*' Cast)*
     Cast          ::= Unary ('sicut' Type)*
@@ -1426,9 +1537,12 @@ Terminals are §8.4's tokens; `IDENT` `INT` `STRING` are the lexer's classes.
     Postfix       ::= Primary Suffix*
     Suffix        ::= '.' IDENT | '(' [Expr (',' Expr)*] ')' | '[' Expr ']' | '?'
                     | GenericArgs                            (* after a path segment only *)
+                    | StructLit                              (* after a path segment only; not in ExprNS; [UNTESTED] *)
+    StructLit     ::= '{' [FieldInit (',' FieldInit)*] '}'
+    FieldInit     ::= IDENT ':' Expr
     Primary       ::= Literal | '(' Expr ')' | Lambda | IDENT
     Lambda        ::= 'functio' ParamList ['->' Type] Block
-    Literal       ::= INT | STRING                           (* INT grammar [OPEN], §8.4 *)
+    Literal       ::= INT | STRING                           (* INT: decimal or 0x hex, §8.4; the rest [OPEN] *)
     ArithOp       ::= '+' | '+%' | '+|' | '-' | '-%' | '-|' | '*'
 
     Type          ::= ('&' | '*')* CoreType (':' IDENT | 'apud' IDENT)*
@@ -1528,9 +1642,11 @@ Two were implementation latitude this section does not constrain and should
 not. **A node per precedence level is not required where the level matched no
 operator** — read literally, ten levels would make every atom ten nodes deep;
 the parser emits a level's node only when that level consumed an operator.
-And **`ExprNS` is today exactly `Expr`**, because struct literals are `[OPEN]`
-and they are the only thing it excludes; it stays a separate entry point
-because it is called from seven positions that will differ once they exist.
+And **`ExprNS` was exactly `Expr`** when the parser was built, because struct
+literals were `[OPEN]` and they are the only thing it excludes; it stayed a
+separate entry point because it is called from seven positions that would
+differ once they existed. They are now specified above, `[UNTESTED]`, and
+`ExprNS` is where they are excluded.
 
 **What held is the part worth recording.** The parser needed *no two-token
 peek this section does not list*. `-> functio(u32) -> u8 poscit {rete} poscit
@@ -1549,11 +1665,16 @@ refusing symbolic comparisons — is what makes that last one possible.
 - `[OPEN]` Brand syntax `positio<'t>` (§5.1): `'` is not a §8.4 token.
 - `[OPEN]` Generic implementation heads: `interfacies Legibilis<T> in
   acies<T, N>` leaves `N` unbound.
-- `[OPEN]` Operators: `/`, remainder, shifts, logical negation, the `*%` `*|`
-  family. Shifts must not become `<<`/`>>` tokens.
+- `[OPEN]` Operators: `/`, remainder, logical negation, the `*%` `*|`
+  family, and **bitwise and/or**. The DeModFrame codec
+  (`docs/design/wire-codec.md`) needed none of them — `@transitus` field
+  access is the mask and shift machinery, so and/or wait for a program that
+  does need them. Shifts and exclusive or are settled above as `sursum`
+  `deorsum` `aut`, `[UNTESTED]`, and did not become `<<`/`>>` tokens.
 - `[OPEN]` `refero` (§6.4) is reserved and has no phrase-level form here; `apud`
-  is admitted only as a type suffix; annotation arguments; struct literals;
+  is admitted only as a type suffix; annotation arguments;
   labelled `rumpe`/`perge`; a `sub` list form; `si`/`discerne` as expressions.
+  Struct literals were on this list and are settled above, `[UNTESTED]`.
 - `[OPEN]` `sub` inside `per`/`quisque` bodies (§8.5).
 - `[OPEN]` Whether an unbounded `dum` is admitted outside the `certus` profile.
   The grammar makes `terminus` optional so that its absence is a CST fact the
@@ -1999,7 +2120,14 @@ recoverable and over-committing is not. `0204`-`0209`, `0211`-`0219` and
 
 # 14. Conformance suite
 
-Ships with v1. Each entry must **fail to compile**, except entries 16 and 17, which must produce identical bytes.
+Ships with v1. Twenty of the twenty-four entries must **fail to compile**.
+The other four must compile and are judged by what they
+produce: 15 by a runtime abort, 16 and 17 by byte-identical output, and 23 by
+byte-identical agreement with an external certificate. `tests/run.sh`'s five
+fixture shapes — `code`, `nocap`, `abort`, `bytes`, `cert` — are exactly this
+partition. (This sentence previously excepted only 16 and 17, which was false
+for 15 since it was written and for 23 since it was added;
+`docs/design/wire-codec.md`, finding 1.)
 
 1. Turkish dotless-ı case fold in program logic → `plica_sermone` without `sermo`
 2. Index computed on a folded copy, applied to the original → `EXS-E0332`
@@ -2056,7 +2184,7 @@ a referenced list is the same mistake as renumbering an error code (§8.3).
 6. **Generator model coverage** (§9.4). "No build scripts" may not survive real FFI binding generation.
 7. **Generated-C debug info** (§9.2). If stepping through Exsecutor is unusable, QBE moves earlier.
 8. **Ecosystem bootstrapping.** Unaddressed by anything in this document, and the actual reason languages die.
-9. **Phrase grammar.** `[UNTESTED]` §8.6 now states it as normative — items, statements, the expression precedence table, types, `poscit` attachment, the lambda, `sub`'s two forms, `interfacies … in …` and the `sicut` cast, the `ego` entry point, every peek and every synchronisation set. That closes what this item originally recorded: there *is* a grammar, and it is the one the CST is built against. It does not close the item. Nothing has parsed anything — §9.1's CST does not exist, so the LL(1) claim and the recovery design are unexercised. §8.6's own list is still open: numeric literals and the `HASH` token, sum types and constructor patterns, brand syntax, generic implementation heads, the operators §8.4 lacks, and `sub` inside loop bodies. It also found three contradictions it did not paper over, all since fixed: §4.2's and §5.1's illustrative blocks and `examples/saluta.exsc` omitted the `;` §8.6 requires; §8.4 still marked the comparison words `[OPEN]` and lacked their tier-2 entries; and §4.4 wrote `dyn Trait poscit P` bare, which is not a form that parses. The canonical program gaining a semicolon is the useful one — `tests/unit/lexer_tokens.asm` pins its token count precisely so a change there is a deliberate edit, and the assert caught it. Position in this list is chronological, per the note above.
+9. **Phrase grammar.** `[UNTESTED]` §8.6 now states it as normative — items, statements, the expression precedence table, types, `poscit` attachment, the lambda, `sub`'s two forms, `interfacies … in …` and the `sicut` cast, the `ego` entry point, every peek and every synchronisation set. That closes what this item originally recorded: there *is* a grammar, and it is the one the CST is built against. It does not close the item. Nothing has parsed anything — §9.1's CST does not exist, so the LL(1) claim and the recovery design are unexercised. §8.6's own list is still open: numeric literals and the `HASH` token, sum types and constructor patterns, brand syntax, generic implementation heads, the operators §8.4 lacks, and `sub` inside loop bodies. It also found three contradictions it did not paper over, all since fixed: §4.2's and §5.1's illustrative blocks and `examples/saluta.exsc` omitted the `;` §8.6 requires; §8.4 still marked the comparison words `[OPEN]` and lacked their tier-2 entries; and §4.4 wrote `dyn Trait poscit P` bare, which is not a form that parses. The canonical program gaining a semicolon is the useful one — `tests/unit/lexer_tokens.asm` pins its token count precisely so a change there is a deliberate edit, and the assert caught it. Position in this list is chronological, per the note above. Later, the DeModFrame codec design (`docs/design/wire-codec.md`, M0) settled four of the open items — hexadecimal literals, shifts, exclusive or, and struct literals — all `[UNTESTED]`; `/`, remainder, negation, bitwise and/or, and the rest of the numeric grammar remain open.
 
 ---
 

@@ -80,6 +80,22 @@ atomicity, placement) the type carries. No aggregates (section 2.7), no
 size-polymorphic instruction: generic code (spec §7.1) sees a type parameter
 as `ptr` plus a dictionary and copies or destroys through it `[OPEN]`.
 
+**Canonical form of a narrow integer** (`[UNTESTED]` — `wire-codec.md` D5,
+retired by its M3). In a 64-bit register or slot a `uN` with N < 64 is held
+**zero-extended**: bits N..63 are zero. An `iN` is held **sign-extended**:
+bits N..63 equal bit N−1. `u1` is 0 or 1. Every instruction may assume its
+operands are canonical and must leave its result canonical. The emitter
+normalises after every operation that can produce a non-canonical raw
+result — the wrapping group, `shl`, `trunc` — with `shl 64−N` then `shr`
+(`sar` for `iN`); `and`, `or`, `xor`, `shr` and the compares preserve
+canonical form on canonical inputs and need nothing. A trapping op computes
+in 64 bits, normalises, and traps if the normalised value differs from the
+raw one — one rule for every width up to 32; for 33–63 the same rule, and at
+64 the flags. Spec §5.4 states only that a `uN` value is an integer in
+[0, 2^N); this paragraph is the reference backend's way of holding one, and
+the C backend may hold it differently as long as ADR 0012's differential test
+cannot tell.
+
 ### 2.3 Instruction set
 
 `T` an integer type, `F` a float type; operands share the named type; result
@@ -91,7 +107,7 @@ is that type unless shown. Text form: `%n = op T operands`.
 | integer, wrapping | `addw subw mulw` | `+%`, modulo 2^N |
 | integer, saturating | `adds subs muls` | `+\|`, clamped to `T` |
 | overflow predicate | `addov subov mulov → u1` | true iff the trapping form would trap; `+?` is `addov` + `addw` |
-| bitwise | `and or xor shl shr` | `shr` arithmetic for `iN`; count ≥ N `[OPEN]` |
+| bitwise | `and or xor shl shr` | `shr` arithmetic for `iN`; bits shifted beyond N discarded, result normalised (section 2.2); **a count ≥ N traps** (spec §5.4 as amended, `[UNTESTED]` → `wire-codec.md` M3), so `shl`/`shr` are **side-effecting** like the trapping group: never removed if unused, never reordered across another side effect. The `[OPEN]` this row carried is closed by that sentence |
 | compare | `cmp.eq .ne .lt .le .gt .ge → u1` | signedness from `T` |
 | convert | `zext sext trunc` | `zext`/`sext` by source sign; `trunc` keeps low bits (narrowing `sicut` `[OPEN]`) |
 | float | `fadd fsub fmul fdiv fneg` | one IEEE rounding each, in the function's `rotundatio`, subnormals per `subnormales` |
@@ -126,6 +142,19 @@ test checks that it did. The source has no `goto` (spec §8.5), so every CFG is
 reducible and Braun's irreducible-graph step is not needed. A `quisque` header
 carries a flag and its induction phi is its first phi — the independence bit
 spec §8.5 says everything downstream consumes; its use is Stage 3 `[OPEN]`.
+
+**How the reference backend lowers a phi list** (`[UNTESTED]` —
+`wire-codec.md` D8, retired by its M2; today `emit.inc` aborts on any phi).
+Each incoming edge into a block with phis is a **parallel copy**, done
+through the stack: push each phi's operand for that edge, in phi order; then
+pop into each phi's slot in reverse order. Every read precedes every write,
+so a swap (`%a = phi [%b …]`, `%b = phi [%a …]`) and the lost-copy case are
+correct with no cycle analysis and no scratch register. A `jmp` emits the
+copies before the jump. A `br` has two targets whose copies differ, so each
+edge from a `br` into a block with phis goes through a **per-edge stub** —
+`jcc stub_T; jmp stub_F`, each stub doing its copies and jumping on. A block
+with no phis produces exactly the text it produces today, so the fixtures
+that pin emitted text stay byte-identical through the change.
 
 ### 2.5 Construction on `rt/`: Braun's structures, mapped
 
@@ -347,8 +376,9 @@ type interning and is never iterated.
 ## 6. Unresolved
 
 `arborea w` when `n` is not a multiple of `w`; `u12:maior`-class fields under
-`:minor`; narrowing `sicut`; `/`, `rem`, shifts ≥ width, `ftoi` edges (all
-downstream of spec §8.4's open operator set); whether a `contrahe` variable is
+`:minor`; narrowing `sicut`; `/`, `rem`, `ftoi` edges (downstream of spec
+§8.4's open operator set — shifts ≥ width were on this list and are settled
+in section 2.3, `[UNTESTED]`); whether a `contrahe` variable is
 readable in its body; `rumpe` in a reduction loop; the `+?` optional's
 representation; object header, weak references, destructor dispatch;
 dictionary layout (spec §15, item 5); which capabilities carry runtime values;
