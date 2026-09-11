@@ -263,9 +263,16 @@ nested struct and a capability-bearing type each `E0321` unannotated;
 exemption in `layout.inc` had let `@transitus structura T { t: textus }`
 check clean, which `exsc` confirmed before the fix. From **real source**,
 `textus`, `textus:maior` and `i32:maior` are confirmed (measured with
-`exsc`); the capability-bearing case is `[UNTESTED]` from real source —
-`structura T { x: Scriptor }` currently crashes the compiler before pass 4,
-a defect being fixed separately. Two gaps that fixture recorded rather than closed, now
+`exsc`). `tests/unit/chk_row_layout_src.asm` runs real source through every
+pass: `textus`, `acies<u8, 4>`, `acies<u8, 1>`, a nested struct and a
+capability-bearing field are each `E0321`. That fixture's commit fixed two
+defects:
+- `structura T { x: Scriptor }` crashed the compiler with SIGILL in layout,
+  because the tagged prelude reference was read as a declaration id. The
+  crash predates this work.
+- The one-byte exemption let a one-byte non-integer through.
+
+Two gaps that fixture recorded rather than closed, now
 also in spec §5.2: a **signed** field with an explicit order
 (`i32:maior`) has no code assigned — the enforcement text distinguishes
 integer from non-integer and never revisits signedness — so it checks

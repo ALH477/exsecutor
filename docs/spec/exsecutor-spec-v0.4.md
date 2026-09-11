@@ -635,13 +635,18 @@ tree by hand and runs pass 4 alone: `textus`, `textus:maior`,
 capability-bearing type, each once): an unannotated non-integer field is
 `:nativus` by rule 3 and is `EXS-E0321`; an order annotation on a type
 that is not an integer (`textus:maior`) is `EXS-E0309`, an annotation not
-applicable to the type. `textus`, `textus:maior` and `i32:maior` are also
-confirmed from real source (measured with `exsc`); the capability-bearing
-case from real source is `[UNTESTED]` — the compiler currently crashes on
-`structura T { x: Scriptor }` before pass 4 is reached, which is being
-fixed separately — and `refero<u8>` (`AST_TY_REF`, the same layout path as
-`refero_communis`) has no row of its own. Two gaps the implementation
-found, recorded rather than closed:
+applicable to the type. From real source, run through every pass
+(`tests/unit/chk_row_layout_src.asm`): `textus`, `acies<u8, 4>`,
+`acies<u8, 1>`, a nested struct (one byte wide included) and a
+capability-bearing field (`Scriptor`, or a struct holding one) are each
+`EXS-E0321`. A one-byte non-integer escaped the check until that fixture's
+commit, because the exemption for widths of 8 bits or fewer applied to every
+kind and not only to integers. The same fixture shows that a
+non-`@transitus` struct holding a `Scriptor` is legal and laid out, and is
+capability-bearing by §4.3. `refero<u8>` has no row: it does not parse in
+type position today, so it is reachable only through the hand-built tree
+(`AST_TY_REF`, the same layout path as `refero_communis`). Two gaps the
+implementation found, recorded rather than closed:
 
 - **A signed field with an explicit order (`i32:maior`) has no code
   assigned.** The enforcement above distinguishes integer from non-integer
