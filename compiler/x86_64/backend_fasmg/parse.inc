@@ -341,6 +341,12 @@ proc __bfa_parse_imm64, p, ptr, len
 	jne	.pos
 	inc	rsi
 	dec	rcx
+	; __bfa_parse_udec takes (p, ptr, len) in rdi/rsi/RDX. This passed the
+	; length in rcx, leaving rdx whatever it held -- so every negative
+	; immediate (`iconst i8 -56`) died "expected a decimal integer" and
+	; none had ever been parsed. Found by wire-codec M3's first fixture
+	; with a signed constant.
+	mov	rdx, rcx
 	mov	rdi, [p]
 	call	__bfa_parse_udec
 	neg	rax

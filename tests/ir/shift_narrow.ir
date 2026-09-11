@@ -1,0 +1,131 @@
+; TEST: expect-exit=100
+;
+; `shl`/`shr` below the trapping count (ssa-ir.md 2.3; spec 5.4 as amended):
+; a count of N-1 is legal and bits shifted past N-1 are DISCARDED, which for
+; `shl` is the normalisation after it. `shr` is logical for uN, arithmetic
+; (`sar`) for iN. A count of N traps: trap_shl_u8.ir, trap_shr_u32.ir.
+;
+;    1  shl u8  1 << 7              = 128
+;    2  shl u8  3 << 7              = 128   bit 8 discarded
+;    3  shr u8  128 >> 7            = 1
+;    4  shr i8  -128 >> 7           = -1    arithmetic
+;    5  shl i8  1 << 7              = -128  into the sign bit
+;    6  shl u32 1 << 31             = 2^31
+;    7  shl u64 1 << 63             = 2^63
+;    8  shr u64 (2^64-1) >> 63      = 1     logical at 64 bits
+;    9  shl u4  15 << 1             = 14    (inline immediate count)
+;   10  shl u8  200 << 0            = 200
+;
+; Mutation (run): drop the normalisation after `shl` -> exit 2 (3 << 7
+; stays 384).
+;
+; A CHECK CHAIN: check k computes one value, compares it with `cmp.eq` at its
+; own type -- a 64-bit compare, so a result left non-canonical (bits above
+; N-1 wrong) never equals the canonical expected constant -- and on a
+; mismatch returns k. All checks right: exit 100.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = iconst u8 1
+%2 = iconst u8 7
+%3 = shl u8 %1 %2
+%4 = iconst u8 128
+%5 = cmp.eq u8 %3 %4
+br %5 b2 b1
+b1:
+%6 = iconst u8 1
+ret %6
+b2:
+%7 = iconst u8 3
+%8 = iconst u8 7
+%9 = shl u8 %7 %8
+%10 = iconst u8 128
+%11 = cmp.eq u8 %9 %10
+br %11 b4 b3
+b3:
+%12 = iconst u8 2
+ret %12
+b4:
+%13 = iconst u8 128
+%14 = iconst u8 7
+%15 = shr u8 %13 %14
+%16 = iconst u8 1
+%17 = cmp.eq u8 %15 %16
+br %17 b6 b5
+b5:
+%18 = iconst u8 3
+ret %18
+b6:
+%19 = iconst i8 -128
+%20 = iconst i8 7
+%21 = shr i8 %19 %20
+%22 = iconst i8 -1
+%23 = cmp.eq i8 %21 %22
+br %23 b8 b7
+b7:
+%24 = iconst u8 4
+ret %24
+b8:
+%25 = iconst i8 1
+%26 = iconst i8 7
+%27 = shl i8 %25 %26
+%28 = iconst i8 -128
+%29 = cmp.eq i8 %27 %28
+br %29 b10 b9
+b9:
+%30 = iconst u8 5
+ret %30
+b10:
+%31 = iconst u32 1
+%32 = iconst u32 31
+%33 = shl u32 %31 %32
+%34 = iconst u32 2147483648
+%35 = cmp.eq u32 %33 %34
+br %35 b12 b11
+b11:
+%36 = iconst u8 6
+ret %36
+b12:
+%37 = iconst u64 1
+%38 = iconst u64 63
+%39 = shl u64 %37 %38
+%40 = iconst u64 9223372036854775808
+%41 = cmp.eq u64 %39 %40
+br %41 b14 b13
+b13:
+%42 = iconst u8 7
+ret %42
+b14:
+%43 = iconst u64 18446744073709551615
+%44 = iconst u64 63
+%45 = shr u64 %43 %44
+%46 = iconst u64 1
+%47 = cmp.eq u64 %45 %46
+br %47 b16 b15
+b15:
+%48 = iconst u8 8
+ret %48
+b16:
+%49 = iconst u4 15
+%50 = shl u4 %49 1
+%51 = iconst u4 14
+%52 = cmp.eq u4 %50 %51
+br %52 b18 b17
+b17:
+%53 = iconst u8 9
+ret %53
+b18:
+%54 = iconst u8 200
+%55 = iconst u8 0
+%56 = shl u8 %54 %55
+%57 = iconst u8 200
+%58 = cmp.eq u8 %56 %57
+br %58 b20 b19
+b19:
+%59 = iconst u8 10
+ret %59
+b20:
+%60 = iconst u8 100
+ret %60
+}

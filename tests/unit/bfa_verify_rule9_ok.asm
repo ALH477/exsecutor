@@ -102,8 +102,8 @@ segment readable executable
 	mov	edx, [vret]
 	call	bfa_block_link_body
 
-	; sig: () -> u64, so ret's operand type matches -- not checked by
-	; rule 1 (FINDING 4), harmless either way for this fixture's point.
+	; sig: () -> u64, so ret's operand type matches -- rule 1 checks it
+	; since wire-codec M3 (verify.inc's __bfa_verify_pa_ret).
 	mov	rdi, [r9mdl + BfaModule.sigs]
 	call	vec_push
 	mov	ecx, [ty_u64]

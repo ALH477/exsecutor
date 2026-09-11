@@ -1,0 +1,19 @@
+; TEST: emit-exit=5
+;
+; `iconst u8 256`: not a value of u8, so not a u8 in canonical form
+; (ssa-ir.md 2.2) -- verifier rule 1 (verify.inc's `__bfa_verify_pa_iconst`).
+; A constant is where a value enters the function, so it is where the
+; canonical form is checked; every other instruction assumes it. The emitter
+; refuses the same text by name (exit 4), because `exsc` reaches the emitter
+; without the verifier -- this fixture's 5 says the verifier got there
+; first.
+;
+; Mutation (run): the verifier's check dropped -> emit_ir exits 4 (the
+; emitter's refusal), not 5.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = iconst u8 256
+ret %1
+}

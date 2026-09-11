@@ -5,9 +5,10 @@
 ; (prelude/README.md's abort-kind table) -- then SIGILL. The emitted
 ; `jc bfausr_trap` lands on `mov edi, 1 / jmp exsrt_abort`.
 ;
-; The operands are built by multiplication because an `iconst` at or above
-; 2^31 does not assemble yet (emit.inc stores it with `mov qword [slot], imm`,
-; a sign-extended imm32 -- the plan's B4, fixed in M3):
+; The operands are built by multiplication because, when this was written,
+; an `iconst` at or above 2^31 did not assemble (emit.inc stored it with
+; `mov qword [slot], imm`, a sign-extended imm32 -- the plan's B4, fixed in
+; M3; iconst_wide.ir). The products still check `mul`, so they stay:
 ;   x  = 2147483647                      2^31 - 1
 ;   x2 = x * x   = 2^62 - 2^32 + 1       no carry
 ;   x8 = x2 * 4  = 2^64 - 2^34 + 4       no carry

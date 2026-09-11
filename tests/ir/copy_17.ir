@@ -1,0 +1,105 @@
+; TEST: expect-exit=17
+;
+; `copy n %d %s` (ssa-ir.md 2.7), unrolled by emit.inc into 8-byte steps and
+; a 4/2/1 tail, through rcx, with the destination in rax and the source in
+; rdx -- never `rep movsb`, which would need rdi and rsi. 17 bytes is two
+; qwords and a one-byte tail; the destination is pre-filled with 0xAA so a
+; copy that ran long (or short) shows. The last check copies 7 bytes -- the
+; 4, 2 and 1 tails together -- from an `addr`-offset source.
+;
+;    1  qword 0 of the copy              = 0x0807060504030201
+;    2  qword 8                          = 0x100F0E0D0C0B0A09
+;    3  byte 16                          = 17
+;    4  byte 17, past the copy           = 0xAA   untouched
+;    5  qword 16                         = 0xAAAAAAAAAAAAAA11
+;    6  `addr %d 16`, then load u8       = 17
+;    7  copy 7 from `addr %s 1`          = 0xAA08070605040302
+;
+; Mutations (run): the tail dropped -> exit 3; one qword step too many ->
+; exit 4.
+;
+; A CHECK CHAIN: check k computes one value, compares it with `cmp.eq` at its
+; own type -- a 64-bit compare, so a result left non-canonical (bits above
+; N-1 wrong) never equals the canonical expected constant -- and on a
+; mismatch returns k. All checks right: exit 17.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = slot 24 8
+%2 = slot 24 8
+%3 = iconst u64 578437695752307201
+store u64 %1 0 nativus %3
+%4 = iconst u64 1157159078456920585
+store u64 %1 8 nativus %4
+%5 = iconst u64 17
+store u64 %1 16 nativus %5
+%6 = iconst u64 12297829382473034410
+store u64 %2 0 nativus %6
+store u64 %2 8 nativus %6
+store u64 %2 16 nativus %6
+copy 17 %2 %1
+%7 = load u64 %2 0 nativus
+%8 = iconst u64 578437695752307201
+%9 = cmp.eq u64 %7 %8
+br %9 b2 b1
+b1:
+%10 = iconst u8 1
+ret %10
+b2:
+%11 = load u64 %2 8 nativus
+%12 = iconst u64 1157159078456920585
+%13 = cmp.eq u64 %11 %12
+br %13 b4 b3
+b3:
+%14 = iconst u8 2
+ret %14
+b4:
+%15 = load u8 %2 16 nativus
+%16 = iconst u8 17
+%17 = cmp.eq u8 %15 %16
+br %17 b6 b5
+b5:
+%18 = iconst u8 3
+ret %18
+b6:
+%19 = load u8 %2 17 nativus
+%20 = iconst u8 170
+%21 = cmp.eq u8 %19 %20
+br %21 b8 b7
+b7:
+%22 = iconst u8 4
+ret %22
+b8:
+%23 = load u64 %2 16 nativus
+%24 = iconst u64 12297829382473034257
+%25 = cmp.eq u64 %23 %24
+br %25 b10 b9
+b9:
+%26 = iconst u8 5
+ret %26
+b10:
+%27 = addr %2 16
+%28 = load u8 %27 0 nativus
+%29 = iconst u8 17
+%30 = cmp.eq u8 %28 %29
+br %30 b12 b11
+b11:
+%31 = iconst u8 6
+ret %31
+b12:
+%32 = slot 8 8
+store u64 %32 0 nativus %6
+%33 = addr %1 1
+copy 7 %32 %33
+%34 = load u64 %32 0 nativus
+%35 = iconst u64 12252050508696781570
+%36 = cmp.eq u64 %34 %35
+br %36 b14 b13
+b13:
+%37 = iconst u8 7
+ret %37
+b14:
+%38 = iconst u8 17
+ret %38
+}

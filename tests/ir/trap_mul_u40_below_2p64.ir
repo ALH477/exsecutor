@@ -1,0 +1,23 @@
+; TEST: abort=1
+;
+; u40 (2^32 - 1)(2^32 + 1) = 2^64 - 1.
+; Abort kind 1, the numeric trap (prelude/README.md) -- the shared
+; `bfausr_trap`. If nothing traps the function returns 7.
+;
+; The complement of trap_mul_u40_2p64.ir: this product is just BELOW 2^64,
+; so the 64-bit `mul` does not overflow and CF stays clear; what traps is the
+; compare -- 2^64 - 1 normalised to 40 bits is 2^40 - 1, not itself. (Both
+; u40 products trap: anything at or above 2^40 is out of range. The two
+; fixtures differ in which check catches it.)
+;
+; Mutation (run): the compare dropped, the flag kept -> exit 7.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = iconst u40 4294967295
+%2 = iconst u40 4294967297
+%3 = mul u40 %1 %2
+%4 = iconst u8 7
+ret %4
+}

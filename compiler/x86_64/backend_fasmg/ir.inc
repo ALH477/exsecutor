@@ -587,6 +587,44 @@ proc bfa_value_type, func, valueid
 	return
 endp
 
+; bfa_type_canon(module, ty, value) -> rax = `value` in the CANONICAL FORM
+; of type `ty` (docs/design/ssa-ir.md section 2.2): for `uN` with N < 64
+; bits N..63 cleared, for `iN` with N < 64 bits N..63 copies of bit N-1,
+; and for anything else -- a 64-bit integer, `ptr`, a float's bits --
+; `value` unchanged. A compile-time mirror of the `shl 64-N` / `shr`|`sar`
+; pair emit.inc writes after a narrow operation, so a caller holding a
+; constant asks `bfa_type_canon(...) == value` to learn whether it is a
+; value of `ty` at all: the verifier (rule 1, for `iconst` and inline
+; immediates) and the emitter (which the driver reaches WITHOUT the
+; verifier, driver/run.inc) both do.
+proc bfa_type_canon, module, ty, value
+	locals
+	endl
+	mov	rdi, [module]
+	mov	esi, [ty]
+	call	bfa_type_ptr
+	movzx	edx, byte [rax + BfaType.kind]
+	movzx	ecx, word [rax + BfaType.width]
+	mov	rax, [value]
+	cmp	edx, BFA_TK_U
+	je	.isint
+	cmp	edx, BFA_TK_I
+	jne	.done
+  .isint:
+	neg	ecx
+	add	ecx, 64			; cl = 64 - N
+	jle	.done			; N = 64: every bit pattern is a value
+	shl	rax, cl
+	cmp	edx, BFA_TK_I
+	je	.signed
+	shr	rax, cl
+	return
+  .signed:
+	sar	rax, cl
+  .done:
+	return
+endp
+
 ; bfa_func_new(module) -> rax = pointer to a freshly arena-allocated, zeroed
 ; BfaFunc, already appended to module.funcs. Caller fills in name/sig/numeri/
 ; attrs/span and then builds blocks/insts through bfa_block_new/bfa_inst_push.

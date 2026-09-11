@@ -1,0 +1,180 @@
+; TEST: expect-exit=100
+;
+; `adds`/`subs` (`+|`/`-|`), clamped to T, at u8, i8, u32, u64 and i64
+; (emit.inc's `__bfa_emit_sat` has the four lowerings). Each clamps on the
+; side the true result left from, and passes an in-range result through.
+;
+;    1  adds u8  200 + 100 = 255     2  adds u8  100 + 100 = 200
+;    3  subs u8  3 - 5     = 0       4  subs u8  5 - 3     = 2
+;    5  adds i8  100 + 100 = 127     6  subs i8  -100 - 100 = -128
+;    7  adds i8  -100 + 50 = -50
+;    8  adds u64 (2^64-1) + 1 = 2^64-1     9  subs u64 0 - 1 = 0
+;   10  adds i64 (2^63-1) + 1 = 2^63-1    11  subs i64 -2^63 - 1 = -2^63
+;   12  adds i64 -5 + 3 = -2              13  subs u64 10 - 3 = 7
+;   14  adds u32 (2^32-1) + 1 = 2^32-1
+;   15  subs i64 5 - (-(2^63-1)) = 2^63-1   (a positive a, a negative b)
+;
+; Mutations (run): the uN clamp's `cmova` as `cmovb` -> exit 1; the i64
+; `cmovo` dropped -> exit 10.
+;
+; A CHECK CHAIN: check k computes one value, compares it with `cmp.eq` at its
+; own type -- a 64-bit compare, so a result left non-canonical (bits above
+; N-1 wrong) never equals the canonical expected constant -- and on a
+; mismatch returns k. All checks right: exit 100.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = iconst u8 200
+%2 = iconst u8 100
+%3 = adds u8 %1 %2
+%4 = iconst u8 255
+%5 = cmp.eq u8 %3 %4
+br %5 b2 b1
+b1:
+%6 = iconst u8 1
+ret %6
+b2:
+%7 = iconst u8 100
+%8 = iconst u8 100
+%9 = adds u8 %7 %8
+%10 = iconst u8 200
+%11 = cmp.eq u8 %9 %10
+br %11 b4 b3
+b3:
+%12 = iconst u8 2
+ret %12
+b4:
+%13 = iconst u8 3
+%14 = iconst u8 5
+%15 = subs u8 %13 %14
+%16 = iconst u8 0
+%17 = cmp.eq u8 %15 %16
+br %17 b6 b5
+b5:
+%18 = iconst u8 3
+ret %18
+b6:
+%19 = iconst u8 5
+%20 = iconst u8 3
+%21 = subs u8 %19 %20
+%22 = iconst u8 2
+%23 = cmp.eq u8 %21 %22
+br %23 b8 b7
+b7:
+%24 = iconst u8 4
+ret %24
+b8:
+%25 = iconst i8 100
+%26 = iconst i8 100
+%27 = adds i8 %25 %26
+%28 = iconst i8 127
+%29 = cmp.eq i8 %27 %28
+br %29 b10 b9
+b9:
+%30 = iconst u8 5
+ret %30
+b10:
+%31 = iconst i8 -100
+%32 = iconst i8 100
+%33 = subs i8 %31 %32
+%34 = iconst i8 -128
+%35 = cmp.eq i8 %33 %34
+br %35 b12 b11
+b11:
+%36 = iconst u8 6
+ret %36
+b12:
+%37 = iconst i8 -100
+%38 = iconst i8 50
+%39 = adds i8 %37 %38
+%40 = iconst i8 -50
+%41 = cmp.eq i8 %39 %40
+br %41 b14 b13
+b13:
+%42 = iconst u8 7
+ret %42
+b14:
+%43 = iconst u64 18446744073709551615
+%44 = iconst u64 1
+%45 = adds u64 %43 %44
+%46 = iconst u64 18446744073709551615
+%47 = cmp.eq u64 %45 %46
+br %47 b16 b15
+b15:
+%48 = iconst u8 8
+ret %48
+b16:
+%49 = iconst u64 0
+%50 = iconst u64 1
+%51 = subs u64 %49 %50
+%52 = iconst u64 0
+%53 = cmp.eq u64 %51 %52
+br %53 b18 b17
+b17:
+%54 = iconst u8 9
+ret %54
+b18:
+%55 = iconst i64 9223372036854775807
+%56 = iconst i64 1
+%57 = adds i64 %55 %56
+%58 = iconst i64 9223372036854775807
+%59 = cmp.eq i64 %57 %58
+br %59 b20 b19
+b19:
+%60 = iconst u8 10
+ret %60
+b20:
+%61 = iconst i64 -9223372036854775808
+%62 = iconst i64 1
+%63 = subs i64 %61 %62
+%64 = iconst i64 -9223372036854775808
+%65 = cmp.eq i64 %63 %64
+br %65 b22 b21
+b21:
+%66 = iconst u8 11
+ret %66
+b22:
+%67 = iconst i64 -5
+%68 = iconst i64 3
+%69 = adds i64 %67 %68
+%70 = iconst i64 -2
+%71 = cmp.eq i64 %69 %70
+br %71 b24 b23
+b23:
+%72 = iconst u8 12
+ret %72
+b24:
+%73 = iconst u64 10
+%74 = iconst u64 3
+%75 = subs u64 %73 %74
+%76 = iconst u64 7
+%77 = cmp.eq u64 %75 %76
+br %77 b26 b25
+b25:
+%78 = iconst u8 13
+ret %78
+b26:
+%79 = iconst u32 4294967295
+%80 = iconst u32 1
+%81 = adds u32 %79 %80
+%82 = iconst u32 4294967295
+%83 = cmp.eq u32 %81 %82
+br %83 b28 b27
+b27:
+%84 = iconst u8 14
+ret %84
+b28:
+%85 = iconst i64 5
+%86 = iconst i64 -9223372036854775807
+%87 = subs i64 %85 %86
+%88 = iconst i64 9223372036854775807
+%89 = cmp.eq i64 %87 %88
+br %89 b30 b29
+b29:
+%90 = iconst u8 15
+ret %90
+b30:
+%91 = iconst u8 100
+ret %91
+}

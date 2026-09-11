@@ -1432,10 +1432,12 @@ proc __bfa_print_operands, ctx, func, instptr
 	mov	rdi, [rdi + BfaPrintCtx.module]
 	mov	esi, [tyv]
 	call	bfa_type_ptr
-	movzx	ecx, byte [rax + BfaType.sign]
+	; the KIND, not BfaType.sign: the lowering interns an iN with sign 0
+	; (emit.inc's __bfa_ty_is_signed has the whole story)
+	movzx	ecx, byte [rax + BfaType.kind]
 	pop	rax
-	cmp	ecx, 0
-	je	.iconst_unsigned
+	cmp	ecx, BFA_TK_I
+	jne	.iconst_unsigned
 	mov	rdi, [ctx]
 	mov	rsi, rax
 	call	__bfa_out_i64

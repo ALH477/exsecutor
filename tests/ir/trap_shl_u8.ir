@@ -1,0 +1,24 @@
+; TEST: abort=1
+;
+; shl u8 1 by 8: a count equal to the width.
+; Abort kind 1, the numeric trap (prelude/README.md) -- the shared
+; `bfausr_trap`. If nothing traps the function returns 7.
+;
+; A count >= N traps (spec 5.4 as amended: "a count >= the width traps, as
+; `+` traps on overflow"; ssa-ir.md 2.3). The hardware would mask the count
+; (x86 takes cl mod 64, so this would be 256, normalised to 0) -- the target-dependent answer the trap exists to refuse.
+; emit.inc compares the count UNSIGNED (`cmp rcx, N` / `jae bfausr_trap`)
+; before the shift; the same kind as `+`. N - 1 does not trap:
+; shift_narrow.ir.
+;
+; Mutation (run): the count check dropped -> exit 7.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = iconst u8 1
+%2 = iconst u8 8
+%3 = shl u8 %1 %2
+%4 = iconst u8 7
+ret %4
+}

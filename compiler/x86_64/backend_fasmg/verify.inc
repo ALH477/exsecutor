@@ -217,7 +217,13 @@
 ; most naturally as requiring this for `call` too, and it is a bounded,
 ; well-defined check to add -- left out of this pass to keep the shape
 ; switch (already the largest single piece of this file) from growing
-; further, not because it is hard.
+; further, not because it is hard. `ret` is the other end of the same
+; question and IS now checked: its operand against the function's own
+; declared return type, and a valueless `ret` only in a `void` function
+; (__bfa_verify_pa_ret; wire-codec milestone M3, where narrow integers made
+; a mismatch a wrong value rather than a pun). So is every constant against
+; its type's canonical form -- `iconst` and inline immediates
+; (__bfa_verify_pa_iconst, __bfa_verify_pa_imm).
 ;
 ; FINDING 5 -- "`rumpe` out of a reduction loop" (ssa-ir.md section 3's own
 ; parenthetical, `[OPEN]` there already) has NO representation in the
@@ -671,8 +677,9 @@ proc __bfa_verify_pa_bin, ctx, instid
 	movzx	ecx, word [rax + BfaInst.aux]
 	mov	[aux], ecx
 
+	mov	dword [r], 0
 	test	dword [aux], 0x100
-	jnz	.skipa
+	jnz	.imma
 	mov	rdi, [ctx]
 	mov	esi, [a]
 	mov	edx, [ty]
@@ -680,17 +687,63 @@ proc __bfa_verify_pa_bin, ctx, instid
 	mov	[r], eax
 	test	eax, eax
 	jnz	.ret
+	jmp	.skipa
+  .imma:
+	mov	rdi, [ctx]
+	mov	esi, [ty]
+	mov	edx, [a]
+	call	__bfa_verify_pa_imm
+	mov	[r], eax
+	test	eax, eax
+	jnz	.ret
   .skipa:
 	test	dword [aux], 0x200
-	jnz	.done
+	jnz	.immb
 	mov	rdi, [ctx]
 	mov	esi, [b]
 	mov	edx, [ty]
 	call	__bfa_verify_pa_checkval
 	mov	[r], eax
-  .done:
+	jmp	.ret
+  .immb:
+	mov	rdi, [ctx]
+	mov	esi, [ty]
+	mov	edx, [b]
+	call	__bfa_verify_pa_imm
+	mov	[r], eax
   .ret:
 	mov	eax, [r]
+	return
+endp
+
+; __bfa_verify_pa_imm(ctx, ty, raw) -> eax = 0 ok, 1 (rule 1). An inline
+; immediate operand (parse.inc's `__bfa_val_or_imm`) is the 32-bit field
+; `raw`, which the emitter sign-extends; it must be a value of `ty` in
+; canonical form (ssa-ir.md 2.2), the same rule `iconst` is held to.
+; `addw u8 %x -1` and `cmp.lt u32 %x 4294967295` (whose field reads back
+; as -1) are refused here rather than computed with the wrong constant.
+proc __bfa_verify_pa_imm, ctx, ty, raw
+	locals
+		slot imv, dq
+	endl
+	mov	rdi, [ctx]
+	mov	esi, [ty]
+	call	__bfa_verify_ty_ok
+	test	eax, eax
+	jz	.bad
+	movsxd	rax, dword [raw]
+	mov	[imv], rax
+	mov	rdi, [ctx]
+	mov	rdi, [rdi + BfaVerifyCtx.module]
+	mov	esi, [ty]
+	mov	rdx, [imv]
+	call	bfa_type_canon
+	cmp	rax, [imv]
+	jne	.bad
+	mov	eax, 0
+	return
+  .bad:
+	mov	eax, BFA_VERIFY_R1_OPERAND
 	return
 endp
 
@@ -1284,9 +1337,18 @@ proc __bfa_verify_pa_retain, ctx, instid
 	return
 endp
 
+; `ret [%v]` -- %v's type must be the function's declared return type, and
+; a valueless `ret` belongs to a `void` function only (an aggregate result
+; is `void` here too: it travels through the hidden result `ptr`, ssa-ir.md
+; 2.9). This used to check only that %v resolved, so a `u64` returned from
+; a `-> u8` function passed -- and with narrow integers held in canonical
+; form (ssa-ir.md 2.2) that is not a type pun but a wrong value: the
+; caller's slot would hold bits above bit 7. Found by tests/ir/'s first
+; fixtures (they declared `@initium -> u64` to stay honest around it).
 proc __bfa_verify_pa_ret, ctx, instid
 	locals
 		slot vv, dd
+		slot rty, dd
 	endl
 	mov	rdi, [ctx]
 	mov	rdi, [rdi + BfaVerifyCtx.func]
@@ -1294,14 +1356,85 @@ proc __bfa_verify_pa_ret, ctx, instid
 	call	bfa_inst_ptr
 	mov	ecx, [rax + BfaInst.a]
 	mov	[vv], ecx
+
+	mov	rax, [ctx]
+	mov	rcx, [rax + BfaVerifyCtx.func]
+	mov	esi, [rcx + BfaFunc.sig]
+	mov	rdi, [rax + BfaVerifyCtx.module]
+	mov	rdi, [rdi + BfaModule.sigs]
+	call	vec_get
+	mov	ecx, [rax + BfaSig.ret_ty]
+	mov	[rty], ecx
+
 	cmp	dword [vv], 0
 	je	.novalue
+	cmp	dword [rty], 0
+	je	.bad
 	mov	rdi, [ctx]
 	mov	esi, [vv]
-	call	__bfa_verify_pa_checkval_noty
+	mov	edx, [rty]
+	call	__bfa_verify_pa_checkval
 	return
   .novalue:
+	cmp	dword [rty], 0
+	jne	.bad
 	mov	eax, 0
+	return
+  .bad:
+	mov	eax, BFA_VERIFY_R1_OPERAND
+	return
+endp
+
+; `iconst T imm` -- the constant must be a value of T, in T's canonical
+; form (ssa-ir.md 2.2): `iconst u8 256` and `iconst i8 200` are rule 1.
+; Every other instruction may assume canonical operands; this is where a
+; constant enters, so this is where it is checked. At 64 bits every bit
+; pattern is a value and nothing is refused.
+proc __bfa_verify_pa_iconst, ctx, instid
+	locals
+		slot eidx, dd
+		slot ty, dd
+		slot lo, dd
+		slot cval, dq
+	endl
+	mov	rdi, [ctx]
+	mov	rdi, [rdi + BfaVerifyCtx.func]
+	mov	rsi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[eidx], ecx
+	mov	ecx, [rax + BfaInst.ty]
+	mov	[ty], ecx
+	mov	rdi, [ctx]
+	mov	esi, [ty]
+	call	__bfa_verify_ty_ok
+	test	eax, eax
+	jz	.bad
+	mov	rdi, [ctx]
+	mov	rdi, [rdi + BfaVerifyCtx.func]
+	mov	esi, [eidx]
+	call	bfa_extra_get
+	mov	[lo], eax
+	mov	rdi, [ctx]
+	mov	rdi, [rdi + BfaVerifyCtx.func]
+	mov	esi, [eidx]
+	inc	esi
+	call	bfa_extra_get
+	shl	rax, 32
+	mov	ecx, [lo]
+	or	rax, rcx
+	mov	[cval], rax
+	mov	rdi, [ctx]
+	mov	rdi, [rdi + BfaVerifyCtx.module]
+	mov	esi, [ty]
+	mov	rdx, [cval]
+	call	bfa_type_canon
+	cmp	rax, [cval]
+	jne	.bad
+	mov	eax, 0
+	return
+  .bad:
+	mov	eax, BFA_VERIFY_R1_OPERAND
 	return
 endp
 
@@ -1729,7 +1862,7 @@ proc __bfa_verify_passA_inst, ctx, instid
 	cmp	eax, BFA_SH_PARAM
 	je	.d_trivial
 	cmp	eax, BFA_SH_ICONST
-	je	.d_trivial
+	je	.d_iconst
 	cmp	eax, BFA_SH_FCONST
 	je	.d_trivial
 	; unrecognised shape -- an internal contract violation: the shape
@@ -1846,6 +1979,11 @@ proc __bfa_verify_passA_inst, ctx, instid
 	mov	rdi, [ctx]
 	mov	rsi, [instid]
 	call	__bfa_verify_pa_phi
+	return
+  .d_iconst:
+	mov	rdi, [ctx]
+	mov	rsi, [instid]
+	call	__bfa_verify_pa_iconst
 	return
   .d_trivial:
 	mov	eax, 0

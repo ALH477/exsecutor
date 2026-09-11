@@ -1,0 +1,97 @@
+; TEST: expect-exit=100
+;
+; `and`/`or`/`xor` at any width, with NO normalisation: two zero-extended
+; operands have zeros above bit N-1 and two sign-extended ones copies of
+; bit N-1, so the result is canonical already (check 4: i8 -1 xor 1 = -2
+; keeps its sign-extension; check 5 likewise for `and`).
+;
+;    1  xor u8  255 15                   = 240
+;    2  and u8  200 15                   = 8     (inline immediate)
+;    3  or  u16 256 1                    = 257
+;    4  xor i8  -1 1                     = -2
+;    5  and i8  -56 -16                  = -64
+;    6  xor u32 0xDEADBEEF 0xFFFFFFFF    = 559038736
+;    7  or  u64 2^63 1                   = 2^63 + 1
+;
+; Mutation (run): `xor` emitted as `or` -> exit 1.
+;
+; A CHECK CHAIN: check k computes one value, compares it with `cmp.eq` at its
+; own type -- a 64-bit compare, so a result left non-canonical (bits above
+; N-1 wrong) never equals the canonical expected constant -- and on a
+; mismatch returns k. All checks right: exit 100.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = iconst u8 255
+%2 = iconst u8 15
+%3 = xor u8 %1 %2
+%4 = iconst u8 240
+%5 = cmp.eq u8 %3 %4
+br %5 b2 b1
+b1:
+%6 = iconst u8 1
+ret %6
+b2:
+%7 = iconst u8 200
+%8 = and u8 %7 15
+%9 = iconst u8 8
+%10 = cmp.eq u8 %8 %9
+br %10 b4 b3
+b3:
+%11 = iconst u8 2
+ret %11
+b4:
+%12 = iconst u16 256
+%13 = iconst u16 1
+%14 = or u16 %12 %13
+%15 = iconst u16 257
+%16 = cmp.eq u16 %14 %15
+br %16 b6 b5
+b5:
+%17 = iconst u8 3
+ret %17
+b6:
+%18 = iconst i8 -1
+%19 = iconst i8 1
+%20 = xor i8 %18 %19
+%21 = iconst i8 -2
+%22 = cmp.eq i8 %20 %21
+br %22 b8 b7
+b7:
+%23 = iconst u8 4
+ret %23
+b8:
+%24 = iconst i8 -56
+%25 = iconst i8 -16
+%26 = and i8 %24 %25
+%27 = iconst i8 -64
+%28 = cmp.eq i8 %26 %27
+br %28 b10 b9
+b9:
+%29 = iconst u8 5
+ret %29
+b10:
+%30 = iconst u32 3735928559
+%31 = iconst u32 4294967295
+%32 = xor u32 %30 %31
+%33 = iconst u32 559038736
+%34 = cmp.eq u32 %32 %33
+br %34 b12 b11
+b11:
+%35 = iconst u8 6
+ret %35
+b12:
+%36 = iconst u64 9223372036854775808
+%37 = iconst u64 1
+%38 = or u64 %36 %37
+%39 = iconst u64 9223372036854775809
+%40 = cmp.eq u64 %38 %39
+br %40 b14 b13
+b13:
+%41 = iconst u8 7
+ret %41
+b14:
+%42 = iconst u8 100
+ret %42
+}

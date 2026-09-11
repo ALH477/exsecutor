@@ -49,13 +49,13 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # this -- the test is `found < floor` -- so a floor that drifts below the real
 # count still catches the failure mode that matters: a discovery mechanism
 # silently finding nothing. Drift costs precision, not the guarantee.
-UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-147}"
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-149}"
 
 # The same guarantee for the two run phases below: tests/ir/*.ir fixtures,
 # and tests/programs/*/ directories. Same rule -- `found < floor` fails --
 # and the same reason. Raise each in the commit that adds a fixture.
-IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-12}"
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-5}"
+IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-39}"
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-6}"
 
 PASS=0
 FAIL=0

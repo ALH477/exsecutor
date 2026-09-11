@@ -32,10 +32,10 @@ calls):
    whole fasmg program `bfa_emit_program` makes of it, with the hello
    world's closure `{Mundus, ambitus}` and MXCSR `0x1F80`. The phase
    assembles that, runs it, and checks the exit status or abort and stdout.
-   12 fixtures (`IR_FIXTURE_FLOOR`).
+   39 fixtures (`IR_FIXTURE_FLOOR`).
 4. **`tests/programs/`** — Exsecutor sources, RUN. Each directory is one
    program: `exsc aedifica --hospes x86_64-linux SRC... -o OUT`, `fasmg OUT
-   BIN`, run, check. 5 programs (`PROGRAM_FIXTURE_FLOOR`).
+   BIN`, run, check. 6 programs (`PROGRAM_FIXTURE_FLOOR`).
 
 Phases 3 and 4 are the first in this script to execute code a compiler
 *emitted*. Until them a `tests/unit/` fixture could only compare emitted

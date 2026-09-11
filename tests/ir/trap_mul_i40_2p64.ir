@@ -1,0 +1,22 @@
+; TEST: abort=1
+;
+; i40 2^32 * 2^32 = 2^64, signed: the same product through `imul`.
+; Abort kind 1, the numeric trap (prelude/README.md) -- the shared
+; `bfausr_trap`. If nothing traps the function returns 7.
+;
+; THE CASE THE COMPARE MISSES (ssa-ir.md 2.2, wire-codec.md D5): at 33..63
+; bits the 64-bit product can overflow. 2^32 * 2^32 = 2^64 leaves raw 0 in
+; rax, 0 normalises to 0, and the compare passes -- so `mul` there also traps
+; on the 64-bit flag (`imul`'s OF). trap_mul_u40_2p64.ir is the unsigned twin.
+;
+; Mutation (run): the 33..63-bit flag check dropped -> exit 7.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = iconst i40 4294967296
+%2 = iconst i40 4294967296
+%3 = mul i40 %1 %2
+%4 = iconst u8 7
+ret %4
+}

@@ -1,0 +1,78 @@
+; TEST: expect-exit=40
+;
+; Multiplication at 33..63 bits WITHOUT a trap -- the other half of
+; trap_mul_u40_2p64.ir and trap_mul_u40_below_2p64.ir. At these widths the
+; 64-bit product can itself overflow, so `mul` checks the 64-bit flag AND
+; the normalised copy (ssa-ir.md 2.2); a correct in-range product must pass
+; both, including the extremes of u40 and i40.
+;
+;    1  mul  u40 (2^20+1)(2^20-1)         = 2^40 - 1   the largest u40
+;    2  mul  u40 2^32 * 255               = 1095216660480
+;    3  mul  i40 -2^19 * 2^20             = -2^39      the smallest i40
+;    4  mulw u40 2^32 * 2^32              = 0          2^64 mod 2^40
+;    5  mulw u40 (2^32-1)(2^32+1)         = 2^40 - 1   (2^64-1) mod 2^40
+;
+; 4 and 5 are the two trapping fixtures' products in the wrapping form:
+; the flag is not consulted there and the normalisation is the answer.
+;
+; A CHECK CHAIN: check k computes one value, compares it with `cmp.eq` at its
+; own type -- a 64-bit compare, so a result left non-canonical (bits above
+; N-1 wrong) never equals the canonical expected constant -- and on a
+; mismatch returns k. All checks right: exit 40.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = iconst u40 1048577
+%2 = iconst u40 1048575
+%3 = mul u40 %1 %2
+%4 = iconst u40 1099511627775
+%5 = cmp.eq u40 %3 %4
+br %5 b2 b1
+b1:
+%6 = iconst u8 1
+ret %6
+b2:
+%7 = iconst u40 4294967296
+%8 = iconst u40 255
+%9 = mul u40 %7 %8
+%10 = iconst u40 1095216660480
+%11 = cmp.eq u40 %9 %10
+br %11 b4 b3
+b3:
+%12 = iconst u8 2
+ret %12
+b4:
+%13 = iconst i40 -524288
+%14 = iconst i40 1048576
+%15 = mul i40 %13 %14
+%16 = iconst i40 -549755813888
+%17 = cmp.eq i40 %15 %16
+br %17 b6 b5
+b5:
+%18 = iconst u8 3
+ret %18
+b6:
+%19 = iconst u40 4294967296
+%20 = iconst u40 4294967296
+%21 = mulw u40 %19 %20
+%22 = iconst u40 0
+%23 = cmp.eq u40 %21 %22
+br %23 b8 b7
+b7:
+%24 = iconst u8 4
+ret %24
+b8:
+%25 = iconst u40 4294967295
+%26 = iconst u40 4294967297
+%27 = mulw u40 %25 %26
+%28 = iconst u40 1099511627775
+%29 = cmp.eq u40 %27 %28
+br %29 b10 b9
+b9:
+%30 = iconst u8 5
+ret %30
+b10:
+%31 = iconst u8 40
+ret %31
+}

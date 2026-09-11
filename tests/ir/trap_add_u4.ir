@@ -1,0 +1,22 @@
+; TEST: abort=1
+;
+; u4 15 + 1 = 16: past the top of u4.
+; Abort kind 1, the numeric trap (prelude/README.md) -- the shared
+; `bfausr_trap`. If nothing traps the function returns 7.
+;
+; Below 64 bits a trapping `add` cannot carry out of the 64-bit register, so
+; no flag says anything; emit.inc computes the sum into rax, normalises a
+; copy into rcx, and traps when the two differ (ssa-ir.md 2.2).
+;
+; Mutation (run): the trapping form emitted as the wrapping one (no
+; compare) -> exit 7, in every trap_add_* fixture.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = iconst u4 15
+%2 = iconst u4 1
+%3 = add u4 %1 %2
+%4 = iconst u8 7
+ret %4
+}

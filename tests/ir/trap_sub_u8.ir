@@ -1,0 +1,23 @@
+; TEST: abort=1
+;
+; u8 3 - 5 = -2: below the bottom of u8. The raw 64-bit difference is
+; 2^64 - 2; normalised to u8 it is 254.
+; Abort kind 1, the numeric trap (prelude/README.md) -- the shared
+; `bfausr_trap`. If nothing traps the function returns 7.
+;
+; This one does borrow in 64 bits, but below 64 the emitter consults no flag
+; for `sub` either (for an iN the borrow would mean nothing): it compares the
+; difference with its normalised copy, as for `add` (ssa-ir.md 2.2).
+;
+; Mutation (run): the trapping form emitted as the wrapping one (no
+; compare) -> exit 7.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = iconst u8 3
+%2 = iconst u8 5
+%3 = sub u8 %1 %2
+%4 = iconst u8 7
+ret %4
+}

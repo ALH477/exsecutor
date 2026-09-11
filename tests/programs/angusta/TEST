@@ -1,0 +1,3 @@
+# angusta.exsc's header lists the twelve checks; 1-12 names the first wrong
+# one, 88 is 200 +% 144 in u8 after all are right.
+TEST: expect-exit=88

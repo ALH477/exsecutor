@@ -1,0 +1,16 @@
+; TEST: emit-exit=5
+;
+; An inline immediate operand that is not a value of the instruction's type:
+; `addw u8 %1 -1`. parse.inc stores an inline immediate in a 32-bit field
+; the emitter sign-extends, so this would add 2^64 - 1 -- which, wrapped to
+; u8, happens to be right for `addw`, and would be wrong for `cmp.lt u8 %1
+; -1` or a trapping `add`. Rule 1, like reject_verify_iconst.ir: an operand
+; must have the type its op requires, and -1 is not a u8.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = iconst u8 5
+%2 = addw u8 %1 -1
+ret %2
+}

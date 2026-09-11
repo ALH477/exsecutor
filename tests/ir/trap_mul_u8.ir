@@ -1,0 +1,18 @@
+; TEST: abort=1
+;
+; u8 16 * 16 = 256: past the top of u8. At 32 bits and below the
+; 64-bit product is exact and only the compare is emitted.
+; Abort kind 1, the numeric trap (prelude/README.md) -- the shared
+; `bfausr_trap`. If nothing traps the function returns 7.
+;
+; Mutation (run): the compare dropped -> exit 7.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = iconst u8 16
+%2 = iconst u8 16
+%3 = mul u8 %1 %2
+%4 = iconst u8 7
+ret %4
+}

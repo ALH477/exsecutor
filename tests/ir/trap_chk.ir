@@ -1,0 +1,22 @@
+; TEST: abort=1
+;
+; `chk %i %n` traps when %i >= %n (ssa-ir.md 2.3), compared UNSIGNED (`jae`).
+; The lowering's `a[i]` shape (lowering.md's `Index` row) at i = N = 4, one
+; past a four-element u32 array: the trap must come before the `index` and
+; the `load` it guards, which would read past the array. Kind 1, "failed
+; `chk`" (prelude/README.md). memory_narrow.ir passes `chk` at i = 2 and 3.
+;
+; Mutation (run): `jae` as `ja` (so i = N passes) -> exit 7.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = slot 16 4
+%2 = iconst u64 4
+%3 = iconst u64 4
+chk %3 %2
+%4 = index %1 %3 4
+%5 = load u32 %4 0 nativus
+%6 = iconst u8 7
+ret %6
+}

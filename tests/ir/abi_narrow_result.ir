@@ -1,0 +1,37 @@
+; TEST: expect-exit=50
+;
+; A narrow result from ANOTHER OBJECT is normalised before it is stored
+; (emit.inc's `__bfa_emit_call`). SysV AMD64 leaves the bits of `rax` above
+; a u8/u16/u32 return value unspecified, and every instruction after the
+; call assumes the canonical form (ssa-ir.md 2.2), so a call to an
+; `externus` callee whose return type is narrow gets the normalisation pair
+; after the `call`. A callee this emitter wrote needs none: its `ret` loads
+; a canonical slot.
+;
+; No prelude routine returns a narrow value today, so this fixture makes one
+; out of a wide one: it declares the prelude's `exsrt_mundus_ambitus` --
+; which returns a POINTER, an address with bits far above bit 7 -- as
+; `-> u8`. That is exactly a foreign callee whose upper bits are garbage.
+; After the normalisation the result is below 256; `zext u64` of a
+; canonical u8 is a plain copy, so without it the slot would still hold the
+; address and the compare would fail.
+;
+; Mutation (run): the normalisation after an externus call dropped -> exit 1.
+
+functio @exsrt_mundus_ambitus (ptr) -> u8 numeri ad_parem vetita explicita conservata externus sysv_amd64 {
+}
+functio @initium (ptr) -> u8 numeri ad_parem vetita explicita conservata {
+b0:
+%0 = param ptr 0
+%1 = call u8 @exsrt_mundus_ambitus %0
+%2 = zext u64 %1
+%3 = iconst u64 256
+%4 = cmp.lt u64 %2 %3
+br %4 b1 b2
+b1:
+%5 = iconst u8 50
+ret %5
+b2:
+%6 = iconst u8 1
+ret %6
+}

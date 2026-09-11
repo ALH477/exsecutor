@@ -1,0 +1,18 @@
+; TEST: emit-exit=5
+;
+; `ret` of a u64 from a `-> u8` function: verifier rule 1, since M3
+; (verify.inc's `__bfa_verify_pa_ret`). Until then `ret` checked only that
+; its operand resolved, and tests/ir/'s first fixtures declared `@initium ->
+; u64` rather than lean on that. With narrow integers held in canonical form
+; it is not a harmless pun: 300 in a u8 slot is not a u8. The emitter would
+; lower it (and the program would exit 44, the low byte); the verifier must
+; refuse it first.
+;
+; Mutation (run): the return-type comparison dropped -> emit_ir exits 0.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = iconst u64 300
+ret %1
+}

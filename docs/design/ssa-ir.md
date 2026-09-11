@@ -86,9 +86,16 @@ retired by its M3). In a 64-bit register or slot a `uN` with N < 64 is held
 bits N..63 equal bit N−1. `u1` is 0 or 1. Every instruction may assume its
 operands are canonical and must leave its result canonical. The emitter
 normalises after every operation that can produce a non-canonical raw
-result — the wrapping group, `shl`, `trunc` — with `shl 64−N` then `shr`
-(`sar` for `iN`); `and`, `or`, `xor`, `shr` and the compares preserve
-canonical form on canonical inputs and need nothing. A trapping op computes
+result — the wrapping group, `shl`, `trunc`, and a `sext` into a `uN` —
+with `shl 64−N` then `shr` (`sar` for `iN`); `and`, `or`, `xor`, `shr` and
+the compares preserve canonical form on canonical inputs and need nothing.
+(The first draft of this sentence left out `sext` into a `uN`: `sext u16`
+of `i8` −56 is 65480, and the sign-extended −56 must be cut to 16 bits to
+be it. It also said nothing of a `zext` of an `iN` or a `sext` of a `uN`,
+which section 2.3's "by source sign" means the lowering never emits but
+the verifier does not refuse; the emitter first extends from the source
+width, so `zext u16` of `i8` −56 is 200. Both found implementing M3;
+`tests/ir/conv_roundtrip.ir`.) A trapping op computes
 in 64 bits, normalises, and traps if the normalised value differs from the
 raw one — complete for `add`/`sub` at every width below 64 and for `mul` at
 widths up to 32, where the 64-bit product is exact. **Not complete for `mul`
@@ -96,7 +103,10 @@ at widths 33–63**: in `u40`, 2^32 × 2^32 = 2^64 has raw result 0, which
 normalises to 0 and would not trap. So `mul` traps *also* on the 64-bit
 `mul`/`imul` overflow flag, and at width 64 `add`/`sub`/`mul` use the flags
 alone, as today. (`wire-codec.md`'s review, M2; the M3 tests include a
-`u40` product at and just below 2^64.) Spec §5.4 states only that a `uN` value is an integer in
+`u40` product at and just below 2^64. Both of those trap — anything at or
+above 2^40 is out of range — and they differ in which check catches it:
+2^64 only the flag, 2^64 − 1 only the compare. The products that must not
+trap are `tests/ir/mul_u40.ir`'s, up to 2^40 − 1.) Spec §5.4 states only that a `uN` value is an integer in
 [0, 2^N); this paragraph is the reference backend's way of holding one, and
 the C backend may hold it differently as long as ADR 0012's differential test
 cannot tell.

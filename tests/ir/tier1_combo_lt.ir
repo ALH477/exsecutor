@@ -8,11 +8,13 @@
 ; tier1_combo_ge.ir takes the other arm; trap_add_carry.ir takes the trap.
 ;
 ; `@initium` is declared `-> u64`, not the `-> u8` a lowering emits, because
-; nothing narrows a u64 to a u8 in the Tier-1 emitter yet (`trunc` arrives
-; with narrow integers, milestone M3 of the wire-codec plan). The prelude
-; reads `al` after `call bfausr_initium` either way (prelude.asm,
-; `exsrt_start`), so the exit status is the low byte of the result. When
-; `trunc` exists this should become `-> u8` with a `trunc u8`.
+; when this was written nothing narrowed a u64 to a u8 in the emitter. The
+; prelude reads `al` after `call bfausr_initium` either way (prelude.asm,
+; `exsrt_start`), so the exit status is the low byte of the result. Since
+; wire-codec milestone M3 `trunc` exists and the verifier checks `ret`
+; against the declared return type, so this `-> u64` is honest IR returning
+; a u64 -- it stays, as do the fixtures that cite this paragraph; the M3
+; fixtures (narrow_wrap.ir and the rest) are `-> u8` throughout.
 
 functio @combo (u64 u64) -> u64 {
 b0:

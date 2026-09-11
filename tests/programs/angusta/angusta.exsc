@@ -1,0 +1,118 @@
+// Narrow integers in today's Exsecutor: u8, u16, u32 and i8 locals and
+// parameters, `+%` `-%` `+|` `+`, the comparisons, and `sicut` both ways
+// (lower/expr.inc's `__lwr_cast`: widening is `zext`/`sext` by the source's
+// sign, narrowing and an equal-width sign change are `trunc`). Every value
+// is held in canonical form (docs/design/ssa-ir.md 2.2), so each check
+// below is also a check that the bits above the width are right: a u8 left
+// holding 300 would compare unequal to 44, not merely look like it in the
+// low byte. `initium` returns the number of the first check that is wrong,
+// or, when all are right, a last narrow sum -- 200 +% 144 in u8, 88.
+//
+//    1  involve(200, 100)        u8 200 +% 100            44
+//    2  detrahe(3, 5)            u8 3 -% 5                254
+//    3  satura(200, 100)         u8 200 +| 100            255
+//    4  lata(200, 100)           u8 -> u16, then +        300
+//    5  angusta(300)             u16 300 sicut u8         44
+//    6  signata(200) gt 100      u8 200 sicut i8 is -56: a signed compare
+//                                says no; an unsigned one would say yes
+//    7  summa_s(signata(200), 100)   i8 -56 + 100         44
+//    8  brevis(65535)            u16 65535 +% 2           1
+//    9  magna(4294967295)        u32 (2^32-1) +% 1        0  -- the
+//                                constant needs `mov rax, imm64`
+//   10  circuit(10)              a u8 accumulator +% 50 ten times through
+//                                a loop phi: 500 mod 256  244
+//   11  locals                   u8 locals, reassigned: 200 +% 100 +% 212 = 0
+//   12  tota(200, 55)            the trapping u8 `+` at its top: 255, no trap
+//
+// Nothing here traps; tests/ir/trap_add_*.ir are the narrow traps.
+
+functio involve(a: u8, b: u8) -> u8 {
+    redde a +% b;
+}
+
+functio detrahe(a: u8, b: u8) -> u8 {
+    redde a -% b;
+}
+
+functio satura(a: u8, b: u8) -> u8 {
+    redde a +| b;
+}
+
+functio lata(a: u8, b: u8) -> u16 {
+    redde (a sicut u16) + (b sicut u16);
+}
+
+functio angusta(x: u16) -> u8 {
+    redde x sicut u8;
+}
+
+functio signata(x: u8) -> i8 {
+    redde x sicut i8;
+}
+
+functio summa_s(a: i8, b: i8) -> i8 {
+    redde a + b;
+}
+
+functio brevis(a: u16) -> u16 {
+    redde a +% 2;
+}
+
+functio magna(a: u32) -> u32 {
+    redde a +% 1;
+}
+
+functio circuit(n: u64) -> u8 {
+    mutabilis s: u8 = 0;
+    per i in 0..n {
+        s = s +% 50;
+    }
+    redde s;
+}
+
+functio tota(a: u8, b: u8) -> u8 {
+    redde a + b;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    si involve(200, 100) ne 44 {
+        redde 1;
+    }
+    si detrahe(3, 5) ne 254 {
+        redde 2;
+    }
+    si satura(200, 100) ne 255 {
+        redde 3;
+    }
+    si lata(200, 100) ne 300 {
+        redde 4;
+    }
+    si angusta(300) ne 44 {
+        redde 5;
+    }
+    si signata(200) gt 100 {
+        redde 6;
+    }
+    si summa_s(signata(200), 100) ne 44 {
+        redde 7;
+    }
+    si brevis(65535) ne 1 {
+        redde 8;
+    }
+    si magna(4294967295) ne 0 {
+        redde 9;
+    }
+    si circuit(10) ne 244 {
+        redde 10;
+    }
+    firma a: u8 = 200;
+    mutabilis s: u8 = a +% 100;
+    s = s +% 212;
+    si s ne 0 {
+        redde 11;
+    }
+    si tota(200, 55) ne 255 {
+        redde 12;
+    }
+    redde involve(200, 144);
+}
