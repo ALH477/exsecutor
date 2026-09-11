@@ -10,10 +10,14 @@
 // §5.2's own `DeModFrame`, where `versio: u4` and `genus: u4` sum to
 // exactly 8.)
 //
-// DEFERRED: needs the @transitus bit-width layout checker, which needs the
-// type checker (Stage 2). compiler/x86_64/ast/ and cst/ are both still
-// empty; `exsc aedifica`, run directly against this file, exits 0 and
-// reports nothing -- confirmed, not assumed.
+// RUNS: the @transitus bit-width layout checker (wire-codec branch) now
+// rejects this. compiler/x86_64/ast/ and cst/ are no longer empty; `exsc
+// aedifica --hospes x86_64-linux --diagnostica json`, run directly against
+// this file, exits 1 and emits exactly one diagnostic -- {"code":
+// "EXS-E0322",...,"message":"implicit padding in a @transitus type",...} --
+// confirmed, not assumed. (The code is the same E0322 as entry 7's,
+// per §5.2 rule 4 applied at bit rather than byte granularity, as this
+// entry's own text above already says.)
 
 @transitus
 publica structura Malum {
@@ -21,4 +25,4 @@ publica structura Malum {
     genus:  u3
 }
 
-// TEST: entry=21 shape=code expect-code=EXS-E0322 status=deferred needs=wire_layout_checker
+// TEST: entry=21 shape=code expect-code=EXS-E0322 status=run

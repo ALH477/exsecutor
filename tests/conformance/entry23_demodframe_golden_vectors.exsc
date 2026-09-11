@@ -37,12 +37,17 @@
 // run_conformance_tests.
 //
 // DEFERRED: needs a real encoder/decoder for `@transitus` types (Stage 3
-// backend) to run the 246 vectors through at all, which in turn needs the
-// type checker (Stage 2) to accept the declaration below in the first
-// place. `exsc aedifica`, run directly against this file, exits 0 with no
-// diagnostic (the declaration lexes clean); `exsc aedifica -o OUT` reaches
-// "code generation is not implemented... Spec 16 Stage 3" (exit 4) --
-// confirmed, not assumed, exactly as for entries 16 and 17.
+// backend) to run the 246 vectors through at all. `exsc aedifica --hospes
+// x86_64-linux`, run directly against this file with no `-o`, exits 0 with
+// no diagnostic -- the type checker (wire-codec branch) now accepts the
+// `DeModFrame` declaration below cleanly, including its layout. RESTATED
+// against that landing: `exsc aedifica --hospes x86_64-linux -o OUT`, run
+// against this file, now exits 1 with EXS-E0424 ("entry point malformed") --
+// this fixture declares only a `structura`, no `initium`/entry function, so
+// codegen's entry-point check now fires before codegen itself would; it no
+// longer reaches "code generation is not implemented" because that specific
+// path is gated behind having an entry point at all. Confirmed, not
+// assumed, against the current build/exsc.
 
 @transitus
 publica structura DeModFrame {

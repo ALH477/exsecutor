@@ -9,13 +9,20 @@ calls):
    toolchain itself (`fasmg` + `vendor/fasmg-x86`) and `tools/syscall-audit.sh`,
    so that is what these fixtures exercise.
 2. **`tests/conformance/`** — spec §14's 24-entry suite. **All 24 cases
-   are written; 6 run.** `exsc` now exists, so the entries the lexer can
+   are written; 10 run.** `exsc` now exists, so the entries the lexer can
    decide are checked against a real diagnostic: 3 (bidi in a comment,
    `EXS-E0103`), 5 (non-NFC, `E0102`), 18 (BOM, `E0101`), 19 (mixed-script,
-   `E0104`), 20 (CRLF, `E0106`). The other 19 report **`DEFERRED`** with
-   what they wait on — `type_checker`, `capability_checker`, `parser`,
-   `backend` — and are **never counted as passing**. A suite reporting
-   24/24 while running 5 would be worse than no suite.
+   `E0104`), 20 (CRLF, `E0106`), 22 (sub-byte byte order on `:maior`,
+   `E0201`). The wire-codec branch's `@transitus` layout checker and type
+   checker moved four more from `DEFERRED` to run: 6 (`:nativus` in a wire
+   struct, `E0321`), 7 (implicit padding in a wire struct, `E0322`), 9 (a
+   row-carrying function where a bare function type is expected, `E0303`),
+   21 (bit widths not summing to a whole byte, `E0322`). The other 14
+   report **`DEFERRED`** with what they wait on — `type_checker`,
+   `capability_checker`, `import_closure`, `ffi_checker`,
+   `lexicon_checker`, `backend`, `runtime`, `cross_compile`, `wire_codec`
+   — and are **never counted as passing**. A suite reporting 24/24 while
+   running 10 would be worse than no suite.
 
    Five rule shapes, and a runner assuming one will quietly mishandle four:
    reject-with-exact-code (most), byte-identical output (16, 17), external

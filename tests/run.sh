@@ -254,14 +254,17 @@ run_conformance_tests() {
   # fixtures -- would be the fifth):
   #   fixture_floor -- §14 has exactly 24 entries; fewer *.exsc files than
   #                    that means fixtures went missing, not that §14 shrank.
-  #   run_floor     -- entries 3, 5, 18, 19, 20 are lexically checkable
-  #                    today and verified passing (see this suite's own
-  #                    report); if the number that actually RUN ever drops
-  #                    below that, something silently stopped working.
+  #   run_floor     -- entries 3, 5, 18, 19, 20, 22 are lexically checkable,
+  #                    and entries 6, 7, 9, 21 are checkable by the
+  #                    wire-codec branch's @transitus layout checker and
+  #                    type checker, all ten verified passing (see this
+  #                    suite's own report); if the number that actually RUN
+  #                    ever drops below that, something silently stopped
+  #                    working.
   echo "== conformance suite (tests/conformance/, spec §14) =="
   local dir="$REPO_ROOT/tests/conformance"
   local fixture_floor=24
-  local run_floor=5
+  local run_floor=10
 
   if [[ ! -d "$dir" ]]; then
     bad "tests/conformance/ does not exist"

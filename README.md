@@ -281,8 +281,8 @@ the socket family a hard failure because `rete` is not among them.
   corpus — `docs/design/diagnostics-review.md`, final section, and
   `tests/diagnostics/`. Stage 2's (`sub` resolution needing a search) does not
   fire, argued first in `docs/design/checker.md` §2.1.
-- `tests/run.sh`: **405 pass, 0 fail**, 141 unit fixtures, 6 of 24 conformance
-  entries running (the other 18 report `DEFERRED` and are never counted as
+- `tests/run.sh`: **578 pass, 0 fail**, 155 unit fixtures, 10 of 24 conformance
+  entries running (the other 14 report `DEFERRED` and are never counted as
   passing).
 - `make audit`: PASS — the nine allowlisted syscalls and nothing else, on the
   real binary. `make reproduce`: PASS, byte-identical across directory, `TZ`,

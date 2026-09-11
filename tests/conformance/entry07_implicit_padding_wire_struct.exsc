@@ -30,10 +30,12 @@
 // `u4`+`u3` -- and never has a multi-byte field to also satisfy rule 2
 // against).
 //
-// DEFERRED: needs the @transitus layout checker, which needs the type
-// checker (Stage 2). compiler/x86_64/ast/ and cst/ are both still empty;
-// `exsc aedifica`, run directly against this file, exits 0 and reports
-// nothing -- confirmed, not assumed (see this suite's report).
+// RUNS: the @transitus layout checker (wire-codec branch) now rejects this.
+// compiler/x86_64/ast/ and cst/ are no longer empty; `exsc aedifica
+// --hospes x86_64-linux --diagnostica json`, run directly against this
+// file, exits 1 and emits exactly one diagnostic -- {"code":"EXS-E0322",
+// ...,"message":"implicit padding in a @transitus type",...} -- confirmed,
+// not assumed.
 
 @transitus
 publica structura Malum {
@@ -42,4 +44,4 @@ publica structura Malum {
     versio:  u4
 }
 
-// TEST: entry=7 shape=code expect-code=EXS-E0322 status=deferred needs=wire_layout_checker
+// TEST: entry=7 shape=code expect-code=EXS-E0322 status=run

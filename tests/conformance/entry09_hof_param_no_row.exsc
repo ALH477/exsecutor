@@ -27,14 +27,18 @@
 // "poscit rete function where a bare function type is expected" case §14's
 // text now names directly.
 //
-// DEFERRED: needs the type checker (Stage 2) to resolve both function
-// types and compare them, not the capability-row checker alone -- this is
-// now a class-030x general-typing code, per §13's amendment, not a 042x
-// row code. compiler/x86_64/ast/ and cst/ are both still empty; `exsc
-// aedifica`, run directly against this file, exits 0 and reports nothing --
-// confirmed, not assumed. §4.2 itself is `[UNTESTED]` as a soundness claim
-// beyond a nine-case Python probe (`prototypes/capcheck/`), which CLAUDE.md
-// and `prototypes/README.md` both forbid this suite from depending on.
+// RUNS: the type checker (wire-codec branch) now resolves both function
+// types and compares them -- this is a class-030x general-typing code, per
+// §13's amendment, not a 042x row code. compiler/x86_64/ast/ and cst/ are
+// no longer empty; `exsc aedifica --hospes x86_64-linux --diagnostica
+// json`, run directly against this file, exits 1 and emits exactly one
+// diagnostic -- {"code":"EXS-E0303",...,"message":"type mismatch",...,
+// "snippet":"identitas_rete"} at the `ataca` call site, exactly as this
+// entry's own text above predicts -- confirmed, not assumed. §4.2 itself is
+// still `[UNTESTED]` as a soundness claim beyond a nine-case Python probe
+// (`prototypes/capcheck/`), which CLAUDE.md and `prototypes/README.md`
+// both forbid this suite from depending on; this entry checks one instance
+// the type checker rejects, not soundness in general.
 
 publica functio applica_sine_ordine(v: f32, f: functio(f32) -> f32) -> f32 poscit alloc {
     redde f(v);
@@ -48,4 +52,4 @@ publica functio ataca(v: f32) -> f32 poscit alloc {
     redde applica_sine_ordine(v, identitas_rete);
 }
 
-// TEST: entry=9 shape=code expect-code=EXS-E0303 status=deferred needs=type_checker
+// TEST: entry=9 shape=code expect-code=EXS-E0303 status=run
