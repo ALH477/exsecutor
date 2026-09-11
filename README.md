@@ -233,62 +233,67 @@ what was run, and the repository holds itself to the source policy it enforces
 are byte-exact exceptions and why).
 
 <!-- STATUS BLOCK: the only place this file makes claims about what works.
-     Refresh at publish; everything outside this block is written to stay true. -->
+     Every figure is from running the named command at the named commit.
+     Refresh it here and nowhere else. -->
 
-## Status as of `b9c0abc` (2026-09-10)
+## Status as of `2e257f0` (2026-09-10)
 
 Every figure here was produced by running the named command at this commit, in
 the `nix develop` shell, on `x86_64-linux`.
 
-**The publish gate is not met.** `tools/publish-gate.sh` exits 1 at step 3:
-`exsc aedifica` at this commit accepts exactly one `SOURCE` and exits 2 on the
-second, while spec §12 (amended after the driver was written) lets `SOURCE`
-repeat so the three hello-world files form one compilation unit. The driver is
-behind the spec on that point. Given one file and `-o`, `exsc` exits 4 -- "the
-front end accepts this source, but code generation is not implemented" -- which
-is the honest state: nothing compiles to an artifact yet.
+**The publish gate is met.** `tools/publish-gate.sh` reports `RESULT: GATE MET`
+— twelve checks of twelve. The hello world compiles and runs:
 
-**What exists and runs:**
+```
+$ build/exsc aedifica --hospes x86_64-linux \
+      examples/saluta.exsc examples/imprime.exsc examples/initium.exsc -o hello.asm
+$ INCLUDE=vendor/fasmg-x86 fasmg hello.asm hello && ./hello
+Ave, mundus.
 
-- `make all` -> `build/exsc`, 249,874 bytes, freestanding. The front end is
-  complete for Stage 1: all three `examples/*.exsc` lex, parse, and build a
-  typed AST (exit 0 without `-o`; `--emitte tokens|cst|ast` dumps each stage).
-- **Stage 1's kill criterion was evaluated, failed, fixed, and re-evaluated**;
-  it no longer fires (`docs/design/diagnostics-review.md`, final section).
-  Stage 2 is open.
-- **Stage 2, the checker**, is being written under `compiler/x86_64/checker/`
-  against `docs/design/checker.md`. This commit holds its first four passes
-  (name resolution, the row fixpoint, packed layout) under nine `chk_*` unit
-  fixtures. It is not yet included from `exsc.asm`, so `build/exsc` does not
-  run it and no `.exsc` file is type- or capability-checked yet.
-- **Stage 3 pieces exist ahead of their input:** `backend_fasmg/` parses,
-  prints, verifies (nine rules, each with a rejected and an accepted twin) and
-  naively emits the SSA IR, and `prelude/` is the runtime a compiled program
-  carries. Both pass their unit fixtures (`bfa_*`, `prelude_*`), and the
-  emitter's output has been assembled by real fasmg and run -- against
-  hand-written IR only. No lowering from the AST exists
-  (`docs/design/lowering.md` is design only), so nothing from an `.exsc` file
-  reaches either of them yet.
+Ex silentio surgit forma.
+Ex signo nascitur vox.
+Ex codice fit lumen.
 
-**What the checks said:**
+Hodie incipimus.
+$ ./hello | cmp - examples/saluta.expected && echo BYTES MATCH
+BYTES MATCH
+```
 
-| command | result |
-|---|---|
-| `tests/run.sh` | **356 pass, 0 fail.** 124 unit fixtures discovered, floor 124. Conformance: **6 of 24 entries ran and passed** -- 3, 5, 18, 19, 20, 22, each rejected with exactly its §14 code -- and **18 are `DEFERRED`**, never counted as passing. |
-| `make audit` | PASS. Nine syscall sites, all in `rt/sys.inc`: `read write close fstat lseek mmap munmap openat exit_group`. Exactly the allowlist. |
-| `make reproduce` | PASS. Byte-identical 249,874 bytes across divergent cwd, `TZ`, locale, `SOURCE_DATE_EPOCH`, umask, hostname. |
-| `tools/spec-check.sh` | PASS. 49 codes in §13, 49 in `codes.inc`, in sync; keywords in sync; every `§N` citation resolves; no stray evidence markers. |
-| `tools/syscall-audit.sh --self-test` | PASS. The socket fixture is rejected; the `--potestates` union admits what it should and `Mundus` alone rejects `read` and `socket`. |
-| `nix flake check` | all six checks pass: `smoke`, `test`, `audit`, `buildExsecutorPackage-smoke`, `vendor-integrity`, `wire-vendor-integrity`. |
+101 bytes, no trailing newline. The binary is 1,074 bytes, statically linked,
+and its entire syscall surface is one `write(1)` and `exit_group` — audited
+against `{Mundus, ambitus}`, the capabilities the program actually has, with
+the socket family a hard failure because `rete` is not among them.
 
-**What is missing before the gate can pass:** the driver accepting repeated
-`SOURCE` (§12); the Stage 2 checker; AST-to-SSA lowering; and the program the
-backend emits from `initium` running and writing `examples/saluta.expected`.
+**What runs:**
 
-**Two artifacts the spec cites are not in this tree** and are marked
-`[UNREPRODUCED]` in it: the 468-line capability-row checker behind §4.2 (what
-is in `prototypes/capcheck/` is a re-derivation from the spec, not a
-restoration) and the Stage 0 benchmark sources behind §6.2 and §9.2.
+- `make all` → `build/exsc`, **397,785 bytes**, freestanding, no libc.
+- **All three stages of §16 reach end to end for this program.** Stage 1: the
+  §8.1 source gate, the lexer, the lossless CST, the typed AST. Stage 2: name
+  resolution, types, capability rows, packed layout — the lexicon pass is built
+  and **not enabled**, because §3.3's root table is illustrative and rejects the
+  language's own canonical names, which its fixture asserts. Stage 3: the
+  lowering to SSA IR, the verifier, and the fasmg reference backend with its
+  runtime prelude.
+- **Both kill criteria that could fire have been evaluated.** Stage 1's
+  (diagnostics) fired, was fixed, and was re-measured against a checked-in
+  corpus — `docs/design/diagnostics-review.md`, final section, and
+  `tests/diagnostics/`. Stage 2's (`sub` resolution needing a search) does not
+  fire, argued first in `docs/design/checker.md` §2.1.
+- `tests/run.sh`: **405 pass, 0 fail**, 141 unit fixtures, 6 of 24 conformance
+  entries running (the other 18 report `DEFERRED` and are never counted as
+  passing).
+- `make audit`: PASS — the nine allowlisted syscalls and nothing else, on the
+  real binary. `make reproduce`: PASS, byte-identical across directory, `TZ`,
+  locale, `SOURCE_DATE_EPOCH`, umask and hostname. `tools/spec-check.sh`: PASS,
+  49 error codes in sync with §13. `nix flake check`: green.
+
+**What does not run yet.** Only one program has been compiled end to end, and
+most of the language is `rassert`-refused rather than lowered: `contrahe` and
+its reduction triple, lambdas, `eventus`, generics, and every `numeri` but the
+default. The C backend (§9.2's reach backend) does not exist; neither does the
+`ego` reader, the module system, the LSP, or `exsc emenda`. `EXS-E0105`
+(confusables) has no hermetic data source. The emitted program's capability
+mask is an over-approximation with the exact fix recorded beside it.
 
 <!-- END STATUS BLOCK -->
 
