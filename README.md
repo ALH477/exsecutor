@@ -240,7 +240,7 @@ are byte-exact exceptions and why).
      Every figure is from running the named command at the named commit.
      Refresh it here and nowhere else. -->
 
-## Status as of `9ede8bf` (2026-09-11)
+## Status as of `af02c2d` (2026-09-11)
 
 Every figure here was produced by running the named command at this commit, in
 the `nix develop` shell, on `x86_64-linux`.
@@ -355,8 +355,9 @@ function of the vendored transmitter output and the integers in
   corpus — `docs/design/diagnostics-review.md`, final section, and
   `tests/diagnostics/`. Stage 2's (`sub` resolution needing a search) does not
   fire, argued first in `docs/design/checker.md` §2.1.
-- `tests/run.sh`: **700 pass, 0 fail** — 166 unit fixtures; 49 IR fixtures and
-  22 Exsecutor programs, each compiled, assembled, **run**, and syscall-audited;
+- `tests/run.sh`: **973 pass, 0 fail** in 2 m 12 s — 166 unit fixtures; 49 IR
+  fixtures and 92 Exsecutor programs, each compiled, assembled, **run**, and
+  syscall-audited (70 of those programs are the receiver's impaired vectors);
   10 of 24 conformance entries running, each required to emit exactly its
   expected code and nothing else (the other 14 report `DEFERRED` and are never
   counted as passing); 0 program directories deferred.
