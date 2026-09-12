@@ -1,0 +1,7 @@
+# copia_magna.exsc explains what each exit status means. It exists because
+# this exact shape -- a struct literal with an `acies<i64, 18000>` field --
+# used to kill exsc with SIGILL and no message, by unrolling one `copy` into
+# a megabyte of fasmg text (docs/design/receptor.md finding 20). The copy is
+# a loop now. tests/ir/copy_magna.ir checks the bytes a large copy moves;
+# this directory checks that the language construct above it compiles at all.
+TEST: expect-exit=0

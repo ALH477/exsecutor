@@ -1,0 +1,50 @@
+// A struct literal whose field is a large array: the shape that used to
+// kill `exsc` outright.
+//
+// `Magna { a: [...] }` lowers its aggregate field to a temporary and then
+// `copy 144000` bytes into the destination. The emitter used to unroll every
+// `copy` at compile time into n/8 `mov` pairs -- about 7.35 bytes of fasmg
+// per byte copied -- so this program asked for a megabyte of assembler text
+// and exhausted the compilation arena. `arena_alloc`'s trap then fired:
+// SIGILL, exit 132, and NOT ONE BYTE on stderr. Measured at 18000 elements;
+// 17000 compiled (999,057 bytes of asm), 18000 did not
+// (docs/design/receptor.md finding 20).
+//
+// Now a `copy` above BFA_COPY_UNROLL_MAX is a loop, so the text is constant
+// and this program compiles, runs, and moves its bytes.
+//
+// Exit statuses: 0 all checks pass; 1 the copied field lost a value; 2 a
+// write through the copy did not take; 3 the source array was disturbed by
+// the copy; 4 the second copy disagreed with the first.
+
+structura Magna {
+    a: acies<i64, 18000>
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    // The literal: 144,000 bytes, built once and copied into `g`.
+    mutabilis g = Magna { a: [-7; 18000] };
+
+    // Every element arrived.
+    si g.a[0] ne -7 { redde 1; }
+    si g.a[9000] ne -7 { redde 1; }
+    si g.a[17999] ne -7 { redde 1; }
+
+    // The copy is writable, and a write lands where it was aimed.
+    g.a[17999] = 11;
+    si g.a[17999] ne 11 { redde 2; }
+    si g.a[17998] ne -7 { redde 2; }
+
+    // A second literal is unaffected by what the first became: each
+    // `Magna` value owns its bytes (spec §6.3, arrays unboxed by value).
+    firma h = Magna { a: [-7; 18000] };
+    si h.a[17999] ne -7 { redde 3; }
+
+    // A whole-struct copy of a copy, so the loop form runs twice in one
+    // program with different sources.
+    firma k = g;
+    si k.a[17999] ne 11 { redde 4; }
+    si k.a[0] ne -7 { redde 4; }
+
+    redde 0;
+}

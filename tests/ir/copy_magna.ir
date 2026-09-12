@@ -1,0 +1,83 @@
+; TEST: expect-exit=42
+;
+; A `copy` far above BFA_COPY_UNROLL_MAX, which emit.inc now emits as a loop
+; instead of unrolling. 100,003 bytes: not a multiple of 8, so the loop moves
+; 12,500 qwords and the 4/2/1 tail moves the last three bytes. The unrolled
+; form would have been about 735,000 bytes of fasmg text for this one
+; instruction; the loop is a fixed dozen lines.
+;
+; The destination is pre-filled with 0xAA at each place a check reads, so a
+; copy that ran short leaves 0xAA where a byte should be, and one that ran
+; long overwrites the 0xAA that must survive past the end.
+;
+;    1  qword 0, the loop's first step        = 0x0807060504030201
+;    2  qword 99992, its last                 = 0x1122334455667788
+;    3  byte 100002, the tail's last byte     = 0x5A
+;    4  byte 100003, one past the copy        = 0xAA   untouched
+;    5  byte 100000, the tail's first byte    = 0      the tail wrote a zero
+;                                                      over the fill
+; All five right: exit 42.
+;
+; Check 5 is the one that catches a tail that never ran: bytes 100000 and
+; 100001 of the source are zero, so only a copy that moved them turns that
+; 0xAA into a 0.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = slot 100016 8
+%2 = slot 100016 8
+%3 = iconst u64 578437695752307201
+store u64 %1 0 nativus %3
+%4 = iconst u64 1234605616436508552
+store u64 %1 99992 nativus %4
+%5 = iconst u64 5898240
+store u64 %1 100000 nativus %5
+%6 = iconst u64 12297829382473034410
+store u64 %2 0 nativus %6
+store u64 %2 99992 nativus %6
+store u64 %2 100000 nativus %6
+copy 100003 %2 %1
+%7 = load u64 %2 0 nativus
+%8 = iconst u64 578437695752307201
+%9 = cmp.eq u64 %7 %8
+br %9 b2 b1
+b1:
+%10 = iconst u8 1
+ret %10
+b2:
+%11 = load u64 %2 99992 nativus
+%12 = iconst u64 1234605616436508552
+%13 = cmp.eq u64 %11 %12
+br %13 b4 b3
+b3:
+%14 = iconst u8 2
+ret %14
+b4:
+%15 = load u8 %2 100002 nativus
+%16 = iconst u8 90
+%17 = cmp.eq u8 %15 %16
+br %17 b6 b5
+b5:
+%18 = iconst u8 3
+ret %18
+b6:
+%19 = load u8 %2 100003 nativus
+%20 = iconst u8 170
+%21 = cmp.eq u8 %19 %20
+br %21 b8 b7
+b7:
+%22 = iconst u8 4
+ret %22
+b8:
+%23 = load u8 %2 100000 nativus
+%24 = iconst u8 0
+%25 = cmp.eq u8 %23 %24
+br %25 b10 b9
+b9:
+%26 = iconst u8 5
+ret %26
+b10:
+%27 = iconst u8 42
+ret %27
+}

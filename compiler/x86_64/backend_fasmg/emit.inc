@@ -3825,20 +3825,119 @@ proc __bfa_emit_copy_chunk, ctx, off, width
 	return
 endp
 
-; __bfa_emit_copy(ctx, func, instid) -- `copy n %d %s`: n bytes, unrolled
-; at compile time into 8-byte steps and a 4/2/1 tail, destination in rax,
-; source in rdx, every byte through rcx -- the three registers this file's
-; header already calls scratch. Never `rep movsb`, which would need rdi and
-; rsi. Ascending offsets, so it is a memcpy: overlapping %d and %s are not
-; given a meaning here, and ssa-ir.md 2.7 ("`copy n` is bytes only") gives
-; them none either. n = 0 loads the two pointers and moves nothing.
-proc __bfa_emit_copy, ctx, func, instid
+; __bfa_emit_cpylabel(ctx, lblptr, lbllen, instid) -- `<prefix>c<instid>`,
+; no newline: the one spelling of a large `copy`'s loop label, for its
+; definition and for the `jnz` back to it. Deliberately shaped like
+; __bfa_emit_blklabel, which is the same idea for a block.
+proc __bfa_emit_cpylabel, ctx, lblptr, lbllen, instid
+	locals
+	endl
+	mov	rdi, [ctx]
+	mov	rsi, [lblptr]
+	mov	rdx, [lbllen]
+	call	__bfa_out_lit
+	__bfa_emtxt "c"
+	mov	rdi, [ctx]
+	mov	esi, [instid]
+	call	__bfa_out_u64
+	return
+endp
+
+; BFA_COPY_UNROLL_MAX -- the largest `copy n` this file still unrolls, in
+; BYTES. At or below it the emitted form is unchanged from what every
+; existing fixture pins; above it the 8-byte steps become a runtime loop
+; (__bfa_emit_copy, below, states the whole argument).
+;
+; WHY 128, three reasons, in the order they decided it:
+;
+;   1. It is five times past break-even in emitted TEXT. An unrolled 8-byte
+;      step is two `mov` lines, ~59 bytes of fasmg source; the loop form is
+;      a fixed six extra lines, ~135 bytes, and the same 4/2/1 tail. The
+;      loop is the shorter text from about 24 bytes up. A threshold at
+;      break-even would make every copy near it a coin flip; 128 is far
+;      enough above that nothing sits on the fence.
+;   2. It BOUNDS the text one `copy` can emit. 128 bytes is 16 steps, about
+;      950 bytes of fasmg -- so no single sub-threshold `copy` can be a
+;      meaningful fraction of the compilation arena, which is the failure
+;      this threshold exists to remove (driver/io.inc's arena is
+;      DRV_ARENA_FLOOR + DRV_ARENA_FACTOR x the SOURCE bytes, and a `copy`
+;      is emitted text per BYTE COPIED, a quantity the source length does
+;      not bound -- `acies<i64, 18000>` is six lines of source and 144,000
+;      bytes of copy).
+;   3. MEASURED against the tree as it stands: every `copy` any fixture or
+;      program in this repository emits today is 40 bytes or smaller --
+;      `copy 7` and `copy 17` in tests/unit and tests/ir, 16 bytes in
+;      tests/programs/forma and hydramodem_basis, 40 in the three
+;      hydramodem_* programs -- with exactly one exception, the 2,528-byte
+;      aggregate copy in the five receptio_* receiver programs. So the
+;      threshold leaves every fixture whose emitted text is pinned
+;      byte-identical, and converts exactly the one case that had already
+;      grown past what unrolling is for.
+BFA_COPY_UNROLL_MAX = 128
+
+; __bfa_emit_copy(ctx, func, instid, lblptr, lbllen) -- `copy n %d %s`: n
+; bytes, destination in rax, source in rdx, every byte through rcx -- the
+; three registers this file's header already calls scratch. Ascending
+; offsets, so it is a memcpy: overlapping %d and %s are not given a meaning
+; here, and ssa-ir.md 2.7 ("`copy n` is bytes only") gives them none
+; either. n = 0 loads the two pointers and moves nothing.
+;
+; TWO FORMS, chosen by BFA_COPY_UNROLL_MAX (above):
+;
+;   n <= 128   unrolled at compile time into 8-byte steps and a 4/2/1
+;              tail. Byte-for-byte what this routine has always emitted.
+;   n >  128   the 8-byte steps become a runtime loop over n/8 iterations,
+;              then the same 4/2/1 tail at offsets 0/4/6 from the pointers
+;              the loop advanced. Nine lines of fasmg whatever n is.
+;
+; WHY THIS HAD TO CHANGE. Unrolling is ~7.35 bytes of fasmg text per byte
+; copied, and a struct literal with a big `acies` field lowers to a
+; temporary plus a `copy` of the whole field (lowering, `[e; N]` into an
+; aggregate). Six lines of source carrying `acies<i64, 18000>` is a
+; 144,000-byte `copy`, which is ~1.06 MB of emitted text -- and the
+; compilation arena is sized from the SOURCE, so it ran out and
+; `arena_alloc` trapped: SIGILL, exit 132, no message at all
+; (docs/design/receptor.md finding 20, measured -- N = 17,000 compiled,
+; N = 18,000 did not). The loop makes the emitted text O(1) in n.
+;
+; THE COUNTER IS IN MEMORY, AND THAT IS THE WHOLE TRICK. This backend keeps
+; no value in a register across an instruction boundary, so the loop has
+; only rax, rcx and rdx to work with -- and it needs all three for the
+; destination pointer, the source pointer, and the 8 bytes in flight. The
+; counter therefore lives in the `copy`'s OWN stack slot,
+; `__bfa_slot(ctx, instid)`. That slot exists and is free: the prologue
+; reserves one 8-byte slot per instruction id, "void ids included for
+; simplicity" (this file's header, and __bfa_frame_layout's `ninsts + 1`),
+; and `copy` is a void instruction, so nothing else ever writes or reads
+; it. No new frame space, no new convention -- just the one slot the naive
+; layout was already paying for.
+;
+; STILL NEVER `rep movsb`, and now for a checkable reason rather than a
+; preference. `movsb` needs rdi and rsi, and those are SysV ARGUMENT
+; registers that `param i` reads (__bfa_emit_param). Nothing in
+; docs/design/ssa-ir.md, and nothing in verify.inc, requires a function's
+; `param` instructions to come before every other instruction of its entry
+; block -- so a `copy` may legally be emitted ahead of a `param` that still
+; has to read `rdi`, and clobbering it would miscompile silently. The
+; memory counter assumes nothing about instruction order.
+;
+; THE ABI IS UNTOUCHED. The loop makes no call, never moves `rsp`, never
+; writes a callee-saved register and never touches the red zone; it writes
+; rax, rcx, rdx and one frame slot, all of which this backend already
+; treats as dead at an instruction boundary.
+;
+; THE LABEL is `<prefix>c<instid>`, built from the same per-function label
+; prefix the block and edge labels use (__bfa_emit_blklabel: `<prefix><n>`,
+; and `__bfa_emit_br`'s `<prefix><n>e<k>`). `instid` is unique within the
+; function and `c` is not a digit, so it can collide with neither form.
+proc __bfa_emit_copy, ctx, func, instid, lblptr, lbllen
 	locals
 		slot eidx, dd
 		slot nbytes, dd
 		slot vd, dd
 		slot vs, dd
 		slot off, dd
+		slot rem, dd
 	endl
 	mov	rdi, [func]
 	mov	esi, [instid]
@@ -3870,40 +3969,92 @@ proc __bfa_emit_copy, ctx, func, instid
 	mov	rdi, [ctx]
 	call	__bfa_emit_nl
 
+	cmp	dword [nbytes], BFA_COPY_UNROLL_MAX
+	ja	.loopform
+
 	mov	dword [off], 0
-  .q:
 	mov	eax, [nbytes]
-	sub	eax, [off]
-	cmp	eax, 8
+	mov	[rem], eax
+  .q:
+	cmp	dword [rem], 8
 	jb	.tail4
 	mov	rdi, [ctx]
 	mov	esi, [off]
 	mov	edx, 8
 	call	__bfa_emit_copy_chunk
 	add	dword [off], 8
+	sub	dword [rem], 8
 	jmp	.q
+
+	; ---- the loop form, n > BFA_COPY_UNROLL_MAX ------------------------
+	; rax and rdx are already loaded with the destination and the source.
+  .loopform:
+	__bfa_emtxt 9, "mov", 9, "qword "
+	mov	rdi, [ctx]
+	mov	esi, [instid]
+	call	__bfa_slot			; the copy's own, unread slot
+	__bfa_emtxt ", "
+	mov	rdi, [ctx]
+	mov	eax, [nbytes]
+	shr	eax, 3				; whole 8-byte steps
+	mov	esi, eax
+	call	__bfa_out_u64
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+
+	mov	rdi, [ctx]
+	mov	rsi, [lblptr]
+	mov	rdx, [lbllen]
+	mov	ecx, [instid]
+	call	__bfa_emit_cpylabel
+	__bfa_emtxt ":", 10
+	__bfa_emtxt 9, "mov", 9, "rcx, qword [rdx]", 10
+	__bfa_emtxt 9, "mov", 9, "qword [rax], rcx", 10
+	__bfa_emtxt 9, "add", 9, "rax, 8", 10
+	__bfa_emtxt 9, "add", 9, "rdx, 8", 10
+	__bfa_emtxt 9, "dec", 9, "qword "
+	mov	rdi, [ctx]
+	mov	esi, [instid]
+	call	__bfa_slot
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	__bfa_emtxt 9, "jnz", 9
+	mov	rdi, [ctx]
+	mov	rsi, [lblptr]
+	mov	rdx, [lbllen]
+	mov	ecx, [instid]
+	call	__bfa_emit_cpylabel
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+
+	; The tail is the same 4/2/1 sequence, now at offsets 0/4/6 from the
+	; pointers the loop left advanced -- which is why `off` restarts at 0
+	; here and `rem` is what the loop did not move.
+	mov	dword [off], 0
+	mov	eax, [nbytes]
+	and	eax, 7
+	mov	[rem], eax
+
   .tail4:
-	cmp	eax, 4
+	cmp	dword [rem], 4
 	jb	.tail2
 	mov	rdi, [ctx]
 	mov	esi, [off]
 	mov	edx, 4
 	call	__bfa_emit_copy_chunk
 	add	dword [off], 4
-	mov	eax, [nbytes]
-	sub	eax, [off]
+	sub	dword [rem], 4
   .tail2:
-	cmp	eax, 2
+	cmp	dword [rem], 2
 	jb	.tail1
 	mov	rdi, [ctx]
 	mov	esi, [off]
 	mov	edx, 2
 	call	__bfa_emit_copy_chunk
 	add	dword [off], 2
-	mov	eax, [nbytes]
-	sub	eax, [off]
+	sub	dword [rem], 2
   .tail1:
-	cmp	eax, 1
+	cmp	dword [rem], 1
 	jb	.done
 	mov	rdi, [ctx]
 	mov	esi, [off]
@@ -4209,6 +4360,8 @@ proc __bfa_emit_inst, ctx, module, func, instid, lblptr, lbllen
 	mov	rdi, [ctx]
 	mov	rsi, [func]
 	mov	edx, [instid]
+	mov	rcx, [lblptr]
+	mov	r8, [lbllen]
 	call	__bfa_emit_copy
 	return
   .notcopy:
