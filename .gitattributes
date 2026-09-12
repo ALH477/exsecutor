@@ -33,6 +33,18 @@ vendor/hydramodem-tx/** -text
 # them for that reason.
 vendor/hydramodem-rx/** -text
 
+# vendor/streamdb-v3/ is a StreamDB v3 container written by the upstream C
+# writer, three mechanically-corrupted copies of it, and the 24 raw document
+# payloads it packs -- vendored as a certificate for a reader written in
+# Exsecutor (see vendor/streamdb-v3/PROVENANCE.md). The containers and
+# payloads are binary and byte-exact by construction (the negative cases are
+# single flipped bytes at recorded offsets; a checkout that rewrote a byte
+# would silently change which case is being tested). `-text` for the same
+# reason as the three vendor trees above; `expectation.json` and
+# `PROVENANCE.md` are carved back out to plain LF text below, same as their
+# PROVENANCE.md exceptions.
+vendor/streamdb-v3/** -text
+
 # --- tests/conformance/: byte-exact by definition, DO NOT NORMALISE ---
 #
 # These fixtures exist to violate §8.1 on purpose. entry20_crlf.exsc must
@@ -82,3 +94,11 @@ examples/hydramodem/*.wav -text
 vendor/fasmg-x86/PROVENANCE.md text eol=lf
 vendor/hydramodem-tx/PROVENANCE.md text eol=lf
 vendor/hydramodem-rx/PROVENANCE.md text eol=lf
+vendor/streamdb-v3/PROVENANCE.md text eol=lf
+
+# expectation.json is the machine-readable manifest this project wrote, not
+# upstream output -- plain LF text. Unlike the PROVENANCE.md files above it
+# IS covered by vendor/streamdb-v3's own tree digest (only PROVENANCE.md is
+# named out of that recipe), so its bytes matter and normalisation must not
+# move them.
+vendor/streamdb-v3/expectation.json text eol=lf

@@ -331,6 +331,25 @@
       # identifier. Same digest discipline as the three above: PROVENANCE.md
       # excluded, LC_ALL=C pinned.
       rxVendorDigest = "4d8769c2a544057600d7271cfc75bac58dfe2801d97a9486eb6dbcddcc9ca05e"; # LC_ALL=C
+
+      # vendor/streamdb-v3: a 24-document StreamDB v3 container written by the
+      # real upstream C writer, three mechanically-corrupted copies of it, the
+      # 24 raw document payloads, and expectation.json -- a machine-readable
+      # manifest of what the N64-embedded reference reader (Kiln's reader)
+      # says about all of it. Vendored as a certificate for a StreamDB v3
+      # reader written in Exsecutor, which does not exist yet -- see
+      # vendor/streamdb-v3/PROVENANCE.md, including why the container itself
+      # is not byte-reproducible (the writer mints UUIDs from /dev/urandom)
+      # and is therefore generated once and frozen rather than rebuilt at
+      # test time. Program output vendored as test data, not code; nothing
+      # here links into exsc and the files keep the C edition's own
+      # LGPL-2.1-or-later identifier (PROVENANCE.md's licensing section --
+      # the upstream repo's one root LICENSE file is LGPLv3 text, but that
+      # governs the Rust edition; the C edition that produced these bytes is
+      # LGPL-2.1-or-later by its own file headers and the upstream README).
+      # Same digest discipline as the four above: PROVENANCE.md excluded,
+      # LC_ALL=C pinned.
+      streamdbVendorDigest = "1a07a7a4dba9ff71e9f71b66bf3e5e2125ee21e7a6fd5a25250fbb6d20ff8934"; # LC_ALL=C
     in
     {
       packages.${system} = {
@@ -576,6 +595,44 @@
           '';
         };
 
+        # Same check again, for vendor/streamdb-v3 (a StreamDB v3 container
+        # from the real upstream C writer, its three negative-case copies, the
+        # 24 raw payloads, and expectation.json). Program output and this
+        # project's own manifest vendored as a test certificate, never
+        # edited here; nothing here links into exsc and the container/payload
+        # files keep the C edition's LGPL-2.1-or-later identifier (see
+        # vendor/streamdb-v3/PROVENANCE.md's licensing section).
+        streamdb-vendor-integrity = pkgs.stdenvNoCC.mkDerivation {
+          name = "check-vendor-streamdb-v3-integrity";
+          nativeBuildInputs = [ pkgs.coreutils pkgs.findutils ];
+          dontUnpack = true;
+          buildCommand = ''
+            set -e
+            export LC_ALL=C
+            mkdir -p work/vendor
+            cp -r --no-preserve=mode -- ${./vendor/streamdb-v3} work/vendor/streamdb-v3
+            cd work
+            actual="$(find vendor/streamdb-v3 -type f ! -name PROVENANCE.md | sort | xargs sha256sum | sha256sum | cut -d' ' -f1)"
+            echo "expected (LC_ALL=C): ${streamdbVendorDigest}"
+            echo "actual   (LC_ALL=C): $actual"
+            if [ "$actual" != "${streamdbVendorDigest}" ]; then
+              echo "" >&2
+              echo "FAIL: vendor/streamdb-v3 content hash does not match." >&2
+              echo "This container was written once by the upstream C writer" >&2
+              echo "and is never rebuilt or edited here (it is not even" >&2
+              echo "byte-reproducible from identical inputs -- see" >&2
+              echo "PROVENANCE.md's non-reproducibility section). A mismatch" >&2
+              echo "means a local edit or a re-vendor; report it rather than" >&2
+              echo "updating this digest to match -- expectation.json's" >&2
+              echo "recorded results are attached to THESE bytes and mean" >&2
+              echo "nothing attached to others." >&2
+              exit 1
+            fi
+            mkdir -p "$out"
+            echo "$actual" > "$out"/digest
+          '';
+        };
+
         test = pkgs.stdenvNoCC.mkDerivation {
           name = "check-unit-tests";
           nativeBuildInputs = [
@@ -604,6 +661,11 @@
             # on stdin (stdin=vendor/hydramodem-rx/<kind>/<name>.wav); without
             # them here those directories would have nothing to decode.
             cp -r --no-preserve=mode -- ${./vendor/hydramodem-rx} repo/vendor/hydramodem-rx
+            # No Exsecutor StreamDB v3 reader exists yet, so nothing under
+            # tests/ reads this tree today -- staged anyway, the same way the
+            # other vendor/ trees are, so it is present the moment such a
+            # reader's fixtures are added (see vendor/streamdb-v3/PROVENANCE.md).
+            cp -r --no-preserve=mode -- ${./vendor/streamdb-v3} repo/vendor/streamdb-v3
             chmod +x repo/tests/run.sh repo/tools/*.sh
             # The sandbox has no /usr/bin/env, and tests/run.sh invokes the
             # audit as an executable -- so the `#!/usr/bin/env bash` shebang is

@@ -1,0 +1,282 @@
+{
+  "format": "StreamDB v3",
+  "container": "corpus.streamdb",
+  "document_count": 24,
+  "documents": [
+    {
+      "index": 0,
+      "key": "models/asset_000.t3dm",
+      "size": 33,
+      "sha256": "5d8fcfefa9aeeb711fb8ed1e4b7d5c8a9bafa46e8e76e68aa18adce5a10df6ab",
+      "crc32": "e4908305",
+      "payload_file": "payloads/models/asset_000.t3dm"
+    },
+    {
+      "index": 1,
+      "key": "sprites/asset_001.sprite",
+      "size": 1,
+      "sha256": "bbf3f11cb5b43e700273a78d12de55e4a7eab741ed2abf13787a4d2dc832b8ec",
+      "crc32": "99063bca",
+      "payload_file": "payloads/sprites/asset_001.sprite"
+    },
+    {
+      "index": 2,
+      "key": "sfx/asset_002.wav64",
+      "size": 7,
+      "sha256": "d2f5a975f8d547c22f7c4a8ee80401209e954b70bc2b91bbe8509ffe5b9986d2",
+      "crc32": "8a7b98ba",
+      "payload_file": "payloads/sfx/asset_002.wav64"
+    },
+    {
+      "index": 3,
+      "key": "music/asset_003.xm64",
+      "size": 8,
+      "sha256": "4fd3473f8febc39f96d9a865ae0e1312b279e99430e37e344940d4a06974138f",
+      "crc32": "02b146da",
+      "payload_file": "payloads/music/asset_003.xm64"
+    },
+    {
+      "index": 4,
+      "key": "data/asset_004.bin",
+      "size": 9,
+      "sha256": "73ad91fbf94401c220e5a36b03305d171d09f2dd6a092baeafca4ffecc475f4c",
+      "crc32": "20ddab93",
+      "payload_file": "payloads/data/asset_004.bin"
+    },
+    {
+      "index": 5,
+      "key": "models/asset_005.t3dm",
+      "size": 3001,
+      "sha256": "99c7ba1341452965effa8be873e1e5c618f1218673b45d3a64be92795eb3c058",
+      "crc32": "67024a12",
+      "payload_file": "payloads/models/asset_005.t3dm"
+    },
+    {
+      "index": 6,
+      "key": "sprites/asset_006.sprite",
+      "size": 1575,
+      "sha256": "89ca415d111b384c32a143d4f17a68898e9e423f9d8acbb22c73528c8e827738",
+      "crc32": "41f34489",
+      "payload_file": "payloads/sprites/asset_006.sprite"
+    },
+    {
+      "index": 7,
+      "key": "sfx/asset_007.wav64",
+      "size": 1832,
+      "sha256": "53dd2d09a3f32f94ccd36f91e717bdbfc62866f94bb9869a990bed57c2f8c576",
+      "crc32": "5d6454eb",
+      "payload_file": "payloads/sfx/asset_007.wav64"
+    },
+    {
+      "index": 8,
+      "key": "music/asset_008.xm64",
+      "size": 2089,
+      "sha256": "858a41586b8f3d94e699140af63d773e60a5af6800ba39efff1ed2505c7b8a7d",
+      "crc32": "9022c498",
+      "payload_file": "payloads/music/asset_008.xm64"
+    },
+    {
+      "index": 9,
+      "key": "data/asset_009.bin",
+      "size": 2346,
+      "sha256": "ee92614bef9ecba8df6deb7aa42983bb21feb6f0ec23ba7db0b28ba3db1741ca",
+      "crc32": "638dcc46",
+      "payload_file": "payloads/data/asset_009.bin"
+    },
+    {
+      "index": 10,
+      "key": "models/asset_010.t3dm",
+      "size": 2603,
+      "sha256": "8631f8a9bde93f3024a8d3078206e0c44394f036474468d0ee39d0a046131226",
+      "crc32": "d3df1433",
+      "payload_file": "payloads/models/asset_010.t3dm"
+    },
+    {
+      "index": 11,
+      "key": "sprites/asset_011.sprite",
+      "size": 2860,
+      "sha256": "bcf608928181b471e6f67ebc1dd2b14b69a450c1edfec52848dfd18140cac141",
+      "crc32": "fa196c56",
+      "payload_file": "payloads/sprites/asset_011.sprite"
+    },
+    {
+      "index": 12,
+      "key": "sfx/asset_012.wav64",
+      "size": 167,
+      "sha256": "e9c49ea7715fee5f4b64f0b38e4a472ead272234d0d42504af7625a7decca83e",
+      "crc32": "865983d0",
+      "payload_file": "payloads/sfx/asset_012.wav64"
+    },
+    {
+      "index": 13,
+      "key": "music/asset_013.xm64",
+      "size": 424,
+      "sha256": "ff8f6b5b6a92a28a2a54f62e05d3d7dd85d47926f3d93d86034105a777963de6",
+      "crc32": "6461fb26",
+      "payload_file": "payloads/music/asset_013.xm64"
+    },
+    {
+      "index": 14,
+      "key": "data/asset_014.bin",
+      "size": 681,
+      "sha256": "898554fd2f7dfe761d5a3696dacd35391c270d84338d5db598723052fe10d7b7",
+      "crc32": "be4c9d78",
+      "payload_file": "payloads/data/asset_014.bin"
+    },
+    {
+      "index": 15,
+      "key": "models/asset_015.t3dm",
+      "size": 938,
+      "sha256": "5aa61ccfd76d360355f5011b7537a374c771f658fd146c58db9a14f92cdf3af7",
+      "crc32": "50b98bad",
+      "payload_file": "payloads/models/asset_015.t3dm"
+    },
+    {
+      "index": 16,
+      "key": "sprites/asset_016.sprite",
+      "size": 1195,
+      "sha256": "429c46fda003ee5439ea3f54d1a30adcaf17eab1e879c95bbf2f3c78fe445626",
+      "crc32": "e86f2836",
+      "payload_file": "payloads/sprites/asset_016.sprite"
+    },
+    {
+      "index": 17,
+      "key": "sfx/asset_017.wav64",
+      "size": 1452,
+      "sha256": "dc1d538f29d658a09794c79137dcf6bd2e805dfd039b7fc89397828c401dd95c",
+      "crc32": "60da4b7d",
+      "payload_file": "payloads/sfx/asset_017.wav64"
+    },
+    {
+      "index": 18,
+      "key": "music/asset_018.xm64",
+      "size": 1709,
+      "sha256": "6e17598e79e82a1727cee0cb33b12fb743bad1d49c5ea84db827738a5bc406d6",
+      "crc32": "9eac1642",
+      "payload_file": "payloads/music/asset_018.xm64"
+    },
+    {
+      "index": 19,
+      "key": "data/asset_019.bin",
+      "size": 1966,
+      "sha256": "67d368ffcb7b2b5f6f2c1bea2af18588097403e0636a2d772b8678de57e4b1cc",
+      "crc32": "9ad17160",
+      "payload_file": "payloads/data/asset_019.bin"
+    },
+    {
+      "index": 20,
+      "key": "models/asset_020.t3dm",
+      "size": 2223,
+      "sha256": "b78a456fd777640e03298f024f56a7c5f5d59c5b606e23970470de3a688ceac6",
+      "crc32": "67d61af5",
+      "payload_file": "payloads/models/asset_020.t3dm"
+    },
+    {
+      "index": 21,
+      "key": "sprites/asset_021.sprite",
+      "size": 2480,
+      "sha256": "1b308fb9503064fbd0f8e55840e7470dea04b2276482c05b324ad2c3cf47fb7f",
+      "crc32": "33da39cc",
+      "payload_file": "payloads/sprites/asset_021.sprite"
+    },
+    {
+      "index": 22,
+      "key": "sfx/asset_022.wav64",
+      "size": 2737,
+      "sha256": "35762800d84aa634963fafceb75ca179ff7aadfed8a72c591cb48321df4b0223",
+      "crc32": "9662bea3",
+      "payload_file": "payloads/sfx/asset_022.wav64"
+    },
+    {
+      "index": 23,
+      "key": "music/asset_023.xm64",
+      "size": 44,
+      "sha256": "adecb95cbec289ac7c4953b63c4b162e00d48c4281f25848cb17390cb78dc90d",
+      "crc32": "8b2a409b",
+      "payload_file": "payloads/music/asset_023.xm64"
+    }
+  ],
+  "suffix_search": {
+    "note": "Traversal order as actually printed by the embedded reader's streamdb_emb_find_suffix callback (a scratch dumper linking the unmodified streamdb_embedded.c), not predicted. Confirmed to match the reverse-lexicographic-by-key rule streamdb-embedded/README.md implies: sorting each matching key's remaining prefix reversed, ascending, reproduces this order exactly.",
+    ".t3dm": [
+      {
+        "key": "models/asset_000.t3dm",
+        "size": 33,
+        "crc32": "e4908305"
+      },
+      {
+        "key": "models/asset_010.t3dm",
+        "size": 2603,
+        "crc32": "d3df1433"
+      },
+      {
+        "key": "models/asset_020.t3dm",
+        "size": 2223,
+        "crc32": "67d61af5"
+      },
+      {
+        "key": "models/asset_005.t3dm",
+        "size": 3001,
+        "crc32": "67024a12"
+      },
+      {
+        "key": "models/asset_015.t3dm",
+        "size": 938,
+        "crc32": "50b98bad"
+      }
+    ],
+    ".bin": [
+      {
+        "key": "data/asset_004.bin",
+        "size": 9,
+        "crc32": "20ddab93"
+      },
+      {
+        "key": "data/asset_014.bin",
+        "size": 681,
+        "crc32": "be4c9d78"
+      },
+      {
+        "key": "data/asset_009.bin",
+        "size": 2346,
+        "crc32": "638dcc46"
+      },
+      {
+        "key": "data/asset_019.bin",
+        "size": 1966,
+        "crc32": "9ad17160"
+      }
+    ]
+  },
+  "negative_cases": {
+    "negative/corpus.trunc300.streamdb": {
+      "construction": "head -c 300 corpus.streamdb",
+      "reference_reader_result": {
+        "open_probe": "STREAMDB_EMB_ERR_FORMAT (\"bad format\") -- both header slots parse (magic/version/self-CRC all still intact within the first 256 bytes) but header_parse's bounds check (trie_off+trie_len <= file_len, index_off+index_len <= file_len) fails for both slots against the 300-byte truncated file, so read_commit finds no valid commit",
+        "harness_transcript": "FAIL: probe: bad format\nprobe says arena needs 0 bytes\nFAIL: open db: bad format",
+        "exit_code": 1
+      }
+    },
+    "negative/corpus.payload-flip.streamdb": {
+      "construction": "corpus.streamdb with the byte at file offset 11250 XORed with 0xFF (0x77 -> 0x88): file offset 11250 = payload offset 11245 of models/asset_010.t3dm (index 10, size 2603, from the newest commit's index) + 5, i.e. the 6th payload byte of that one document",
+      "reference_reader_result": {
+        "affected_document": "models/asset_010.t3dm",
+        "outcome": "streamdb_emb_get returns STREAMDB_EMB_ERR_CRC (\"checksum mismatch\") for models/asset_010.t3dm only; the other 23 documents read back byte-exact with CRC verified; suffix searches unaffected (trie/index untouched, only a payload byte moved)",
+        "harness_transcript_excerpt": "FAIL: get models/asset_010.t3dm: checksum mismatch",
+        "n_documents_ok": 23,
+        "n_documents_failed": 1,
+        "exit_code": 1
+      }
+    },
+    "negative/corpus.header-flip.streamdb": {
+      "construction": "corpus.streamdb with the byte at file offset 136 XORed with 0xFF (0x03 -> 0xfc): file offset 136 = header slot 1's byte 8 (offset 128 + 8), the low byte of that slot's commit-sequence field. Slot 1 holds seq=3 (the newest commit, all 24 documents); slot 0 holds seq=2 (the older commit, the first 20 documents inserted, from this corpus's two-flush construction -- see PROVENANCE.md). Flipping this byte breaks slot 1's own trailing CRC (offset 200..204, covering bytes 128..200), so header_parse rejects it and read_commit falls back to the next-newest VALID slot: slot 0.",
+      "reference_reader_result": {
+        "outcome": "open/probe succeed (STREAMDB_EMB_OK) but against the OLDER commit: doc_count drops from 24 to 20; the 20 documents present in that commit (asset_000..asset_019) read back byte-exact with CRC verified; the 4 documents only present in the newer commit (models/asset_020.t3dm, sprites/asset_021.sprite, sfx/asset_022.wav64, music/asset_023.xm64) each return STREAMDB_EMB_ERR_NOT_FOUND (\"not found\"); suffix '.t3dm' match count drops from 5 to 4 (asset_020.t3dm no longer indexed)",
+        "harness_transcript_excerpt": "documents: 20, trie nodes: 316, arena used: 8540\n...\nFAIL: get models/asset_020.t3dm: not found\nFAIL: get sprites/asset_021.sprite: not found\nFAIL: get sfx/asset_022.wav64: not found\nFAIL: get music/asset_023.xm64: not found\n...\nsuffix '.t3dm' -> 4 match(es)",
+        "n_documents_ok": 20,
+        "n_documents_not_found": 4,
+        "exit_code": 1
+      }
+    }
+  }
+}

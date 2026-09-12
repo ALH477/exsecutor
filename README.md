@@ -131,11 +131,11 @@ What the two proofs prove:
   one thing a hermetic sandbox does not do, so `reproduce` runs from the
   devShell and in CI.
 
-`nix flake check` runs eight sandboxed derivations -- `smoke`, `test`, `audit`,
-`buildExsecutorPackage-smoke` and the four vendor-integrity checks
+`nix flake check` runs nine sandboxed derivations -- `smoke`, `test`, `audit`,
+`buildExsecutorPackage-smoke` and the five vendor-integrity checks
 (`vendor-integrity`, `wire-vendor-integrity`, `modem-vendor-integrity`,
-`rx-vendor-integrity`, one per tree under `vendor/`) -- over the git-tracked
-tree only. `tests/run.sh`, which the `test` check runs,
+`rx-vendor-integrity`, `streamdb-vendor-integrity`, one per tree under
+`vendor/`) -- over the git-tracked tree only. `tests/run.sh`, which the `test` check runs,
 carries a floor on the number of fixtures it must discover, because this
 project has produced green checks that saw nothing four times, and the floor is
 what stopped a fifth.
@@ -162,7 +162,7 @@ examples/           the hello world, its golden output, HydraModem's transmitter
 prototypes/         Python design probes -- never shipped, never on the build closure (§18)
 tests/              unit fixtures, the §14 conformance suite, the Stage 1 diagnostics corpus
 tools/              the audits, generators, and the publish gate; nothing here is on the build path except as a check
-vendor/             third-party, byte-exact, own licences: fasmg-x86/ (BSD-3-Clause), hydramesh-wire/, hydramodem-tx/, hydramodem-rx/ (LGPL-3.0-only)
+vendor/             third-party, byte-exact, own licences: fasmg-x86/ (BSD-3-Clause), hydramesh-wire/, hydramodem-tx/, hydramodem-rx/ (LGPL-3.0-only), streamdb-v3/ (LGPL-2.1-or-later)
 .claude/agents/     how the work is organised: one agent per directory, scopes exclusive
 CLAUDE.md           the working invariants, binding on every change
 ```
@@ -405,9 +405,13 @@ executables, `ego` files, diagnostics -- under terms of your choosing, and
 Exception B is the GNU Classpath linking exception, attaching only to a file
 whose own header carries the designation line, which no file in this repository
 currently does. `vendor/` is third-party and keeps its own licences --
-`vendor/fasmg-x86/` is BSD-3-Clause and `vendor/hydramesh-wire/`,
-`vendor/hydramodem-tx/` and `vendor/hydramodem-rx/` are LGPL-3.0-only -- and
-none of the exceptions apply
+`vendor/fasmg-x86/` is BSD-3-Clause; `vendor/hydramesh-wire/`,
+`vendor/hydramodem-tx/` and `vendor/hydramodem-rx/` are LGPL-3.0-only;
+`vendor/streamdb-v3/` is LGPL-2.1-or-later (the upstream C edition's own
+licence, per its file headers and README -- see
+`vendor/streamdb-v3/PROVENANCE.md`'s licensing section, since the upstream
+repository's single root LICENSE file text is LGPLv3 and governs only the
+Rust edition) -- and none of the exceptions apply
 to it. `LICENSE.EXCEPTION` states that it has not been reviewed by a lawyer,
 and so does this sentence.
 
