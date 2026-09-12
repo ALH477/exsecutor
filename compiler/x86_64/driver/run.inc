@@ -161,14 +161,13 @@ drv_m_todo2  db 'only `aedifica` does anything: it reads the SOURCE files, appli
 drv_m_todolsp db '`lsp` is marked [OPEN] Deferred in spec 18.2 -- it needs the lossless CST, which does not exist.',0
 drv_m_nohospes db 'aedifica: --hospes TRIPLE is required. Spec 9.5: exsc with no --hospes is an error, and there is no default-to-build-platform.',0
 drv_m_emptyhospes db 'aedifica: --hospes: TRIPLE must not be empty',0
-; The `--hospes` table's three messages. Its rows live in cli.inc beside the
+; The `--hospes` table's two refusal messages. Its rows live in cli.inc beside the
 ; value spellings; these say what each refusal is. The old single message
 ; said "there is no second backend to pick", which stopped being true the
 ; day `--emitte c` existed -- text is not permanent (spec 8.3), and this is
 ; the amendment.
-drv_m_hospesunsup db 'aedifica: --hospes: not a value this build accepts. The closed table is x86_64-linux (both backends), riscv64-linux (--emitte c only) and mips64-none-o64 (not yet, see below). Spec 9.5 forbids guessing one. Got: ',0
+drv_m_hospesunsup db 'aedifica: --hospes: not a value this build accepts. The closed table is x86_64-linux (both backends), riscv64-linux (--emitte c only) and mips64-none-o64 (--emitte c only, and its mensura is 32). Spec 9.5 forbids guessing one. Got: ',0
 drv_m_hospesnoc db 'aedifica: --hospes: this value names no reference backend, so it needs --emitte c. The reference backend emits x86-64 fasmg text and targets x86_64-linux alone. Got: ',0
-drv_m_hospeso64 db 'aedifica: --hospes: mips64-none-o64 is a row of the design table that this build cannot yet honour. Its 32-bit `ptr` needs lower/ty.inc, which interns ref/refc at width 64 unconditionally, and backend_fasmg/ir.inc`s bfa_ty_ptr -- other trees, and one of them a file the C backend reuses unchanged. Scheduled as C4 (docs/design/c-backend.md section 7). Got: ',0
 ; The driver's `--hospes` row travels into `bfc_emit_unit` unchanged, so the
 ; two enumerations must agree value for value. Asserted at ASSEMBLY time
 ; rather than trusted: they are declared in two files, one of which
@@ -893,8 +892,13 @@ proc drv_aedifica, argc, argv
 	lea	rdx, [drv_v_mips64]
 	call	drv_arg_is
 	test	eax, eax
-	jnz	.hospes_o64
-	jmp	.hospes_unsupported
+	jz	.hospes_unsupported
+	mov	dword [drvhos], DRV_HOSPES_MIPS64
+	; named no reference backend either, and for a second reason: its
+	; addresses are 32-bit, and the reference emitter refuses an address
+	; narrower than 64 by name (backend_fasmg/emit.inc's `.addr` arm).
+	cmp	dword [r15 + DrvCtx.emitte], DRV_EMIT_C
+	jne	.hospes_needs_c
   .hospes_known:
 
 	; ---- --emitte c requires -o OUT --------------------------------------
@@ -1147,13 +1151,25 @@ proc drv_aedifica, argc, argv
 	mov	r8,  [r15 + DrvCtx.srcpathn]
 	call	chk_set_source
 	mov	rdi, [r15 + DrvCtx.chk]
-	mov	esi, 64			; the pointer width of the one triple
-					; --hospes accepts (checked above) --
-					; x86_64-linux is 64-bit. Spec §9.5
-					; forbids guessing this from nothing;
-					; deriving it is only reachable because
-					; the triple was already pinned to a
-					; single accepted value.
+	; The accepted row's address width, which spec §9.5 says a row fixes
+	; and which is `mensura`'s width for the whole compilation. Deriving
+	; it is only reachable because the triple was already pinned to an
+	; accepted value above; §9.5 forbids guessing it from nothing.
+	;
+	; This was a literal 64 with a comment calling x86_64-linux "the one
+	; triple --hospes accepts", which stopped being true the day
+	; riscv64-linux landed and was harmless only because that row is
+	; 64-bit too. It is the item docs/design/c-backend.md finding 18's
+	; five-part cost never listed, and it sits directly on the path a
+	; 32-bit row must travel. This is its single call site.
+	mov	esi, 64
+	cmp	dword [drvhos], DRV_HOSPES_MIPS64
+	jne	.tgt_set
+	mov	esi, 32			; mips64-none-o64: a 64-bit ISA under
+					; an ABI with 32-bit addresses, so
+					; `mensura` is 32 and `+` traps at 2^32
+					; (ADR 0015 decision 1 and 3)
+  .tgt_set:
 	call	chk_set_target
 	mov	rdi, [r15 + DrvCtx.chk]
 	call	chk_run			; rax = diagnostics appended; already
@@ -1486,18 +1502,16 @@ proc drv_aedifica, argc, argv
 	call	drv_msg
 	mov	eax, DRV_EXIT_TODO
 	return
-  .hospes_o64:
-	; The row exists in the design's table and this build cannot honour it.
-	; Named separately from an unknown triple because the two are different
-	; facts: this one is scheduled work with a stated blocker, and saying
-	; "unknown" of a value the design lists would be false.
-	lea	rdi, [drv_m_hospeso64]
-	mov	rsi, [r15 + DrvCtx.hospes]
-	mov	rdx, [r15 + DrvCtx.hospesn]
-	xor	rcx, rcx
-	call	drv_msg
-	mov	eax, DRV_EXIT_TODO
-	return
+	; `.hospes_o64` stood here: the row existed in the design's table and
+	; this build could not honour it, so it was named separately from an
+	; unknown triple. C4 honours it, and the refusal is gone rather than
+	; reworded. What the message claimed was the blocker -- "its 32-bit
+	; `ptr` needs lower/ty.inc ... and backend_fasmg/ir.inc`s bfa_ty_ptr"
+	; -- was not one: ADR 0015 decision 2 keeps `ptr` interned at 64 on
+	; every row, because nothing but the reference backend reads that
+	; width, and the reference backend refuses this row anyway. The row
+	; needed the width `mensura` is built from, which is above, and one
+	; `_Static_assert` in the emitted unit.
   .emitte_c_no_out:
 	lea	rdi, [drv_m_emitcnoout]
 	xor	rsi, rsi

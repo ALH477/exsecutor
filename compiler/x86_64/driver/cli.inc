@@ -256,27 +256,33 @@ DRV_EMIT_C      = 3
 ; ---- the closed `--hospes` table, c-backend.md D2 --------------------------
 ; Spec 9.5 gives `--hospes` no default and forbids guessing one; what was
 ; missing until now was a table of what each accepted value FIXES. One row
-; per value, and the row says the width of `mensura` -- and therefore of
-; `ptr` -- which is the one fact the emitted C must assert rather than leave
-; to the C compiler.
+; per value, and the row says the width of `mensura`, which is the target's
+; `usize` and so the width of an address AS THE PROGRAM SEES IT -- the one
+; fact the emitted C must assert rather than leave to the C compiler.
 ;
-;   value             mensura/ptr   backends
-;   x86_64-linux      64            reference, C
-;   riscv64-linux     64            C only
-;   mips64-none-o64   32            C only -- NOT ACCEPTED BY THIS BUILD
+;   value             mensura   backends
+;   x86_64-linux      64        reference, C
+;   riscv64-linux     64        C only
+;   mips64-none-o64   32        C only
 ;
-; The third row is parsed and refused. The obstacle is not here and is not
-; `mensura`, which the checker already parameterises through
-; `chk_set_target` and which `lower/ty.inc` already reads from: it is that
-; `lower/ty.inc` interns `ref`/`refc` at width 64 unconditionally and
-; `ir.inc`'s `bfa_ty_ptr` interns `ptr` at 64, and those are two other
-; trees -- one of them a file the C backend reuses UNCHANGED by contract.
-; Reported, not done; c-backend.md finding 6 is corrected in the same
-; commit, because it said `mensura` was the hardcoded thing and it is not.
+; All three rows are accepted. The third was refused until C4, with a
+; message naming `lower/ty.inc`'s `ref`/`refc` constants and `ir.inc`'s
+; `bfa_ty_ptr` as the obstacle. Neither was one. ADR 0015 decision 2 keeps
+; the IR's `ptr`/`ref`/`refc` interned at 64 on EVERY row, because nothing
+; reads that width except the reference backend -- the C backend switches
+; on the type's KIND and asks C for `sizeof(void *)`, and `lower/ty.inc`
+; sizes from the checker's `AstType.width`. So `ir.inc`, the file the C
+; backend reuses unchanged by contract, was never in the way.
+;
+; What the row actually needed: the width handed to `chk_set_target` (which
+; had been a literal 64), and one `_Static_assert` line in the emitted
+; unit. What it COSTS is elsewhere and is larger -- `mensura` at 32 is
+; written through the whole unit as literal widths, so the o64 unit is a
+; different, larger C file than the x86_64 one.
 DRV_HOSPES_NONE    = 0
 DRV_HOSPES_X86_64  = 1
 DRV_HOSPES_RISCV64 = 2
-DRV_HOSPES_MIPS64  = 3		; parsed so the refusal can name the reason
+DRV_HOSPES_MIPS64  = 3		; mensura 32 -- the only row that is not 64
 
 ; ---- option spellings ------------------------------------------------------
 drv_o_hospes db '--hospes',0

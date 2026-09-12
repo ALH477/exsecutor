@@ -303,12 +303,16 @@ drv_s_usage:
 	db '  --hospes TRIPLE      target triple. REQUIRED: spec 9.5 makes an absent', 10
 	db '                       --hospes an error. There is no default-to-build-platform.', 10
 	db '                       The value set is a CLOSED TABLE, one row per triple,', 10
-	db '                       and the row fixes the width of `mensura` and `ptr`:', 10
+	db '                       and the row fixes the width of `mensura`, which', 10
+	db '                       is the target`s usize and so its address width:', 10
 	db '                         x86_64-linux     64  both backends', 10
 	db '                         riscv64-linux    64  --emitte c only', 10
-	db '                         mips64-none-o64  32  not yet -- scheduled', 10
-	db '                       Anything else, a row whose only backend was not', 10
-	db '                       asked for, or the o64 row: exit 4, with the reason.', 10
+	db '                         mips64-none-o64  32  --emitte c only', 10
+	db '                       On the o64 row `mensura` is 32, so `+` traps at', 10
+	db '                       2^32 rather than 2^64 -- the target`s semantics,', 10
+	db '                       not a backend difference (ADR 0015).', 10
+	db '                       Anything else, or a row whose only backend was', 10
+	db '                       not asked for: exit 4, with the reason.', 10
 	db '  SOURCE               the file to compile. Positional, and REPEATABLE:', 10
 	db '                       spec 12 says the files named form one compilation', 10
 	db '                       unit -- one module, one artifact -- and that their', 10

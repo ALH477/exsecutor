@@ -248,12 +248,25 @@ proc __bfc_prog_hospes, ctx, hospes
 	je	.w64
 	cmp	dword [hospes], BFC_HOSPES_RISCV64
 	je	.w64
+	cmp	dword [hospes], BFC_HOSPES_MIPS64
+	je	.w32
 	jmp	.after_msg
-  .msg db "hospes: this build emits C for x86_64-linux and riscv64-linux only; mips64-none-o64's 32-bit `ptr` needs lower/ty.inc and ir.inc's bfa_ty_ptr, which are other trees and are C4's (c-backend.md D2, finding 6)"
+  .msg db "hospes: no row. This build emits C for x86_64-linux, riscv64-linux and mips64-none-o64"
   .after_msg:
 	lea	rdi, [.msg]
 	mov	rsi, .after_msg - .msg
 	call	__bfc_die
+  .w32:
+	; mips64-none-o64. This assert is the WHOLE of what the row
+	; contributes textually -- but not the whole of what it contributes:
+	; the row also sets `mensura` to 32 back in the checker, and that is
+	; written through the unit as literal widths in every `exsi_norm_u`,
+	; `exsi_add_u` and `exsi_ld_*` call. The o64 unit is a different,
+	; larger file than the x86_64 one, and reading this proc alone gives
+	; the opposite impression (ADR 0015, "the correction").
+	__bfc_emtxt 10, "_Static_assert(sizeof(void *) == 4, "
+	__bfc_emtxt 34, "exsecutor: this hospes has 32-bit addresses", 34, ");", 10, 10
+	return
   .w64:
 	__bfc_emtxt 10, "_Static_assert(sizeof(void *) == 8, "
 	__bfc_emtxt 34, "exsecutor: this hospes has 64-bit addresses", 34, ");", 10, 10

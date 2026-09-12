@@ -1304,16 +1304,21 @@ run_differential_tests() {
   # all of them is that they must not collapse into one:
   #   --emitte c without -o        usage error (2): an artifact needs a file
   #   an unknown triple            exit 4: not a row of the table
-  #   mips64-none-o64              exit 4: a row this build cannot honour --
-  #                                named separately, because calling a value
-  #                                the design lists "unknown" would be false
   #   riscv64-linux without c      exit 4: a row whose only backend is the C
   #                                one, asked for without asking for it
-  # And two acceptances, which prove the refusals are not simply "everything
-  # fails": both 64-bit rows emit, and -- since the row contributes only a
-  # `sizeof(void *)` assert and both rows are 64-bit -- they emit the SAME
-  # BYTES, which is D5's determinism claim reduced to its smallest testable
-  # form. The last check is the one that ties the two harnesses together:
+  #   mips64-none-o64 without c    exit 4: the same, for a second reason --
+  #                                its addresses are 32-bit and the reference
+  #                                emitter refuses a narrow address by name
+  # (mips64-none-o64 WITH --emitte c was a fourth refusal until C4, on the
+  # ground that this build could not honour the row. It can; ADR 0015.)
+  #
+  # And three acceptances, which prove the refusals are not simply
+  # "everything fails". The two 64-bit rows emit the SAME BYTES -- D5's
+  # determinism claim reduced to its smallest testable form. The 32-bit row
+  # must emit DIFFERENT bytes, in more than the one `_Static_assert` line,
+  # because the row sets `mensura` as well and that reaches every emitted
+  # width; a one-line diff would mean the plumbing did nothing.
+  # The last check is the one that ties the two harnesses together:
   # `exsc --emitte c` and `emit_c` must agree byte for byte on the same
   # program, the same equality tests/ir/saluta.ir's header records for the
   # reference side.
@@ -1355,18 +1360,50 @@ run_differential_tests() {
       aedifica --hospes x86_64-linux --emitte c "${hw[@]}"
     drv_case "--hospes aarch64-linux (not in the table)" 4 \
       aedifica --hospes aarch64-linux --emitte c "${hw[@]}" -o "$workdir/a.c"
-    drv_case "--hospes mips64-none-o64 (a row C1 cannot honour)" 4 \
-      aedifica --hospes mips64-none-o64 --emitte c "${hw[@]}" -o "$workdir/a.c"
+    drv_case "--hospes mips64-none-o64 without --emitte c" 4 \
+      aedifica --hospes mips64-none-o64 "${hw[@]}" -o "$workdir/a.asm"
     drv_case "--hospes riscv64-linux without --emitte c" 4 \
       aedifica --hospes riscv64-linux "${hw[@]}" -o "$workdir/a.asm"
     drv_case "--hospes x86_64-linux --emitte c" 0 \
       aedifica --hospes x86_64-linux --emitte c "${hw[@]}" -o "$workdir/x86.c"
     drv_case "--hospes riscv64-linux --emitte c" 0 \
       aedifica --hospes riscv64-linux --emitte c "${hw[@]}" -o "$workdir/rv.c"
+    drv_case "--hospes mips64-none-o64 --emitte c" 0 \
+      aedifica --hospes mips64-none-o64 --emitte c "${hw[@]}" -o "$workdir/o64.c"
     if cmp -s "$workdir/x86.c" "$workdir/rv.c"; then
       ok "driver: the two 64-bit rows emit byte-identical units"
     else
       bad "driver: the two 64-bit rows differ, and both are 64-bit"
+    fi
+    # The 32-bit row must emit something DIFFERENT, and the difference must
+    # not be confined to the prologue's one `_Static_assert` line. Reading
+    # `__bfc_prog_hospes` alone gives the impression that the assert is all a
+    # row contributes; it is not, because the row also sets `mensura`, and
+    # that is written through the unit as literal widths in every
+    # `exsi_norm_u`, `exsi_add_u` and `exsi_ld_*`. A one-line diff here would
+    # mean the width plumbing silently did nothing -- which is exactly the
+    # error ADR 0015 was written to correct, so it is checked rather than
+    # assumed.
+    if cmp -s "$workdir/x86.c" "$workdir/o64.c"; then
+      bad "driver: the 32-bit row emitted the same unit as the 64-bit one"
+    else
+      local o64diff
+      o64diff=$(diff "$workdir/x86.c" "$workdir/o64.c" | grep -c '^[<>]' || true)
+      # 2 lines would be the assert alone (one `<`, one `>`), so the
+      # threshold is the next change after it. On this hello world the
+      # diff is exactly 4: the assert, and `exsrt_scriptor_scribe`'s
+      # `mensura` result gaining an `exsi_norm_u(..., 32)`. On the
+      # StreamDB unit it is in the thousands.
+      if [[ "$o64diff" -ge 4 ]]; then
+        ok "driver: mips64-none-o64 differs from x86_64-linux in $o64diff lines, more than the assert's 2"
+      else
+        bad "driver: mips64-none-o64 differs in only $o64diff lines -- at 2 that is the assert alone, so mensura=32 never reached the text"
+      fi
+    fi
+    if grep -q '_Static_assert(sizeof(void \*) == 4,' "$workdir/o64.c"; then
+      ok "driver: the mips64-none-o64 unit asserts 32-bit addresses"
+    else
+      bad "driver: the mips64-none-o64 unit does not assert sizeof(void *) == 4"
     fi
     if "$emit" <"$REPO_ROOT/tests/ir/saluta.ir" >"$workdir/hw.c" 2>/dev/null &&
        cmp -s "$workdir/hw.c" "$workdir/x86.c"; then
