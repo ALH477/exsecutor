@@ -1,6 +1,11 @@
 # 0012 — Two backends: fasmg is the reference, C is reach
 
-**Status:** Accepted as design, 2026-09-09. **Nothing implemented.**
+**Status:** Accepted as design, 2026-09-09. **Nothing implemented.** The
+backend's design is `docs/design/c-backend.md` (2026-09-11), which records
+two corrections to what is written below and does not edit it: spec §13
+has since gained `EXS-E0701` for the refusal the Neutral section says has
+no code, and the prologue's `__FINITE_MATH_ONLY__` test is on its value,
+not its presence, because GCC is believed to define it always `[UNTESTED]`.
 **Relates to:** spec §5.2, §5.3, §5.4, §5.5, §9.2 (amended to match), §9.3,
 §9.5, §9.6, §16, §18.1; ADR 0007, ADR 0009; `docs/design/ssa-ir.md`
 

@@ -450,7 +450,7 @@ potestas Hospes = { alloc, archivum, horologium, ambitus }
 publica functio initium(m: Mundus) -> u8 { … }
 ```
 
-Rule 2 names `initium` and says `Mundus` is passed to it; this pins the rest. A program has exactly one `initium`; it is `publica`; its one parameter is the root, which is rule 4's second path — received as a parameter — so it carries no `poscit` and there is nothing to declare: the program's whole authority is that one value, and every other capability is derived from it, explicitly (rule 2). Its result is the process exit status. A module with no `initium` is a library; "it runs" is a claim only a program can make. `[OPEN]` no library artifact exists for the reference backend — `fasmg` has no link step — so until one is designed, `-o` on a module without `initium` asks for a program that cannot be built and is `EXS-E0424` (`docs/design/runtime.md`, finding 2).
+Rule 2 names `initium` and says `Mundus` is passed to it; this pins the rest. A program has exactly one `initium`; it is `publica`; its one parameter is the root, which is rule 4's second path — received as a parameter — so it carries no `poscit` and there is nothing to declare: the program's whole authority is that one value, and every other capability is derived from it, explicitly (rule 2). Its result is the process exit status. A module with no `initium` is a library; "it runs" is a claim only a program can make. `[OPEN]` no library artifact exists for the reference backend — `fasmg` has no link step — so until one is designed, `-o` on a module without `initium` asks for a program that cannot be built and is `EXS-E0424` (`docs/design/runtime.md`, finding 2). That sentence is about the reference backend. Under `--emitte c` (§9.2, library mode) a module without `initium` **is** a library and `-o` names its C translation unit: the driver does not mark a program as asked for, and `EXS-E0424` does not fire. `[UNTESTED]` — `docs/design/c-backend.md` D1.
 
 Derivation is by method on the root — `m.ambitus()`, `m.archivum()` — and rule 2's *fallibly* is resolved at two different times. Where presence is a property of the host (`ambitus`, `archivum`: a `none-eabi` target has neither), it is decided at compile time by `--hospes` (§9.5) and the `hospites` list (§10.1), and the derivation itself is total. Where presence is a property of the run (`rete`), the derivation returns `eventus`. `[OPEN]` which atoms fall on which side beyond these three; the checker (`docs/design/checker.md`) decides per atom. A second `initium`, one with the wrong signature, or none where a program was asked for, is `EXS-E0424`.
 
@@ -2018,6 +2018,23 @@ The clean SSA boundary is what makes two backends affordable. Each is written
 against the IR contract (`docs/design/ssa-ir.md`), so each can be built and
 tested against hand-written IR, with no frontend and without the other.
 
+**The C backend's first mode is library mode.** `exsc aedifica --hospes
+TRIPLE SOURCE… --emitte c -o OUT` writes one C11 translation unit holding
+the module's functions — a definition per function with a body, an `extern`
+prototype per `externus` or prelude declaration, a read-only byte array per
+literal, and a prologue of `_Static_assert`s and `#error`s (ADR 0012's rung
+(b)) — and nothing else: no entry point, no runtime, no prelude, no
+capability gating, no reference counting. The unit imports exactly one
+symbol, `exsrt_abortus(kind)`, which whoever links it supplies; a module
+without `initium` is a library there (§4.7). Whole-program mode — an
+`initium` driven from a C `main`, a C prelude, syscalls, `#if`-gated
+capabilities so §10.3's audit holds of the binary — is a later milestone.
+The lowering of each opcode, and the twenty-three the C backend refuses by
+name because the reference has no lowering to check them against (floats,
+`div`/`rem`, `muls`, the overflow predicates, the reductions, `callind`) or
+because library mode has no runtime (`retain`/`release`), are tabulated in
+`docs/design/c-backend.md`. `[UNTESTED]` — nothing of it is implemented.
+
 Compile speed was measured and is **not** the constraint I previously claimed. `[UNREPRODUCED]` — the measurement harness is absent from the tree; figures carried forward from v0.2. gcc `-O0` on backend-style generated C:
 
 | shape | kloc/s |
@@ -2103,6 +2120,32 @@ Code generation uses **declared generators**: a manifest entry naming a generato
 Nix's trichotomy as language-level concepts: `buildPlatform`, `hostPlatform`, `targetPlatform`. Conditional compilation keys on **`hostPlatform`**, never an ambiguous "current platform."
 
 **`exsc` with no `--hospes` is an error.** No default-to-build-platform. This is not a cross-compilation mode — it falls directly out of "target is a capability, not ambient state," and it is the most Nix-aligned decision in the document. Native compilation is the case where `build == host`, spelled out.
+
+**The value set is a closed table**, one row per value, and a value is the
+same word §10.1's `hospites` list uses. A row fixes the width of `mensura`
+and therefore of every address — the one fact the C backend's emitted text
+must assert (`_Static_assert(sizeof(void *) == …)`) rather than leave to
+the C compiler. A row fixes **nothing about byte order**: the reference
+backend's host is little-endian by construction, and the C backend's
+emitted text reads every `nativus` place through helpers the C compiler
+selects from its own target's order and every `maior`/`minor` place byte
+by byte, so the text depends on no assumption about it. The rows accepted:
+
+| `--hospes` | `mensura` width | backends |
+|---|---|---|
+| `x86_64-linux` | 64 | reference; C |
+| `riscv64-linux` | 64 | C `[UNTESTED]` |
+| `mips64-none-o64` | 32 — a 64-bit ISA under an ABI with 32-bit addresses (the Nintendo 64 under o64) | C `[UNTESTED]` |
+
+`aarch64-linux`, `wasm32-wasi` and `none-eabi` appear in §10.1 and are not
+yet accepted: no row states their width, and `none-eabi` names no
+architecture from which one could be read. `[OPEN]`. A value not in the
+table, or one whose row does not list the backend asked for, is a usage
+error — exit nonzero, a message, no `EXS-E` code (§9.3: a flag is about the
+invocation, not the source). A well-formed module whose declared `numeri`
+(§5.4) the named target cannot honour is `EXS-E0701`. `[UNTESTED]` — the
+table beyond `x86_64-linux` is `docs/design/c-backend.md` D2 and nothing
+implements it.
 
 ## 9.6 The two-hash invariant
 
@@ -2237,7 +2280,10 @@ for the reference backend, `fasmg OUT BIN` with `vendor/fasmg-x86/` on the
 include path, the one tool §18.1 puts in the closure. The emitted text is
 self-contained modulo the vendored macro package — the runtime prelude is
 emitted into it, not found on a path, and the only `include` it carries is
-§18.1's `vendor/fasmg-x86/`.
+§18.1's `vendor/fasmg-x86/`. For the C backend (`--emitte c`, §9.2) `OUT`
+is a C11 translation unit and the step is a C compiler of the GCC/Clang
+family — a build-platform tool that never enters `exsc`'s own closure
+(§18.1, ADR 0012) and that `exsc` never invokes. `[UNTESTED]`
 
 With no `ego.exsc` — the hello world has none — the program's `potestates`
 are the checker's computed capability closure of `initium` and its `numeri`
