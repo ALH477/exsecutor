@@ -240,7 +240,7 @@ are byte-exact exceptions and why).
      Every figure is from running the named command at the named commit.
      Refresh it here and nowhere else. -->
 
-## Status as of `af02c2d` (2026-09-11)
+## Status as of `5417576` (2026-09-12)
 
 Every figure here was produced by running the named command at this commit, in
 the `nix develop` shell, on `x86_64-linux`.
@@ -336,9 +336,33 @@ round-trip transmitter-to-receiver in one process. Every vector is an integer
 function of the vendored transmitter output and the integers in
 `vendor/hydramodem-rx/PROVENANCE.md`, which prints the generator verbatim.
 
+**A second backend, and a third external format.** `exsc --emitte c` emits a
+C11 translation unit of pure functions (`docs/design/c-backend.md`, ADR 0012).
+Its acceptance test is that the two backends cannot be told apart: for every
+IR fixture and every eligible program, the C build must match the reference
+build's stdout, exit status and trap behaviour under gcc and clang at two
+optimisation levels, all under UBSan. They match everywhere.
+
+The first program through it is a **StreamDB v3 reader** — the third-party
+container the Kiln N64 engine reads (`examples/streamdb/`,
+`vendor/streamdb-v3/`). It parses the alternating 128-byte header slots, the
+sorted index and the reversed trie with no allocation and no capability, and
+is certified against the upstream writer's own bytes: all 24 documents
+byte-exact, both suffix searches in traversal order, and three corrupted
+containers behaving exactly as the reference C reader does — including
+falling back to the older commit when the newer header is damaged. The
+emitted C unit is 137,742 bytes and reproduces byte-identically across
+divergent directory, locale, time zone and hostname.
+
+Declaring the header as a `@transitus` struct forced two zero-pad gaps in the
+format into the open that no survey of it had listed, and declaring the
+16-byte UUID as two `u64:maior` halves makes the index's byte-order sort an
+integer comparison — the binary search has no byte loop. There is no shift and
+no mask anywhere in the header, index or record parsing.
+
 **What runs:**
 
-- `make all` → `build/exsc`, **426,389 bytes**, freestanding, no libc.
+- `make all` → `build/exsc`, **453,732 bytes**, freestanding, no libc.
 - **All three stages of §16 reach end to end.** Stage 1: the §8.1 source gate,
   the lexer, the lossless CST, the typed AST. Stage 2: name resolution, types,
   capability rows, packed layout — the lexicon pass is built and **not
@@ -355,9 +379,14 @@ function of the vendored transmitter output and the integers in
   corpus — `docs/design/diagnostics-review.md`, final section, and
   `tests/diagnostics/`. Stage 2's (`sub` resolution needing a search) does not
   fire, argued first in `docs/design/checker.md` §2.1.
-- `tests/run.sh`: **973 pass, 0 fail** in 2 m 12 s — 166 unit fixtures; 49 IR
-  fixtures and 92 Exsecutor programs, each compiled, assembled, **run**, and
+- `tests/run.sh`: **1351 pass, 0 fail** in 3 m 46 s — 166 unit fixtures; 50 IR
+  fixtures and 96 Exsecutor programs, each compiled, assembled, **run**, and
   syscall-audited (70 of those programs are the receiver's impaired vectors);
+  and a **differential phase**: 156 IR builds and 104 program builds in which
+  the C backend's output must agree with the reference's on stdout bytes, exit
+  status and trap-or-not, across gcc and clang at `-O0` and `-O2`, every one
+  under `-fsanitize=undefined -fno-sanitize-recover=all`. They agree
+  everywhere; zero sanitizer reports;
   10 of 24 conformance entries running, each required to emit exactly its
   expected code and nothing else (the other 14 report `DEFERRED` and are never
   counted as passing); 0 program directories deferred.
@@ -386,8 +415,15 @@ compilation arena says so on stderr since `9ede8bf` and still exits 132, as
 that commit's mutation run recorded. The checker
 refuses a correct program where a `poscit sicut s` function calls another
 with the same `s` (`EXS-E0421`; the spec is right, `docs/design/wire-codec.md`
-finding 9). The C backend (§9.2's reach backend) does not exist; neither does
-the `ego` reader, the module system, the LSP, or `exsc emenda`. `EXS-E0105`
+finding 9). The C backend exists in **library mode only** — a translation
+unit of pure functions, no entry point, no runtime, no ARC — and refuses 23
+of the 60 IR opcodes by name, every one of them an opcode the reference
+backend does not lower either (floats, `div`/`rem`, the overflow predicates,
+`callind`, the reductions). A 32-bit-pointer `--hospes` row, which the N64
+needs, is **not** there: `ptr` is interned at 64 bits in a file the C backend
+reuses unchanged, and the reference emitter would silently miscompile such a
+module rather than refuse it (`docs/design/c-backend.md` finding 18). Neither
+does the `ego` reader, the module system, the LSP, or `exsc emenda`. `EXS-E0105`
 (confusables) has no hermetic data source. The emitted program's capability
 mask is an over-approximation with the exact fix recorded beside it, and,
 separately, every `ambitus` binary carries `read` whether it reads or not
