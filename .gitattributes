@@ -61,6 +61,13 @@ tests/programs/*/expected.out -text
 # while proving nothing. `-text`, for exactly the reason above.
 tests/data/*.bin -text
 
+# examples/hydramodem/loopback.wav is what the transmitter in that directory
+# writes -- audio, and a WAV header whose fields a CR would ruin. It is
+# byte-identical to the vendored reference render it is certified against
+# (vendor/hydramodem-tx/d310123400a1ffffdeadbeef0a1b2ca961.wav); it is here so
+# that a reader can hear the thing without building anything. `-text`.
+examples/hydramodem/*.wav -text
+
 # PROVENANCE.md is ours, not upstream's, and is excluded from the digest.
 vendor/fasmg-x86/PROVENANCE.md text eol=lf
 vendor/hydramodem-tx/PROVENANCE.md text eol=lf

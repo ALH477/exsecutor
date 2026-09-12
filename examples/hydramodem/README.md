@@ -26,6 +26,22 @@ bitwise and or or and no signed shift; what it costs is four **negative
 controls** — mutants that decode anyway — which `docs/design/receptor.md`
 section 6 names rather than hides.
 
+## Hear it first
+
+`loopback.wav` in this directory is what `loopback.exsc` writes: 0.396 s of
+2-FSK audio at 48 kHz carrying the frame
+`d310123400a1ffffdeadbeef0a1b2ca961`. Play it and you hear a short warble;
+the tones are 2000 Hz for a 0 bit and 3000 Hz for a 1, a thousand of them a
+second.
+
+It is checked in so the sound is one click away, and it is **byte-identical**
+to `vendor/hydramodem-tx/d310123400a1ffffdeadbeef0a1b2ca961.wav`, the render
+HydraModem's own `frame_tx` produced — the file the certificate in
+`tests/programs/hydramodem_loopback/` compares against on every run. So it is
+a copy of a file already in the tree, kept for the reader rather than for the
+tests; nothing here depends on it, and `make` never reads it. Regenerate it
+with the commands below and `cmp` will be silent.
+
 ## Build and run
 
 From the repository root, inside `nix develop`:
