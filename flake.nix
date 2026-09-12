@@ -167,9 +167,18 @@
       # fixture-count floor for this reason.
       compilerExists = builtins.pathExists compilerSrcPath;
 
+      # spec §18.1 / docs/design/c-backend.md D6: a C compiler is a
+      # verification-only tool. It is in the devShell and in checks.test and
+      # on no package's build closure. Stated as an assertion rather than a
+      # comment so that adding one to exsc is a flake *evaluation* error --
+      # `nativeBuildInputs` on an exsc build is exactly [ fasmg ], one entry.
+      assertBuildClosure = drv:
+        assert builtins.length drv.nativeBuildInputs == 1;
+        drv;
+
       exscPkg =
         if compilerExists then
-          buildExsecutorPackage {
+          assertBuildClosure (buildExsecutorPackage {
             pname = "exsc";
             version = "0.0.0-unreleased"; # no versioning scheme exists yet; honest placeholder
             src = ./compiler/x86_64;
@@ -186,7 +195,7 @@
               license = nixpkgsLib.licenses.gpl3Plus;
               platforms = [ system ];
             };
-          }
+          })
         else
           pkgs.stdenvNoCC.mkDerivation {
             name = "exsc-not-yet-written";
@@ -368,6 +377,13 @@
           pkgs.fasmg
           pkgs.python3 # verification-only: design probes (spec §18), never on the build closure
           pkgs.binutils # verification-only: readelf/objdump, needed by `make audit`
+          # verification-only: the C backend's differential test compiles
+          # emitted C with both, at -O0 and -O2 (docs/design/c-backend.md D6).
+          # exsc never invokes a C compiler (spec §12: execve is on no
+          # allowlist) and neither is on any package's build closure -- the
+          # assertion beside exscPkg below is what keeps that true.
+          pkgs.gcc
+          pkgs.clang
           pkgs.gnumake
           pkgs.file
         ];
@@ -638,6 +654,12 @@
           nativeBuildInputs = [
             fasmgPkg pkgs.bash pkgs.python3 pkgs.binutils
             pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.diffutils
+            # verification-only, as python3 and binutils above are: the C
+            # backend's differential phase (docs/design/c-backend.md D6)
+            # compiles emitted C under both compilers at -O0 and -O2. A
+            # missing one is a phase failure, not a skip, so they are check
+            # inputs and not optional.
+            pkgs.gcc pkgs.clang
           ];
           dontUnpack = true;
           buildCommand = ''

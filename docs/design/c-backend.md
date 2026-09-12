@@ -244,32 +244,77 @@ in C1 anyway**, because ADR 0012 made that the backend's first job:
 translation unit under `prototypes/` (verification-only, never shipped)
 holding every incantation above and in ADR 0012, compiled by `gcc` and
 `clang` at `-O0` and `-O2` with `-fsanitize=undefined
--fno-sanitize-recover=all`, and a table in section 8 with one row per
-incantation and four cells per row, each cell "held", "rejected" or "no
-effect" with the compiler version. The rows, all `[UNTESTED]`:
+-fno-sanitize-recover=all`, and a table with one row per incantation, each
+cell "held", "rejected" or "no effect" with the compiler version.
 
-| incantation | what it must do |
-|---|---|
-| `#if defined(__FAST_MATH__)` | fire under `-ffast-math`, not otherwise |
-| `#if __FINITE_MATH_ONLY__` | fire under `-ffinite-math-only`, not otherwise, and be defined at all |
-| `#pragma STDC FP_CONTRACT OFF` | prevent `a*b+c` contracting under `-O2 -ffp-contract=fast`; GCC is believed to ignore it (ADR 0012 open item) |
-| `#pragma GCC optimize("fp-contract=off")` | the belt to that brace, accepted per translation unit |
-| `_Static_assert((-1 & 3) == 3, …)` | compile under `-std=c11 -pedantic` |
-| `_Static_assert(sizeof(void *) == 4, …)` | fire under `-m32` / o64, pass under lp64 |
-| `_Alignas(16) unsigned char s[n];` on a local | accepted, and `&s[0]` 16-aligned at `-O0` and `-O2` |
-| `_Noreturn void f(unsigned);` | accepted under `-std=c11`, `-std=gnu11` and `-std=gnu2x` (Kiln's two dialects) |
-| `__builtin_memcpy(d, s, 144000)` | compile without pulling in `<string.h>`; note whether a `memcpy` symbol is referenced at `-Os` (Kiln links newlib, so it resolves; recorded, not forbidden) |
-| `__has_builtin(__builtin_mul_overflow)` | true on both; the helper's fast path taken |
-| the `exsi_*` helpers of section 3, each | no UBSan report on the fixtures of `tests/ir/` that exercise them |
-| `(unsigned char *)((uintptr_t)p + (uintptr_t)i * s)` | no `-fsanitize=pointer-overflow` report when in bounds |
-| `fesetround(FE_UPWARD)` then a constant-folded `1.0/3.0` | whether the fold respects the mode (ADR 0012 open item; floats are D8's, the measurement is cheap) |
-| `_mm_getcsr()` FTZ/DAZ bits on x86-64; `__builtin_aarch64_get_fpcr` or inline `mrs` on aarch64 | readable at process start (ADR 0012 item 2) |
+**That probe was written and run.** It is
+`prototypes/cprologue/{incantations.c,fpcontract.c,run.sh}`, and
+`nix develop . --command prototypes/cprologue/run.sh` reproduces the table
+below (`pass=22 fail=0` on the assertions the script itself checks; the
+fp-contract and fenv/MXCSR rows are readings, not assertions). Measured
+**2026-09-12** on `x86_64-linux` under **gcc 15.3.0** and **clang 21.1.8**
+(the versions nixpkgs pins in this flake — the design said gcc 14, and
+`nix develop` gives 15.3.0; recorded as measured). Base flags
+`-std=c11 -Wall -Wextra -pedantic -fsanitize=undefined
+-fno-sanitize-recover=all` at `-O0` and `-O2`.
+
+| incantation | what it must do | gcc 15.3.0 | clang 21.1.8 |
+|---|---|---|---|
+| `#if defined(__FAST_MATH__)` | fire under `-ffast-math`, not otherwise | **held** (`-O0`/`-O2` clean; `#error` under `-ffast-math`) | **held** |
+| `#if __FINITE_MATH_ONLY__` | fire under `-ffinite-math-only`, not otherwise, **and be defined at all** | **held** — defined, `0` by default, `1` under the flag | **held** — same |
+| `#pragma STDC FP_CONTRACT OFF` | prevent `a*b+c` contracting under `-O2 -ffp-contract=fast` | **no effect** — and GCC says so itself: `warning: ignoring '#pragma STDC FP_CONTRACT' [-Wunknown-pragmas]`. `vfmadd` still emitted, witness contracts | **no effect** — accepted *silently* (no diagnostic at all, even under `-Wunknown-pragmas`) and `vfmadd` still emitted |
+| `#pragma GCC optimize("fp-contract=off")` | the belt to that brace, accepted per translation unit | **held** — accepted per TU, no `vfmadd`, witness does not contract | **no effect** — `#pragma GCC optimize` is not implemented by Clang; `#pragma clang fp contract(off)`, Clang's own spelling, was measured too and *also* fails to override a command-line `-ffp-contract=fast`, both at file scope and at the top of the function body |
+| `_Static_assert((-1 & 3) == 3, …)` | compile under `-std=c11 -pedantic` | **held** | **held** |
+| `_Static_assert(sizeof(void *) == 4, …)` | fire under o64, pass under lp64 | **held** — fires (compile error) on this lp64 host, as it must | **held** |
+| `_Alignas(16) unsigned char s[n];` on a local | accepted, `&s[0]` 16-aligned at `-O0` and `-O2` | **held** at both levels | **held** at both levels |
+| `_Noreturn void f(unsigned);` | accepted under `-std=c11`, `-std=gnu11`, `-std=gnu2x` | **held** under all three, no `-Wall -Wextra` diagnostic | **held** under all three |
+| `__builtin_memcpy(d, s, 144000)` | compile without `<string.h>`; note whether `memcpy` is referenced at `-Os` | **held**; at `-Os` `nm -u` shows **no** `memcpy` reference (inlined) | **held**; at `-Os` `memcpy` **is** referenced — recorded, not forbidden (newlib resolves it; Kiln's gate forbids libm and `malloc`, not `memcpy`) |
+| `__has_builtin(__builtin_mul_overflow)` | true on both | **held** — `__has_builtin` defined, and `add`/`sub`/`mul_overflow` and `__builtin_memcpy` all report available | **held** |
+| the `exsi_*` helpers of D4, each | no UBSan report | **held** — `checks=63 aborts=19 fails=0` (63 assertions over every helper, 19 of them trapping edges), clean at `-O0` and `-O2` | **held** — identical figures at both |
+| `(unsigned char *)((uintptr_t)p + (uintptr_t)i * s)` | no `-fsanitize=pointer-overflow` report in bounds | **held** — `-fsanitize=undefined,pointer-overflow` accepted, no report | **held** |
+| `fesetround(FE_UPWARD)` then a folded `1.0/3.0` | whether the fold respects the mode | **no effect** — the fold uses round-to-nearest (`0.33333333333333331483`) while the runtime division under `FE_UPWARD` gives `…37034`; the fold ignores the dynamic mode | **no effect** — identical figures |
+| `_mm_getcsr()` FTZ/DAZ | readable at process start | **held** — `0x00001fa0`, FTZ=0 DAZ=0 at start | **held** — identical |
+
+**What the measurement changes.** Three cells were not what was written
+from memory, and the first two change the design:
+
+1. **Row 3 is dead.** `#pragma STDC FP_CONTRACT OFF` does nothing in either
+   compiler — ADR 0012 suspected GCC and was right, and Clang is no better,
+   which ADR 0012 did not suspect. It must not be emitted as if it worked.
+   When the first float opcode is lowered the prologue emits row 4's GCC
+   pragma **under `#if defined(__GNUC__) && !defined(__clang__)`** and, for
+   Clang, has nothing that works from inside the source: the only thing
+   measured to prevent contraction under Clang is the command-line flag
+   `-ffp-contract=off`, which is exactly the leak spec §9.3 forbids. So the
+   honest lowering for Clang is rung (d) — `exsc` refuses a module declaring
+   `contractio explicita` when the pinned toolchain is Clang — or rung (b),
+   an `#error` on Clang when such a module is compiled. Neither is written
+   now: no float opcode is lowered (D8), so nothing depends on it yet. It is
+   recorded here as **finding 12** so the later milestone starts from the
+   measurement instead of the memory. The `#pragma STDC` line may still be
+   emitted as documentation of intent, but never counted as a defence.
+2. **Row 2's correction was right** (finding 2): `__FINITE_MATH_ONLY__` is
+   always defined, so ADR 0012's `#ifdef` test would have fired on every
+   build. The prologue's value test is correct, and the design's suspicion
+   is now a measurement.
+3. **`memcpy` at `-Os` differs between the two compilers** — GCC inlines a
+   144,000-byte `__builtin_memcpy`, Clang emits a call. Open question 6 is
+   therefore already half-answered for the host compiler: a `copy` that big
+   *does* become a call under at least one compiler of the family, so Kiln's
+   link must admit `memcpy`. The `mips64-elf-gcc -Os` half stays
+   `[UNTESTED]` until C4.
+
+Everything else in the table held exactly as written, including the two
+`_Static_assert`s the design flagged as suspect-by-construction and the
+`index` idiom under `-fsanitize=pointer-overflow` (open question 4: **no
+report**, so the row keeps the idiom and the harness needs no
+`-fno-sanitize=pointer-overflow`).
 
 Rejected: `-std=c99`. `_Static_assert`, `_Alignas` and `_Noreturn` are C11,
 and each replaces a GCC attribute that would otherwise be on the extension
 list; both consumers' dialects (`gnu11`, `gnu2x`) include them.
 
-Retired by: C1's measurement table.
+Retired by: C1's measurement table — **retired**, above.
 
 ### D4 One lowering per opcode, on one carrier type
 
@@ -1047,6 +1092,27 @@ Numbered; each names the document and the sentence.
     backend defines overlapping `copy`, the lowering emits none, and the
     differential test cannot compare an undefined case; recorded so no one
     later "fixes" one side to match the other.
+12. **Neither fp-contract pragma is a defence under Clang, and the ISO one
+    is a defence under neither.** Measured, D3's table: `#pragma STDC
+    FP_CONTRACT OFF` is ignored by gcc 15.3.0 (which says so:
+    `-Wunknown-pragmas`) and silently ignored by clang 21.1.8; `#pragma GCC
+    optimize("fp-contract=off")` works under GCC and is not implemented by
+    Clang; `#pragma clang fp contract(off)` does not override a command-line
+    `-ffp-contract=fast` at file scope or at function scope. So ADR 0012's
+    row-1 defence for problem 1 holds for GCC only, and for Clang the
+    emitted source has **no** way to forbid contraction — the only measured
+    remedy is the caller's `-ffp-contract=off`, which is the leak spec §9.3
+    exists to remove. Nothing depends on this yet (no float opcode is
+    lowered, D8). When one is, the choice is rung (b) — an `#error` under
+    Clang for a module declaring `contractio explicita` — or rung (d), and
+    it is a decision, not a detail. ADR 0012's Open item on this is
+    answered and its answer is worse than it feared.
+13. **`__builtin_memcpy` of 144,000 bytes is inlined by GCC at `-Os` and
+    becomes a `memcpy` call under Clang.** Open question 6's host half,
+    measured; the `mips64-elf-gcc` half is C4's. The consequence is that
+    Kiln's link must admit `memcpy` (newlib provides it) — `nm -u` is not
+    guaranteed to list only `exsrt_abortus`, and D7's gate already allows
+    for it.
 
 ## 9. What retires each marker
 
