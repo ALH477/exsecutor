@@ -1,21 +1,20 @@
 # 0014 — The HydraModem receiver: certified by decode success against HydraModem's own verdicts, not by internal bit identity
 
-**Status:** Accepted, 2026-09-11. **R2 implemented and running; R3 not.**
-`docs/design/receptor.md` is the design; a scratch integer model of it
-decodes the three vendored WAVs, 137 further reference renders, and every
-noise- and frequency-impaired input HydraModem's receiver decodes (177
-inputs, section 11 there). Since R2 the Exsecutor program exists:
+**Status:** Accepted, 2026-09-11. **R2 and R3 both implemented and running.**
+`docs/design/receptor.md` is the design. The Exsecutor program is
 `examples/hydramodem/{receptor,recipe,circuitus}.exsc`, certified by
 `tests/programs/receptio_*` — the three WAVs decode, 140 words round-trip,
 and all nine mutants of section 6 behave as predicted (section 12 there).
-The reader and the array literal ran before it. Decision 1's **impaired
-set** and decision 2's `vendor/hydramodem-rx/` remain `[UNTESTED]` and are
-R3's, which is in progress in a separate change and not claimed here.
-Decision 1's `Praefixa` did not survive the emitter at R2 — four arrays
-instead, receptor.md finding 20 — which changes no verdict and no bound;
-the emitter has since been fixed (`9ede8bf`, `tests/programs/copia_magna/`)
-and the receiver keeps its four arrays. After R2, M5 (`76ca763`) made the
-transmitter's table a literal with every receiver certificate byte-identical.
+Decision 1's **impaired set** and decision 2's `vendor/hydramodem-rx/` are
+no longer `[UNTESTED]`: seventy vectors are vendored with HydraModem's own
+verdict on each, `mollia` carries D10's timing loop, and **the receiver
+decodes all 62 the reference decodes and never writes a frame that is not
+the input's** (section 13 there, with the tallies, three new mutants and
+findings 24-29). After R2, M5 (`76ca763`) made the transmitter's table a
+literal with every receiver certificate byte-identical. Decision 1's `Praefixa` did not survive the emitter at R2 —
+four arrays instead, receptor.md finding 20 — which changes no verdict and no
+bound; the emitter defect has since been fixed and the struct now compiles
+(finding 28), and converting the receiver to it is a named follow-up.
 **Relates to:** ADR 0011 (the first external certificate), ADR 0013 (the
 transmitter, the second); spec §3.1, §4.6, §5.4, §6.3, §8.6, §11, §12;
 `vendor/hydramodem-tx/`; the proposed `vendor/hydramodem-rx/`.
@@ -77,13 +76,15 @@ rather than pretending the certificate is stronger than it is.
 **2. The impaired set is vendored with the reference's verdicts, in
 `vendor/hydramodem-rx/`**, on `vendor/hydramodem-tx/`'s provenance
 discipline (program output, digests under `LC_ALL=C`, the commit, the
-recipe; no source; not relicensed, no exception applied). Thirty-five
-files, 1.33 MB: white noise at 6, 0 and −6 dB on three frames and two
-seeds (the reference decodes all), at −9 dB (it decodes none — the
-receiver must not write a frame), sample-clock offsets to ±3000 ppm,
-frequency offsets to +300 Hz (the reference fails +300 by its timing
-loop, measured, and the design's R2 model decodes it — the certificate
-is one-directional and allows that). The generator is integer arithmetic
+recipe; no source; not relicensed, no exception applied). **Seventy files,
+2.67 MB** where this ADR planned thirty-five: white noise at +12, +6, 0, −3
+and −6 dB on three frames and two seeds each (the reference decodes all 30),
+at −12 dB (it decodes none — the receiver must not write a frame),
+sample-clock offsets to ±3000 ppm on all three frames, frequency offsets to
+±300 Hz (the reference fails both by its timing loop, measured, and this
+receiver decodes +300 — the certificate is one-directional and allows that).
+The refusal level is −12 dB and not −9 because −9 dB is **not unanimous**:
+the reference decoded one of six there, which is its own cliff. The generator is integer arithmetic
 throughout — a xorshift64 and an Irwin–Hall sum for noise, integer
 interpolation for the clock — so every byte is re-derivable from the
 three clean WAVs and the integers in the table, with no `libm` in the
@@ -140,11 +141,19 @@ ablative it asks for. The lexicon pass is disabled; the question is
 
 **Negative**
 
-- Four blind spots the certificate states and cannot close at R2; two of
-  them (the plateau centre, the threshold) are predicted to become visible
-  under R3's clock-offset vectors and one (the table one-off) never.
-- A fourth vendored tree, 1.33 MB, to digest-check and to re-vendor when
-  upstream moves. Pinned to the same commit as the transmitter's.
+- Four blind spots the certificate states and cannot close at R2. The
+  prediction that two of them would become visible under R3's clock-offset
+  vectors is **falsified**: the plateau-edge mutant decodes 62 of 62 with the
+  timing loop and 55 of 62 without — exactly the unmutated R2 receiver's own
+  score (receptor.md finding 26). All four stand. R3 added one the design did
+  not have: the EMA weight **is** visible (finding 24), and the transition
+  gate is visible only on the *clean* channel (finding 25).
+- A fourth vendored tree, 2.67 MB, to digest-check and to re-vendor when
+  upstream moves. Pinned to the same commit as the transmitter's, with its
+  own flake check (`rx-vendor-integrity`).
+- Seventy new test directories, one per vector, and 22.5 s on `tests/run.sh`
+  (measured: 1 m 49 s to 2 m 12 s). A per-file verdict is what this
+  certificate is, and one directory per file is what "per file" means.
 - ~~Nothing runs.~~ The reader, the literal, an index store through a field,
   `i64` multiplication from source, the two casts of finding 13 and the
   harness's `stdin=` key all run as of R2. ~~**The 640 KB struct of prefix
@@ -152,13 +161,16 @@ ablative it asks for. The lexicon pass is disabled; the question is
   `copy`d and the emitter unrolled a `copy n` into n/8 instructions, so the
   compilation arena trapped (receptor.md finding 20, with the sweep). Four
   arrays passed one per parameter cost nothing — no call needs more than six
-  words — and the finding was reported for the backend's owner rather than
-  worked around in the emitter. Fixed there since (`9ede8bf`: a `copy`
-  above 128 bytes is a loop; `tests/programs/copia_magna/` is the struct
-  that trapped, now exit 0). The receiver still uses the four arrays.
-- R3's timing loop wants a signed division by a power of two, which is a
-  signed shift (`[OPEN]`) or a sign-and-magnitude workaround; decided at
-  R3 with the vectors, not here.
+  words — and the finding is reported for the backend's owner rather than
+  worked around in the emitter. **Fixed since, by `9ede8bf`**: `Praefixa`
+  compiles and travels as one word (finding 28). R3's timing loop, which
+  needs the sample count as well as the origin, therefore carries `o` and `n`
+  packed in one `mensura` — a workaround the struct would retire, and the
+  conversion is a named follow-up rather than something smuggled into R3.
+- R3's timing loop wants a signed division by a power of two. **Decided with
+  the vectors, as this said it would be: sign-and-magnitude on `u64`, and the
+  signed shift stays `[OPEN]`** — all 24 clock-offset vectors decode without
+  it, which is evidence against needing it rather than for.
 
 **Neutral**
 
@@ -172,15 +184,20 @@ ablative it asks for. The lexicon pass is disabled; the question is
 
 ## Open
 
-- ~~**Everything is unimplemented.**~~ R2's five test directories, the
-  prelude fixture and the array-literal fixtures exist and run;
-  `vendor/hydramodem-rx/` and everything R3 does not.
+- ~~**Everything is unimplemented.**~~ ~~`vendor/hydramodem-rx/` and
+  everything R3 does not.~~ R2's five test directories, the prelude fixture,
+  the array-literal fixtures, the seventy `receptio_vec_*` directories and
+  the timing loop all exist and run.
 - **The soft-metric argument** (`receptor.md` D7) is an argument; the
   sweep found no input on which the difference and the ratio disagree,
   which is consistent with it and not a test of it.
-- **Whether decode success can ever see the plateau refinement** — the
-  design predicts the clock-offset vectors will, and records it as a
-  prediction.
+- **Whether decode success can ever see the plateau refinement.** The design
+  predicted the clock-offset vectors would; they do not, and the reason is
+  the loop itself — starting 21 samples early, it rails the offset to +2 and
+  catches up in about twenty symbols (receptor.md finding 26). No candidate
+  vector is in sight, and the blind spot is now expected to be permanent.
+- **Whether 1/4 is the right EMA weight**, as opposed to one inside the set
+  that passes. 1/2 loses four vectors; nothing here says 1/4 is best.
 - **The names** (decision 4): a rule for associated constructors, or
   different names, when `lexicon.norma` exists.
 - **Other profiles** (M4): sketched in `receptor.md` section 9, with what

@@ -64,8 +64,12 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-166}"
 # a `u64:maior` field read, milestone M6 made the read compile, and the
 # positive test of what it compiles to is tests/unit/lwr_transitus.asm
 # (`load u64 %0 0 maior`), because the emitter cannot run a `maior` load yet.
+# It went from 22 to 92 when the receiver's R3 milestone added one directory
+# per vendored impaired vector (receptio_vec_*, seventy of them): the
+# certificate of ADR 0014 decision 1 is a per-file verdict, and seventy
+# directories is what "per file" means here.
 IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-49}"
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-22}"
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-92}"
 
 PASS=0
 FAIL=0

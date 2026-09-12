@@ -1,0 +1,27 @@
+# One of the seventy impaired vectors of vendor/hydramodem-rx/ (ADR 0014
+# decision 2; docs/design/receptor.md D11). stdin is the WAV; the expectation
+# is HydraModem's OWN receiver's verdict on the same bytes, recorded in
+# vendor/hydramodem-rx/verdicta.tsv when the tree was vendored and not
+# re-derived here.
+#
+# The loopback frame rendered with both tones displaced by +300 Hz, by the
+# reference's own DSP (frame_tx_offset.c, printed in PROVENANCE.md;
+# byte-identical to frame_tx at zero displacement).
+#
+# The reference REFUSES it (exit 1, nothing printed)
+# and this receiver DOES, to the correct frame. That is the one-directional
+# case ADR 0014 decision 1 allows and docs/design/receptor.md finding 7
+# predicted: the reference's silence is not a verdict about the frame, and
+# acquisition succeeds here (its sync_score is 16 of 16) while its own timing
+# loop, reacting to a frequency offset it was not designed for, walks the grid
+# off the symbols and fails by CRC. RECORDED, NOT CERTIFIED: the expectation
+# below is what this receiver was observed to do, and a future change that
+# turned it into a refusal would be a change to report, not a defect -- the
+# reference refuses it too.
+#
+# This directory is generated, one per vector, and its verdict is the
+# certificate ADR 0014 decision 1 states: decode everything the reference
+# decodes, and never write a frame that is not the input's. A refusal where the
+# reference also refused is fine; a refusal where it succeeded is a failure of
+# this certificate, and a WRONG frame is a failure of the stronger half.
+TEST: expect-exit=0 stdin=vendor/hydramodem-rx/freq/loopback-p300hz.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/receptor.exsc,examples/hydramodem/recipe.exsc

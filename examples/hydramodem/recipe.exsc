@@ -107,7 +107,10 @@ publica functio initium(m: Mundus) -> u8 {
     si o eq n {
         redde 1;
     }
-    firma d = decodifica(mollia(i0, q0, i1, q1, o));
+    // `mollia`'s timing loop needs `n` as well as `o` and the emitter passes
+    // six argument words, the hidden result pointer included, so the two
+    // indices travel in one (receptor.md D10; both are under 2^21).
+    firma d = decodifica(mollia(i0, q0, i1, q1, (o sursum 32) + n));
     si residuum(d) ne 0 {
         redde 2;
     }

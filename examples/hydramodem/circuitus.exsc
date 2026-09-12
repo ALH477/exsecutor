@@ -78,7 +78,9 @@ functio circui(w: acies<u8, 17>, t: acies<i64, 48>) -> u8 {
     si o eq 19008 {
         redde 1;
     }
-    firma d = decodifica(mollia(i0, q0, i1, q1, o));
+    // o and n in one word: the emitter passes six argument words, the hidden
+    // result pointer included, and the timing loop needs both (receptor.md D10).
+    firma d = decodifica(mollia(i0, q0, i1, q1, (o sursum 32) + 19008));
     si residuum(d) ne 0 {
         redde 1;
     }

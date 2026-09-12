@@ -1,20 +1,18 @@
 # The HydraModem receiver — design for the modem program, R2 and R3 (modem.md's M3)
 
-Status: **R2 is implemented and runs; R3 is not.** `examples/hydramodem/
+Status: **R2 and R3 are both implemented and run.** `examples/hydramodem/
 receptor.exsc`, `recipe.exsc` and `circuitus.exsc` are compiled, run and
-tested by `tests/programs/receptio_{loopback,exemplum,vacuum,caput,
-circuitus}/`: the three vendored WAVs decode to their frames, 140 words
-round-trip through the transmitter's own `sona`, and all nine mutants of
-section 6 behave as predicted. Section 12 records what was measured on the
-Exsecutor program; **D3's `Praefixa` struct is the one decision that did not
-survive contact with the emitter** (finding 20), and one figure of section 11
-does not reproduce (finding 21). Finding 20's emitter defect was fixed after
-R2 (`9ede8bf`: a `copy` above 128 bytes is a loop; `tests/programs/
-copia_magna/` is the struct that used to crash), and R2's receiver was **not**
-rewritten to use `Praefixa` — it still passes four arrays, and nothing about
-its verdicts changed. Everything R3 — the timing loop, the impaired vectors,
-`vendor/hydramodem-rx/` — is design only as of this revision; R3 is being
-implemented in a separate change and nothing of it is claimed here.
+tested by `tests/programs/receptio_*`: the three vendored WAVs decode to their
+frames, 140 words round-trip through the transmitter's own `sona`, all nine
+mutants of section 6 behave as predicted, and — R3 — the timing loop of D10 is
+in `mollia` and **the receiver decodes all 62 of the 70 vendored impaired
+vectors HydraModem's own receiver decodes, and never writes a frame that is
+not the input's** (`vendor/hydramodem-rx/`, one `receptio_vec_*` directory per
+vector). Section 12 records what was measured on the Exsecutor program at R2
+and section 13 what R3 measured; **D3's `Praefixa` struct is the one decision
+that did not survive contact with the emitter** (finding 20 — whose compiler
+half has since been fixed, finding 28), and one figure of section 11 does not
+reproduce (finding 21).
 
 Before that, what had run was a scratch integer model of exactly this design
 (section 11: Python, never shipped,
@@ -671,7 +669,7 @@ Bytes 0–16 are written on success, exit 0.
 −9 dB vectors, on which the reference and the model reject and the
 receiver must not write.
 
-### D10 Timing tracking is R3; the loop's constants become powers of two
+### D10 Timing tracking is R3; the loop's constants become powers of two — **implemented**
 
 R2 samples every data symbol at `best_o + 40·48 + 48 j`, with no loop.
 On a clean channel and on every AWGN vector the model decodes without one
@@ -695,7 +693,43 @@ vectors in hand; modem.md §9's prediction that the receiver "possibly"
 needs signed shifts narrows to: R2 does not, R3's loop does or works
 around them.
 
-**Retired by:** R3's clock-offset vectors (D11).
+**What R3 built, and the four things the design did not say.** The loop is in
+`mollia`, `positio` and `vagatio` being Q8 fixed point in `i64` — 256ths of a
+sample — and the five offsets, the argmax, the cross-multiplied gate and the
+two power-of-two weights exactly as above. Four things had to be decided that
+this text left open, and each is a difference from the reference worth naming:
+
+1. **The signed shift is not taken, and stays `[OPEN]` with this as evidence
+   against needing it.** Both divisions are the sign-and-magnitude idiom
+   `mollia`'s own per-frame scaling already uses: the magnitude cast to `u64`,
+   `deorsum`, the sign put back. That truncates toward zero where a signed
+   shift would floor toward −∞, and toward zero is the symmetric choice for an
+   EMA. All eight clock-offset displacements on all three frames decode, so
+   section 9's condition for leaving the shift `[OPEN]` is met — the mirror of
+   entry 23's and/or, as it said.
+2. **`a0` is `lround(pos)`, not `(long)pos`** — `(positio + 128) deorsum 8` on
+   the `u64` reinterpretation, `positio` never being negative. The reference
+   rounds (`hydra_modem.c:301`) and truncating would bias the grid half a
+   sample early at every symbol.
+3. **`o` and `n` travel in one `mensura`**, `on = (o sursum 32) + n`. The loop
+   needs the sample count — a window must not run past the samples that were
+   read — and `mollia` already spends four argument words on the arrays and one
+   on the hidden result pointer. The emitter's limit is six and says so:
+   `bfa: emitter: param index > 5 (Tier 1's 6-argument limit)`, measured. Both
+   indices are under 2²¹ by D3's capacity, so the packing is exact. Finding 12's
+   hidden pointer, one milestone later — and finding 28 records that D3's
+   `Praefixa`, which would make the packing unnecessary, now compiles.
+4. **A window past `n` is clamped, where the reference fails.**
+   `hydra_modem.c:322` returns `HYDRA_ERR_NO_SYNC`; a function returning 316
+   soft bits has no way to say that, so the window is pulled back to the last
+   one wholly inside the input. Measured not to bind anywhere: an instrumented
+   build reports the largest window the loop asks for on each of the 70 vectors
+   and the three clean WAVs, and the tightest is **938 samples clear of `n`**.
+   The same reason finding 23 gives one loop up — past `n` the prefix arrays
+   hold zeros no sample wrote.
+
+**Retired by:** R3's clock-offset vectors (D11) — 24 of 24, where the same
+receiver without the loop decodes 17 of 24 (section 13).
 
 ### D11 Certificates: R2 in-process and from the vendored WAVs; R3 against HydraModem's verdicts on vendored impaired WAVs
 
@@ -763,27 +797,47 @@ every byte** from the three vendored WAVs and the numbers in the table:
   in `PROVENANCE.md` with its digest, as `extrahe.py` is. At `Δf = 0` it
   reproduces the vendored WAV byte for byte (measured).
 
-**The set and its budget.** From the three vendored frames: AWGN at 6, 0
-and −6 dB, two seeds each, on all three frames (18 files; the reference
-decodes every one); AWGN at −9 dB, one seed, all three frames (3 files;
-the reference rejects every one — the receiver must not write a frame);
-clock offsets ±500, ±1000, ±2000, ±3000 ppm on the loopback frame (8
-files; the reference decodes all, RECEIVER.md's "≥ ±3000"); frequency
-offsets −200, −100, +100, +200, +250, +300 Hz on the loopback frame (6
-files; the reference decodes all but +300). **35 files, 1.33 MB** at
-38,060 bytes each (the clock files a few bytes more or less), under the
-2 MB budget; plus `PROVENANCE.md` and a `verdicta.tsv` (file, exit
-status, hex) the tests are generated from — one `tests/programs/
-hydramodem_rx_<vector>/` per file, `stdin=`, `expect-exit=0` with the
-frame as `expected.out` where the reference decoded, and where it
-rejected `expect-exit=1` or `2` with no `expected.out` (the harness
-refuses output where none is expected, which is the "never a wrong
-frame" half). Every point is **unanimous** — at each impairment level the
-reference decodes all seeds or none — so the certificate never sits on
-the reference's own cliff, where a seed-by-seed difference between two
-correct receivers is expected and would certify nothing. The cliff
-itself, between −6 and −9 dB, is reported in section 11 as a measurement
-and is not part of the certificate.
+**The set and its budget — as planned, then as built.** The plan was 35 files,
+1.33 MB: AWGN at 6, 0 and −6 dB, two seeds each, on all three frames; AWGN at
+−9 dB, one seed; clock offsets ±500, ±1000, ±2000, ±3000 ppm on the loopback
+frame; frequency offsets −200, −100, +100, +200, +250, +300 Hz on it.
+
+**What was vendored is 70 files, 2,668,388 bytes**, and it differs from the
+plan in three ways, each for a reason measurement supplied:
+
+- **Every impairment is on all three frames** where the plan put the clock and
+  frequency rows on the loopback frame alone. The all-zero-body frame is the
+  one whose symbol stream has the longest same-tone runs, which is exactly
+  where the timing loop's transition gate coasts, so it is the frame a clock
+  offset is hardest on; leaving it out would have left the gate untested where
+  it matters. (The frequency offsets stay on the loopback frame: they cost a
+  rendering run of the reference's own DSP per file, and the reference's
+  failure mode at ±300 Hz is its timing loop, which is frame-independent —
+  measured at 6 displacements in section 11 and at 10 here.)
+- **Six AWGN levels, +12 to −6 dB, and the refusal level is −12 dB, not −9.**
+  −9 dB is **not unanimous**: the reference decoded one of six there (the
+  all-zero frame at one seed) and refused five. Every level must be unanimous
+  or the certificate sits on the reference's own cliff, where two correct
+  receivers are expected to differ seed by seed and agreement would certify
+  nothing — so the refusal level moved to −12 dB, where the reference refuses
+  6 of 6 and, measured over 18 more files, 0 of 18. The cliff is reported in
+  `vendor/hydramodem-rx/PROVENANCE.md` and section 13 as a measurement: −7 dB
+  16/18, −8 dB 3/18, −9 dB 0/18.
+- **Both signs of the frequency offset**, ±50 to ±300 Hz. The reference fails
+  at −300 as well as +300, at 50 Hz granularity, which the plan did not know.
+
+The layout is `awgn/`, `clock/`, `freq/` under `vendor/hydramodem-rx/`, with
+`PROVENANCE.md` and `verdicta.tsv` (file, exit status, hex) beside them, and
+one `tests/programs/receptio_vec_<kind>_<name>/` per file: `stdin=`,
+`expect-exit=0` with the frame as `expected.out` where the reference decoded,
+and where it refused, this receiver's own status with **no** `expected.out` —
+the harness refuses output where none is expected, which is the "never a wrong
+frame" half. 2.67 MB against the 3 MB this milestone was given; the
+alternative, storing the recipe and the digests and regenerating at test time,
+is deterministic and takes 5.7 s but would put a Python interpreter and the
+generator on `tests/run.sh`'s path, which needs neither today, and would make
+every program test depend on a generator rather than on a file git can
+content-address.
 
 Rejected: generating impaired inputs at test time from the clean WAVs (the
 verdicts are about *bytes*, and a generator in the harness is a second
@@ -793,8 +847,8 @@ frequency offsets by a `double` mixer (the image, and the `libm`); the
 reference's *diagnostics* (origin, score, ppm) as part of the certificate
 (internal state, which ADR 0014 declines to certify).
 
-**Retired by:** the tests named above, once `vendor/hydramodem-rx/` is
-vendored and the receiver runs.
+**Retired by:** the tests named above — **70 directories, all green**, and the
+tallies in section 13.
 
 ### D12 Where the code lives
 
@@ -907,10 +961,32 @@ loop "tracks drift, not a static offset"), and a threshold of 36 is
 visible only on a vector whose reference score is exactly 36 — none is in
 the set, and none is sought.
 
-**R3 must pass:** the 35 vectors of D11, each against its recorded
-verdict. And, run for the record and not certified: the AWGN cliff, at
-−7 and −8 dB with six seeds each on one frame, reported as counts for the
-reference and for the receiver side by side.
+**R3 must pass:** the vectors of D11, each against its recorded verdict. **It
+does: 70 of 70 directories, 62 decodes of the reference's 62, no wrong frame**
+(section 13). And, run for the record and not certified: the AWGN cliff, at
+−7, −8 and −9 dB with six seeds each on all three frames, reported for the
+reference.
+
+**R3's own mutants**, three, on the timing loop, each applied mechanically to
+a temporary copy of `examples/hydramodem/` and both drivers rebuilt.
+Predictions written before the runs; the last two columns are what happened.
+
+| mutant | predicted | observed, the 70 vectors | observed, clean + loopback |
+|---|---|---|---|
+| EMA weight 1/2 for 1/4 (`deorsum 1` for `deorsum 2`) | probably invisible: the gate fires only at transitions and a faster EMA still tracks the mean | **58 of 62** — loses `clock/loopback-p3000ppm`, `clock/vacuum-m3000ppm`, `clock/vacuum-p1000ppm`, `freq/loopback-m200hz`, all by CRC | 3/3 WAVs, loopback 140/140 |
+| track direction inverted (`pos += 48 − drift/2`) | fails the clock vectors — positive feedback, the grid runs away; clean unaffected because drift stays 0 | **36 of 62** — loses 15 of 24 clock vectors *and* 9 AWGN ones, all by CRC | 3/3 WAVs, loopback 140/140 |
+| the transition gate removed (always update) | fails the clean WAVs and nearly everything: a flat profile rails the argmax to the search edge | **62 of 62 — passes every vector** | **fails**: exit 2 on all three WAVs, loopback 140 × 1 |
+
+The first prediction was wrong and the third was half wrong, and both are
+findings: 24 and 25.
+
+**And the prediction R3 was meant to settle, settled the other way.** Finding 6
+predicted that the plateau-edge mutant — the plateau's first origin for its
+centre, 21 samples early — "should fail on clock-offset vectors". It does not:
+applied to the R3 receiver it decodes **62 of 62**, and applied to the R2
+receiver (no timing loop) it decodes **55 of 62**, losing exactly the seven the
+unmutated R2 receiver loses and no others. The mutant is invisible to this
+certificate with the loop and without it. Finding 26.
 
 ## 7. Worked example, as designed — superseded by `examples/hydramodem/`
 
@@ -1344,22 +1420,87 @@ The four below were found by implementing R2 and are numbered after it.
     has been observed; it is a difference from the reference and is recorded
     as one.
 
+The six below were found by implementing R3 and are numbered after it.
+
+24. **The EMA weight is visible to the certificate; the design expected it not
+    to be.** D10 called 1/4 for the reference's 0.20 "a documented departure,
+    admissible because the certificate is decode success", which is true, and
+    the implicit expectation was that 1/2 would be equally admissible. It is
+    not: the 1/2 mutant loses four vectors — three clock offsets and, oddly,
+    a −200 Hz frequency offset — all by CRC, with the clean channel and the
+    140-word loopback untouched. So the constant is not free, and the
+    certificate can see it where it cannot see a table entry or a threshold at
+    the margin (section 6's four negative controls). 1/4 is *not* thereby shown
+    optimal; it is shown to be inside the set that passes and 1/2 outside it.
+25. **The transition gate's certificate is the CLEAN channel, not the impaired
+    vectors — the opposite of what it was written for.** Removing it fails all
+    three clean WAVs (exit 2) and all 140 loopback words, and passes **every
+    one of the 70 impaired vectors**. The reason is exact ties: on a noiseless
+    same-tone run the total energy at the five offsets is *equal to the last
+    integer*, the argmax's strict `>` keeps the first, and the first is −2, so
+    the grid walks backwards one sample a symbol. Add noise and the profile is
+    never exactly flat, the argmax scatters symmetrically about 0, and the EMA
+    averages it to nothing. The reference's own comment ("same-tone runs are
+    flat and carry no timing information") describes the mechanism; what it
+    does not say, and what an integer receiver makes stark, is that the failure
+    needs an *exactly* flat profile, which only a synthetic input has.
+    HydraModem's `double` energies would tie far less often, so this is a
+    hazard the integer arithmetic sharpens rather than one it inherits.
+26. **Finding 6's prediction is falsified.** The plateau-edge mutant was
+    predicted to become visible on the clock-offset vectors. It decodes 62 of
+    62 with the timing loop and 55 of 62 without it — the same 55 the unmutated
+    R2 receiver decodes — so it is invisible either way. With the loop the
+    reason is mechanical and worth stating: starting 21 samples early, the gate
+    fires at the first transition, the argmax reads +2 every symbol, `vagatio`
+    climbs to its ceiling and the grid advances 49 samples a symbol until it
+    catches up, about twenty symbols in. The loop does not *expose* the missing
+    refinement, it *absorbs* it. The plateau centre and the ±24 refinement
+    remain a blind spot of this certificate with no vector in sight that would
+    close it.
+27. **The receiver inherits one of the reference's failures and not the other.**
+    At +300 Hz the reference fails by its timing loop (finding 7) and this
+    receiver decodes — the one-directional case D11 allows, recorded in
+    `receptio_vec_freq_loopback_p300hz/`'s own `TEST` as recorded and not
+    certified. At −300 Hz the reference fails and so does this receiver, by
+    CRC — where the **R2** receiver, with no timing loop, decoded it. So adding
+    the loop lost one input the reference also refuses. Permitted by the
+    certificate, and recorded because it is the loop reacting to a frequency
+    offset it was not designed for, which is the same mechanism finding 7
+    describes in the reference.
+28. **Finding 20's compiler defect is fixed, and D3's `Praefixa` now compiles.**
+    `9ede8bf` (another tree, landed while R3 was in progress) emits a `copy`
+    above 128 bytes as a loop instead of unrolling it, and makes an exhausted
+    compilation arena print a message instead of trapping. Re-measured here:
+    the four-field `Praefixa { i0: [0; 20481], … }` of D3 compiles to **46,940
+    bytes of asm**, and a thousand by-value `summa(p, a)` calls run in 2 ms, so
+    the struct travels as one word and not as a 640 KB copy — which is what D3
+    assumed and R2 could not check. **The receiver was not converted**, because
+    that is a whole-file refactor of R2's decision landing inside R3's commit
+    and it would have made the tallies and the mutants harder to attribute. It
+    is a named follow-up, and it would retire two workarounds at once: the four
+    array parameters, and D10's `(o sursum 32) + n` packing, since
+    `mollia(p, o, n)` is three words and the emitter's limit is six.
+29. **`impedi.py` takes the top sixteen bits of xorshift64, not the bottom.**
+    D11's sketch said "masked to 16 bits"; xorshift64's low bits are its weak
+    ones, and a noise vector should not inherit that. Stated in
+    `vendor/hydramodem-rx/PROVENANCE.md` as the departure it is, with the
+    stream measured: over 200,000 draws from seed 1, mean −287, σ 65,738,
+    kurtosis 2.9023 against Irwin–Hall(12)'s exact 2.9. The 0.3 % excess σ makes
+    every labelled SNR pessimistic by 0.03 dB. The generator also discards 64
+    warm-up steps, so the seeds can be the readable integers 1–36 rather than
+    large ones chosen to look random.
+
 ## 9. Later milestones
 
-**R3 — robustness.** Vendor `vendor/hydramodem-rx/` (D11: 35 files, the
-generator and the offset renderer printed in `PROVENANCE.md`, the
-reference's verdicts in `verdicta.tsv`); add the timing loop of D10 to
-`receptor.exsc`; generate the 35 test directories. Language needed: a
-signed division by a power of two for the EMA and the track — a signed
-shift (`[OPEN]`, spec §5.4: "two sensible meanings and no program has
-needed either"; this is the program, and the meaning it needs is the
-arithmetic one, floor toward −∞, which is what the reference's `double`
-multiply by 0.2 approximates) — or a sign-and-magnitude drift in two
-`u64`s with `deorsum`, which needs nothing. The decision is R3's, taken
-with the vectors: if sign-and-magnitude decodes all eight clock-offset
-files, the shift stays `[OPEN]` with this as evidence *against* needing
-it, the mirror of entry 23's and/or. Certified by: the 35 vectors; the
-plateau-edge mutant failing on the clock files (finding 6's prediction).
+**R3 — robustness. Done.** `vendor/hydramodem-rx/` is vendored (70 files, the
+generator and the offset renderer printed verbatim in `PROVENANCE.md`, the
+reference's verdicts in `verdicta.tsv`), the timing loop of D10 is in
+`mollia`, and 70 `receptio_vec_*` directories run. Language needed, as
+predicted: a signed division by a power of two for the EMA and the track. The
+decision the section asked for is taken — **sign-and-magnitude in `u64`, and
+the signed shift stays `[OPEN]`**, because all 24 clock-offset vectors decode
+without it (section 13). Certified by the 70 vectors; **not** by the
+plateau-edge mutant, which finding 26 records as a falsified prediction.
 
 **M4 — other profiles**, transmitter and receiver together, each certified
 against new `frame_tx` renders (for the TX, byte-identical) and the C
@@ -1406,9 +1547,12 @@ stay byte-identical (modem.md D4, as amended).
 | D3 header check; D4 the table; D5 the bounds; D6 acquisition; D7 the metric; D8 the trellis; D9 the residue | R2 | `tests/programs/receptio_{loopback,exemplum,vacuum}/`, `receptio_circuitus/` (140/140), `receptio_caput/` | **retired** by those five directories, all green. D3's `Praefixa` is *not* what shipped (finding 20); D5's `hydramodem_rx_plenus/`, a full-scale synthetic input, is **not written** — the bounds are exercised at 0.9 of full scale and no higher |
 | section 6's five failing mutants and four negative controls | R2 | the mutation run over a copy of `examples/hydramodem/` | **retired**: 9 of 9 observed as predicted, section 12 |
 | D7's argument (the difference is the sounder metric) | never fully | R3's vectors are consistent with it; a proof is not a test | stays an argument, as D9's affinity does |
-| D10 the timing loop; finding 6's prediction | R3 | the eight clock-offset vectors; the plateau-edge mutant failing on them | — |
-| D11 R3: 35 vectors against the reference's verdicts | R3 | one directory per vector | — |
-| finding 7 (+300 Hz: reference fails by timing, receiver decodes) | R3 | the `+300` vector with `expect-exit=0` — the receiver decodes it, or the loop makes it fail as the reference does; either is recorded, neither certified | — |
+| D10 the timing loop | R3 | the clock-offset vectors | **retired**: the loop is in `mollia`, 24 of 24 clock vectors decode where the same receiver without it decodes 17, and the signed shift was not needed. The four things D10 left open are decided in its own text |
+| finding 6's prediction (the plateau centre becomes visible on clock offsets) | R3 | the plateau-edge mutant failing on them | **falsified**, finding 26: 62 of 62 with the loop, 55 of 62 without, which is exactly the unmutated R2 receiver's own score. No vector closes this blind spot |
+| D11 R3: vectors against the reference's verdicts | R3 | one directory per vector | **retired**: 70 vectors, 70 directories, 62 of the reference's 62 decodes, no wrong frame. The set is not the 35 planned — three frames throughout, −12 dB for −9, both signs of Δf — and D11 says why |
+| finding 7 (+300 Hz: reference fails by timing, receiver decodes) | R3 | the `+300` vector with `expect-exit=0` — the receiver decodes it, or the loop makes it fail as the reference does; either is recorded, neither certified | **recorded, not certified**: at +300 Hz this receiver decodes where the reference does not; at **−300** Hz it fails where the R2 receiver decoded. Finding 27 |
+| R3's three timing-loop mutants | R3 | predictions in section 6 | **run**: two predictions held, one was wrong (the EMA weight is visible) and one was half wrong (the gate's certificate is the clean channel). Findings 24 and 25 |
+| finding 20's compiler defect (a struct literal's big `acies` field) | the backend's owner | — | **fixed by `9ede8bf`** and re-measured here, finding 28: `Praefixa` compiles to 46,940 bytes of asm and travels as one word. The receiver still passes four arrays; converting it is a named follow-up |
 | finding 13 (two casts the spec left `[OPEN]`) | the follow-up commit after `bd316cd` | — | **retired** as a spec question: §5.4 defines both as truncation; the source-level directions no program writes stay `[UNTESTED]` there |
 | findings 11, 15, 16 (in-place mutation; `stdin=`; a 640 KB local) | the implementer's trees | — | 15 and 16 **retired** (the key exists; the frames are 661,344 and 812,224 bytes and run). 11 stands: the accumulate loop is still written twice, once per driver |
 | finding 14 (`*` on `i64` from source `[UNTESTED]`) | R2 | — | **retired**: `x * t[m0]` runs 4 × 19,008 times a decode and `i * i + q * q` ~150,000 times, on every one of the five directories |
@@ -1544,12 +1688,68 @@ where finding 21 says otherwise.
 - **Not measured at R2:** anything impaired (that is R3); a full-scale input
   (`hydramodem_rx_plenus/` is not written, so the bounds are exercised at
   0.9 of full scale); the timing loop in any form; `Praefixa` working, since
-  it did not compile at R2 (the emitter has since been fixed, `9ede8bf`, and
-  the receiver has not been rewritten to use it); the per-field header sweep
-  D3 asks for, of which `receptio_caput/` is one field.
-- **After R2, not part of it:** `76ca763` (M5) replaced the transmitter's
-  `discerne` table with a literal and re-ran all five `receptio_*`
-  directories, byte-identical; `9ede8bf` changed the emitter's `copy` above
-  128 bytes to a loop and left every `receptio_*` certificate unchanged
-  (`tests/run.sh` 700/0 at that commit). Neither changed a verdict, a bound
-  or a byte of the receiver's output.
+  it does not compile; the per-field header sweep D3 asks for, of which
+  `receptio_caput/` is one field.
+
+## 13. What R3 measured, on the program that runs
+
+Everything here is `tests/run.sh`'s own output or a command run beside it in a
+clean worktree at the commit that added the timing loop, with `frame_rx` built
+from HydraMesh `fce2813` by `vendor/hydramodem-rx/PROVENANCE.md`'s recipe
+(re-verified first: `frame_tx` from the same build re-rendered all three
+vendored WAVs to their recorded digests).
+
+- **The certificate: 62 of 62, and no wrong frame.** Over the 70 vendored
+  vectors, HydraModem's `frame_rx` decodes 62 and refuses 8. This receiver
+  decodes **every one of the 62, each to the input's own frame**, refuses 7 of
+  the 8 the reference refuses, and decodes the eighth — `freq/loopback-p300hz`
+  — correctly. **On no input of the 70 did it write a frame that was not the
+  input's.** By kind: AWGN 30 of the reference's 30 (and 0 of the 6 it
+  refuses); clock 24 of 24; frequency 8 of 8 (and 1 of the 2 it refuses).
+- **The loop is what buys the clock offsets.** The same receiver with D10's
+  loop removed — HEAD's `receptor.exsc` at `8deb727`, rebuilt against this
+  tree — decodes **55 of 62**, losing seven: `±3000 ppm` on all three frames
+  and `+2000 ppm` on the loopback frame, every one by CRC. Nothing else in the
+  set separates the two receivers except the ±300 Hz pair of finding 27.
+- **The clean-channel certificates are untouched, and so is the grid.**
+  `receptio_{loopback,exemplum,vacuum}/` decode to their 17 bytes, and
+  `receptio_circuitus/` writes 140 zero bytes. An instrumented build reports
+  the origin, the per-frame scaling shift, and the first and last sampled
+  window for each of the three WAVs, with and without the loop: **959, 33,
+  2879, 17999 — identical on all three frames, both ways.** On a clean channel
+  the gate fires at every transition, the argmax reads 0, `vagatio` never
+  leaves 0, and the timing loop samples exactly the grid R2 sampled. The
+  decoded origins and shifts did not change.
+- **The clamp never binds.** The same instrumented build reports the largest
+  window the loop asks for on each of the 70 vectors and the three WAVs; the
+  tightest is `freq/loopback-m300hz.wav`, whose last window ends 938 samples
+  short of `n`. D10's fourth decision is a guard, not a behaviour.
+- **The three mutants**, section 6's table: EMA 1/2 loses four vectors, the
+  inverted track loses 26, the removed gate loses the clean channel and the
+  140-word loopback and no vector at all. Predictions and what they were wrong
+  about are findings 24 and 25.
+- **Timing.** One decode: **24.9 ms** wall over ten runs of a clean WAV
+  (12.6 ms of it system time — the 38,060 one-byte reads D1 costed), against
+  **25.6 ms** for the same measurement on the loop-less R2 binary: the loop's
+  3,160 extra energies are lost in the acquisition scan's 153,680. All 70
+  vectors back to back: **1.78 s**. The 140-word loopback: **1.42 s** (R2's was
+  1.17 s; it synthesises as well as decodes). `tests/run.sh` end to end:
+  **2 m 11.7 s, 973 checks, 0 failures, 92 program directories**, against
+  **1 m 49.2 s and 700 checks** for the same tree with the seventy
+  `receptio_vec_*` directories moved aside — so the certificate costs **22.5 s**,
+  0.32 s a directory, of which the decode is 25 ms and the rest is compiling and
+  assembling the same four sources afresh for each.
+- **No arithmetic trap fired anywhere.** Seven binaries were run over the whole
+  set — the shipped receiver, the loop-less R2 one, the three timing mutants,
+  and the plateau-edge mutant in both its R2 and R3 forms — which is 70 × 7 =
+  490 impaired decodes, plus the three clean WAVs on each of the seven and 140
+  loopback words on each of four. Every exit status was 0, 1 or 2; never a
+  SIGILL. D5's bounds cover the loop's own arithmetic — a
+  total energy under 1.6 × 10¹⁷ and twenty of those under 3.2 × 10¹⁸, inside
+  `i64` — and that is their test, since the cross-multiplied gate is a trapping
+  multiply.
+- **Not measured at R3:** a full-scale synthetic input (`hydramodem_rx_plenus/`
+  is still not written); the per-field header sweep; `Praefixa` in the
+  receiver (it compiles — finding 28 — but the receiver was not converted); any
+  toolchain but the one recorded; whether 1/4 is the *best* EMA weight rather
+  than one inside the set that passes.

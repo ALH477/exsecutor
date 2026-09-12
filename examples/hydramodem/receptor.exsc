@@ -7,8 +7,9 @@
 // the transmitter's own `sona`. Neither decides a byte of the frame; this
 // file decides them all.
 //
-// The design is docs/design/receptor.md, milestone R2 -- D3 through D9, with
-// every arithmetic bound proved there and re-derived before this was written.
+// The design is docs/design/receptor.md, D3 through D9 (R2, the clean
+// receiver) and D10 (R3, the timing loop, in `mollia`), with every arithmetic
+// bound proved there and re-derived before this was written.
 // The reference is HydraMesh's hydramodem/ at fce2813 (hydra_modem.c's rx
 // path, hydra_conv.c's soft Viterbi, hydra_interleave.c, hydra_frame.c) and
 // the certificate is DECODE SUCCESS, not bit identity: ADR 0014 records why,
@@ -16,7 +17,9 @@
 //
 // WHAT IS NOT USED, AND IS NOT NEEDED. No division, no remainder (the
 // deinterleaver is a walk, as the transmitter's interleaver is), no floating
-// point, no bitwise and or or, no signed shift. The reference is `double`
+// point, no bitwise and or or, and NO SIGNED SHIFT -- R3's timing loop divides
+// a signed drift by four and by two and does it by sign-and-magnitude on u64,
+// so spec §5.4's [OPEN] signed shift is still unneeded. The reference is `double`
 // throughout; every quantity here is an integer whose bound is proved in D5
 // from |x| <= 32768 and |T7| <= 127, and the trapping arithmetic of spec §5.4
 // is what makes those bounds load-bearing: a receiver that overflowed would
@@ -227,13 +230,113 @@ publica functio acquire(i0: acies<i64, 20481>, q0: acies<i64, 20481>,
 // walked 19 at a time with one subtraction, so there is no multiplication and
 // no remainder. 19 is coprime to 316, so the walk writes every index once --
 // a stride that is not would leave zeros behind and the CRC would see them.
+//
+// THE SAMPLING GRID IS A TIMING LOOP (D10, R3). R2 sampled symbol j at
+// o + 1920 + 48 j and nothing else; a resampled input walks off that grid, and
+// the reference's own loop is what follows it. hydra_modem.c:297-326, in
+// integers:
+//
+//   * `pos` starts at o + 1920 and a0 is `lround(pos)`;
+//   * the total energy E_0 + E_1 is taken at the five offsets -2..+2 from a0,
+//     skipping any window that is not wholly inside the samples that were
+//     read; the first maximum wins, as the reference's strict `>` makes it;
+//   * the update is GATED on the profile being non-flat, (max - min) > 0.15
+//     max, because integrate-and-dump is flat inside a symbol and only a
+//     window straddling a TONE TRANSITION carries timing information -- a
+//     same-tone run would rail the argmax to the search edge and walk the grid
+//     away. The 0.15 is cross-multiplied, (max - min) * 20 gt max * 3, in i64;
+//     D5's bound covers it: a total energy is under 1.6e17 and twenty of those
+//     is 3.2e18, inside i64's 9.2e18.
+//   * gated, drift += (off - drift) / 4 and always pos += 48 + drift / 2.
+//
+// THE TWO LOOP CONSTANTS ARE POWERS OF TWO, 1/4 and 1/2, where the reference
+// has 0.20 and 0.50 (HYDRA_TIMING_EMA, HYDRA_TIMING_TRACK). A documented
+// departure, admissible because the certificate is decode success and the
+// reference's own comment says the four constants were "tuned jointly" for its
+// two sweeps, not derived. ADR 0014 decision 1 names this among the things a
+// verdict cannot see.
+//
+// NO SIGNED SHIFT, AND NONE IS NEEDED. `drift` and `pos` are Q8 fixed point in
+// i64 (256ths of a sample), and a division by four or by two is the
+// sign-and-magnitude idiom the scaling below already uses: the magnitude cast
+// to u64, `deorsum`, and the sign put back. That truncates toward zero where a
+// signed shift would floor toward minus infinity, and toward zero is the
+// symmetric choice for an EMA. So spec §5.4's signed shift stays [OPEN] with
+// this as evidence AGAINST needing it -- receptor.md section 9 asked for
+// exactly that decision, and the eight clock-offset displacements decide it.
+//
+// TWO INDICES IN ONE WORD. The emitter's Tier-1 calling convention passes six
+// argument words, the hidden result pointer included ("bfa: emitter: param
+// index > 5", measured), and this function already spends four on the arrays
+// and one on the hidden pointer. The timing loop needs the sample count too --
+// a window must not run past the samples that were read -- so `o` and `n` are
+// carried in one `mensura`, `on = (o sursum 32) + n`, both being under 2^21 by
+// D3's capacity. receptor.md finding 12's hidden pointer, again.
 publica functio mollia(i0: acies<i64, 20481>, q0: acies<i64, 20481>,
                        i1: acies<i64, 20481>, q1: acies<i64, 20481>,
-                       o: mensura) -> acies<i64, 316> {
+                       on: mensura) -> acies<i64, 316> {
+    firma o = on deorsum 32;
+    firma n = on - (o sursum 32);
     mutabilis s: acies<i64, 316> = [0; 316];
     mutabilis maxima: u64 = 0;
-    mutabilis a: mensura = o + 1920;
+    mutabilis positio: i64 = ((o + 1920) * 256) sicut i64;   // Q8, never negative
+    mutabilis vagatio: i64 = 0;                              // Q8 drift
     per j in 0..316 {
+        firma a0 = (((positio + 128) sicut u64) deorsum 8) sicut mensura;
+        mutabilis summa: i64 = -1;
+        mutabilis minima: i64 = 4611686018427387904;
+        mutabilis melior: mensura = 2;
+        per oi in 0..5 {
+            si (a0 + oi) ge 2 {
+                firma aa = a0 + oi - 2;
+                si (aa + 48) le n {
+                    firma e = vis(i0, q0, aa) + vis(i1, q1, aa);
+                    si e gt summa {
+                        summa = e;
+                        melior = oi;
+                    }
+                    si e lt minima {
+                        minima = e;
+                    }
+                }
+            }
+        }
+        mutabilis usus: mensura = 2;
+        si summa gt 0 {
+            si (summa - minima) * 20 gt summa * 3 {
+                usus = melior;
+                firma error = ((usus sicut i64) - 2) * 256 - vagatio;
+                si error ge 0 {
+                    vagatio = vagatio + (((error sicut u64) deorsum 2) sicut i64);
+                } aliter {
+                    vagatio = vagatio - ((((0 - error) sicut u64) deorsum 2) sicut i64);
+                }
+            }
+        }
+        si vagatio ge 0 {
+            positio = positio + 12288 + (((vagatio sicut u64) deorsum 1) sicut i64);
+        } aliter {
+            positio = positio + 12288 - ((((0 - vagatio) sicut u64) deorsum 1) sicut i64);
+        }
+        mutabilis a: mensura = a0;
+        si (a0 + usus) ge 2 {
+            a = a0 + usus - 2;
+        }
+        // THE REFERENCE FAILS HERE AND THIS CLAMPS. hydra_modem.c:322 returns
+        // HYDRA_ERR_NO_SYNC when the chosen window runs past the samples; a
+        // function that returns 316 soft bits has no way to say that, so the
+        // window is pulled back to the last one wholly inside the input. A
+        // clamped window is still a measurement of real samples, where a
+        // window past `n` would read prefix entries no sample ever wrote
+        // (receptor.md finding 23's reason, one loop further down). MEASURED
+        // NOT TO BIND anywhere on the certificate: an instrumented build
+        // reports the largest window the loop asks for on each of the 70
+        // vendored vectors and the three clean WAVs, and the tightest is 938
+        // samples clear of `n` (freq/loopback-m300hz.wav: a_max 18,022 against
+        // n 19,008). The clamp is a guard, not a behaviour.
+        si (a + 48) gt n {
+            a = n - 48;
+        }
         firma d = vis(i1, q1, a) - vis(i0, q0, a);
         s[j] = d;
         mutabilis mag: u64 = 0;
@@ -245,7 +348,6 @@ publica functio mollia(i0: acies<i64, 20481>, q0: acies<i64, 20481>,
         si mag gt maxima {
             maxima = mag;
         }
-        a = a + 48;
     }
     mutabilis w: u64 = maxima;
     mutabilis k: u64 = 0;

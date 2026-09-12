@@ -321,51 +321,20 @@ move by a byte when it changed. Reference renders of four more profiles
 CLI can express it) are vendored under `vendor/hydramodem-tx/profiles/`; no
 Exsecutor program targets them yet.
 
-**And the modem's receiver, certified by its verdicts.** The other half —
-`receptor.exsc`, `recipe.exsc`, `circuitus.exsc`, 654 lines — reads a WAV
-from standard input and writes the 17-byte frame it carries, or exits 1 (no
-sync), 2 (CRC) or 3 (not a WAV it will decode) and writes nothing. It is
-integer arithmetic throughout, with every bound proved from `|x| ≤ 32768` and
-a 7-bit oscillator table: no floating point, no division, no bitwise and/or,
-no signed shift (`docs/design/receptor.md`, ADR 0014). Certified at
-milestone R2 by decode success, not bit identity — a receiver's internal
-state is one implementation's arithmetic, and HydraModem's is `double` —
-against HydraModem's own reference renders and a loopback through this
-transmitter:
-
-```
-receptio_loopback:  stdin vendor/hydramodem-tx/d310123400a1ffffdeadbeef0a1b2ca961.wav -> 17 bytes, byte-identical
-receptio_exemplum:  stdin vendor/hydramodem-tx/d31312340001ffffdeadbeefab12cd24c0.wav -> 17 bytes, byte-identical
-receptio_vacuum:    stdin vendor/hydramodem-tx/d310000000000000000000000000005b80.wav -> 17 bytes, byte-identical
-receptio_circuitus: 140 words out through the transmitter's `sona` and back, in one process: 140/140
-receptio_caput:     a header at 44,100 Hz -> exit 3, nothing written
-```
-
-One WAV decode takes 26 ms wall at this commit (five runs, all 0.026 s; about
-10 ms of it system time for 38,060 one-byte `read`s); the 140-word loopback
-1.4 s. Nine mutants behave as `receptor.md` section 6 predicted: five fail
-(the trellis taps, the interleaver's stride, the sync word complemented, both
-oscillators on one tone, the threshold above 40) and four **decode anyway**
-— a one-bit sync change, a threshold of 36, the plateau's first origin, a
-one-off in the table — which are the certificate's stated blind spots, not a
-harness defect. **R3 — robustness — is not done:** no impaired vector
-(noise, clock offset, frequency offset) has been fed to this receiver, the
-timing loop is not written, and `vendor/hydramodem-rx/` does not exist at
-this commit. Nothing above claims otherwise.
-
-**Two language features the receiver forced, both landed:**
-
-- **A standard-input reader.** `Lector.ab_introitu(a: ambitus)` and
-  `l.lege_octeto() -> u16` — one byte, or 256 at end of input — in the
-  runtime prelude, mirroring `Scriptor.ad_exitum` / `scribe_octeto`; spec
-  §4.6, `8524028`. End of input and a read error are the same 256 until
-  `eventus` has syntax, and the spec says so. `tests/programs/lector/` is
-  `cat` over 41 bytes, proved against its own input file.
-- **Array literals, both forms.** `[e1, …, en]` and `[e; N]` in operand
-  position, typed from the expectation or the first element, `N` part of the
-  type, no implicit zero-fill; spec §8.6, `54ba744`. Parsed, typed, lowered
-  and run (`tests/unit/{cst,chk_ty,lwr}_acies.asm`, `tests/programs/acies/`),
-  and every buffer and table in the receiver is written in them.
+**And the receiver, certified by its verdicts.** The other half is written too
+(ADR 0014): it reads a WAV on standard input and writes the seventeen bytes it
+carries, in integers throughout -- no floating point, no division, no
+remainder, no signed shift -- against a reference that is `double` from end to
+end. It cannot be held to bit identity, because two correct receivers disagree
+on their internals by construction, so it is held to **decode success against
+HydraModem's own receiver**: `vendor/hydramodem-rx/` holds seventy impaired
+WAVs (white noise from +12 to -12 dB, sample-clock offsets to ±3000 ppm,
+carrier-frequency offsets to ±300 Hz) and `frame_rx`'s verdict on each, and the
+Exsecutor receiver decodes **all 62 the reference decodes** and never writes a
+frame that is not the input's. The three clean WAVs decode, and 140 words
+round-trip transmitter-to-receiver in one process. Every vector is an integer
+function of the vendored transmitter output and the integers in
+`vendor/hydramodem-rx/PROVENANCE.md`, which prints the generator verbatim.
 
 **What runs:**
 

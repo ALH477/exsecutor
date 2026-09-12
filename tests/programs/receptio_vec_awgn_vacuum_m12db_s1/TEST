@@ -1,0 +1,21 @@
+# One of the seventy impaired vectors of vendor/hydramodem-rx/ (ADR 0014
+# decision 2; docs/design/receptor.md D11). stdin is the WAV; the expectation
+# is HydraModem's OWN receiver's verdict on the same bytes, recorded in
+# vendor/hydramodem-rx/verdicta.tsv when the tree was vendored and not
+# re-derived here.
+#
+# The vacuum frame with additive white noise at a nominal -12 dB SNR:
+# the Irwin-Hall sum of twelve xorshift64 draws, sigma integer 83013,
+# seed 1 of the generator's table.
+#
+# The reference REFUSES it (exit 1, nothing printed)
+# and neither does this receiver: exit 1 (no sync) with NO expected.out,
+# so check_run's "wrote to stdout, expected nothing" is the half of the
+# assertion that says no frame was invented out of noise.
+#
+# This directory is generated, one per vector, and its verdict is the
+# certificate ADR 0014 decision 1 states: decode everything the reference
+# decodes, and never write a frame that is not the input's. A refusal where the
+# reference also refused is fine; a refusal where it succeeded is a failure of
+# this certificate, and a WRONG frame is a failure of the stronger half.
+TEST: expect-exit=1 stdin=vendor/hydramodem-rx/awgn/vacuum-m12db-s1.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/receptor.exsc,examples/hydramodem/recipe.exsc

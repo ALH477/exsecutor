@@ -1,0 +1,22 @@
+# One of the seventy impaired vectors of vendor/hydramodem-rx/ (ADR 0014
+# decision 2; docs/design/receptor.md D11). stdin is the WAV; the expectation
+# is HydraModem's OWN receiver's verdict on the same bytes, recorded in
+# vendor/hydramodem-rx/verdicta.tsv when the tree was vendored and not
+# re-derived here.
+#
+# The loopback frame rendered with both tones displaced by -200 Hz, by the
+# reference's own DSP (frame_tx_offset.c, printed in PROVENANCE.md;
+# byte-identical to frame_tx at zero displacement).
+#
+# The reference decodes it to its own frame,
+# so this directory expects exit 0 and expected.out -- the seventeen bytes
+# of d310123400a1ffffdeadbeef0a1b2ca961, compared by `cmp`. Where this
+# receiver refuses instead, check_run's "wrote nothing, expected 17 bytes"
+# is the half of the assertion that fails.
+#
+# This directory is generated, one per vector, and its verdict is the
+# certificate ADR 0014 decision 1 states: decode everything the reference
+# decodes, and never write a frame that is not the input's. A refusal where the
+# reference also refused is fine; a refusal where it succeeded is a failure of
+# this certificate, and a WRONG frame is a failure of the stronger half.
+TEST: expect-exit=0 stdin=vendor/hydramodem-rx/freq/loopback-m200hz.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/receptor.exsc,examples/hydramodem/recipe.exsc
