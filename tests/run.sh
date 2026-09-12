@@ -69,7 +69,7 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-166}"
 # certificate of ADR 0014 decision 1 is a per-file verdict, and seventy
 # directories is what "per file" means here.
 IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-49}"
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-92}"
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-96}"
 
 PASS=0
 FAIL=0

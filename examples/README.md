@@ -1,6 +1,6 @@
 # examples/
 
-Exsecutor source, three programs, all compiled and run by `tests/run.sh`:
+Exsecutor source, four programs, all compiled and run by `tests/run.sh`:
 
 - **the hello world** — `saluta.exsc`, `imprime.exsc`, `initium.exsc`,
   below; `tests/programs/saluta/` and `tools/publish-gate.sh` run it;
@@ -18,11 +18,29 @@ Exsecutor source, three programs, all compiled and run by `tests/run.sh`:
   in one process. Its certificate is decode success, not bit identity, and
   `docs/decisions/0014-hydramodem-receiver.md` says why; robustness under
   impaired input (R3) is not done.
+- **`streamdb/`, a StreamDB v3 reader** — `lector_streamdb.exsc` is a pure
+  library (no `poscit`, no `initium`, no allocation) that reads the container
+  format Kiln's N64 asset database uses: two alternating header slots with a
+  torn-write fallback, a UUID-sorted index searched in place, a **reversed**
+  trie flattened in one pass, CRC-32/ISO-HDLC throughout, and the documented
+  trap that an index entry's offset addresses the payload with the record
+  header eight bytes before it. `probatio.exsc` is the driver.
+  `tests/programs/streamdb_*/` run it over `vendor/streamdb-v3/` — a container
+  the real upstream C writer produced, plus three corruptions — and compare
+  every payload byte, both suffix-search orders and all three failure outcomes
+  with what the embedded reference reader recorded.
+  **Every header field, index entry and record header is a `@transitus` struct
+  with `:minor` fields**, so the reader contains no byte swap and no mask and
+  makes no assumption about the host's order. `docs/design/c-backend.md`
+  section 6 is its design and its measurements; it is the first program
+  written for the C backend to compile, and it runs on the reference backend
+  today.
 
 This file said "nothing here compiles — there is no compiler" until
 2026-09-10, and then, until the hydramodem commit, that nothing here was
 type-checked or compiled to code, which the hello world's test had already
-made false. It then said there were two programs, until the receiver.
+made false. It then said there were two programs, until the receiver, and
+three, until the StreamDB reader.
 
 ## `saluta.exsc`
 

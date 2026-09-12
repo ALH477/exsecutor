@@ -76,7 +76,8 @@ calls):
    and checks five positions, one of them past the end.
 4. **`tests/programs/`** — Exsecutor sources, RUN. Each directory is one
    program: `exsc aedifica --hospes x86_64-linux SRC... -o OUT`, `fasmg OUT
-   BIN`, run, check. 22 programs run (`PROGRAM_FIXTURE_FLOOR`); none is
+   BIN`, run, check. 96 programs run (`PROGRAM_FIXTURE_FLOOR`; this sentence
+   said 22 for a long time); none is
    deferred (the `status=deferred` mechanism below stays for the next one).
    Beside the hello world and the arithmetic, loop, `discerne`, cast and
    struct programs: `lector/` and `lector_numerus/` (the reader, below),
@@ -105,6 +106,26 @@ calls):
    26 ms, about 10 ms of it system time for 38,060 one-byte `read`
    syscalls. Robustness — impaired input, a timing loop — is R3 and is not
    in this suite.
+
+   Four are the **StreamDB v3 reader** (`examples/streamdb/`,
+   `docs/design/c-backend.md` section 6). `streamdb_corpus/` feeds the
+   24-document container the real upstream C writer produced
+   (`vendor/streamdb-v3/`) on `stdin=` and compares a 32,591-byte certificate
+   stream with `expected.out`: every key's payload **inline**, byte for byte
+   against `vendor/streamdb-v3/payloads/`, then the document and trie-node
+   counts, then both suffix searches in the traversal order
+   `expectation.json` captured from the embedded reference reader. The other
+   three are that manifest's three negative cases —
+   `streamdb_onus/` (one flipped payload byte: one checksum mismatch, 23
+   intact), `streamdb_caput/` (one flipped header byte: the torn-write
+   fallback to the older commit, 20 documents readable and 4 absent) and
+   `streamdb_truncus/` (300 bytes: no valid commit, exit 1, **no output**) —
+   each reproducing the reference reader's recorded outcome exactly.
+   `streamdb_corpus/expecta.py` builds the three `expected.out` files from the
+   vendored corpus and asserts itself against `expectation.json` first; it is
+   verification-only and this script never calls it. At 0.044 s the whole
+   directory set is a rounding error beside `receptio_circuitus/`, which is
+   why the reader reads one byte per syscall and has no buffer.
 
 Phases 3 and 4 are the first in this script to execute code a compiler
 *emitted*. Until them a `tests/unit/` fixture could only compare emitted

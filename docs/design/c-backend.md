@@ -666,6 +666,14 @@ Kiln's own gates — no `.d`-suffixed instruction in the disassembly
 out-lines a `__builtin_memcpy`, which newlib resolves). Retired by C3 and
 C4.
 
+**The reference half is done and section 6 now reports it, not a plan.**
+`examples/streamdb/{lector_streamdb,probatio}.exsc` and
+`tests/programs/streamdb_{corpus,onus,caput,truncus}/` run under the fasmg
+backend and agree with `vendor/streamdb-v3/expectation.json` on all four
+containers, with five mutants run. What stays `[UNTESTED]` is exactly the
+C half of the sentence above: the same source through `--emitte c`, the two
+streams compared, and the `mips64-elf-gcc` gates.
+
 ### D8 Not in scope for C1–C4
 
 Floats — the reference cannot lower them either, so ADR 0012's numeric
@@ -744,92 +752,214 @@ Runtime traps are `exsrt_abortus(N)` with `prelude/README.md`'s kinds
 | run | `run_binary` | `run_binary`, four times | stdout bytes; exit status; trap-or-not and kind |
 | directive | `check_run` | `check_run` | each build meets the fixture's own directive too |
 
-## 6. The StreamDB v3 reader — the format as surveyed, and the reader's shape
+## 6. The StreamDB v3 reader — built, run and certified on the reference backend
 
-The format survey is another agent's and landed after the first draft of
-this section, which had stated expectations; those are replaced here by
-what the survey found. The corpus it certifies against is being vendored at
-`vendor/streamdb-v3/` by a third agent (recipe, digests and the upstream
-commit in its `PROVENANCE.md`, the discipline of `vendor/hydramodem-tx/`).
-Nothing in this section has been run through either backend: `[UNTESTED]`
-until C3.
+**Status: the host half of D7 is done.** `examples/streamdb/` holds the reader
+and its driver, `tests/programs/streamdb_{corpus,onus,caput,truncus}/` run it
+over `vendor/streamdb-v3/` on the **reference (fasmg/x86-64) backend**, and
+every figure below was measured on this tree. The C half — the same source
+through `--emitte c`, and the N64 cross-compile — is still `[UNTESTED]` and is
+C3/C4's. This section previously stated a design; it now states what the
+design became, and names where the two differ.
 
-**The container**, little-endian throughout, read on a big-endian machine —
-spec §5.2's case exactly, and the reason this is the right first program
-for a backend whose `load … minor` is emitted byte-at-a-time (D4 row 40):
+**The container**, re-verified byte by byte against `corpus.streamdb` rather
+than read off a header comment:
 
 | region | layout |
 |---|---|
-| header | two alternating **128-byte slots** at the front; the newest slot whose CRC-32 over its bytes `[0, 72)` validates wins |
+| header | two alternating **128-byte slots** at the front; the newest slot whose magic, version, own CRC-32 over `[0, 72)` and bounds all validate wins |
 | documents | from offset 256: `[u32 size LE][u32 crc LE][payload]`, one record after another |
-| index blob | `u64 count`, then `count` **32-byte** entries `[16-byte UUID][u64 offset][u32 size][u32 crc]`, **sorted by UUID bytes** — so a UUID lookup is a binary search over the blob in place |
-| trie blob | a **reversed** trie — keys are indexed last byte first, which is what makes a suffix search a prefix walk — whose nodes are serialised **recursively and inline**: `u64 nchild`, then `nchild` times `(u8 key, node)`, then `u8 tag`, then if the tag says so `u64 16` and a 16-byte UUID, then `u64 subtree_count` |
-| checksums | CRC-32/ISO-HDLC everywhere: reflected polynomial `0xEDB88320`, init and final xor `0xFFFFFFFF` |
-| **the trap** | an index entry's `offset` addresses the **payload**; the 8-byte record header is at `offset - 8`. The upstream format comment reads the other way and it fails on every document (`streamdb-embedded/README.md`, which paid for it once already) |
+| index blob | `u64 count`, then `count` **32-byte** entries `[16-byte UUID][u64 offset][u32 size][u32 crc]`, **sorted by UUID bytes** — a binary search over the blob in place |
+| trie blob | a **reversed** trie — keys indexed last byte first, which is what makes a suffix search a prefix walk — serialised **recursively and inline**: `u64 nchild`, then `nchild` times `(u8 key, node)` ascending by key, then `u8 tag`, then if the tag says so `u64 16` and a 16-byte UUID, then `u64 subtree_count` |
+| checksums | CRC-32/ISO-HDLC: reflected polynomial `0xEDB88320`, init and final xor `0xFFFFFFFF` |
+| **the trap** | an index entry's `offset` addresses the **payload**; the 8-byte record header is at `offset - 8`. The `- 8` is spelled once, in `documentum_proba`, and mutant 1 below proves it is checked |
+| **the zero pads** | bytes `[36, 40)` and `[60, 64)` of a slot, and `[76, 128)`. The survey did not list them; `@transitus` forbids implicit padding, so declaring the slot forced them into the open |
 
-**The reader's shape.** Pure functions over caller-supplied byte arrays
-(spec §4.1 rule 6: no `poscit`, no `initium`), no allocation, no I/O, no
-capability beyond reading its input — which is why it is the right first
-program for library mode: it needs nothing D1 withholds. Kiln's
-`streamdb_emb_io_t` reads bytes out of ROM and sizes an arena; the
-Exsecutor code parses what it is handed. The split, in Kiln's terms:
+### 6.1 `@transitus` carried it, and that is the section's main result
 
-| Kiln today (`streamdb_embedded.c`) | Exsecutor function (names per spec §3) | the C signature it becomes |
+Every fixed-shape record is a `@transitus` struct with `:minor` fields reached
+through §5.2's one aggregate cast. **There is not one shift and not one mask
+anywhere in the reader for a header field, an index entry or a record
+header**, and nothing in the file assumes the host's byte order — `Caput.ordo`
+is a `u64:minor` field on any machine. Two places pay for themselves twice:
+
+- **`Caput` is all 128 bytes**, twenty fields, the two zero pads and the
+  52-byte tail included, because §5.2 admits no implicit padding. The pad was
+  in the format and is now in the type.
+- **`Indicium` declares the UUID as `idm: u64:maior` + `idn: u64:maior`.** The
+  index is sorted by UUID *byte* order, so comparing the two big-endian halves
+  as unsigned integers **is** `memcmp` on sixteen bytes: the binary search has
+  no byte loop at all. A `:minor` pair would have given the wrong order. This
+  is the sharpest evidence in the tree that the annotation is load-bearing
+  rather than decorative.
+
+Where it stops: a trie node is variable-length and has no `@transitus` shape.
+Its three `u64`s are read through `Octo { valor: u64:minor }` — the one-field
+view `Syndroma` already is in entry 23 — so even there the order is the
+declaration's. The alternative, a hand-written byte-wise `rd_u64`, exists in
+neither file.
+
+### 6.2 What was built, against the table this section used to hold
+
+| this section's design | what exists | why it differs |
 |---|---|---|
-| `header_parse` + `read_commit` over the two slots | `caput_lege(b: &acies<u8, 128>) -> Caput`; `caput_valet(b: &acies<u8, 128>) -> u1` (CRC over `[0, 72)`); the "newest valid slot" rule in `caput_elige(a, b) -> u8` | `void exs_caput_lege(unsigned char *ret, unsigned char *b)` — an aggregate return is a hidden `ptr` first (IR 2.9); `uint64_t exs_caput_valet(unsigned char *b)` |
-| the index entry (32 bytes) | `indicium_lege(b: &acies<u8, 32>) -> Indicium` with `Indicium` a `@transitus` struct of `u8`×16, `u64:minor`, `u32:minor`, `u32:minor` | `void exs_indicium_lege(unsigned char *ret, unsigned char *b)` |
-| the binary search by UUID | `indicem_quaere(b: ptr, n: u64, id: &acies<u8, 16>) -> u64` — index of the entry or `n`; every access through `chk` | `uint64_t exs_indicem_quaere(unsigned char *b, uint64_t n, unsigned char *id)`; `n` is `u32`-typed under `mips64-none-o64` (D2) |
-| the record header, at `offset - 8` | `recordum_lege(b: &acies<u8, 8>) -> Recordum` — the `- 8` lives in the *caller*, spelled once, beside a comment naming the trap | `void exs_recordum_lege(unsigned char *ret, unsigned char *b)` |
-| `crc32` of a payload | `redundantia32(b: ptr, n: mensura) -> u32` | `uint64_t exs_redundantia32(unsigned char *b, uint64_t n)` |
-| the one-pass trie flattening into the arena | `arbor_percurre(b: ptr, n: mensura, out: ptr, cap: mensura) -> mensura` — walks the serialised trie **in order** with an explicit stack in a caller-supplied scratch array (no recursion, so the walk's depth is bounded by the array the caller sized, not by the stack), emitting Kiln's 25-byte flat node `(child_first u32, child_count u16, has_value u8, pad u8, uuid 16)` into `out`; returns the node count or 0 on overflow | `uint64_t exs_arbor_percurre(unsigned char *b, uint64_t n, unsigned char *out, uint64_t cap)` |
-| child lookup over the flat array; `find_suffix`'s descent | `arbor_descende(nodes: ptr, keys: ptr, node: u32, key: u8) -> u32` | `uint64_t exs_arbor_descende(unsigned char *nodes, unsigned char *keys, uint64_t node, uint64_t key)` |
+| `caput_lege(b: &acies<u8, 128>) -> Caput` | `caput_lege(b: acies<u8, 65536>, s: mensura) -> Caput` | there are no slices and `sicut` needs an exactly-sized `acies`, so each reader copies its fixed window out of the container into a local and casts that. `&T` is not written anywhere (finding 15) |
+| `caput_valet(b) -> u1` | `caput_valet(b, s, longitudo) -> u8` | `u1` is a `@transitus` field width, not a value type |
+| `caput_elige(a, b) -> u8` | `caput_elige(b, longitudo) -> mensura` — 0, 128, or 256 for "no commit" | it chooses **and** validates, so it takes the container rather than two parsed headers |
+| `indicium_lege`, `recordum_lege`, `indicem_quaere`, `redundantia32`, `arbor_descende` | as designed, with the container and an offset in place of a slice | — |
+| `arbor_percurre(b, n, out, cap) -> mensura` writing a caller array | `arbor_percurre(b, s, n) -> Arbor`, returning the flat trie **by value** | **finding 12 below.** A parameter is borrowed (§6.3 decision 3); a function cannot fill an array it was handed. `receptor.md` finding 11 is the same gap |
+| — | `clavem_quaere`, `documentum_quaere`, `documentum_proba`, `suffixum_percurre` | the lookup, the verify and the suffix walk the table did not name |
+| one `suffixum_quaere(a, b, s, d, clavis, n)` | `suffixum_percurre(a, clavis, n) -> Nodi`, the caller resolving each node | six parameters plus the hidden result pointer is seven words, one more than a call passes — WC finding 8, met again. The split is the better shape anyway |
 
-Why the flattening is Exsecutor's and the arena is Kiln's: a lookup over
-the *serialised* trie is linear in the blob, because a child's inline
-subtree has no stored byte length to skip by (`subtree_count` counts
-entries, not bytes), so the one pass that turns it into contiguous child
-ranges is the reader's real work — and it is a pure function of the bytes
-into a caller-sized array, which is the shape D1 admits. Sizing that array
-(`streamdb_emb_probe`) stays a C-side estimate from `trie_len`, as it is
-today.
+The 25-byte flat node became six parallel arrays in one `Arbor` value
+(`primus`, `numeri`, `habet`, `claves`, `idm`, `idn`), because an `acies` of a
+`@transitus` struct would have had to hold the UUID and a `u64:maior` pair
+reads it in the order the index compares.
 
-**What the language must not need for it.** The same constraint WC §1
-stated: the reader may use only what is settled — unsigned integers at
-every width, `@transitus` fields with `:minor` (the field access *is* the
-byte swap), `aut`/`sursum`/`deorsum`, hex and struct literals, the one
-aggregate cast, `per`, `dum … terminus`, `si`/`sin`/`aliter`, `chk` on
-every index, and array literals (spec §8.6, since `54ba744`) for the
-CRC-32 table. Bitwise and/or are still `[OPEN]` in spec §8.6; CRC-32/
-ISO-HDLC's low-bit test is `(c sursum 31) deorsum 31` in `u32` and its
-byte extraction `(c sursum 24) deorsum 24`, the shift-discard idiom WC §5
-used for the encode basis, so no operator is added. No float, no
-recursion, no `mensura` mixed with a fixed width without an explicit
-widening (spec §5.2). The one thing the reader may need that the tree does
-not yet have: `u64:minor` fields are lowered by `load u64 … minor`, which
-`tests/ir/byte_order.ir` runs — nothing new; recorded so it is checked
-rather than assumed.
+**Siblings adjacent is the whole trick** (`streamdb_embedded.c:186-196`, and
+mutant 3 below). A node fills a slot its *parent* assigned it and
+bump-allocates a contiguous range for its own children **before** descending
+into any of them. Allocate each child's slot at the moment you descend instead
+and the array is still the right size, the node count is still right, both
+CRCs still pass, and every multi-child lookup silently misses.
 
-**The certificate** (D7), semantic because containers are not
-byte-reproducible: `tests/programs/streamdb_*/` compile one driver over
-`examples/streamdb/` from `initium`, read a container from `stdin=` (the
-prelude's `Lector`, one byte at a time into a `slot`-backed buffer sized
-for the corpus), and write a **stream** in the entry-23 style, sections in
-order: (1) per key in index order, the payload's length and the payload's
-own bytes, so a mismatch names the key; (2) the document count, the node
-count from the flattening, and the suffix-match counts for the corpus's
-fixed suffix set; (3) the outcomes of the error cases — a container
-truncated at 300 bytes (rejected, format), one payload byte flipped
-(exactly one CRC mismatch, naming the key), an absent key (not found) —
-as one byte each. The reference backend's stream is compared against a
-verification-only Python expectation built from the vendored corpus and
-the upstream reader's answers; the C backend's stream is compared against
-the reference's (D6). Three mutants, run on copies as WC §6.1 does, each
-failing at a named section: the polynomial `0xEDB88320` → `0xEDB88321`
-(section 1, key 0: every CRC); `offset` read as the header rather than the
-payload, the `- 8` dropped (section 1, key 0: size mismatch on every
-document — the trap, made a mutant so the harness proves it is checked);
-the reversed trie walked first byte first (section 2: the suffix counts).
-A harness on which any of them passes has proved nothing.
+The walk is **iterative with an explicit stack** — five parallel `mensura`
+arrays 1025 deep, one more than the format's 1024-byte maximum key — so the
+depth bound is the array's and not the machine stack's.
+
+**Stricter than the reference, deliberately: `subtree_count` is verified.**
+Upstream writes the number of value-carrying nodes in the subtree, inclusive —
+re-measured over both of the corpus's commits, 373 nodes and 316 nodes, every
+stored count equal to its subtree's value count. `streamdb_embedded.c:181-183`
+and `:242-243` read the field and throw it away. Verifying it rejects
+hand-corrupted blobs the reference accepts, and would refuse a writer that
+ever disagreed with this reading.
+
+### 6.3 The certificate, and what it measured
+
+Four directories, one driver, four containers; the driver writes a byte
+stream and `tests/run.sh` compares it with `cmp` against a committed
+`expected.out`. `tests/programs/streamdb_corpus/expecta.py` builds those three
+files from the vendored corpus — an independent Python reading of the format
+that asserts itself against `expectation.json` (every payload against
+`payloads/`, every size and crc32 against the manifest, both suffix orders
+against the captured traversal) before it writes a byte. It is
+verification-only and `tests/run.sh` never calls it.
+
+| directory | container | stream | result |
+|---|---|---|---|
+| `streamdb_corpus/` | `corpus.streamdb` | 32,591 bytes | exit 0; 24 documents, 373 trie nodes, slot 128 (seq 3); all 24 keys verdict 0 with their **payload bytes inline**; `.t3dm` 5 matches, `.bin` 4, in the manifest's captured order |
+| `streamdb_onus/` | one payload byte flipped | 29,988 bytes | exit 0; `models/asset_010.t3dm` alone carries verdict 2 (checksum mismatch); the other 23 byte-exact. The difference from the good stream is exactly that document's 2,603 payload bytes plus its one verdict byte |
+| `streamdb_caput/` | one header byte flipped | 25,099 bytes | exit 0 **against the older commit**: seq 2, 20 documents, **316 trie nodes**, slot 0; `asset_020..023` verdict 1 (not found); `.t3dm` drops 5 → 4 with the other four unmoved |
+| `streamdb_truncus/` | `head -c 300` | 0 bytes | exit 1, nothing written: both slots' bounds fail against a 300-byte file |
+
+Each of the three streams' every byte agrees with `expecta.py`'s, and
+`expecta.py`'s agrees with `expectation.json` wherever the manifest speaks.
+
+**Measured, on this tree.** The corpus is **47,708 bytes** — an earlier
+statement of 316 KB was wrong. `Lector.lege_octeto` reads one byte per
+`read(2)`, so the program makes 47,709 reads and 32,591 writes: **80,300
+syscalls**, **0.044 s / 0.044 s / 0.043 s wall** over three runs with stdout
+to `/dev/null`. That is a thirtieth of the suite's slowest existing directory
+(`receptio_circuitus/`, 1.4 s), so **no buffered read was added** — the
+prelude has none to call in any case, and adding one is the prelude owner's
+change. `exsc` emits 212,143 bytes of fasmg for the two sources in 0.2 s;
+`fasmg` makes a 45,507-byte binary of it. The syscall audit passes: the
+binaries' surface is within `{Mundus, ambitus}`.
+
+### 6.4 Mutants: predicted, then run
+
+Each on a temp copy of the two sources, compiled and run; **predicted before
+observed**, and the two agreed in every case.
+
+| # | mutation | predicted | observed | does the corpus catch it? |
+|---|---|---|---|---|
+| 1 | the `- 8` on the record header dropped | every document fails the header-vs-index check | all 24 verdict 3, stream 211 bytes, first differing byte at stream offset 17 — key 0 | **yes** |
+| 2 | the reversed trie walked first byte first | no key found, no suffix matched | all 24 verdict 1, `.t3dm` 0, `.bin` 0, stream 139 bytes | **yes** |
+| 3 | child slots allocated at descent, so siblings are not adjacent | the counts still right, the lookups gone, no checksum disturbed | 24 documents, **373 nodes**, slot 128 — all correct — and all 24 verdict 1, both suffix counts 0 | **yes, and only the certificate does** |
+| 4 | the wrapping bound `off + len > file_len` | the vendored corpus cannot tell the two forms apart | byte-identical on `corpus.streamdb`. It needs a hand-made header (slot 1's `trie_off = 2^64 - 1`, `trie_len = 2`, slot CRC recomputed), where the correct reader falls back to the older commit and writes 25,099 bytes, exit 0, and the mutant accepts the slot and aborts | **no** |
+| 5 | the index-blob CRC not checked | the vendored corpus cannot tell, since its index CRC passes | byte-identical on `corpus.streamdb`. It needs a hand-flipped UUID byte in the index blob, where the correct reader exits 2 writing nothing and the mutant exits 0 writing 30,237 bytes with `data/asset_009.bin` not found and `.bin` 3 instead of 4 | **no** |
+
+**What the certificate therefore does not prove.** It does not exercise the
+*form* of the bounds arithmetic (mutant 4) or the index CRC (mutant 5): both
+need inputs no honest writer produces, so the vendored corpus — which is
+writer-produced on purpose — cannot contain them. It also does not cover a
+zero-length payload (the reference writer refuses to make one,
+`PROVENANCE.md`), a key over 24 bytes, a trie deeper than 24, a container over
+65,536 bytes, or more than 2,048 trie nodes.
+
+**A result worth its own line: mutant 4 will not compile into the reference's
+bug.** Written with plain `+`, `off + len` on `u64` **traps** — `abortus 1`,
+§6.6's shape — so the reference reader's wrapping comparison is *not
+expressible* in Exsecutor without asking for it in as many words (`+%`).
+`streamdb_embedded.c:120-122` and `:375-378` are written in the form C makes
+silent and this language makes loud.
+
+### 6.5 What the language needed, and the five gaps it found
+
+Used and sufficient: unsigned integers at every width, `@transitus` fields
+with `:minor` and `:maior` (the field access **is** the byte order), the one
+aggregate cast, array literals in both forms, `per`, `dum`, `rumpe`, `perge`,
+`si`/`sin`/`aliter`, `sicut`, `aut`, `sursum`/`deorsum`, and `chk` on every
+index. No float, no recursion, no division or remainder — `lo + ((hi - lo)
+deorsum 1)` is every midpoint and a two-slot header is a comparison, not a
+`% HEADER_SLOTS` — no bitwise and/or (§8.6 still `[OPEN]`; the CRC's low-bit
+test is `(c sursum 31) deorsum 31` and its final xor is `aut 0xffffffff`), and
+no CRC table: the whole corpus asks for about 35 KB of CRC, so the bitwise
+form is cheaper than the array literal it would take to avoid.
+
+12. **A function cannot fill an array it was handed.** A parameter is borrowed
+    (§6.3 decision 3) and there is no `&T` to assign through, so
+    "caller-supplied output buffer" — this section's own asking shape — has no
+    form. The reader owns each output and returns it by value (`Arbor` is
+    ~69 KB, `Nodi` ~520 bytes); there is still no allocation and every buffer
+    is still a fixed-size `acies` on the stack. Same gap as
+    `docs/design/receptor.md` finding 11, met by a second program.
+13. **An array length must be an integer literal.** `acies<u8, CAPACITAS>`
+    with a module `firma` is `EXS-E0304` at the type and `EXS-E0303` at the
+    initialiser (measured, `exsc` at `9c67d49`). So `65536`, `2048`, `1025`
+    and `1024` are literals in every signature, and the module `firma`s beside
+    them exist only for the arithmetic. Decision 5 of §8.6 makes a module
+    `firma` a constant; nothing makes it a *type-level* constant.
+14. **The 6-argument limit counts the hidden result pointer** (WC finding 8).
+    `suffixum_quaere(a, b, s, d, clavis, n) -> Inventa` is `bfa: emitter:
+    param index > 5`. Recorded again because it has now shaped two designs.
+15. **`&` is written nowhere in the reader.** This section's table asked for
+    `&acies<u8, 128>`; the reader takes the container by value-borrow and an
+    offset instead, which is what the language admits today. Not a defect —
+    a correction to the table.
+16. **§3.1's qualifier rule cannot spell these names.** It decomposes only
+    the part before `_` and requires the part after to be an ablative or a
+    proper noun; `caput_lege` puts the noun first and the verb in the
+    qualifier slot, and `lege_caput` would need `capite`. The names here are
+    kept as this section wrote them so the C backend's table still lines up.
+    §3's lexicon checker is `[OPEN]` and enforces nothing, so this is a gap in
+    the rule, recorded rather than worked around.
+
+### 6.6 The reference reader, where it is weaker than the format demands
+
+Read-only, at `/home/asher/Documents/M64/streamdb-embedded/`. Reported, not
+patched — it is not this repository's tree.
+
+1. **`streamdb_embedded.c:120-122` — the bounds check wraps.**
+   `if (h->trie_off + h->trie_len > file_len) return 0;` on two `uint64_t`s
+   read straight off the wire. A header claiming `off = 2^64 - 1, len = 2`
+   computes `1`, passes, and the reader then reads from `off`. The same form
+   is at `:375-378` for every index entry's `offset + size`. The upstream
+   form — `len > file_len || off > file_len - len` — is what this reader uses,
+   and mutant 4 above is the difference made visible.
+2. **`streamdb_embedded.c:181-183`, `:242-243` — `subtree_count` is read and
+   discarded**, in both passes. It is a checkable invariant (measured: exact
+   over all 689 nodes of the corpus's two commits) and nothing checks it.
+3. **`streamdb_embedded.c:319` — the arena estimate's comment contradicts its
+   arithmetic.** "A node is at minimum 10 bytes on the wire (u64 nchild + u8
+   tag + u64 count is 17, so this is conservative)" — 17 is the minimum, and
+   dividing by 10 over-estimates, which is safe; the sentence calls 10 the
+   minimum and then says why it is not. Harmless, and misleading to the next
+   reader.
+
+The reference is otherwise agreed with byte for byte: every verdict in
+`expectation.json`, on all four containers, is reproduced exactly.
 
 ## 7. Milestones
 
@@ -837,7 +967,7 @@ A harness on which any of them passes has proved nothing.
 |---|---|---|---|
 | **C1** skeleton and prologue measurements | (1) the measurement table of D3, filled in, **first**; (2) `compiler/x86_64/backend_c/{emit_c,program_c}.inc` — the 37 lowerings, the 23 refusals by name, the prologue, mangling; (3) `--emitte c`, `-o` required, `--hospes` rows, `CHK_F_PROGRAM` not set; (4) `tests/unit/bfc_emit_*.asm` pinning emitted text per opcode family, `bfc_mangle.asm`, `driver_emitte_c*.asm` for D2's three-way split | D2, D3 (as measured), D4 rows (text), D5 mangling, D1 (the unit compiles) | the hello world's IR through `emit_c`, compiled by `gcc -std=c11 -pedantic -Wall -Wextra` with the shim, prints `examples/saluta.expected` and exits 0 — by hand, recorded in the commit |
 | **C2** the differential harness | `tests/ir/emit_c.asm`, `tests/c/exsrt_shim.c`, `run_differential_tests`, `c-emit-exit=`/`c-exsc-exit=`, `checks.test` and the devShell gaining `gcc` and `clang`, the closure assertion | D6, D1 (the unit runs), D5 (byte-identical under `reproduce.sh`'s conditions) | 49 + 22 fixtures × 4 builds agreeing with the reference on all three observables, `nix flake check` green |
-| **C3** the reader | `examples/streamdb/` in Exsecutor, `tests/programs/streamdb_*/` driving it from `initium` over `vendor/streamdb-v3/` on stdin, both backends; the Python expectation | D7 (host half), section 6 | the semantic stream of section 6 — every key byte-exact with CRC verified, the counts, the error outcomes — identical under both backends and equal to the expectation; three mutants each failing at the named section |
+| **C3** the reader | `examples/streamdb/` in Exsecutor, `tests/programs/streamdb_*/` driving it from `initium` over `vendor/streamdb-v3/` on stdin, both backends; the Python expectation. **The reference-backend half landed with section 6**: the two sources, the four directories, `expecta.py`, and five mutants; what is left is the `--emitte c` stream and its comparison | D7 (host half), section 6 | the semantic stream of section 6 — every key byte-exact with CRC verified, the counts, the error outcomes — identical under both backends and equal to the expectation; five mutants, three of which the corpus catches and two of which need hand-made input (section 6.4) |
 | **C4** the N64 cross-compile | the `lower/` change of finding 6 (`mensura` from the `--hospes` row), `--hospes mips64-none-o64`, a `checks.n64` that compiles the C3 unit with Kiln's toolchain and gates | D7 (target half), D2's o64 row | the object compiles under Kiln's flags with no `.d` instruction and `nm -u` = `{exsrt_abortus}` (+ `memcpy`); linked into a Kiln test ROM by hand and recorded, not gated `[OPEN]` |
 
 Later, not scheduled: `div`/`rem`/`muls`/`*ov` in both backends; floats in

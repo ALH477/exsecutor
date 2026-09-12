@@ -1,0 +1,256 @@
+// examples/streamdb/probatio.exsc -- the driver for the StreamDB v3 reader,
+// and the only file of the unit that names `Mundus`, `Lector` or `Scriptor`.
+// It reads a container from standard input with `Lector.ab_introitu`, opens it
+// with `lector_streamdb.exsc`, and writes a certificate stream to standard
+// output, raw, one byte per `Scriptor.scribe_octeto` call.
+//
+// A container is not byte-reproducible -- the upstream writer mints each
+// document's UUID from /dev/urandom, so index bytes, trie bytes and every
+// CRC downstream of them differ run to run (vendor/streamdb-v3/PROVENANCE.md
+// measures it) -- so what this program writes is not the container but what a
+// reader can SAY about one. Every field of the stream is stable across
+// re-packings of the same 24 documents.
+//
+//   section  bytes            content
+//   0        1                the open's verdict (0 = a commit was read)
+//            4                that commit's sequence number, low 32 bits
+//   1        4                document count
+//            4                flattened trie node count
+//            4                the winning header slot's offset (0 or 128)
+//   2        24 x (1 + 4 + k) per key of the frozen corpus IN GEN.PY'S ORDER:
+//                             the verdict, then the payload length, then the
+//                             payload itself -- so a mismatch names its key
+//                             by position. Verdict 0 ok, 1 not found,
+//                             2 checksum mismatch, 3 malformed record; a
+//                             non-zero verdict writes length 0 and no bytes.
+//   3        1 + 8m           `.t3dm`: the match count, then each match's
+//            1 + 8m           `.bin`:  size and crc32, IN THE READER'S OWN
+//                             TRAVERSAL ORDER (reverse-lexicographic by key)
+//
+// Every multi-byte number is big-endian, written through `Quattuor`'s
+// `u32:maior` field -- the byte order is the declaration's, here as
+// everywhere else in this unit.
+//
+// `initium` returns 0 when the container opened and the stream was written,
+// and the stream itself carries every per-document verdict: a corrupt payload
+// is a byte in section 2, not an exit status. A container that will not open
+// at all returns its open verdict (1-6) and writes NOTHING. 9 means the input
+// was longer than the 65,536-byte capacity, 8 that a write was short.
+//
+// THE 24 KEYS ARE DATA. They are vendor/streamdb-v3/expectation.json's
+// `documents` array in index order, which is corpus/gen.py's insertion order
+// (PROVENANCE.md prints the generator). Nothing else about the corpus is
+// written down here: sizes, checksums, UUIDs and the suffix results all come
+// out of the container.
+//
+// ONE SYSCALL PER BYTE, MEASURED, AND THAT IS WHY THERE IS NO BUFFER.
+// `Lector.lege_octeto` reads one byte per `read(2)`; the corpus is 47,708
+// bytes, so the read is 47,709 syscalls and the stream is another 32,591
+// `write(2)`s -- 80,300 syscalls for the whole program. Measured on this
+// tree, three runs, stdout to /dev/null: 0.044 s, 0.044 s, 0.043 s wall
+// (0.026/0.018, 0.016/0.028, 0.026/0.016 user/sys). That is a THIRTIETH of
+// the suite's slowest existing directory (`receptio_circuitus/` at 1.4 s,
+// tests/README.md), so a buffered read would be optimising the wrong thing.
+// NOT ADDED. The prelude has no bulk read to call in any case -- spec §4.6's
+// `Lector` is `lege_octeto` and nothing else -- and adding one is the prelude
+// owner's change, not this program's.
+
+// A big-endian u32 as four bytes, the way `Syndroma` is a big-endian u16 in
+// tests/conformance/entry23/probatio.exsc.
+@transitus
+structura Quattuor {
+    valor: u32:maior
+}
+
+functio scribe_u32(s: Scriptor, v: u32) -> mensura {
+    firma t = Quattuor { valor: v } sicut acies<u8, 4>;
+    mutabilis n: mensura = s.scribe_octeto(t[0]);
+    n = n + s.scribe_octeto(t[1]);
+    n = n + s.scribe_octeto(t[2]);
+    n = n + s.scribe_octeto(t[3]);
+    redde n;
+}
+
+// The frozen corpus's 24 keys, 24 bytes each, zero-padded; `longitudines`
+// holds each one's true length. A table is written as a function returning
+// the literal because a module `firma` with an array initialiser does not
+// lower today (spec §8.6, measured; docs/design/modem.md D4).
+functio claves() -> acies<u8, 576> {
+    redde [
+        109, 111, 100, 101, 108, 115, 47, 97, 115, 115, 101, 116, 95, 48, 48, 48, 46, 116, 51, 100, 109, 0, 0, 0,
+        115, 112, 114, 105, 116, 101, 115, 47, 97, 115, 115, 101, 116, 95, 48, 48, 49, 46, 115, 112, 114, 105, 116, 101,
+        115, 102, 120, 47, 97, 115, 115, 101, 116, 95, 48, 48, 50, 46, 119, 97, 118, 54, 52, 0, 0, 0, 0, 0,
+        109, 117, 115, 105, 99, 47, 97, 115, 115, 101, 116, 95, 48, 48, 51, 46, 120, 109, 54, 52, 0, 0, 0, 0,
+        100, 97, 116, 97, 47, 97, 115, 115, 101, 116, 95, 48, 48, 52, 46, 98, 105, 110, 0, 0, 0, 0, 0, 0,
+        109, 111, 100, 101, 108, 115, 47, 97, 115, 115, 101, 116, 95, 48, 48, 53, 46, 116, 51, 100, 109, 0, 0, 0,
+        115, 112, 114, 105, 116, 101, 115, 47, 97, 115, 115, 101, 116, 95, 48, 48, 54, 46, 115, 112, 114, 105, 116, 101,
+        115, 102, 120, 47, 97, 115, 115, 101, 116, 95, 48, 48, 55, 46, 119, 97, 118, 54, 52, 0, 0, 0, 0, 0,
+        109, 117, 115, 105, 99, 47, 97, 115, 115, 101, 116, 95, 48, 48, 56, 46, 120, 109, 54, 52, 0, 0, 0, 0,
+        100, 97, 116, 97, 47, 97, 115, 115, 101, 116, 95, 48, 48, 57, 46, 98, 105, 110, 0, 0, 0, 0, 0, 0,
+        109, 111, 100, 101, 108, 115, 47, 97, 115, 115, 101, 116, 95, 48, 49, 48, 46, 116, 51, 100, 109, 0, 0, 0,
+        115, 112, 114, 105, 116, 101, 115, 47, 97, 115, 115, 101, 116, 95, 48, 49, 49, 46, 115, 112, 114, 105, 116, 101,
+        115, 102, 120, 47, 97, 115, 115, 101, 116, 95, 48, 49, 50, 46, 119, 97, 118, 54, 52, 0, 0, 0, 0, 0,
+        109, 117, 115, 105, 99, 47, 97, 115, 115, 101, 116, 95, 48, 49, 51, 46, 120, 109, 54, 52, 0, 0, 0, 0,
+        100, 97, 116, 97, 47, 97, 115, 115, 101, 116, 95, 48, 49, 52, 46, 98, 105, 110, 0, 0, 0, 0, 0, 0,
+        109, 111, 100, 101, 108, 115, 47, 97, 115, 115, 101, 116, 95, 48, 49, 53, 46, 116, 51, 100, 109, 0, 0, 0,
+        115, 112, 114, 105, 116, 101, 115, 47, 97, 115, 115, 101, 116, 95, 48, 49, 54, 46, 115, 112, 114, 105, 116, 101,
+        115, 102, 120, 47, 97, 115, 115, 101, 116, 95, 48, 49, 55, 46, 119, 97, 118, 54, 52, 0, 0, 0, 0, 0,
+        109, 117, 115, 105, 99, 47, 97, 115, 115, 101, 116, 95, 48, 49, 56, 46, 120, 109, 54, 52, 0, 0, 0, 0,
+        100, 97, 116, 97, 47, 97, 115, 115, 101, 116, 95, 48, 49, 57, 46, 98, 105, 110, 0, 0, 0, 0, 0, 0,
+        109, 111, 100, 101, 108, 115, 47, 97, 115, 115, 101, 116, 95, 48, 50, 48, 46, 116, 51, 100, 109, 0, 0, 0,
+        115, 112, 114, 105, 116, 101, 115, 47, 97, 115, 115, 101, 116, 95, 48, 50, 49, 46, 115, 112, 114, 105, 116, 101,
+        115, 102, 120, 47, 97, 115, 115, 101, 116, 95, 48, 50, 50, 46, 119, 97, 118, 54, 52, 0, 0, 0, 0, 0,
+        109, 117, 115, 105, 99, 47, 97, 115, 115, 101, 116, 95, 48, 50, 51, 46, 120, 109, 54, 52, 0, 0, 0, 0
+    ];
+}
+
+functio longitudines() -> acies<u8, 24> {
+    redde [
+        21, 24, 19, 20, 18, 21, 24, 19, 20, 18, 21, 24,
+        19, 20, 18, 21, 24, 19, 20, 18, 21, 24, 19, 20
+    ];
+}
+
+// ".t3dm" and ".bin", the two suffixes vendor/streamdb-v3/expectation.json
+// records the reference reader's traversal order for.
+functio suffixa() -> acies<u8, 10> {
+    redde [46, 116, 51, 100, 109, 46, 98, 105, 110, 0];
+}
+
+// ---- the stream ------------------------------------------------------------
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma l = Lector.ab_introitu(a);
+    firma s = Scriptor.ad_exitum(a);
+
+    // ---- the container, one byte per syscall ----------------------------
+    mutabilis b: acies<u8, 65536> = [0; 65536];
+    mutabilis longitudo: mensura = 0;
+    mutabilis c: u16 = l.lege_octeto();
+    dum c ne 256 {
+        si longitudo ge capacitas {
+            redde 9;
+        }
+        b[longitudo] = c sicut u8;
+        longitudo = longitudo + 1;
+        c = l.lege_octeto();
+    }
+
+    // ---- the open (section 0) -------------------------------------------
+    firma slot = caput_elige(b, longitudo);
+    si slot ge 256 {
+        redde 1;
+    }
+    firma h = caput_lege(b, slot);
+    firma indicis_situs = h.index_situs sicut mensura;
+    firma indicis_longitudo = h.index_longitudo sicut mensura;
+    firma arboris_situs = h.arbor_situs sicut mensura;
+    firma arboris_longitudo = h.arbor_longitudo sicut mensura;
+
+    si redundantia32(b, indicis_situs, indicis_longitudo) ne h.index_summa {
+        redde 2;
+    }
+    si redundantia32(b, arboris_situs, arboris_longitudo) ne h.arbor_summa {
+        redde 3;
+    }
+    firma numerus = indicem_numera(b, indicis_situs, indicis_longitudo);
+    si numerus ge capacitas {
+        redde 4;
+    }
+    si indicem_proba(b, indicis_situs, numerus, longitudo) ne 0 {
+        redde 6;
+    }
+    firma arbor = arbor_percurre(b, arboris_situs, arboris_longitudo);
+    si arbor.numerus eq 0 {
+        redde 5;
+    }
+
+    mutabilis n: mensura = s.scribe_octeto(0);
+    n = n + scribe_u32(s, h.ordo sicut u32);
+
+    // ---- the counts (section 1) -----------------------------------------
+    n = n + scribe_u32(s, numerus sicut u32);
+    n = n + scribe_u32(s, arbor.numerus sicut u32);
+    n = n + scribe_u32(s, slot sicut u32);
+    mutabilis expectata: mensura = 17;
+
+    // ---- the documents (section 2) --------------------------------------
+    firma tabula = claves();
+    firma lg = longitudines();
+    per d in 0..24 {
+        mutabilis k: acies<u8, 1024> = [0; 1024];
+        firma kn = lg[d] sicut mensura;
+        per i in 0..kn {
+            k[i] = tabula[d * 24 + i];
+        }
+        firma pos = documentum_quaere(arbor, b, indicis_situs, numerus, k, kn);
+        si pos ge numerus {
+            n = n + s.scribe_octeto(1);
+            n = n + scribe_u32(s, 0);
+            expectata = expectata + 5;
+        } aliter {
+            firma e = indicium_lege(b, indicis_situs + 8 + pos * 32);
+            firma v = documentum_proba(b, longitudo, e);
+            si v ne 0 {
+                si v eq 2 {
+                    n = n + s.scribe_octeto(2);
+                } aliter {
+                    n = n + s.scribe_octeto(3);
+                }
+                n = n + scribe_u32(s, 0);
+                expectata = expectata + 5;
+            } aliter {
+                firma mg = e.magnitudo sicut mensura;
+                firma situs = e.situs sicut mensura;
+                n = n + s.scribe_octeto(0);
+                n = n + scribe_u32(s, e.magnitudo);
+                per i in 0..mg {
+                    n = n + s.scribe_octeto(b[situs + i]);
+                }
+                expectata = expectata + 5 + mg;
+            }
+        }
+    }
+
+    // ---- the suffix searches (section 3) --------------------------------
+    firma sf = suffixa();
+    per t in 0..2 {
+        mutabilis k: acies<u8, 1024> = [0; 1024];
+        mutabilis kn: mensura = 5;
+        si t eq 1 {
+            kn = 4;
+        }
+        per i in 0..kn {
+            k[i] = sf[t * 5 + i];
+        }
+        firma v = suffixum_percurre(arbor, k, kn);
+        // Resolve each visited node to an index entry; a node whose UUID the
+        // index does not carry is not a match, which is the reference's rule.
+        mutabilis inventa: mensura = 0;
+        per i in 0..v.numerus {
+            firma nodus = v.nodi[i];
+            si indicem_quaere(b, indicis_situs, numerus, arbor.idm[nodus], arbor.idn[nodus]) lt numerus {
+                inventa = inventa + 1;
+            }
+        }
+        n = n + s.scribe_octeto(inventa sicut u8);
+        expectata = expectata + 1;
+        per i in 0..v.numerus {
+            firma nodus = v.nodi[i];
+            firma pos = indicem_quaere(b, indicis_situs, numerus, arbor.idm[nodus], arbor.idn[nodus]);
+            si pos lt numerus {
+                firma e = indicium_lege(b, indicis_situs + 8 + pos * 32);
+                n = n + scribe_u32(s, e.magnitudo);
+                n = n + scribe_u32(s, e.summa);
+                expectata = expectata + 8;
+            }
+        }
+    }
+
+    si n ne expectata {
+        redde 8;
+    }
+    redde 0;
+}

@@ -1,0 +1,22 @@
+# Negative case 3: a container truncated to 300 bytes.
+# vendor/streamdb-v3/negative/corpus.trunc300.streamdb is `head -c 300
+# corpus.streamdb`, so BOTH header slots survive intact -- magic, version and
+# each slot's own trailing CRC all still validate -- and both slots'
+# trie/index offsets and lengths point past the end of the 300-byte file.
+#
+# What expectation.json records the reference reader doing: header_parse's
+# bounds check fails for both slots, read_commit finds no valid commit, and
+# probe and open both return STREAMDB_EMB_ERR_FORMAT ("bad format").
+#
+# What this reader does: `caput_elige` answers 256 (no commit) and
+# `probatio.exsc` returns 1 having written NOTHING. There is no `stdout=` key,
+# so tests/run.sh requires stdout to be empty -- a reader that emitted a
+# partial stream before noticing would fail here rather than pass quietly.
+#
+# THIS IS THE ONE CASE THE BOUNDS CHECK DECIDES, and it decides it on offsets
+# a real writer wrote. It does NOT exercise the non-wrapping FORM of that
+# check: `off + len > file_len` and `len > file_len || off > file_len - len`
+# agree on every header in this corpus. Mutant 4 in the commit message is
+# where the form is proved, on a header made by hand, because the corpus
+# cannot make one.
+TEST: expect-exit=1 stdin=vendor/streamdb-v3/negative/corpus.trunc300.streamdb sources=examples/streamdb/lector_streamdb.exsc,examples/streamdb/probatio.exsc

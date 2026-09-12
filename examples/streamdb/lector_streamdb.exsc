@@ -1,0 +1,739 @@
+// examples/streamdb/lector_streamdb.exsc -- a StreamDB v3 reader, written in
+// Exsecutor. PURE: no `poscit` anywhere, no `initium`, no capability, no
+// allocation, no I/O. It reads bytes it is handed and answers questions about
+// them; `probatio.exsc` is the only file of the unit that names `Mundus`,
+// `Lector` or `Scriptor`. docs/design/c-backend.md section 6 / D7 is its
+// design, and the names below are that section's.
+//
+// THE NAME. §3.1 decomposes only the part of a public name before `_` and
+// says the qualifier after it is "a Latin ablative or a proper noun".
+// `streamdb` is a proper noun, as `plica_unicode`'s is. The FUNCTION names
+// below are c-backend.md section 6's table verbatim (`caput_lege`,
+// `indicium_lege`, `arbor_percurre`, `arbor_descende`, ...) so that the C
+// backend's own table still lines up with this file; note that those put the
+// NOUN before the `_` and the verb after it, which §3.1's qualifier rule does
+// not admit either way round. §3's lexicon checker is `[OPEN]` (§3.3:
+// EXS-E0601-E0603 "are `[OPEN]`: ... built and tested ... and not enabled"),
+// so nothing enforces this today. Recorded, not worked around.
+//
+// ---------------------------------------------------------------------------
+// THE CONTAINER, verified against /home/asher/Documents/M64/streamdb-embedded/
+// src/streamdb_embedded.c (the reference reader, read-only) and against
+// DeMoD-StreamDB C/src/streamdb.c (the writer), and re-measured against
+// vendor/streamdb-v3/corpus.streamdb byte by byte:
+//
+//   [0, 128)    header slot 0
+//   [128, 256)  header slot 1
+//   [256, ...)  documents, then the appended trie and index commit blobs
+//
+//   header slot, 128 bytes, 76 used, little-endian:
+//     0   "STDB"            4   version u32 (= 3)
+//     8   commit seq u64    16  trie off u64      24  trie len u64
+//     32  trie crc u32      36  ZERO PAD u32
+//     40  index off u64     48  index len u64     56  index crc u32
+//     60  ZERO PAD u32      64  data end u64      72  crc32 of [0, 72)
+//     76..128 zero
+//   document record:  [u32 size][u32 crc32(payload)][payload]
+//   index blob:       u64 count, then count x 32 bytes
+//                     [16B uuid][u64 offset][u32 size][u32 crc],
+//                     sorted by UUID BYTE ORDER
+//   trie blob:        REVERSED (keys indexed last byte first), each node
+//                     u64 nchild, then nchild x (u8 key, node) ascending by
+//                     key, then u8 tag, then if tag == 1 a u64 length (== 16)
+//                     and a 16-byte UUID, then u64 subtree_count
+//   checksums:        CRC-32/ISO-HDLC -- reflected, polynomial 0xEDB88320,
+//                     init and final xor 0xFFFFFFFF
+//
+// THE TRAP. An index entry's `offset` addresses the PAYLOAD; the 8-byte
+// record header is at `offset - 8`. The upstream format comment reads the
+// other way. `documentum_proba` below is the one place the `- 8` is spelled.
+//
+// ---------------------------------------------------------------------------
+// WHY `@transitus`, AND WHERE IT STOPS. Every fixed-shape record here is
+// declared as a `@transitus` struct with `:minor` fields and reached through
+// §5.2's one aggregate cast. That is the language's whole claim about byte
+// order -- "the conversion IS the field access" -- and there is not one shift
+// or mask below for any header, index entry or record header. Nothing in this
+// file assumes the host's byte order; `Caput.ordo` is a `u64:minor` field on
+// any machine.
+//
+// Two places earn it twice over:
+//   * `Caput` declares the two ZERO PADS (`vacuum36`, `vacuum60`) and the
+//     52 trailing bytes as fields, because §5.2 forbids implicit padding in a
+//     `@transitus` type. The pad is in the format; now it is in the type.
+//   * `Indicium` declares the 16-byte UUID as `idm: u64:maior` +
+//     `idn: u64:maior`. The index is sorted by UUID BYTE order, so comparing
+//     the two big-endian halves as unsigned integers IS memcmp on 16 bytes --
+//     the binary search needs no byte loop at all. A `:minor` pair would have
+//     given the wrong order; the annotation is load-bearing.
+//
+// Where it stops: a trie node is VARIABLE length, so it has no `@transitus`
+// shape. Its three u64 fields are read through `Octo` -- a one-field
+// `@transitus` struct, the same trick `Syndroma` is in
+// tests/conformance/entry23/codex.exsc -- so even there the byte order is the
+// declaration's and not a shift chain.
+//
+// ---------------------------------------------------------------------------
+// SIZES ARE LITERALS IN TYPES, CONSTANTS EVERYWHERE ELSE.
+// `acies<u8, capacitas>` with a module `firma` is EXS-E0304 at the type and
+// EXS-E0303 at the initialiser (measured, this tree, exsc at 9c67d49): an
+// array length must be an integer LITERAL. Decision 5 of §8.6 makes a module
+// `firma` a constant; nothing makes it a type-level one. So 65536, 2048, 1025
+// and 1024 appear as literals in every `acies<...>` below and as the named
+// constants beside them in every comparison. Finding, reported; not worked
+// around, and the duplication is the language's, not this file's.
+//
+//   65536  container capacity. vendor/streamdb-v3/corpus.streamdb is 47,708
+//          bytes.
+//   2048   flattened trie nodes. The corpus's newest commit has 373; its
+//          older one 316.
+//   1025   explicit-stack depth, one more than the format's 1024-byte
+//          maximum key, so a 1024-deep walk fits and a 1025-deep one is
+//          rejected rather than overrunning.
+//   1024   key capacity, the format's own MAX_KEY_LEN.
+//   64     suffix matches reported.
+//
+// NO CALLER-PROVIDED OUTPUT ARRAY. c-backend.md section 6 asks for
+// `arbor_percurre(b, n, out, cap)` writing into a caller-supplied array. That
+// has no form in the language: a parameter is borrowed (§6.3 decision 3), and
+// docs/design/receptor.md finding 11 is exactly this gap ("Mutation through a
+// borrowed aggregate parameter has no form"). So the flattening OWNS its
+// output and returns it: `arbor_percurre` returns an `Arbor` by value, the
+// shape `tabulam()` in tests/programs/acies/ already runs. Every buffer is
+// still fixed-size and still on the stack -- there is no allocation -- but
+// "caller-supplied" is not what the language can say today.
+
+// ---- module constants (every comparison below reads these; the `acies<...>`
+// lengths repeat them as literals because a type cannot name one) ----------
+
+publica firma capacitas: mensura = 65536;
+publica firma nodi_maximi: mensura = 2048;
+publica firma pila_maxima: mensura = 1025;
+publica firma clavis_maxima: mensura = 1024;
+publica firma inventa_maxima: mensura = 64;
+
+// ---- the records ----------------------------------------------------------
+
+// A header slot, all 128 bytes of it. `signum` is `u32:maior` so that the
+// four ASCII bytes "STDB" read as 0x53544442; every other field is `:minor`,
+// which is what the format says and what the host does not get a vote on.
+@transitus
+publica structura Caput {
+    signum: u32:maior
+    versio: u32:minor
+    ordo: u64:minor
+    arbor_situs: u64:minor
+    arbor_longitudo: u64:minor
+    arbor_summa: u32:minor
+    vacuum36: u32:minor
+    index_situs: u64:minor
+    index_longitudo: u64:minor
+    index_summa: u32:minor
+    vacuum60: u32:minor
+    finis: u64:minor
+    summa: u32:minor
+    vacuum76: u64:minor
+    vacuum84: u64:minor
+    vacuum92: u64:minor
+    vacuum100: u64:minor
+    vacuum108: u64:minor
+    vacuum116: u64:minor
+    vacuum124: u32:minor
+}
+
+// One 32-byte index entry. `idm`/`idn` are the UUID's two halves read
+// BIG-endian, which makes unsigned comparison of the pair equal to memcmp of
+// the sixteen bytes -- the order the blob is sorted in.
+@transitus
+publica structura Indicium {
+    idm: u64:maior
+    idn: u64:maior
+    situs: u64:minor
+    magnitudo: u32:minor
+    summa: u32:minor
+}
+
+// The 8-byte document record header, which lives at `Indicium.situs - 8`.
+@transitus
+publica structura Recordum {
+    magnitudo: u32:minor
+    summa: u32:minor
+}
+
+// A bare little-endian u64, for the trie's variable-length nodes and the
+// index blob's count. The byte order is still the declaration's.
+@transitus
+publica structura Octo {
+    valor: u64:minor
+}
+
+// A bare 16-byte UUID read as two big-endian halves, to match `Indicium`.
+@transitus
+publica structura Nomen {
+    idm: u64:maior
+    idn: u64:maior
+}
+
+// ---- the flattened trie ---------------------------------------------------
+
+// Kiln's flat node, one entry per slot across six parallel arrays.
+// `numerus` is the node count, and 0 means the blob was malformed.
+//
+// SIBLINGS ARE ADJACENT, and that is the whole point (streamdb_embedded.c
+// :186-196). A node fills a slot its PARENT already assigned it and
+// bump-allocates a fresh contiguous range for its own children before
+// descending into any of them, so a node's children occupy consecutive
+// indices even though their subtrees allocate arbitrarily far ahead. Allocate
+// each child's slot at the moment you descend into it instead and the array
+// is still the right size, every single-child lookup still works, and
+// multi-child lookups silently miss -- no CRC catches it, because the blob
+// was read correctly and only the array is wrong.
+publica structura Arbor {
+    numerus: mensura
+    primus: acies<mensura, 2048>
+    numeri: acies<mensura, 2048>
+    habet: acies<u8, 2048>
+    claves: acies<u8, 2048>
+    idm: acies<u64, 2048>
+    idn: acies<u64, 2048>
+}
+
+// The value-carrying nodes a suffix search reached, in the reader's traversal
+// order. Node slots and not index positions, because resolving a slot to an
+// index entry needs the container and the index offset too, and
+// `suffixum_percurre(a, b, s, d, clavis, n)` would be six parameters plus the
+// hidden result pointer -- seven words, one more than a call passes
+// (docs/design/wire-codec.md finding 8, met again here). The split is the
+// better shape anyway: the trie walk is over the trie alone.
+publica structura Nodi {
+    numerus: mensura
+    nodi: acies<mensura, 64>
+}
+
+// ---- CRC-32/ISO-HDLC ------------------------------------------------------
+
+// Reflected, polynomial 0xEDB88320, init 0xFFFFFFFF, final xor 0xFFFFFFFF --
+// zlib's crc32, and the function streamdb_embedded.c computes on the fly.
+// This is NOT the CRC tests/conformance/entry23/codex.exsc has: that one is
+// CRC-16/CCITT-FALSE, unreflected, polynomial 0x1021, no final xor.
+//
+// `(c sursum 31) deorsum 31` is the low-bit test, and `c deorsum 1` discards
+// the bit it shifts past the bottom (§5.4), so there is no `& 1` and no
+// `& 0xFFFFFFFF` -- the shift-discard idiom the wire codec used for the same
+// reason. No table: the corpus asks for about 35 KB of CRC in total.
+publica functio redundantia32(b: acies<u8, 65536>, s: mensura, n: mensura) -> u32 {
+    mutabilis c: u32 = 0xffffffff;
+    per i in 0..n {
+        c = c aut (b[s + i] sicut u32);
+        per k in 0..8 {
+            si (c sursum 31) deorsum 31 eq 1 {
+                c = (c deorsum 1) aut 0xedb88320;
+            } aliter {
+                c = c deorsum 1;
+            }
+        }
+    }
+    redde c aut 0xffffffff;
+}
+
+// ---- the records, read out of the container -------------------------------
+
+// Every one of these copies its fixed window into a local and casts it: §5.2
+// admits `sicut` between a `@transitus` struct S and `acies<u8, N>` only when
+// N is exactly S's size, and there are no slices.
+
+publica functio caput_lege(b: acies<u8, 65536>, s: mensura) -> Caput {
+    mutabilis t: acies<u8, 128> = [0; 128];
+    per i in 0..128 {
+        t[i] = b[s + i];
+    }
+    redde t sicut Caput;
+}
+
+publica functio indicium_lege(b: acies<u8, 65536>, s: mensura) -> Indicium {
+    mutabilis t: acies<u8, 32> = [0; 32];
+    per i in 0..32 {
+        t[i] = b[s + i];
+    }
+    redde t sicut Indicium;
+}
+
+publica functio recordum_lege(b: acies<u8, 65536>, s: mensura) -> Recordum {
+    mutabilis t: acies<u8, 8> = [0; 8];
+    per i in 0..8 {
+        t[i] = b[s + i];
+    }
+    redde t sicut Recordum;
+}
+
+publica functio octo_lege(b: acies<u8, 65536>, s: mensura) -> u64 {
+    mutabilis t: acies<u8, 8> = [0; 8];
+    per i in 0..8 {
+        t[i] = b[s + i];
+    }
+    firma o = t sicut Octo;
+    redde o.valor;
+}
+
+publica functio nomen_lege(b: acies<u8, 65536>, s: mensura) -> Nomen {
+    mutabilis t: acies<u8, 16> = [0; 16];
+    per i in 0..16 {
+        t[i] = b[s + i];
+    }
+    redde t sicut Nomen;
+}
+
+// ---- the header, validated ------------------------------------------------
+
+// 1 if the slot at `s` is a commit this reader will read, 0 otherwise.
+// `longitudo` is the container's length in bytes.
+//
+// BOUNDS ARITHMETIC DOES NOT WRAP. The test is `len > file_len ||
+// off > file_len - len`, never `off + len > file_len`: `off` and `len` are
+// u64 straight off the wire, and a header claiming off = 2^64 - 1, len = 2
+// makes the second form compute 1 and pass. THE REFERENCE READER HAS THE
+// SECOND FORM (streamdb_embedded.c:120-122), and so does its data-end and
+// per-entry check at :375-378. Finding, not a model. The corpus cannot catch
+// it -- a real writer never emits such a header -- so mutant 4 in the commit
+// message hand-makes one.
+publica functio caput_valet(b: acies<u8, 65536>, s: mensura, longitudo: mensura) -> u8 {
+    si longitudo lt 256 {
+        redde 0;
+    }
+    si s + 128 gt longitudo {
+        redde 0;
+    }
+    firma c = caput_lege(b, s);
+    si c.signum ne 0x53544442 {
+        redde 0;
+    }
+    si c.versio ne 3 {
+        redde 0;
+    }
+    // The slot's own CRC covers bytes [0, 72). A slot failing it was torn
+    // mid-write, and the caller falls back to the other slot.
+    si c.summa ne redundantia32(b, s, 72) {
+        redde 0;
+    }
+    firma fl: u64 = longitudo sicut u64;
+    si c.arbor_longitudo gt fl {
+        redde 0;
+    }
+    si c.arbor_situs gt (fl - c.arbor_longitudo) {
+        redde 0;
+    }
+    si c.index_longitudo gt fl {
+        redde 0;
+    }
+    si c.index_situs gt (fl - c.index_longitudo) {
+        redde 0;
+    }
+    si c.finis gt fl {
+        redde 0;
+    }
+    si c.index_longitudo lt 8 {
+        redde 0;
+    }
+    redde 1;
+}
+
+// The offset of the winning header slot: 0, 128, or 256 meaning "no valid
+// commit". The newest slot whose magic, version, CRC and bounds all validate
+// wins; on a tie slot 0 wins, which is what the reference's `h.seq >
+// best.seq` over slots in order does. There is no remainder here and no
+// `% HEADER_SLOTS`: two slots is a comparison.
+publica functio caput_elige(b: acies<u8, 65536>, longitudo: mensura) -> mensura {
+    firma v0 = caput_valet(b, 0, longitudo);
+    firma v1 = caput_valet(b, 128, longitudo);
+    si v0 eq 0 {
+        si v1 eq 0 {
+            redde 256;
+        }
+        redde 128;
+    }
+    si v1 eq 0 {
+        redde 0;
+    }
+    firma c0 = caput_lege(b, 0);
+    firma c1 = caput_lege(b, 128);
+    si c1.ordo gt c0.ordo {
+        redde 128;
+    }
+    redde 0;
+}
+
+// ---- the index ------------------------------------------------------------
+
+// The document count the index blob declares, or `capacitas` if the blob is
+// not shaped like an index. `s` is the blob's offset and `n` its length.
+publica functio indicem_numera(b: acies<u8, 65536>, s: mensura, n: mensura) -> mensura {
+    si n lt 8 {
+        redde capacitas;
+    }
+    firma d = octo_lege(b, s);
+    // A count that cannot index the blob is a malformed index, and the
+    // multiplication below must not be allowed to wrap either.
+    si d gt (nodi_maximi sicut u64) {
+        redde capacitas;
+    }
+    firma k = d sicut mensura;
+    si 8 + k * 32 gt n {
+        redde capacitas;
+    }
+    redde k;
+}
+
+// 0 if every entry is in bounds, 1 otherwise. The reference does this at open
+// time and fails the whole open (streamdb_embedded.c:368-379) -- with the
+// wrapping form of the bound, again.
+publica functio indicem_proba(b: acies<u8, 65536>, s: mensura, d: mensura, longitudo: mensura) -> u8 {
+    firma fl: u64 = longitudo sicut u64;
+    per i in 0..d {
+        firma e = indicium_lege(b, s + 8 + i * 32);
+        si e.situs lt 8 {
+            redde 1;
+        }
+        firma m: u64 = e.magnitudo sicut u64;
+        si m gt fl {
+            redde 1;
+        }
+        si e.situs gt (fl - m) {
+            redde 1;
+        }
+    }
+    redde 0;
+}
+
+// The position of the entry whose UUID is (`idm`, `idn`), or `d` if there is
+// none. Binary search over the blob in place: the entries are sorted by UUID
+// byte order, and `Indicium`'s two `u64:maior` halves compare in exactly that
+// order. `lo + ((hi - lo) deorsum 1)` is the midpoint -- a shift, because
+// this language has no division today and because the reference's own
+// `lo + (hi - lo) / 2u` is that shift.
+publica functio indicem_quaere(b: acies<u8, 65536>, s: mensura, d: mensura,
+                               idm: u64, idn: u64) -> mensura {
+    mutabilis lo: mensura = 0;
+    mutabilis hi: mensura = d;
+    dum lo lt hi {
+        firma mid = lo + ((hi - lo) deorsum 1);
+        firma e = indicium_lege(b, s + 8 + mid * 32);
+        si e.idm eq idm {
+            si e.idn eq idn {
+                redde mid;
+            }
+        }
+        si e.idm lt idm {
+            lo = mid + 1;
+        } sin e.idm gt idm {
+            hi = mid;
+        } sin e.idn lt idn {
+            lo = mid + 1;
+        } aliter {
+            hi = mid;
+        }
+    }
+    redde d;
+}
+
+// ---- the trie, flattened --------------------------------------------------
+
+// One pass over the serialised blob at [s, s + n), with an EXPLICIT STACK, no
+// recursion. Returns the flat array; `numerus` is 0 when the blob is
+// malformed.
+//
+// The walk is the reference's `trie_build` transcribed: each frame enters a
+// slot its parent assigned it, bump-allocates a contiguous range for its own
+// children FIRST, then descends into them left to right. That is what keeps
+// siblings adjacent and the child binary search valid.
+//
+// STRICTER THAN THE REFERENCE, DELIBERATELY: `subtree_count` is verified,
+// not discarded. Upstream writes the number of value-carrying nodes in the
+// subtree, inclusive -- re-measured over both of the corpus's commits (373
+// nodes and 316 nodes, every node's stored count equal to its subtree's value
+// count). `streamdb_embedded.c:181-183` and `:242-243` read the field and
+// throw it away. Verifying it rejects hand-corrupted blobs the reference
+// accepts; it also means a writer that ever disagreed with this reading would
+// be refused here and admitted there. Said out loud because it is a real
+// difference in strictness and not an improvement by fiat.
+publica functio arbor_percurre(b: acies<u8, 65536>, s: mensura, n: mensura) -> Arbor {
+    mutabilis a = Arbor {
+        numerus: 0,
+        primus: [0; 2048],
+        numeri: [0; 2048],
+        habet: [0; 2048],
+        claves: [0; 2048],
+        idm: [0; 2048],
+        idn: [0; 2048]
+    };
+
+    // The explicit stack: one entry per open node, 1025 deep so that the
+    // format's 1024-byte maximum key fits and nothing deeper does.
+    mutabilis f_nodus: acies<mensura, 1025> = [0; 1025];
+    mutabilis f_natus: acies<mensura, 1025> = [0; 1025];
+    mutabilis f_factus: acies<mensura, 1025> = [0; 1025];
+    mutabilis f_primus: acies<mensura, 1025> = [0; 1025];
+    mutabilis f_valor: acies<mensura, 1025> = [0; 1025];
+
+    mutabilis p: mensura = 0;
+    mutabilis gradus: mensura = 1;
+    mutabilis sp: mensura = 0;
+    mutabilis slot: mensura = 0;
+    mutabilis modus: mensura = 0;
+    mutabilis vivus: mensura = 1;
+    mutabilis valet: mensura = 1;
+
+    dum vivus eq 1 {
+        si modus eq 0 {
+            // ---- enter `slot`: its child count, then its child range ----
+            si p + 8 gt n {
+                valet = 0;
+                rumpe;
+            }
+            firma nch = octo_lege(b, s + p);
+            p = p + 8;
+            si nch gt 256 {
+                valet = 0;
+                rumpe;
+            }
+            firma k = nch sicut mensura;
+            si gradus + k gt nodi_maximi {
+                valet = 0;
+                rumpe;
+            }
+            si sp ge pila_maxima {
+                valet = 0;
+                rumpe;
+            }
+            a.primus[slot] = gradus;
+            a.numeri[slot] = k;
+            f_nodus[sp] = slot;
+            f_natus[sp] = k;
+            f_factus[sp] = 0;
+            f_primus[sp] = gradus;
+            f_valor[sp] = 0;
+            gradus = gradus + k;
+            sp = sp + 1;
+            modus = 1;
+            perge;
+        }
+
+        // ---- resume the frame on top ----
+        firma t = sp - 1;
+        si f_factus[t] lt f_natus[t] {
+            // The next child's key byte, then descend into it.
+            si p + 1 gt n {
+                valet = 0;
+                rumpe;
+            }
+            firma ch = f_primus[t] + f_factus[t];
+            a.claves[ch] = b[s + p];
+            p = p + 1;
+            f_factus[t] = f_factus[t] + 1;
+            slot = ch;
+            modus = 0;
+            perge;
+        }
+
+        // Children done: the value tag, then the subtree count, then pop.
+        si p + 1 gt n {
+            valet = 0;
+            rumpe;
+        }
+        firma tag = b[s + p];
+        p = p + 1;
+        mutabilis mei: mensura = f_valor[t];
+        si tag eq 1 {
+            si p + 8 gt n {
+                valet = 0;
+                rumpe;
+            }
+            firma ulen = octo_lege(b, s + p);
+            p = p + 8;
+            si ulen ne 16 {
+                valet = 0;
+                rumpe;
+            }
+            si p + 16 gt n {
+                valet = 0;
+                rumpe;
+            }
+            firma id = nomen_lege(b, s + p);
+            p = p + 16;
+            firma nodus = f_nodus[t];
+            a.habet[nodus] = 1;
+            a.idm[nodus] = id.idm;
+            a.idn[nodus] = id.idn;
+            mei = mei + 1;
+        } sin tag ne 0 {
+            valet = 0;
+            rumpe;
+        }
+        si p + 8 gt n {
+            valet = 0;
+            rumpe;
+        }
+        firma subter = octo_lege(b, s + p);
+        p = p + 8;
+        // The stricter check (see the header comment).
+        si subter ne (mei sicut u64) {
+            valet = 0;
+            rumpe;
+        }
+        sp = sp - 1;
+        si sp eq 0 {
+            vivus = 0;
+        } aliter {
+            firma u = sp - 1;
+            f_valor[u] = f_valor[u] + mei;
+        }
+    }
+
+    si valet eq 1 {
+        a.numerus = gradus;
+    }
+    redde a;
+}
+
+// The slot of `nodus`'s child under key byte `clavis`, or `a.numerus` when
+// there is none. Binary search over the contiguous sibling range.
+publica functio arbor_descende(a: Arbor, nodus: mensura, clavis: u8) -> mensura {
+    firma basis = a.primus[nodus];
+    mutabilis lo: mensura = 0;
+    mutabilis hi: mensura = a.numeri[nodus];
+    dum lo lt hi {
+        firma mid = lo + ((hi - lo) deorsum 1);
+        firma k = a.claves[basis + mid];
+        si k eq clavis {
+            redde basis + mid;
+        }
+        si k lt clavis {
+            lo = mid + 1;
+        } aliter {
+            hi = mid;
+        }
+    }
+    redde a.numerus;
+}
+
+// Walk the REVERSED trie: `clavis[0..n)` is spelled LAST BYTE FIRST. Returns
+// the slot reached, or `a.numerus`. Reading it forwards finds nothing for any
+// key that is not a palindrome -- and finds the WRONG node for one that is.
+publica functio clavem_quaere(a: Arbor, clavis: acies<u8, 1024>, n: mensura) -> mensura {
+    si a.numerus eq 0 {
+        redde 0;
+    }
+    si n eq 0 {
+        redde a.numerus;
+    }
+    si n gt clavis_maxima {
+        redde a.numerus;
+    }
+    mutabilis nodus: mensura = 0;
+    per j in 0..n {
+        firma i = n - 1 - j;
+        nodus = arbor_descende(a, nodus, clavis[i]);
+        si nodus ge a.numerus {
+            redde a.numerus;
+        }
+    }
+    redde nodus;
+}
+
+// ---- documents ------------------------------------------------------------
+
+// 0 the document at `e` is intact; 1 malformed; 2 checksum mismatch.
+//
+// THE `- 8` LIVES HERE, ONCE. `e.situs` addresses the payload; the record
+// header is the eight bytes before it, and is checked against the index entry
+// exactly as the reference does (streamdb_embedded.c:475-482).
+publica functio documentum_proba(b: acies<u8, 65536>, longitudo: mensura, e: Indicium) -> u8 {
+    firma fl: u64 = longitudo sicut u64;
+    si e.situs lt 8 {
+        redde 1;
+    }
+    firma m: u64 = e.magnitudo sicut u64;
+    si m gt fl {
+        redde 1;
+    }
+    si e.situs gt (fl - m) {
+        redde 1;
+    }
+    firma situs = e.situs sicut mensura;
+    firma r = recordum_lege(b, situs - 8);
+    si r.magnitudo ne e.magnitudo {
+        redde 1;
+    }
+    si r.summa ne e.summa {
+        redde 1;
+    }
+    si redundantia32(b, situs, e.magnitudo sicut mensura) ne e.summa {
+        redde 2;
+    }
+    redde 0;
+}
+
+// The index position of the document `clavis[0..n)` names, or `d` when there
+// is none: the trie walk, then the UUID binary search, exactly the
+// reference's `streamdb_emb_find`.
+publica functio documentum_quaere(a: Arbor, b: acies<u8, 65536>, s: mensura, d: mensura,
+                                  clavis: acies<u8, 1024>, n: mensura) -> mensura {
+    firma nodus = clavem_quaere(a, clavis, n);
+    si nodus ge a.numerus {
+        redde d;
+    }
+    si a.habet[nodus] eq 0 {
+        redde d;
+    }
+    redde indicem_quaere(b, s, d, a.idm[nodus], a.idn[nodus]);
+}
+
+// ---- suffix search --------------------------------------------------------
+
+// Every key ending in `clavis[0..n)`, in the reference reader's traversal
+// order: descend the reversed trie by the suffix, then walk that subtree in
+// preorder, a node's own value before its children and children in ascending
+// key order (streamdb_embedded.c:517-533, whose `collect` is that walk).
+// A reversed trie makes a suffix search a prefix walk, which is the whole
+// reason the format reverses.
+//
+// The explicit stack holds the nodes still to visit, deepest-last, so pushing
+// a node's children in DESCENDING key order pops them ascending.
+//
+// The reference counts a match only when `index_find` also resolves the
+// node's UUID; here the caller resolves, and skipping an unresolvable node is
+// the caller's to do. `probatio.exsc` does exactly that, so the visit order
+// and the match set are both the reference's.
+publica functio suffixum_percurre(a: Arbor, clavis: acies<u8, 1024>, n: mensura) -> Nodi {
+    mutabilis v = Nodi { numerus: 0, nodi: [0; 64] };
+    firma radix = clavem_quaere(a, clavis, n);
+    si radix ge a.numerus {
+        redde v;
+    }
+
+    mutabilis pila: acies<mensura, 2048> = [0; 2048];
+    mutabilis sp: mensura = 1;
+    pila[0] = radix;
+
+    dum sp gt 0 {
+        sp = sp - 1;
+        firma nodus = pila[sp];
+        si a.habet[nodus] eq 1 {
+            si v.numerus ge inventa_maxima {
+                redde v;
+            }
+            v.nodi[v.numerus] = nodus;
+            v.numerus = v.numerus + 1;
+        }
+        firma k = a.numeri[nodus];
+        firma basis = a.primus[nodus];
+        per j in 0..k {
+            firma c = basis + (k - 1 - j);
+            si sp ge nodi_maximi {
+                redde v;
+            }
+            pila[sp] = c;
+            sp = sp + 1;
+        }
+    }
+    redde v;
+}

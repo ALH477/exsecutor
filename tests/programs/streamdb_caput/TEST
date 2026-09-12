@@ -1,0 +1,26 @@
+# Negative case 2: the torn-write fallback.
+# vendor/streamdb-v3/negative/corpus.header-flip.streamdb is corpus.streamdb
+# with the byte at file offset 136 XORed with 0xFF -- the low byte of header
+# slot 1's commit-sequence field. Slot 1 holds seq=3, the newest commit, all
+# 24 documents; slot 0 holds seq=2, the 20 documents of this corpus's first
+# `streamdb_flush()`. The flip breaks slot 1's own trailing CRC, so that slot
+# no longer validates and the newest slot that DOES is slot 0.
+#
+# What expectation.json records the reference reader doing: open and probe
+# succeed, against the older commit; "documents: 20, trie nodes: 316"; the 20
+# documents of that commit read back byte-exact; models/asset_020.t3dm,
+# sprites/asset_021.sprite, sfx/asset_022.wav64 and music/asset_023.xm64 each
+# return STREAMDB_EMB_ERR_NOT_FOUND; "suffix '.t3dm' -> 4 match(es)".
+#
+# expected.out (25,099 bytes) is all of that, byte by byte: section 0 carries
+# sequence 2, section 1 carries 20 documents / 316 trie nodes / winning slot
+# 0, the last four keys carry verdict 1 (not found) with no payload, and the
+# `.t3dm` count is 4 rather than 5 with models/asset_020.t3dm's row gone from
+# the traversal order and the other four unmoved.
+#
+# THIS IS THE CASE THE WHOLE TWO-SLOT HEADER EXISTS FOR, and it is only
+# available because the corpus was packed with two `streamdb_flush()` calls
+# (PROVENANCE.md, `pack2.c`): a single-flush container has one slot that ever
+# validates, so corrupting it fails the open instead of demonstrating the
+# fallback.
+TEST: expect-exit=0 stdin=vendor/streamdb-v3/negative/corpus.header-flip.streamdb sources=examples/streamdb/lector_streamdb.exsc,examples/streamdb/probatio.exsc
