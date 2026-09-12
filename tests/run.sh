@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/run.sh -- minimal, real test harness.
 #
-# Four phases:
+# Five phases:
 #   1. run_unit_tests: discovers tests/unit/*.asm, assembles each with
 #      fasmg, and checks the expectations declared in its `; TEST:`
 #      directive comment (run=yes|no, expect-exit=<N>, audit=pass|fail|skip,
@@ -21,7 +21,13 @@
 #      checked, then audited with --potestates Mundus,ambitus.
 #   4. run_program_tests: tests/programs/<name>/, Exsecutor sources compiled
 #      by exsc, assembled, run and audited the same way.
-#   Phases 3 and 4 are the first place in this script that executes code a
+#   5. run_differential_tests: ADR 0012's differential test -- the SAME
+#      corpora compiled through the C backend (`--emitte c`), built by gcc
+#      and clang at -O0 and -O2 under UBSan against tests/c/exsrt_shim.c,
+#      and required to agree with the reference on stdout bytes, exit status
+#      and trap-or-not with the abort kind. Two loops and two banners, one
+#      phase: tests/ir/ then tests/programs/.
+#   Phases 3, 4 and 5 are the only places in this script that execute code a
 #   compiler EMITTED; everything before them compares text or diagnostics.
 #
 # See tests/README.md for the directive format and how to add a fixture.
@@ -81,6 +87,27 @@ PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-96}"
 # rejections, checked separately and by exit status), times gcc and clang
 # times -O0 and -O2 = 156.
 DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-156}"
+
+# The same phase over tests/programs/. Two floors, because the claim has two
+# halves and a floor on either alone reads green while the other collapses:
+#
+#   DIFFERENTIAL_PROGRAM_FLOOR        program DIRECTORIES that were eligible
+#     (no c-differentia= in their TEST directive) and whose FOUR builds ALL
+#     agreed with the reference. 26 of the 96 directories are eligible; the
+#     other 70 are the receptio_vec_* sweep, each declaring
+#     c-differentia=nightly-sweep by name. A directory that stopped agreeing
+#     drops this count, and a directory that stopped being COMPILED does too
+#     -- which a floor on builds alone would not catch, since a directory
+#     silently marked ineligible removes four builds and four agreements
+#     together.
+#   DIFFERENTIAL_PROGRAM_BUILD_FLOOR  builds RUN AND CHECKED: 26 x 4 = 104.
+#     Not 26 x 4 compiles -- sixteen of those directories share a unit with
+#     another (the four streamdb_*, the four receptio_*, three hydramodem_*,
+#     each one unit over several inputs), so the phase compiles 18 distinct
+#     units and RUNS 104 binaries. The count that matters is the runs: each
+#     is one comparison against the reference over a different input.
+DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-26}"
+DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-104}"
 
 PASS=0
 FAIL=0
@@ -921,7 +948,7 @@ parse_run_keys() {
   # Empty, not "0": empty means "no C-specific verdict given, so parity with
   # the reference's own key applies". A default of "0" would silently claim
   # parity with success even where emit-exit= says the reference refuses.
-  k_c_emit_exit=""; k_c_exsc_exit=""
+  k_c_emit_exit=""; k_c_exsc_exit=""; k_c_differentia=""
   local kv
   for kv in "$@"; do
     case "$kv" in
@@ -941,6 +968,17 @@ parse_run_keys() {
       # inside it, and parse_run_keys still fails on an unknown key.
       c-emit-exit=*) k_c_emit_exit="${kv#c-emit-exit=}" ;;
       c-exsc-exit=*) k_c_exsc_exit="${kv#c-exsc-exit=}" ;;
+      # INELIGIBILITY FOR THE DIFFERENTIAL PHASE, declared here and nowhere
+      # else. A tests/programs/ directory WITHOUT this key is eligible, and
+      # its four C builds must agree with the reference; with it, the
+      # directory is named and its reason printed, and it is never counted
+      # as agreeing. There is no pattern match anywhere in this script that
+      # decides this: a name silently absent from a phase is exactly the
+      # false green UNIT_FIXTURE_FLOOR's header lists, and "receptio_vec_*
+      # is excluded" written as a glob in the harness would be one fact
+      # nobody greps for. The value set is CLOSED (below), so a typo is a
+      # failed fixture rather than a new, silently accepted reason.
+      c-differentia=*) k_c_differentia="${kv#c-differentia=}" ;;
       sources=*)     k_sources="${kv#sources=}" ;;
       status=*)      k_status="${kv#status=}" ;;
       needs=*)       k_needs="${kv#needs=}" ;;
@@ -972,6 +1010,97 @@ parse_run_keys() {
     bad "$label: stdin=$k_stdin does not exist (paths are repo-root-relative)"
     return 1
   fi
+  # The closed reason set for c-differentia=. Each value is a REASON A
+  # PROGRAM CANNOT BE HELD TO THE DIFFERENTIAL TEST, not a way to quiet one:
+  #
+  #   nightly-sweep         the receiver's impaired-vector sweep, D6's own
+  #                         exclusion ("the 70 receptio_vec_* directories …
+  #                         are excluded from the per-commit gate and listed
+  #                         as a nightly run"). Every one of the seventy
+  #                         compiles the IDENTICAL unit to receptio_exemplum
+  #                         -- same sources=, only stdin= differs -- so what
+  #                         they would add is 280 more runs of four binaries
+  #                         this phase already builds and checks, not one
+  #                         more lowering. Measured, 2026-09-12: one such run
+  #                         is 56/30/70/26 ms (gcc/clang x -O0/-O2), so the
+  #                         sweep is ~13 s of runs, not the minutes D6
+  #                         assumed of the reference. The exclusion stands on
+  #                         the duplicate unit, not on the clock.
+  #   prelude-beyond-shim   the unit imports an exsrt_* routine
+  #                         tests/c/exsrt_shim.c does not define (the four
+  #                         exsrt_alloc_*, retain/release). It would not
+  #                         LINK, and a link failure is the shim's design
+  #                         (its header: "a missing routine must be a loud
+  #                         failure, not a silently different program").
+  #                         Unused today: every eligible unit's imports are
+  #                         within the six the shim provides.
+  #   emitter-refusal       `exsc --emitte c` refuses the module by name --
+  #                         an opcode with no C lowering (c-backend.md D4's
+  #                         23 refusals). Unused today.
+  #
+  # Adding a fourth value is a change here AND a sentence in c-backend.md.
+  if [[ -n "$k_c_differentia" ]]; then
+    case "$k_c_differentia" in
+      nightly-sweep|prelude-beyond-shim|emitter-refusal) ;;
+      *) bad "$label: c-differentia='$k_c_differentia' is not one of nightly-sweep|prelude-beyond-shim|emitter-refusal"
+         return 1 ;;
+    esac
+  fi
+  return 0
+}
+
+# program_sources NAME DIR -- resolves a tests/programs/ directory's §12
+# compilation unit into the array `p_srcs`, reading `k_sources` (which
+# parse_run_keys has already set). Returns 1, having said why, on an
+# ambiguity or a missing file.
+#
+# SHARED BY TWO PHASES on purpose. run_program_tests compiles the unit with
+# the reference backend and run_differential_tests compiles THE SAME UNIT
+# with `--emitte c`; if each worked the rule out for itself, the day the two
+# disagreed about which files the unit is would be the day the differential
+# test compared two different programs and called them equal. One routine,
+# one answer.
+program_sources() {
+  local name="$1" dir="$2" s
+  p_srcs=()
+  local own; own="$(printf '%s\n' "$dir"/*.exsc | LC_ALL=C sort)"
+  if [[ -n "$k_sources" ]]; then
+    local rel=()
+    IFS=',' read -r -a rel <<<"$k_sources"
+    for s in "${rel[@]}"; do p_srcs+=("$REPO_ROOT/$s"); done
+    # `sources=` names the unit, so a directory may hold its own source too
+    # -- a program that needs a LIBRARY from elsewhere (examples/hydramodem/
+    # is one: no `initium`, so it cannot be a unit by itself) and has a main
+    # source of its own otherwise has no way to say so. What stays refused
+    # is the ambiguity the rule was written for: an own `*.exsc` that
+    # `sources=` does not list would be silently ignored, and "which is the
+    # unit?" would again have two answers.
+    if [[ -n "$own" ]]; then
+      local o listed stray=0
+      while IFS= read -r o; do
+        listed=0
+        # an `if`, not `[[ … ]] && listed=1`: under `set -e` a loop whose
+        # last command is a failing `&&` list takes the whole script down
+        for s in "${p_srcs[@]}"; do
+          if [[ "$s" == "$o" ]]; then listed=1; fi
+        done
+        if [[ "$listed" -eq 0 ]]; then
+          bad "$name: $(basename "$o") is in the directory and not in sources= -- which is the unit?"
+          stray=1
+        fi
+      done <<<"$own"
+      [[ "$stray" -eq 0 ]] || return 1
+    fi
+  elif [[ -n "$own" ]]; then
+    while IFS= read -r s; do p_srcs+=("$s"); done <<<"$own"
+  else
+    bad "$name: no *.exsc and no sources="; return 1
+  fi
+  local missing=0
+  for s in "${p_srcs[@]}"; do
+    [[ -f "$s" ]] || { bad "$name: source $s does not exist"; missing=1; }
+  done
+  [[ "$missing" -eq 0 ]] || return 1
   return 0
 }
 
@@ -1045,8 +1174,9 @@ run_ir_tests() {
     fi
     # shellcheck disable=SC2086
     parse_run_keys "$name" $directive || continue
-    if [[ -n "$k_sources" || "$k_exsc_exit" != "0" || "$k_status" != "run" ]]; then
-      bad "$name: sources=/exsc-exit=/status= belong to tests/programs/, not an IR fixture"
+    if [[ -n "$k_sources" || "$k_exsc_exit" != "0" || "$k_status" != "run" ||
+          -n "$k_c_differentia" ]]; then
+      bad "$name: sources=/exsc-exit=/status=/c-differentia= belong to tests/programs/, not an IR fixture"
       continue
     fi
 
@@ -1351,10 +1481,190 @@ run_differential_tests() {
     done
   done
   shopt -u nullglob
-  rm -rf "$workdir"
   floor_check "IR fixtures in tests/ir/" "$found" "$IR_FIXTURE_FLOOR" IR_FIXTURE_FLOOR
   floor_check "differential builds run and checked" "$builds" \
               "$DIFFERENTIAL_BUILD_FLOOR" DIFFERENTIAL_BUILD_FLOOR
+
+  # =========================================================================
+  # The same test over tests/programs/, which is what C2's row still owed:
+  # "the 22 tests/programs/ directories (they need `exsc … --emitte c -o
+  # out.c` per directory, which run_program_tests does not yet drive)".
+  #
+  # WHY HERE AND NOT A SIXTH PHASE. This phase already has the three things
+  # a program loop needs and a sibling would have to build again: the `exsc`
+  # binary (assembled above for D2's driver rows, ~2 s), the two compilers'
+  # presence check, and `$cflags` with the two suppressions argued at
+  # length. A sixth phase would be a third `fasmg exsc.asm` in one run and a
+  # second copy of that reasoning. The phase's name already says "C backend
+  # vs the reference"; the corpus is now both corpora.
+  #
+  # WHAT IS COMPARED is D6's three observables, exactly as for the IR
+  # fixtures and by the same argument: the directory's TEST directive is the
+  # reference's pinned behaviour -- run_program_tests has just held the
+  # reference build to it -- so holding each C build to the same directive
+  # holds it to the reference. stdout bytes (`cmp` against expected.out or
+  # stdout=), exit status, and trap-or-not with the abort kind (`abort=N`
+  # is SIGILL plus a line ending `abortus N`, which the shim's
+  # exsrt_abortus writes). Stderr is otherwise not compared: the reference's
+  # prelude and the shim write different English before `abortus`, and the
+  # English is not promised.
+  #
+  # ELIGIBILITY IS DECLARED, NEVER INFERRED. A directory with no
+  # `c-differentia=` key is eligible, and its four builds must agree; there
+  # is no glob in this loop that quietly passes over a name. See
+  # parse_run_keys for the closed reason set.
+  #
+  # ONE UNIT, MANY DIRECTORIES. Sixteen of the eligible directories share a
+  # `sources=` with another -- the four streamdb_* are one unit over four
+  # containers, the four receptio_* one unit over four WAVs, three
+  # hydramodem_* one unit -- so `exsc --emitte c` runs per DIRECTORY (that
+  # is the invocation C2 owed) but the four C builds are reused when the
+  # emitted unit is byte-identical to one already built. That reuse is
+  # itself a check, and a sharp one: two directories naming the same unit
+  # whose emitted C differed would be a D5 determinism failure inside a
+  # single run of one `exsc`, and it is reported as one rather than silently
+  # recompiled.
+  echo "== differential tests (C backend vs the reference, tests/programs/) =="
+  local pfound=0 pagree=0 pbuilds=0 pskip=0 pdefer=0 dir
+  local -A unit_of=()        # sources= key -> the work prefix whose binaries
+                             # are already built for that exact unit text
+  shopt -s nullglob
+  for dir in "$REPO_ROOT"/tests/programs/*/; do
+    dir="${dir%/}"
+    local name; name="$(basename "$dir")"
+    local w="$workdir/p_$name"
+    if [[ ! -f "$dir/TEST" ]]; then
+      bad "$name: no TEST file"; continue
+    fi
+    local directive; directive="$(grep -m1 '^TEST:' "$dir/TEST" || true)"
+    directive="${directive#TEST:}"
+    if [[ -z "$directive" ]]; then
+      bad "$name: TEST has no 'TEST:' line"; continue
+    fi
+    # shellcheck disable=SC2086
+    parse_run_keys "$name" $directive || continue
+
+    if [[ -n "$k_c_differentia" ]]; then
+      pskip=$((pskip + 1))
+      note "$name/: INELIGIBLE ($k_c_differentia) -- named, not skipped silently"
+      continue
+    fi
+    # A deferred program has no reference build to agree with (nothing was
+    # lowered, assembled or run one phase earlier), so there is nothing to
+    # compare against; it is reported and counted SEPARATELY from the
+    # declared-ineligible, because the two are different statements and one
+    # line reporting both would name neither.
+    if [[ "$k_status" != "run" ]]; then
+      pdefer=$((pdefer + 1))
+      note "$name/: status=$k_status (needs=$k_needs) -- no reference run to agree with"
+      continue
+    fi
+    echo "-- $name/"
+
+    local srcs=()
+    program_sources "$name" "$dir" || continue
+    srcs=("${p_srcs[@]}")
+
+    local ref="$k_stdout"
+    if [[ -f "$dir/expected.out" ]]; then
+      if [[ -n "$ref" ]]; then
+        bad "$name: both expected.out and stdout= -- which is the reference?"; continue
+      fi
+      ref="tests/programs/$name/expected.out"
+    fi
+
+    # The verdict this directory's C emission must reach: its own
+    # c-exsc-exit= if it has one, else parity with the reference's
+    # exsc-exit=. Same rule, same defaults, as c-emit-exit= above.
+    local want_exsc="$k_exsc_exit"
+    local pwhy="parity with exsc-exit="
+    if [[ -n "$k_c_exsc_exit" ]]; then
+      want_exsc="$k_c_exsc_exit"
+      pwhy="c-exsc-exit= (a stated difference)"
+    fi
+
+    local crc=0
+    "$exsc" aedifica --hospes x86_64-linux "${srcs[@]}" --emitte c -o "$w.c" \
+      >"$w.out" 2>"$w.exsclog" || crc=$?
+    # D2 again, per directory and not only on the six driver rows: the unit
+    # goes to OUT and stdout stays empty.
+    if [[ -s "$w.out" ]]; then
+      bad "$name: exsc --emitte c wrote $(wc -c <"$w.out" | tr -d ' ') bytes to stdout"
+      head -c 300 "$w.out" | sed 's/^/         /'
+    fi
+    if [[ "$want_exsc" != "0" ]]; then
+      if [[ "$crc" == "$want_exsc" ]]; then
+        ok "$name: exsc --emitte c refuses it, exit=$crc ($pwhy)"
+      else
+        bad "$name: exsc --emitte c exit=$crc, expected $want_exsc ($pwhy)"
+        sed 's/^/         /' "$w.exsclog"
+      fi
+      continue
+    fi
+    if [[ "$crc" -ne 0 ]]; then
+      bad "$name: exsc --emitte c exit=$crc, expected 0 ($pwhy)"
+      sed 's/^/         /' "$w.exsclog"; continue
+    fi
+    want_one_outcome "$name" || continue
+    pfound=$((pfound + 1))
+
+    # Reuse the four binaries of an already-built directory naming the same
+    # unit, but only after `cmp` says the emitted text really is the same.
+    local key="$k_sources"
+    [[ -z "$key" ]] && key="own:$name"
+    local share="${unit_of[$key]:-}"
+    if [[ -n "$share" ]]; then
+      if cmp -s "$w.c" "$share.c"; then
+        ok "$name: emits the byte-identical unit to $(basename "${share#"$workdir/p_"}") (same sources=; D5)"
+      else
+        bad "$name: names the same sources= as $(basename "${share#"$workdir/p_"}") and emits DIFFERENT C -- two runs of one exsc over one unit must agree (D5)"
+        diff "$share.c" "$w.c" | head -20 | sed 's/^/         /' || true
+        share=""      # do not reuse binaries built from other text
+      fi
+    fi
+    if [[ -z "$share" ]]; then
+      share="$w"
+      unit_of[$key]="$w"
+    fi
+
+    local agree=1 opt
+    for cc in gcc clang; do
+      for opt in -O0 -O2; do
+        local tag="$name/ [$cc $opt]"
+        local bin="$share.$cc$opt.bin"
+        if [[ ! -x "$bin" ]]; then
+          local nowarn="-Wno-cpp"
+          [[ "$cc" == clang ]] && nowarn="-Wno-#warnings"
+          # shellcheck disable=SC2086
+          if ! "$cc" $cflags $nowarn "$opt" -o "$bin" "$share.c" "$shim" >"$share.cclog" 2>&1; then
+            bad "$tag: the emitted C does not compile"
+            sed 's/^/         /' "$share.cclog"
+            agree=0; continue
+          fi
+          if [[ -s "$share.cclog" ]]; then
+            note "$tag: compiler said:"
+            sed 's/^/         /' "$share.cclog"
+          fi
+        fi
+        pbuilds=$((pbuilds + 1))
+        if check_run "$tag" "$bin" "$w.$cc$opt" \
+                     "$k_expect_exit" "$k_abort" "$ref" "$k_stdin" noaudit; then :
+        else agree=0; fi
+      done
+    done
+    [[ "$agree" -eq 1 ]] && pagree=$((pagree + 1))
+  done
+  shopt -u nullglob
+  rm -rf "$workdir"
+  note "$pskip program directories declared INELIGIBLE by name (c-differentia=)"
+  note "$pdefer program directories status=deferred (no reference run to agree with)"
+  floor_check "program directories eligible and agreeing under all four builds" \
+    "$pagree" "$DIFFERENTIAL_PROGRAM_FLOOR" DIFFERENTIAL_PROGRAM_FLOOR
+  floor_check "differential program builds run and checked" "$pbuilds" \
+    "$DIFFERENTIAL_PROGRAM_BUILD_FLOOR" DIFFERENTIAL_PROGRAM_BUILD_FLOOR
+  if [[ "$pagree" -ne "$pfound" ]]; then
+    bad "$pfound program directories were eligible but only $pagree agreed with the reference under all four builds"
+  fi
 }
 
 run_program_tests() {
@@ -1430,45 +1740,9 @@ run_program_tests() {
       bad "$name: emit-exit= belongs to tests/ir/, not a program"; continue
     fi
 
-    local srcs=() s
-    local own; own="$(printf '%s\n' "$dir"/*.exsc | LC_ALL=C sort)"
-    if [[ -n "$k_sources" ]]; then
-      local rel=()
-      IFS=',' read -r -a rel <<<"$k_sources"
-      for s in "${rel[@]}"; do srcs+=("$REPO_ROOT/$s"); done
-      # `sources=` names the unit, so a directory may hold its own source too
-      # -- a program that needs a LIBRARY from elsewhere (examples/hydramodem/
-      # is one: no `initium`, so it cannot be a unit by itself) and has a main
-      # source of its own otherwise has no way to say so. What stays refused
-      # is the ambiguity the rule was written for: an own `*.exsc` that
-      # `sources=` does not list would be silently ignored, and "which is the
-      # unit?" would again have two answers.
-      if [[ -n "$own" ]]; then
-        local o listed stray=0
-        while IFS= read -r o; do
-          listed=0
-          # an `if`, not `[[ … ]] && listed=1`: under `set -e` a loop whose
-          # last command is a failing `&&` list takes the whole script down
-          for s in "${srcs[@]}"; do
-            if [[ "$s" == "$o" ]]; then listed=1; fi
-          done
-          if [[ "$listed" -eq 0 ]]; then
-            bad "$name: $(basename "$o") is in the directory and not in sources= -- which is the unit?"
-            stray=1
-          fi
-        done <<<"$own"
-        [[ "$stray" -eq 0 ]] || continue
-      fi
-    elif [[ -n "$own" ]]; then
-      while IFS= read -r s; do srcs+=("$s"); done <<<"$own"
-    else
-      bad "$name: no *.exsc and no sources="; continue
-    fi
-    local missing=0
-    for s in "${srcs[@]}"; do
-      [[ -f "$s" ]] || { bad "$name: source $s does not exist"; missing=1; }
-    done
-    [[ "$missing" -eq 0 ]] || continue
+    local srcs=()
+    program_sources "$name" "$dir" || continue
+    srcs=("${p_srcs[@]}")
 
     local ref="$k_stdout"
     if [[ -f "$dir/expected.out" ]]; then

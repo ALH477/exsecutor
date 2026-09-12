@@ -20,4 +20,4 @@
 # decodes, and never write a frame that is not the input's. A refusal where the
 # reference also refused is fine; a refusal where it succeeded is a failure of
 # this certificate, and a WRONG frame is a failure of the stronger half.
-TEST: expect-exit=0 stdin=vendor/hydramodem-rx/clock/loopback-p2000ppm.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/receptor.exsc,examples/hydramodem/recipe.exsc
+TEST: expect-exit=0 stdin=vendor/hydramodem-rx/clock/loopback-p2000ppm.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/receptor.exsc,examples/hydramodem/recipe.exsc c-differentia=nightly-sweep

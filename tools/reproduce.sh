@@ -9,6 +9,22 @@
 # umask, and (best-effort) hostname -- and `cmp`s the two outputs
 # byte-for-byte.
 #
+# TWO THINGS ARE REPRODUCED, not one. First `exsc` itself: fasmg over
+# compiler/x86_64/exsc.asm, twice, the binaries `cmp`ed. Then, with the
+# binary that just proved itself, the C BACKEND'S EMITTED TEXT: `exsc
+# --emitte c -o OUT` over two units, twice each, under the same two
+# condition sets, the OUT files `cmp`ed. That second half is
+# docs/design/c-backend.md D5's claim -- "the unit's text is a function of
+# exactly the module, the --hospes row, and exsc's own bytes; no path, no
+# --epoch, no host name, no address, no hash bucket" -- CHECKED rather than
+# asserted. It was asserted until this commit: D5's row in c-backend.md
+# section 9 named this script and this script did not do it, and the only
+# standing evidence was that the two 64-bit --hospes rows emit the same
+# bytes within ONE process, which is not a statement about cwd or locale
+# at all. The reference backend's OUT is not diffed here because the
+# BINARY built from it already is, one step earlier, and a differing OUT
+# cannot produce an identical binary.
+#
 # If compiler/x86_64/exsc.asm does not exist yet (it does not, as of this
 # writing -- see CLAUDE.md), this falls back to reproducing the
 # tests/unit/ toolchain fixture instead, so the harness itself is proven
@@ -69,10 +85,17 @@ mkdir -p "$DIR_A" "$DIR_B"
 # and SRC keeps its path inside them. Copying exsc.asm alone (what this
 # script did until 2026-09-10) failed the moment exsc.asm gained an
 # include, with `symbol 'DrvCtx.arena' is undefined`.
+#
+# `examples/` comes along for the --emitte c half below: each build
+# directory gets its own copy, at its own absolute path and its own depth,
+# which is precisely the divergence D5 says the emitted text must not carry.
+# Nothing from vendor/ is needed -- the StreamDB reader's container is read
+# at RUN time and this script never runs an emitted program.
 REL="${SRC#"$REPO_ROOT/"}"
 for d in "$DIR_A" "$DIR_B"; do
   cp -r "$REPO_ROOT/compiler" "$d/compiler"
   mkdir -p "$d/tests" && cp -r "$REPO_ROOT/tests/unit" "$d/tests/unit"
+  cp -r "$REPO_ROOT/examples" "$d/examples"
 done
 SRC_A="$DIR_A/$REL"
 SRC_B="$DIR_B/$REL"
@@ -112,16 +135,94 @@ if [[ ! -f "$OUT_A" || ! -f "$OUT_B" ]]; then
   exit 2
 fi
 
-if cmp -s "$OUT_A" "$OUT_B"; then
-  echo "REPRODUCE: PASS -- byte-identical output ($(wc -c < "$OUT_A") bytes) across divergent cwd/TZ/locale/SOURCE_DATE_EPOCH/umask$([[ $HOSTNAME_VARY -eq 1 ]] && echo '/hostname')"
-  exit 0
-else
-  echo "REPRODUCE: FAIL -- outputs differ" >&2
-  echo "  A: $OUT_A ($(wc -c < "$OUT_A") bytes)" >&2
-  echo "  B: $OUT_B ($(wc -c < "$OUT_B") bytes)" >&2
+# cmp_pair WHAT A B -- 0 and a PASS line if identical; 1 and the difference
+# otherwise. Shared by the two halves so they report the same way.
+cmp_pair() {
+  local what="$1" a="$2" b="$3"
+  if cmp -s "$a" "$b"; then
+    echo "REPRODUCE: PASS -- $what byte-identical ($(wc -c < "$a" | tr -d ' ') bytes) across divergent cwd/TZ/locale/SOURCE_DATE_EPOCH/umask$([[ $HOSTNAME_VARY -eq 1 ]] && echo '/hostname')"
+    return 0
+  fi
+  echo "REPRODUCE: FAIL -- $what differs" >&2
+  echo "  A: $a ($(wc -c < "$a" | tr -d ' ') bytes)" >&2
+  echo "  B: $b ($(wc -c < "$b" | tr -d ' ') bytes)" >&2
   echo "  first difference (cmp):" >&2
-  cmp "$OUT_A" "$OUT_B" >&2 || true
+  cmp "$a" "$b" >&2 || true
   echo "  differing bytes (cmp -l, first 20 shown):" >&2
-  cmp -l "$OUT_A" "$OUT_B" 2>/dev/null | head -20 >&2 || true
-  exit 1
+  cmp -l "$a" "$b" 2>/dev/null | head -20 >&2 || true
+  return 1
+}
+
+RC=0
+cmp_pair "the exsc binary" "$OUT_A" "$OUT_B" || RC=1
+
+# ---------------------------------------------------------------------------
+# The C backend's emitted text, D5. Same two condition sets, the binary that
+# just proved itself as the compiler, two units:
+#
+#   saluta    examples/{saluta,imprime,initium}.exsc -- the hello world the
+#             publish gate already builds; small, and the one unit whose
+#             emitted C tests/run.sh pins byte for byte against emit_c.
+#   streamdb  examples/streamdb/{lector_streamdb,probatio}.exsc -- the C3
+#             program: 3,915 IR instructions, a `@transitus` struct per
+#             record, `acies` slots up to 65,536 bytes, and the only unit in
+#             the tree big enough for an ordering that depended on an address
+#             or a hash bucket to have somewhere to hide.
+#
+# Each is emitted in BOTH build directories, so the two runs differ in cwd,
+# in the absolute path of every source file, in TZ, locale,
+# SOURCE_DATE_EPOCH, umask and (where unshare allows) hostname. `--hospes
+# x86_64-linux` is fixed: the row is an input to the text by design (it
+# contributes one `_Static_assert` line), so varying it would be testing a
+# different claim.
+#
+# A failure here is NOT a failure of exsc's own reproducibility: the first
+# half passing and this one failing localises the defect to the C emitter,
+# which is why they are reported as two lines and not one.
+if [[ "$TESTING_FIXTURE" -eq 0 ]]; then
+  chmod +x "$OUT_A"
+  # emit_one WORKDIR EXSC OUT TZ LOCALE EPOCH UMASK HOSTNAME SRC...
+  emit_one() {
+    local workdir="$1" exsc="$2" out="$3" tz="$4" locale="$5" epoch="$6"
+    local umask_val="$7" host="$8"; shift 8
+    local inner srcs=""
+    local s; for s in "$@"; do srcs="$srcs '$workdir/$s'"; done
+    inner="cd '$workdir' && umask '$umask_val' && env -i PATH='$PATH' HOME='$HOME' \
+TZ='$tz' LC_ALL='$locale' LANG='$locale' SOURCE_DATE_EPOCH='$epoch' \
+'$exsc' aedifica --hospes x86_64-linux$srcs --emitte c -o '$out' >/dev/null 2>&1"
+    if [[ "$HOSTNAME_VARY" -eq 1 ]]; then
+      unshare --uts -r -- bash -c "hostname '$host' && $inner"
+    else
+      bash -c "$inner"
+    fi
+  }
+
+  echo
+  for unit in \
+    "saluta:examples/saluta.exsc examples/imprime.exsc examples/initium.exsc" \
+    "streamdb:examples/streamdb/lector_streamdb.exsc examples/streamdb/probatio.exsc"
+  do
+    uname_="${unit%%:*}"
+    # shellcheck disable=SC2206
+    usrcs=(${unit#*:})
+    ca="$DIR_A/unit-$uname_.c"
+    cb="$DIR_B/unit-$uname_.c"
+    echo "reproduce: --emitte c, unit '$uname_' (${#usrcs[@]} sources), condition sets A and B"
+    emit_one "$DIR_A" "$OUT_A" "$ca" "UTC" "C" "0" "022" "repro-host-a" "${usrcs[@]}" || true
+    emit_one "$DIR_B" "$OUT_A" "$cb" "Pacific/Kiritimati" "C.UTF-8" "999999999" "077" "repro-host-b" "${usrcs[@]}" || true
+    if [[ ! -s "$ca" || ! -s "$cb" ]]; then
+      echo "REPRODUCE: FAIL -- --emitte c wrote nothing for unit '$uname_'" >&2
+      echo "  (a unit of 0 bytes compared against another of 0 bytes is the" >&2
+      echo "  vacuous pass this project has already shipped twice)" >&2
+      RC=1
+      continue
+    fi
+    cmp_pair "the --emitte c unit '$uname_'" "$ca" "$cb" || RC=1
+  done
+else
+  echo
+  echo ">>> the --emitte c half is SKIPPED: there is no exsc to run. D5 is"
+  echo ">>> unchecked by this run. <<<"
 fi
+
+exit "$RC"

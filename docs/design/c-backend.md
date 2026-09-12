@@ -1,24 +1,40 @@
 # The C backend — design for spec §9.2's reach backend, library mode first
 
-Status: **C1 is implemented and green.** `compiler/x86_64/backend_c/`
-exists (`emit_c.inc`, `program_c.inc`, `prologue.c.in`); `--emitte c` emits;
-the incantation table of D3 has been run under gcc 15.3.0 and clang 21.1.8
-and is filled in below, with three cells that did not hold. The differential
-harness of D6 runs as a `tests/run.sh` phase: **39 of the 49 IR fixtures are
-lowerable and all 39 agree with the reference under four toolchains — gcc and
-clang, `-O0` and `-O2`, `-fsanitize=undefined -fno-sanitize-recover=all` —
-for 156 checked builds; the other 10 are rejection fixtures and the C
-emitter's exit status matches the reference's on every one.** C2's work
-largely landed with C1 because the harness was the only way to know the
-lowerings were right.
+Status: **C1, C2 and C3's host half are implemented and green.**
+`compiler/x86_64/backend_c/` exists (`emit_c.inc`, `program_c.inc`,
+`prologue.c.in`); `--emitte c` emits; the incantation table of D3 has been
+run under gcc 15.3.0 and clang 21.1.8 and is filled in below, with three
+cells that did not hold. The differential harness of D6 runs as two
+`tests/run.sh` phases:
+
+- **over `tests/ir/`: 39 of the 49 IR fixtures are lowerable and all 39
+  agree with the reference under four toolchains — gcc and clang, `-O0` and
+  `-O2`, `-fsanitize=undefined -fno-sanitize-recover=all` — for 156 checked
+  builds; the other 10 are rejection fixtures and the C emitter's exit
+  status matches the reference's on every one.**
+- **over `tests/programs/`: 26 of the 96 directories are eligible and all 26
+  agree with the reference on stdout bytes, exit status and trap-or-not with
+  the abort kind, under the same four toolchains, for 104 checked builds
+  (18 distinct units — sixteen directories share a unit with another and
+  emit byte-identical C, which is itself checked). The other 70 are the
+  `receptio_vec_*` sweep, each declaring `c-differentia=nightly-sweep` in
+  its own `TEST` directive: named, never skipped silently.** Nothing in the
+  tree is ineligible for the other two reasons the key admits — no unit
+  reaches past the shim's six routines, and the C emitter refuses no
+  directory.
+- **the StreamDB v3 reader is among the 26.** `streamdb_{corpus,onus,caput,
+  truncus}` produce byte-identical output through the C backend under all
+  four builds; section 6.7 is the result.
+
+C2's work largely landed with C1 because the harness was the only way to
+know the lowerings were right; what C2 still owed — the program corpus, and
+`tools/reproduce.sh` over two `--emitte c` units — landed with C3.
 
 What is still `[OPEN]` or `[UNTESTED]` is marked where it stands: floats
-(D8), whole-program mode (D1), the StreamDB reader (D7, section 6), the
-`mips64-none-o64` row (D2, refused by name — see finding 6, which was wrong
-about why), and `tools/reproduce.sh` over two `--emitte c` units (D5's
-determinism claim is checked here only by the two 64-bit `--hospes` rows
-emitting identical bytes and by `exsc --emitte c` agreeing byte for byte with
-the `emit_c` harness). `spec §N` cites
+(D8), whole-program mode (D1), the N64 cross-compile (D7's target half), and
+the `mips64-none-o64` row (D2, refused by name — see finding 6, which was
+wrong about why, and finding 18, which measures how much more than two
+constants it is). `spec §N` cites
 `docs/spec/exsecutor-spec-v0.4.md` as amended in the same commit as this file;
 `IR n.m` cites `docs/design/ssa-ir.md`; `RT n` cites `docs/design/runtime.md`;
 `WC Dn` cites `docs/design/wire-codec.md`; ADR 0012 is
@@ -133,7 +149,8 @@ Rejected: whole-program mode first, with a C prelude. It would have put a
 second runtime, a second syscall table and a second capability gate in front
 of the first emitted function, for a consumer that can use none of them.
 
-Retired by: C1 (the unit compiles), C2 (the unit runs against the reference).
+Retired by: C1 (the unit compiles), C2/C3 (the unit runs against the
+reference — **done**: 260 builds across both corpora, every one agreeing).
 
 ### D2 Selection: `--emitte c`, and what `--hospes` means for the C target
 
@@ -461,9 +478,10 @@ Count: **36 lowered by statement, `phi` lowered at the edges = 37, exactly
 the reference's set; 23 refused**, of which 22 are refused because the
 reference refuses them and 2 (`retain`, `release`) because library mode has
 no runtime — and none of the 23 occurs in any of the 49 `tests/ir/*.ir`
-fixtures or the 22 non-vector `tests/programs/` directories (measured by
-grep at `dbe1d64`), so the corpus of section 5 is not narrowed by any
-refusal.
+fixtures or the (then 22, now 26) non-vector `tests/programs/` directories
+(measured by grep at `dbe1d64`; re-measured in C3 by *running* the
+emitter — `exsc … --emitte c` exits 0 on all 26, so not one of them is
+narrowed by a refusal, which is a stronger statement than the grep's).
 
 **The helpers**, as they will appear in the prologue (`[UNTESTED]`, every
 one; the differential test is their proof):
@@ -573,7 +591,8 @@ merely computes a wrong address; the differential test compares
 observables, and "undefined" has none.
 
 Retired by: C1 (`tests/unit/bfc_emit_*.asm` pin the emitted text per row),
-C2 (the differential test runs every row the corpus reaches).
+C2/C3 (the differential test runs every row the corpus reaches — **done**:
+the 39 lowerable IR fixtures and the 26 eligible programs, four builds each).
 
 ### D5 Determinism, and identifier mangling
 
@@ -640,8 +659,29 @@ family is the target and not ISO C alone.
 
 Retired by: C1 (`tests/unit/bfc_mangle.asm`: the six examples above, each
 way; a unit with two names that differ only outside ASCII gets two
-different C names), C2 (two `exsc --emitte c` runs under
-`tools/reproduce.sh`'s divergent conditions, byte-identical `[UNTESTED]`).
+different C names), C3 (`tools/reproduce.sh`, **done** — see below).
+
+**Determinism, measured.** `tools/reproduce.sh` now emits two units under
+its two condition sets — differing cwd, the absolute path of every source,
+`TZ`, `LC_ALL`/`LANG`, `SOURCE_DATE_EPOCH`, `umask`, and hostname (via an
+unprivileged UTS namespace) — and `cmp`s them: the hello world's 8,691 bytes
+and the StreamDB reader's **137,742** bytes, both byte-identical, 2026-09-12.
+The StreamDB unit is the one that matters: 5,929 lines over 22
+functions; a `@transitus` struct per record and `acies` slots up to 65,536 bytes is the
+first unit in the tree large enough for an ordering that depended on an
+address or a hash bucket to have had somewhere to hide. Two mutations prove
+the check is not vacuous: one byte changed in condition set B's copy of
+`saluta.exsc` fails the `cmp`, and an emission that writes no unit at all
+fails the empty-file guard rather than passing as "two identical absences"
+— the vacuous-diff failure mode `tools/reproduce.sh`'s own header already
+records having shipped once.
+
+A second, independent determinism check rides in the differential phase:
+sixteen of the 26 eligible program directories name the same `sources=` as
+another (the four `streamdb_*`, the four `receptio_*`, three
+`hydramodem_*`), and each is required to emit a unit byte-identical to the
+first directory that named that unit. That is D5 inside one process where
+`reproduce.sh` is D5 across two.
 
 ### D6 The differential test is the acceptance gate, and the toolchain stays in the test closure
 
@@ -654,17 +694,42 @@ otherwise not compared: the reference's prelude and the shim below write
 different English before `abortus`, and the English is not promised
 (`prelude/README.md`).
 
-**Over which corpus.** Every `tests/ir/*.ir` (49 at `dbe1d64`) and every
-non-`receptio_vec_*` `tests/programs/` directory (22). The 70
-`receptio_vec_*` directories are the receiver's impaired-vector sweep and
-take minutes under the reference; they are excluded from the per-commit
-gate and listed as a nightly run `[OPEN]`. Every fixture keeps its one
-`; TEST:` directive: the same `expect-exit=`, `abort=`, `stdout=`, `stdin=`
-apply to the C build, so a fixture whose C build meets its own directive
-but differs from the reference is caught twice.
+**Over which corpus.** Every `tests/ir/*.ir` (49 at `dbe1d64`, 50 now) and
+every non-`receptio_vec_*` `tests/programs/` directory (22 then, **26**
+now — the four `streamdb_*` landed with section 6). Every fixture keeps its
+one `; TEST:` directive: the same `expect-exit=`, `abort=`, `stdout=`,
+`stdin=` apply to the C build, so a fixture whose C build meets its own
+directive but differs from the reference is caught twice.
+
+**How the 70 are excluded, and on what grounds — corrected by
+measurement.** This paragraph said the `receptio_vec_*` sweep "take minutes
+under the reference". They do not take minutes under the C build: one such
+run is **56 / 30 / 70 / 26 ms** (gcc/clang × `-O0`/`-O2`, measured
+2026-09-12), so all seventy would be about 13 s of runs. The exclusion
+stands on a better reason, found by building them: **all seventy name the
+identical `sources=` as `receptio_exemplum`** — only `stdin=` differs — so
+what they would add is 280 more runs of four binaries this phase already
+builds and checks, not one more lowering and not one more emitted line.
+They remain out of the per-commit gate, listed as a nightly run `[OPEN]`.
+
+**Exclusion is declared, never inferred.** Each of the seventy carries
+`c-differentia=nightly-sweep` in its own `TEST` directive; a directory with
+no such key is eligible and its four builds must agree. There is no glob in
+`tests/run.sh` that passes over a name. The value set is closed —
+`nightly-sweep`, `prelude-beyond-shim` (the unit imports an `exsrt_*`
+routine the shim does not define, so it would not link), `emitter-refusal`
+(`exsc --emitte c` refuses the module by name) — and an unrecognised value
+fails the fixture rather than silently becoming a new reason. The last two
+are unused today: every eligible unit's imports are within the shim's six,
+and the emitter refuses none of the 26.
 
 **How it runs**, as a fifth phase `run_differential_tests` of
-`tests/run.sh` after `run_program_tests`:
+`tests/run.sh` after `run_program_tests` — one phase with two loops and two
+banners, not two phases: the loop over programs needs the `exsc` binary the
+IR loop already assembled for D2's driver rows, the same compiler-presence
+check, and the same `$cflags` with the two suppressions finding 15 argues
+for, and a sixth phase would be a third `fasmg exsc.asm` in one run plus a
+second copy of that reasoning. The steps:
 
 1. `tests/ir/emit_c.asm` — the mirror of `emit_ir.asm`: IR on stdin, the C
    unit on stdout, the same verifier call per function, the same exit
@@ -687,6 +752,19 @@ but differs from the reference is caught twice.
    `exsrt_alloc_*` routines are **not** defined: a fixture that reaches
    them fails to link, which is the same statement `emit_ir.asm` makes by
    fixing the closure.
+
+   **C3 added nothing to it.** The reader drives `Lector` and `Scriptor`
+   from `initium` and needed no routine the shim did not already have: the
+   six it defines are `exsrt_mundus_ambitus`, `exsrt_scriptor_ad_exitum`,
+   `exsrt_lector_ab_introitu`, `exsrt_scriptor_scribe`,
+   `exsrt_scriptor_scribe_octeto` and `exsrt_lector_lege_octeto`, and the
+   external closure of every one of the 26 eligible units is a subset of
+   those plus `exsrt_abortus` (measured by reading the `extern` prototypes
+   out of all 26 emitted units). Mutation, run: make
+   `exsrt_lector_lege_octeto` report end-of-input at once and `lector`,
+   `lector_numerus`, all four `receptio_*` and all four `streamdb_*`
+   directories fail across all four builds — so the reader's whole result
+   really does come through this one routine.
 3. For each unit, four builds: `gcc` and `clang`, each at `-O0` and `-O2`,
    all with `-std=c11 -Wall -Wextra -fsanitize=undefined
    -fno-sanitize-recover=all`, linked with the shim; then run under the
@@ -704,6 +782,31 @@ but differs from the reference is caught twice.
 5. A missing `gcc` or `clang` is a **failure of the phase**, not a skip —
    the same choice `run_ir_tests` makes for a missing `fasmg`: a harness
    that finds nothing must not report success.
+6. **Floors, two of them, over the program loop.** `DIFFERENTIAL_PROGRAM_
+   FLOOR` (26) counts directories that were *eligible and whose four builds
+   all agreed*; `DIFFERENTIAL_PROGRAM_BUILD_FLOOR` (104) counts builds run
+   and checked. Neither alone suffices: a directory quietly marked
+   ineligible removes four builds and four agreements together, so a floor
+   on builds would not name it and a floor on agreements would not catch a
+   build that stopped running. A third check says so directly — the count of
+   eligible directories and the count of agreeing directories must be equal.
+   Mutation, run: adding `c-differentia=nightly-sweep` to `streamdb_corpus`
+   drops both floors (25 < 26, 100 < 104) and fails; an unrecognised
+   `c-differentia=` value fails the fixture by name.
+
+**Cost, measured.** `tests/run.sh` went from **179.4 s to 226.3 s** on this
+host (2026-09-12), of which the program loop is **46.1 s** — a 26% increase,
+not a doubling, so no sampling rule is proposed. Where it goes: 18 distinct
+units compiled four ways (`streamdb_*`'s unit is ~1.3 s under gcc `-O2` and
+~2.0 s under clang `-O2`; `receptio_circuitus`'s is ~1.0 s), plus 104 runs
+of which `receptio_circuitus` alone is **6.3 s at gcc `-O0` and 8.8 s at
+clang `-O0`** — UBSan at `-O0` over the receiver's inner loops, and the
+single largest item in the phase. The StreamDB reader is cheap by
+comparison: its 80,300 one-byte syscalls over the 47,708-byte corpus cost
+**44–57 ms** per run at every level under both compilers, so the syscall
+count that section 6.3 flagged is not what makes this phase expensive.
+If it ever must be cut, the honest cut is `receptio_circuitus` to one
+`-O2` build with the reason recorded, not a silent sample.
 
 **Where the toolchain lives, and how that is kept true.** `pkgs.gcc` and
 `pkgs.clang` are added to `checks.test`'s `nativeBuildInputs` (beside
@@ -725,7 +828,8 @@ common; ADR 0012 is explicit that the comparison is of observables. Running
 under one compiler — ADR 0012 asks for both, at both levels, and the
 prologue's incantations are the first thing that differs between them.
 
-Retired by: C2.
+Retired by: C2 (the IR corpus) and C3 (the program corpus, the StreamDB
+certificate, and the two floors) — **done**.
 
 ### D7 The first real program: the StreamDB v3 reader for Kiln
 
@@ -745,13 +849,18 @@ Kiln's own gates — no `.d`-suffixed instruction in the disassembly
 out-lines a `__builtin_memcpy`, which newlib resolves). Retired by C3 and
 C4.
 
-**The reference half is done and section 6 now reports it, not a plan.**
+**Both host halves are done and section 6 reports them, not a plan.**
 `examples/streamdb/{lector_streamdb,probatio}.exsc` and
 `tests/programs/streamdb_{corpus,onus,caput,truncus}/` run under the fasmg
 backend and agree with `vendor/streamdb-v3/expectation.json` on all four
-containers, with five mutants run. What stays `[UNTESTED]` is exactly the
-C half of the sentence above: the same source through `--emitte c`, the two
-streams compared, and the `mips64-elf-gcc` gates.
+containers, with five mutants run (sections 6.3, 6.4); and the same two
+sources through `--emitte c`, compiled by gcc 15.3.0 and clang 21.1.8 at
+`-O0` and `-O2` under `-fsanitize=undefined -fno-sanitize-recover=all`
+against `tests/c/exsrt_shim.c`, produce **byte-identical output on all four
+containers under all sixteen builds** (section 6.7). What stays `[UNTESTED]`
+is exactly the target half: the `mips64-elf-gcc -mabi=o64` compile and
+Kiln's gates, which are C4's and which `--hospes mips64-none-o64` does not
+yet accept (finding 18).
 
 ### D8 Not in scope for C1–C4
 
@@ -830,16 +939,24 @@ Runtime traps are `exsrt_abortus(N)` with `prelude/README.md`'s kinds
 | text → binary | `fasmg OUT BIN` | `{gcc,clang} × {-O0,-O2}`, UBSan, + shim | a C compile error is a failure |
 | run | `run_binary` | `run_binary`, four times | stdout bytes; exit status; trap-or-not and kind |
 | directive | `check_run` | `check_run` | each build meets the fixture's own directive too |
+| eligibility | every directory | every directory without `c-differentia=` | the ineligible are named with their reason; two floors and an equality check say none went missing |
+| unit sharing | — | directories with the same `sources=` must emit byte-identical C before a build is reused | D5, inside one process |
 
-## 6. The StreamDB v3 reader — built, run and certified on the reference backend
+**As built, 2026-09-12.** 156 IR builds + 104 program builds = **260**, all
+agreeing; 11 IR rejections at matching exit status; 70 directories
+ineligible by name; the phase costs 46.1 s of the suite's 226.3 s.
 
-**Status: the host half of D7 is done.** `examples/streamdb/` holds the reader
-and its driver, `tests/programs/streamdb_{corpus,onus,caput,truncus}/` run it
-over `vendor/streamdb-v3/` on the **reference (fasmg/x86-64) backend**, and
-every figure below was measured on this tree. The C half — the same source
-through `--emitte c`, and the N64 cross-compile — is still `[UNTESTED]` and is
-C3/C4's. This section previously stated a design; it now states what the
-design became, and names where the two differ.
+## 6. The StreamDB v3 reader — built, run and certified on both backends
+
+**Status: the whole host half of D7 is done.** `examples/streamdb/` holds the
+reader and its driver, `tests/programs/streamdb_{corpus,onus,caput,truncus}/`
+run it over `vendor/streamdb-v3/` on the **reference (fasmg/x86-64) backend**
+— sections 6.1 to 6.6 — **and on the C backend**, where the same two sources
+through `--emitte c` produce the identical four streams under four
+toolchains: section 6.7. Every figure below was measured on this tree. What
+is still `[UNTESTED]` is the N64 cross-compile, which is C4's. This section
+previously stated a design; it now states what the design became, and names
+where the two differ.
 
 **The container**, re-verified byte by byte against `corpus.streamdb` rather
 than read off a header comment:
@@ -1040,6 +1157,54 @@ patched — it is not this repository's tree.
 The reference is otherwise agreed with byte for byte: every verdict in
 `expectation.json`, on all four containers, is reproduced exactly.
 
+### 6.7 The same reader, through the C backend — C3's certificate
+
+**Measured 2026-09-12, gcc 15.3.0 and clang 21.1.8 at `-O0` and `-O2`, all
+four with `-std=c11 -Wall -Wextra -fsanitize=undefined
+-fno-sanitize-recover=all`, linked against `tests/c/exsrt_shim.c`.** The
+unit is `exsc aedifica --hospes x86_64-linux
+examples/streamdb/{lector_streamdb,probatio}.exsc --emitte c -o out.c`:
+**137,742 bytes** of C -- 5,929 lines, 22 functions -- from the two
+sources' 3,915 AST nodes.
+
+| directory | container | reference | C, ×4 |
+|---|---|---|---|
+| `streamdb_corpus/` | `corpus.streamdb` | exit 0, 32,591 bytes | exit 0, `cmp`-identical to `expected.out`, gcc/clang × `-O0`/`-O2` |
+| `streamdb_onus/` | one payload byte flipped | exit 0, 29,988 bytes | exit 0, `cmp`-identical, ×4 |
+| `streamdb_caput/` | one header byte flipped | exit 0, 25,099 bytes | exit 0, `cmp`-identical, ×4 |
+| `streamdb_truncus/` | `head -c 300` | exit 1, nothing written | exit 1, nothing written, ×4 |
+
+Sixteen builds, sixteen agreements, **no disagreement anywhere between the
+two backends** — over the whole 26-directory program corpus, not only these
+four. **No UBSan report fired** on any of the 260 builds across both
+corpora, at either level under either compiler, with
+`-fno-sanitize-recover=all` throughout. The StreamDB unit compiles clean
+under `-Wall -Wextra` at both levels under both compilers; three *other*
+units in the corpus draw exactly one `-Wuninitialized` each at gcc `-O2`,
+which is finding 19 and is not a disagreement.
+
+Three things this run established that C1's IR fixtures could not:
+
+- **The shim needed nothing added.** D6 anticipated extending it for the
+  reader's `Lector`/`Scriptor` traffic; the six routines it already had were
+  exactly enough (D6 step 2).
+- **The four directories emit one unit.** They share a `sources=`, and the
+  harness requires the emitted C to be byte-identical across them before it
+  reuses a build — which it is, so the four containers really are four
+  inputs to one program and not four programs.
+- **The syscall count is not the cost.** Section 6.3 measured 80,300
+  one-byte syscalls per corpus run and 0.043–0.044 s under the reference.
+  Under C with UBSan the same run is **44–57 ms** at every level under both
+  compilers — the same order. The expensive thing in the differential phase
+  is `receptio_circuitus` (6.3 s under gcc `-O0`, 8.8 s under clang `-O0`),
+  not this reader.
+
+What section 6.4's five mutants prove is unchanged and is **not** re-run
+through the C backend: a mutant is a statement about the *source*, and both
+backends compile the same source, so running them twice would measure the
+same thing twice. The C half's claim is agreement, and agreement is what
+the sixteen builds show.
+
 ## 7. Milestones
 
 C1 is done; C2's harness landed with it. What each says now:
@@ -1047,9 +1212,9 @@ C1 is done; C2's harness landed with it. What each says now:
 | milestone | delivers | retires | its certificate |
 |---|---|---|---|
 | **C1** skeleton and prologue measurements — **DONE** | (1) the measurement table of D3, filled in, **first**; (2) `compiler/x86_64/backend_c/{emit_c,program_c}.inc` — the 37 lowerings, the 23 refusals by name, the prologue, mangling; (3) `--emitte c`, `-o` required, `--hospes` rows, `CHK_F_PROGRAM` not set; (4) `tests/unit/bfc_emit_*.asm` pinning emitted text per opcode family, `bfc_mangle.asm`, `driver_emitte_c*.asm` for D2's three-way split | D2, D3 (as measured), D4 rows (text), D5 mangling, D1 (the unit compiles) | the hello world's IR through `emit_c`, compiled by `gcc -std=c11 -pedantic -Wall -Wextra` with the shim, prints `examples/saluta.expected` and exits 0 — by hand, recorded in the commit |
-| **C2** the differential harness — **mostly done in C1** | landed: `tests/ir/emit_c.asm`, `tests/c/exsrt_shim.c`, `run_differential_tests` over `tests/ir/`, `c-emit-exit=`/`c-exsc-exit=`, `checks.test` and the devShell gaining `gcc` and `clang`, the eval-time closure assertion. **Still owed:** the 22 `tests/programs/` directories (they need `exsc … --emitte c -o out.c` per directory, which `run_program_tests` does not yet drive), and `tools/reproduce.sh` extended to diff two `--emitte c` units | D6 for the IR corpus, D1 (the unit runs) | done for `tests/ir/`: 39 lowerable fixtures × 4 builds = 156, all agreeing, plus 11 rejections at matching exit status; `nix flake check` green |
-| **C3** the reader | `examples/streamdb/` in Exsecutor, `tests/programs/streamdb_*/` driving it from `initium` over `vendor/streamdb-v3/` on stdin, both backends; the Python expectation. **The reference-backend half landed with section 6**: the two sources, the four directories, `expecta.py`, and five mutants; what is left is the `--emitte c` stream and its comparison | D7 (host half), section 6 | the semantic stream of section 6 — every key byte-exact with CRC verified, the counts, the error outcomes — identical under both backends and equal to the expectation; five mutants, three of which the corpus catches and two of which need hand-made input (section 6.4) |
-| **C4** the N64 cross-compile | the `lower/` change of finding 6 (`mensura` from the `--hospes` row), `--hospes mips64-none-o64`, a `checks.n64` that compiles the C3 unit with Kiln's toolchain and gates | D7 (target half), D2's o64 row | the object compiles under Kiln's flags with no `.d` instruction and `nm -u` = `{exsrt_abortus}` (+ `memcpy`); linked into a Kiln test ROM by hand and recorded, not gated `[OPEN]` |
+| **C2** the differential harness — **DONE** (in C1 and C3) | landed in C1: `tests/ir/emit_c.asm`, `tests/c/exsrt_shim.c`, `run_differential_tests` over `tests/ir/`, `c-emit-exit=`/`c-exsc-exit=`, `checks.test` and the devShell gaining `gcc` and `clang`, the eval-time closure assertion. **Landed in C3, closing what was owed:** the program corpus (a second loop in the same phase; `exsc … --emitte c -o out.c` per directory; `c-differentia=` with its closed reason set; `program_sources` shared with `run_program_tests` so the two phases cannot disagree about what the unit is; two floors), and `tools/reproduce.sh` diffing two `--emitte c` units | D6 for both corpora, D5 determinism, D1 (the unit runs) | `tests/ir/`: 39 lowerable × 4 = 156 builds agreeing, plus 11 rejections at matching exit status. `tests/programs/`: 26 eligible directories × 4 = 104 builds, all agreeing; 70 declared ineligible by name; `reproduce.sh` byte-identical on two units across divergent cwd/TZ/locale/epoch/umask/hostname. `nix flake check` green |
+| **C3** the reader — **host half DONE** | `examples/streamdb/` in Exsecutor, `tests/programs/streamdb_*/` driving it from `initium` over `vendor/streamdb-v3/` on stdin, **both backends**; the Python expectation. The reference half landed with section 6; the C half is section 6.7 | D7 (host half), section 6, and what C2 owed | the semantic stream of section 6 — every key byte-exact with CRC verified, the counts, the error outcomes — **identical under both backends** on all four containers under all sixteen C builds, and equal to the expectation; five mutants, three of which the corpus catches and two of which need hand-made input (section 6.4) |
+| **C4** the N64 cross-compile | `--hospes mips64-none-o64`: `lower/ty.inc`'s two `ref`/`refc` constants, a ptr width on `BfaModule` with `bfa_ty_ptr` reading it, a refusal by name in the reference emitter so a 32-bit `ptr` is not silently emitted as 64-bit x86-64, a `mips64-elf-gcc` in the test closure, and a `checks.n64` that compiles the C3 unit with Kiln's toolchain and gates. **Finding 18 costs each of the five**; two are `backend_fasmg/`'s tree and one is a flake decision | D7 (target half), D2's o64 row | the object compiles under Kiln's flags with no `.d` instruction and `nm -u` = `{exsrt_abortus}` (+ `memcpy`); linked into a Kiln test ROM by hand and recorded, not gated `[OPEN]` |
 
 Later, not scheduled: `div`/`rem`/`muls`/`*ov` in both backends; floats in
 both (and `EXS-E0701` becomes reachable); whole-program mode with a C
@@ -1190,7 +1355,12 @@ Numbered; each names the document and the sentence.
     That is this host's packaging talking to its own libc from inside a
     system header, with no emitted line involved.)
 
+    **The bolded sentence was over-broad and finding 19 corrects it.** It
+    was measured on the 39 lowerable IR fixtures, none of which contains the
+    one shape that draws a warning; the program corpus does, three times.
+
 16. **A `proc` slot named `al` or `st` shadows a register.**
+    *(numbered before the three C3 added below)*
     `docs/asm-conventions.md` §4.1 says slot names are plain unmangled
     globals, and its burned-name list is about collisions with other
     *project* labels. It does not say that the x86 register names are also
@@ -1202,42 +1372,137 @@ Numbered; each names the document and the sentence.
     its own argument `gptr2`. Worth adding to §4.1 when that file is next
     touched — reported, not done, since it is another tree's.
 
+17. **`--emitte c` dumped the typed AST to stdout, every time.** D2 says it
+    "writes the translation unit there, writes nothing to stdout", and
+    `driver/run.inc`'s own `-o` check repeats it; `drv_emit_dump` dispatches
+    on three arms with `ast` as the fall-through, so `DRV_EMIT_C` reached
+    it and dumped. 3,866 bytes for the hello world, on a stream D2 promises
+    is empty, and spec §18.2's stage-dump mitigation firing for a flag that
+    asked for no stage. No C1 check saw it because every call site redirects
+    stdout to a file nobody reads. Fixed in C3 (two instructions at the call
+    site; the emitted unit is byte-for-byte unchanged), and the six D2
+    driver rows plus all 26 program directories now assert stdout is empty.
+    The lesson is the general one: **a check that redirects an output stream
+    is not checking it.**
+
+18. **The `mips64-none-o64` row is not two constants, and finding 6's
+    closing sentence ("it is two `mov ecx, 64`s away, not a redesign")
+    over-promised.** C3 looked at what the change actually is, and stopped
+    rather than half-doing it:
+    - `lower/ty.inc`'s two `mov ecx, 64` (`.ref`, `.refc`) are indeed two
+      constants, and `mensura` is indeed already parameterised — finding 6
+      is right about both.
+    - But `ir.inc`'s `bfa_ty_ptr(module)` takes **no width at all**: making
+      it read one means a new `BfaModule` field, a default in
+      `bfa_module_init`, a setter, and a width threaded through
+      `lwr_module` from the driver's `--hospes` row. `ir.inc` is the file
+      section 1 says this backend **reuses unchanged by contract**, and it
+      is `backend_fasmg/`'s tree — CLAUDE.md's Scope makes that a request,
+      not an edit.
+    - And the reference emitter would then **silently miscompile** such a
+      module rather than refuse it: `__bfa_mem_access` and
+      `__bfa_mem_plan` dispatch on the IR type's *width*
+      (`emit.inc:2203`, `:2219`), so a `ptr` interned at 32 takes the
+      `.narrow` arm and emits 32-bit x86-64 accesses. A refusal by name has
+      to be added to `backend_fasmg/emit.inc` in the same change — a second
+      edit to the same other tree, and the one that makes the change safe
+      rather than merely possible.
+    - Finally, the row would have **no runnable certificate in this
+      repository's closure.** `nix flake check`'s test closure holds gcc,
+      clang, python3, binutils and fasmg; there is no `mips64-elf-gcc`
+      (D6 fixes that closure deliberately, and adding a cross toolchain to
+      it is C4's own decision). The differential test cannot execute a
+      mips64 binary, so what would land is emitted text with a
+      `_Static_assert(sizeof(void *) == 4)` and nothing that runs —
+      `[UNTESTED]` by construction, which CLAUDE.md's evidence discipline
+      says not to ship as a table row.
+
+    So the row stays refused by name, `drv_m_hospeso64`'s message stays
+    accurate (it names `lower/ty.inc` and `bfa_ty_ptr`; it does not yet name
+    the emitter refusal, which is worth adding when C4 touches it), and C4
+    keeps it. What C3 changes is the estimate: **two constants, one new
+    module field and its plumbing, one new refusal in another tree, and a
+    cross toolchain in the test closure** — four things, of which two are
+    another agent's and one is a flake decision.
+
+19. **GCC at `-O2` warns `-Wuninitialized` on a `storebits` that is the
+    first write to its slot.** Three of the 26 program units — `forma`,
+    `hydramodem_basis`, `receptio_circuitus` — draw exactly one warning
+    each, all the same shape:
+
+    ```c
+    _Alignas(1) unsigned char s2[17];
+    …
+    v2[1] = (unsigned char)(((unsigned)v2[1] & ~(15u << 4)) | (((unsigned)v5 & 15u) << 4));
+    v2[1] = (unsigned char)(((unsigned)v2[1] & ~(15u << 0)) | (((unsigned)v4 & 15u) << 0));
+    ```
+
+    D4 row 43 makes `storebits` a read-modify-write of one byte so the
+    neighbouring fields are untouched; when it is the *first* write to a
+    fresh slot there are no neighbouring fields yet, and the read is of an
+    indeterminate value. Clang does not warn, at either level; GCC does, at
+    `-O2` only.
+
+    **It is benign in effect and it is not a backend disagreement.** The
+    bits the first store preserves are overwritten by the second, every one
+    of the 17 bytes is defined before the slot is read, and all 104 program
+    builds agree with the reference byte for byte. The reference does the
+    same thing: it also read-modify-writes an uninitialised stack slot.
+
+    **Nothing is changed to silence it, and the harness does not suppress
+    it.** Zero-filling a `slot` in the C lowering would make the C backend
+    differ from the reference in precisely the way ADR 0012's differential
+    test exists to detect, and it would hide a real use of an
+    uninitialised slot the day one exists. Knowing a `storebits` is the
+    first write to its slot is dataflow analysis, which D4's one-lowering-
+    per-opcode rule does not admit. So the warning is printed by
+    `run_differential_tests` as a `note` on every run — C1's choice that "a
+    warning that nobody sees is a target nobody holds" is what surfaced
+    this — and finding 15's claim is qualified above. `[OPEN]`: whether a
+    later milestone emits a first-write `storebits` as a plain assignment
+    is a decision for whoever adds dataflow to the emitter, and it must be
+    made on both backends at once or not at all.
+
 ## 9. What retires each marker
 
 | decision or claim | milestone | the test as planned |
 |---|---|---|
 | D3's incantation table, every cell | C1, first task | the scratch unit under `gcc`/`clang` × `-O0`/`-O2` × UBSan, results written into section 8 |
 | D4's 37 rows, text | C1 | `tests/unit/bfc_emit_{narrow,bitwise,bytes,phi,call,program}.asm`, exact emitted text, mirroring `bfa_emit_*` |
-| D4's 37 rows, semantics | C2 | the 49 IR fixtures and 22 programs under four builds, three observables |
+| D4's 37 rows, semantics | C2 | **done**: the 50 IR fixtures (39 lowerable) and 26 programs under four builds each, three observables — 156 + 104 builds, all agreeing |
 | D4's 23 refusals | C1 | one `tests/ir/reject_c_*.ir` per refusal class with `emit-exit=4` and, for the two runtime refusals, `c-emit-exit=4` against a reference that lowers them |
 | D2's three-way split | C1 | `tests/unit/driver_emitte_c_{nohospes,badrow,noout}.asm`; the `EXS-E0701` row stays `[UNTESTED]` until a float opcode exists |
 | D5 mangling | C1 | `tests/unit/bfc_mangle.asm` |
-| D5 determinism | C2 | `tools/reproduce.sh` extended to diff two `--emitte c` units |
-| D6 | C2 | `run_differential_tests` green in `nix flake check` |
+| D5 determinism | C3 | **done**: `tools/reproduce.sh` diffs two `--emitte c` units (the hello world, 8,691 bytes; the StreamDB reader, 137,742) across divergent cwd/TZ/locale/`SOURCE_DATE_EPOCH`/umask/hostname — byte-identical, and two mutations show the diff is not vacuous. Plus, inside one process, sixteen program directories that share a `sources=` must emit byte-identical C |
+| D6 | C3 | **done**: `run_differential_tests` green in `nix flake check` over both corpora |
 | D6's closure assertion | C1 | **done, run once by hand**: `pkgs.gcc` added to `buildExsecutorPackage`'s `nativeBuildInputs` makes `nix build .#exsc` fail at EVALUATION -- `error: an integer with value '2' is not equal to an integer with value '1'`, pointing at `assertBuildClosure`, before any derivation is instantiated. Reverted immediately; the assertion is `flake.nix:175`. |
-| D7, section 6 | C3, C4 | the reader's certificate; the N64 gates |
+| D7, section 6 | C3 (host), C4 (target) | **host half done**: the reader's certificate, identical under both backends on four containers × four toolchains (section 6.7). The N64 gates are C4's |
 | D1's whole-program mode | — | `[OPEN]`, not scheduled |
 
 ## 10. Open questions the implementer must answer first
 
-In the order they block:
+In the order they block. **1–5 are answered**; 6 and 7 are C4's and stand.
 
-1. **D3's table.** Nothing else starts until the incantations have run;
-   two are suspect from memory already (finding 2, `(-1 & 3)`).
-2. **Where `mensura`'s width lives in `lower/` and `checker/`** (finding 6)
-   — one site or many? C3 can run on `x86_64-linux` without the answer;
-   C4 cannot start without it.
-3. **`print.inc`'s output helpers** (finding 8) — promoted, or duplicated?
-4. **UBSan and the `index` idiom** — does `-fsanitize=pointer-overflow`
-   object to `(unsigned char *)((uintptr_t)p + …)` when the result is in
-   bounds? If it does, the row keeps the idiom and the harness adds
-   `-fno-sanitize=pointer-overflow` with the reason recorded; it does not
-   switch to C pointer arithmetic.
-5. **The shim's record layouts** — whether `tests/c/exsrt_shim.c` can
+1. ~~**D3's table.**~~ Answered by C1's measurement, section 2 D3.
+2. ~~**Where `mensura`'s width lives**~~ — answered twice: finding 6 (it is
+   already parameterised; the obstacle is `ref`/`refc`/`ptr`) and, more
+   precisely, finding 18 (what the o64 row actually costs, and why C3
+   stopped rather than half-doing it).
+3. ~~**`print.inc`'s output helpers**~~ (finding 8) — resolved in C1.
+4. ~~**UBSan and the `index` idiom**~~ — answered in D3's table: **no
+   report** under `-fsanitize=undefined,pointer-overflow`, so the row keeps
+   the idiom and the harness needs no `-fno-sanitize=pointer-overflow`. Now
+   also demonstrated at scale: 260 builds across both corpora, every one
+   under `-fno-sanitize-recover=all`, no report.
+5. ~~**The shim's record layouts**~~ — answered by not needing to ask.
+   C3 drove `Lector` and `Scriptor` from `initium` through the shim over
+   four containers and the six routines were exactly enough; the six
+   numbers have not moved, and RT H4's hazard is still recorded in the
+   shim's header. A generated header stays admissible and stays unbuilt;
+   the question as first asked was whether `tests/c/exsrt_shim.c` can
    `#include` a generated header from `interface.inc`'s constants rather
-   than restate them (RT H4). A generator is verification-only and
-   admissible; the question is whether it is worth its lines for six
-   numbers.
+   than restate them (RT H4), and the answer is "it could, and it has not
+   had to".
 6. **`__builtin_memcpy` at `-Os` under `mips64-elf-gcc`** — whether a
    144,000-byte `copy` (`tests/ir/copy_magna.ir`) becomes a `memcpy` call,
    and whether Kiln's link admits it (newlib provides it; the gate forbids

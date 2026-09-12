@@ -301,6 +301,37 @@ lowered to verified IR (`tests/unit/lwr_forma.asm` still lowers that very
 file) while it waited on the emitter's M3/M4 opcodes; since aca9755 it runs
 (`expect-exit=0`), and no directory is deferred at the time of writing.
 
+### The C backend's keys
+
+Three keys exist so the differential phase — which compiles the same
+fixture through `--emitte c` and holds the result to the same directive —
+can *say* where the two backends part company, instead of a name being
+special-cased inside `tests/run.sh`.
+
+`c-emit-exit=N` (IR) and `c-exsc-exit=N` (programs) give the C side's own
+expected status where it legitimately differs from the reference's
+`emit-exit=`/`exsc-exit=`. The default is parity, so
+`reject_emit_straddle.ir` needs neither. No fixture needs either today.
+
+`c-differentia=REASON` (programs only) declares a directory **ineligible**
+for the differential phase. A directory without the key is eligible and its
+four builds — gcc and clang, `-O0` and `-O2`, under
+`-fsanitize=undefined -fno-sanitize-recover=all` — must agree with the
+reference on stdout bytes, exit status, and trap-or-not with the abort
+kind. The reason set is closed, and an unrecognised value fails the
+fixture:
+
+| reason | means |
+|---|---|
+| `nightly-sweep` | the `receptio_vec_*` impaired-vector sweep (`docs/design/c-backend.md` D6). All seventy name the identical `sources=` as `receptio_exemplum`, so they would add 280 runs of four binaries the phase already builds, not one more lowering |
+| `prelude-beyond-shim` | the unit imports an `exsrt_*` routine `tests/c/exsrt_shim.c` does not define, so it would not link. Unused today |
+| `emitter-refusal` | `exsc --emitte c` refuses the module by name (one of D4's 23 refusals). Unused today |
+
+There is deliberately **no glob** in `tests/run.sh` that passes over a
+directory: a name silently absent from a phase is the false green
+`UNIT_FIXTURE_FLOOR`'s header lists four times over, so exclusion is data in
+the fixture and the count of exclusions is printed on every run.
+
 ## Adding a case
 
 **A new `tests/unit/` fixture:** drop a `.asm` file in this directory with
@@ -312,7 +343,11 @@ three for the pattern.
 **A new `tests/ir/` or `tests/programs/` case:** add the `.ir` file or the
 directory with its `TEST` file, then raise `IR_FIXTURE_FLOOR` or
 `PROGRAM_FIXTURE_FLOOR` in `tests/run.sh` in the same commit, and show it is
-not vacuous (CONTRIBUTING.md: break the thing, watch it fail, restore).
+not vacuous (CONTRIBUTING.md: break the thing, watch it fail, restore). A
+new program directory is also a differential case unless it declares
+`c-differentia=`, so raise `DIFFERENTIAL_PROGRAM_FLOOR` and
+`DIFFERENTIAL_PROGRAM_BUILD_FLOOR` (by 1 and by 4) in the same commit too —
+or, if it declares one, say which reason and why.
 
 **A new `tests/conformance/` entry:** a spec amendment to §14 first
 (entries are cited by number; append, never renumber), then the source

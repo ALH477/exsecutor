@@ -683,10 +683,13 @@
             # on stdin (stdin=vendor/hydramodem-rx/<kind>/<name>.wav); without
             # them here those directories would have nothing to decode.
             cp -r --no-preserve=mode -- ${./vendor/hydramodem-rx} repo/vendor/hydramodem-rx
-            # No Exsecutor StreamDB v3 reader exists yet, so nothing under
-            # tests/ reads this tree today -- staged anyway, the same way the
-            # other vendor/ trees are, so it is present the moment such a
-            # reader's fixtures are added (see vendor/streamdb-v3/PROVENANCE.md).
+            # tests/programs/streamdb_*/ read these four containers on stdin.
+            # This comment said "no Exsecutor StreamDB v3 reader exists yet,
+            # so nothing under tests/ reads this tree today" and the tree was
+            # staged ahead of one; the reader landed with c-backend.md section
+            # 6, and section 6.7 runs it through the C backend too. Four
+            # directories x (1 reference build + 4 C builds) read these files
+            # every run (see vendor/streamdb-v3/PROVENANCE.md).
             cp -r --no-preserve=mode -- ${./vendor/streamdb-v3} repo/vendor/streamdb-v3
             chmod +x repo/tests/run.sh repo/tools/*.sh
             # The sandbox has no /usr/bin/env, and tests/run.sh invokes the
