@@ -2235,6 +2235,23 @@ proc __bfa_mem_access, module, ty
 	xor	eax, eax
 	return
   .narrow:
+	; An ADDRESS narrower than 64 gets its own refusal, because the
+	; message below is factually wrong about it -- 32 IS a whole number
+	; of bytes, four of them -- and that wrong message is what a reader
+	; would otherwise be handed. ADR 0015 decision 2 interns `ptr`,
+	; `ref` and `refc` at 64 on EVERY `--hospes` row, so this cannot
+	; arrive from the lowering; it is hand-written IR, or a future row
+	; that changed the intern without teaching this backend to lower it.
+	; Refusing by name is what makes that change safe rather than merely
+	; possible (docs/design/c-backend.md finding 18, third bullet, which
+	; called this a silent miscompile -- it is not silent, it just said
+	; the wrong thing).
+	cmp	edx, BFA_TK_PTR
+	je	.addr
+	cmp	edx, BFA_TK_REF
+	je	.addr
+	cmp	edx, BFA_TK_REFC
+	je	.addr
 	cmp	edx, BFA_TK_U
 	je	.isint
 	cmp	edx, BFA_TK_I
@@ -2252,6 +2269,13 @@ proc __bfa_mem_access, module, ty
   .after_msg:
 	lea	rdi, [.msg]
 	mov	rsi, .after_msg - .msg
+	call	__bfa_emit_die
+  .addr:
+	jmp	.after_amsg
+  .amsg db "load/store: an address narrower than 64 bits. This backend is x86-64 only -- spec 9.5 fixes --hospes before any IR reaches a backend, and ADR 0015 interns ptr/ref/refc at 64 on every row, so the C backend is where a 32-bit-address target is served."
+  .after_amsg:
+	lea	rdi, [.amsg]
+	mov	rsi, .after_amsg - .amsg
 	call	__bfa_emit_die
   .ok:
 	xor	edx, edx
