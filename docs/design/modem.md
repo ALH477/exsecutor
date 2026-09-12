@@ -254,7 +254,7 @@ backend) and which the certificate shows is unnecessary.
 sample 0 of the preamble is `T[2]`, sample 5 is `T[12]`, and every other
 entry follows in the first two symbols).
 
-### D4 The sine table is a function of nine values and quarter-wave symmetry; array literals stay `[OPEN]`
+### D4 The sine table is an array literal (M5); the nine-value `discerne` fold is history
 
 `sinus(m: mensura) -> u16` folds `m` into the first quarter — `m ≥ 24`
 records a negation and subtracts 24; `m > 12` becomes `24 − m` — selects
@@ -323,6 +323,69 @@ the reference's rounding chain.
 `tests/programs/hydramodem_{loopback,exemplum,vacuum}/`); `discerne`'s
 re-spelling by `a1e46e3`'s `tests/programs/discerne/` and M1's `sinus`,
 which is written with it.
+
+**Decided by M5: an array literal, not a `discerne`.** Array literals
+landed at `54ba744` (spec §8.6, both forms) with the evidence this section
+called for: `tests/programs/acies/` tabulates `sinus` itself, all 48
+entries, 48/48 against the running function. M5 is the mechanical step this
+section named — move the transmitter's table from control flow to data —
+and it is now done: `examples/hydramodem/modulator.exsc`'s `sinus` reads a
+48-entry `acies<u16, 48>` built by a private helper, `tabula_sinus()`, in
+place of the nine-arm `discerne`.
+
+The two open questions this section listed are answered by what was tried,
+not by further reading:
+
+- **A module-level `firma` array does not lower, measured.**
+  `publica firma probatio: acies<u16, 4> = [1, 2, 3, 4];` at module scope
+  passes `exsc aedifica` without `-o` ("the front end accepts this
+  source"); with `-o`, the first read of `probatio` traps
+  `__lwr_module_const`'s `rassert eax eq AST_LIT` (`lower/expr.inc`) --
+  SIGILL, exit 132. A module-level `firma`'s initializer must be an
+  `AST_LIT` node today (spec §8.6 decision 5); an array literal is
+  `AST_ARRAYLIT`, a different node kind, and the lowering never widened the
+  one case it handles. Same shape of gap as finding 1's `discerne` trap,
+  reported rather than worked around here. So the table is a *function*
+  returning the literal, indexed where it is bound -- `caput()`'s shape,
+  which this file's section 5 already lists beside `sinus`.
+- **A `mutabilis acies` binding without a literal** was never needed: the
+  table is `firma` (read-only), built once per call from the literal
+  `tabula_sinus()` returns, exactly as `tabulam()` is used in
+  `tests/programs/acies/acies.exsc`.
+
+**Every live entry, all 48 written down.** The nine first-quarter values
+this section already carried, folded by hand instead of by `si`/`sin`:
+`T[24-m] = T[m]`, `T[24+m] = -T[m]` in two's-complement `u16` (`65536 - v`,
+no `0 -% v` at run time). The four dead first-quarter indices (1, 5, 7, 11)
+and their eight mirrors are written as `0`, exactly what the `aliter` arm
+they replace produced. Checked three ways: against the nine values this
+section already recorded; against quarter-wave symmetry applied by hand to
+all 48; and independently against `vendor/hydramodem-tx/*.wav` bytes
+1964..2059 (the preamble's first two symbols, both tones, 96 samples) --
+byte for byte, before the table was ever wired into `sinus`.
+
+**The certificate, unchanged.** `tests/programs/hydramodem_{loopback,
+exemplum,vacuum}/` and `hydramodem_basis/` are byte-identical to the same
+vendored references, 4/4; `receptio_*` (R2/R3, a sibling file in the same
+compilation unit) still 5/5 -- the array literal changes `sinus`'s
+implementation, not its contract, and nothing downstream (`sona`, `tonus`,
+the receiver's own table) reads a different value. Mutating `T[2]`
+(`7633 -> 7634`, the entry the design's own mutation table maps to byte
+1964) fails all three WAV certificates at `cmp`'s byte 1965 (1-based, as
+predicted), reverted after.
+
+**Cost, measured same-host, same `exsc`, before and after this change:**
+binary size +157 bytes on all four transmitter binaries alike (7,836 ->
+7,993 for `loopback`/`exemplum`/`vacuum`'s shared module text; 7,741 ->
+7,898 for `basis`, which never calls `sinus` -- the whole module is
+compiled either way, so the same 157 bytes land in both) -- the array
+literal's stores and the discarded compare chain are close in code size,
+not the free win a table usually is, because `discerne`'s cost here was
+already "nothing" (D4 above) and 48 immediate stores are not smaller than
+nine compares. Wall time: no measurable difference beyond run-to-run noise
+on this host, 17-20 ms for the three WAV drivers and 75-77 ms for `basis`,
+both before and after -- consistent with D7's finding that one `write`
+syscall per sample dominates either way.
 
 ### D5 Bits, the encoder and the interleaver, with settled language only — and why the encoder is evaluated feedforward
 

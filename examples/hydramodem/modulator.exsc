@@ -2,10 +2,10 @@
 // profile, as pure functions: given a frame's seventeen bytes, the tone of
 // each of its 356 symbols, and the 48 samples a tone becomes. No `poscit`
 // anywhere and no capability-bearing parameter: every `publica` function
-// here is pure in spec §4.1 rule 6's sense, the one private helper's row is
-// inferred from a body that touches nothing (rule 5), and nothing in this
-// file can reach the host. emitte.exsc walks the layout below and writes
-// the bytes; that is all it does.
+// here is pure in spec §4.1 rule 6's sense, the two private helpers'
+// (`ante`, `tabula_sinus`) rows are inferred from bodies that touch nothing
+// (rule 5), and nothing in this file can reach the host. emitte.exsc walks
+// the layout below and writes the bytes; that is all it does.
 //
 // The reference is HydraMesh's hydramodem/ at fce2813 -- the C DSP
 // (hydra_dsp_ref.c), not the Faust one -- and vendor/hydramodem-tx/ holds
@@ -16,11 +16,12 @@
 // convolutional code, interleaved; gain 0.9. docs/design/modem.md is the
 // design.
 //
-// No bitwise and or or, no division, no remainder, no signed arithmetic and
-// no array literal appear below: each is `[OPEN]` (spec §5.4, §8.6), and a
-// transmitter needs none of them. A remainder is a walk. A bit is a
-// comparison with 0x80 and a `sursum 1`. A negative sample is `0 -% v` in
-// u16, which is its two's-complement bit pattern. A table is a `discerne`.
+// No bitwise and or or, no division, no remainder and no signed arithmetic
+// appear below: each is `[OPEN]` (spec §5.4), and a transmitter needs none
+// of them. A remainder is a walk. A bit is a comparison with 0x80 and a
+// `sursum 1`. The one array literal below (`tabula_sinus()`, spec §8.6, M5) holds
+// the sine table's two's-complement bit patterns directly, so no
+// `0 -% v` remains at run time either.
 
 // ---- the layout ------------------------------------------------------------
 
@@ -81,46 +82,57 @@ publica functio caput() -> Caput {
 
 // ---- the samples -------------------------------------------------------------
 
-// T[m], 0 <= m < 48, as a two's-complement u16. The reference computes
+// T[m], 0 <= m < 48, as a two's-complement u16 array literal (spec §8.6,
+// landed by 54ba744; M5, docs/design/modem.md D4). The reference computes
 // (float) sin(2 pi phase), multiplies it by 0.9f in float, and the WAV
 // writer takes lround(s * 32767.0) (hydra_dsp_ref.c, hydra_modem.c, wav.c),
 // so T[m] = lround(f32(f32(sin(2 pi m / 48)) * 0.9f) * 32767) -- and on this
 // profile the phase is always a whole number of 48ths (phasis, below), so
 // those 48 integers are all the audio there is.
 //
-// Quarter-wave symmetry folds m into 0..12: T[24 - m] = T[m] and
-// T[m + 24] = -T[m], both measured on all 48 entries. Only NINE first-
-// quarter values are ever read: tone 0 steps by 2 and tone 1 by 3, so the
-// folded index is never 1, 5, 7 or 11. Those four are not carried -- no
-// certificate could check them (docs/design/modem.md, D4) -- and the
-// `aliter` that would receive them is never reached.
+// Quarter-wave symmetry (T[24 - m] = T[m], T[24 + m] = -T[m], both measured
+// on all 48 entries in the design) is applied HERE, once, to write the
+// table down rather than at every call: entries 1, 5, 7, 11 and their
+// mirrors (13, 17, 19, 23, 25, 29, 31, 35, 37, 41, 43, 47) are the four dead
+// first-quarter values -- no certificate could check them
+// (docs/design/modem.md, D4) -- and are written as 0, exactly what the
+// `aliter` arm they replace produced. The negative entries are written as
+// their two's-complement bit pattern directly (65536 - v), so no `0 -% v` at
+// run time. Checked three ways: against the nine live first-quarter values
+// this file held before this change, against quarter-wave symmetry applied
+// by hand to each of the 48, and against the first two symbols (96 samples,
+// both tones) of vendor/hydramodem-tx/*.wav byte for byte (all four dead
+// entries never occur in that comparison, as D4 records).
+//
+// A MODULE-LEVEL `firma` array was tried first and does not lower: a
+// module-level `firma`'s initializer must be an `AST_LIT` node
+// (`__lwr_module_const`, lower/expr.inc) -- spec §8.6 decision 5 admits only
+// a literal there today, not an array literal (`AST_ARRAYLIT`). `exsc
+// aedifica` without `-o` accepts `publica firma probatio: acies<u16, 4> =
+// [1, 2, 3, 4];` at module scope ("the front end accepts this source"); with
+// `-o`, the first read of `probatio` traps `__lwr_module_const`'s `rassert
+// eax eq AST_LIT`, SIGILL, exit 132 -- the same shape of trap finding 1
+// reported for `discerne`, and likewise not worked around here. So the
+// table is a function returning the literal, indexed where it is bound --
+// `caput()`'s shape, one line down. Named `tabula_sinus`, not `tabula`:
+// examples/hydramodem/receptor.exsc (R2/R3, a sibling file compiled into the
+// same unit by every `receptio_*` test) already declares a module-scope
+// `tabula()` of its own, and `EXS-E0302` (duplicate declaration) is correct
+// to refuse two.
+functio tabula_sinus() -> acies<u16, 48> {
+    redde [
+        0, 0, 7633, 11285, 14745, 0, 20853, 0,
+        25539, 27245, 28485, 0, 29490, 0, 28485, 27245,
+        25539, 0, 20853, 0, 14745, 11285, 7633, 0,
+        0, 0, 57903, 54251, 50791, 0, 44683, 0,
+        39997, 38291, 37051, 0, 36046, 0, 37051, 38291,
+        39997, 0, 44683, 0, 50791, 54251, 57903, 0
+    ];
+}
+
 publica functio sinus(m: mensura) -> u16 {
-    mutabilis q: mensura = m;
-    mutabilis negativus: u1 = 0;
-    si q ge 24 {
-        q = q - 24;
-        negativus = 1;
-    }
-    si q gt 12 {
-        q = 24 - q;
-    }
-    mutabilis v: u16 = 0;
-    discerne q {
-        casus 0 { v = 0; }
-        casus 2 { v = 7633; }
-        casus 3 { v = 11285; }
-        casus 4 { v = 14745; }
-        casus 6 { v = 20853; }
-        casus 8 { v = 25539; }
-        casus 9 { v = 27245; }
-        casus 10 { v = 28485; }
-        casus 12 { v = 29490; }
-        aliter { v = 0; }
-    }
-    si negativus eq 1 {
-        v = 0 -% v;
-    }
-    redde v;
+    firma t: acies<u16, 48> = tabula_sinus();
+    redde t[m];
 }
 
 // The index into T of sample i (0 <= i < 48) of a symbol on tone k. The
