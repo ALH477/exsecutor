@@ -26,13 +26,22 @@
 // runs the StreamDB reader (`examples/streamdb/`) against the same
 // vendored corpus entry 23's method produced.
 //
-// DEFERRED: `--hospes mips64-none-o64` is refused by name by this build
-// (`driver/run.inc`), and the cross phase that would run it does not exist
-// yet. Both are C4 -- `docs/design/c-backend.md`, ADR 0015. `cross_compile`
-// is the deferral token, shared with entry 17.
+// RUNS. `--hospes mips64-none-o64` is accepted, and tests/run.sh's cross
+// phase is what carries this entry: it emits each `cross=yes` program
+// directory for that row, cross-compiles it `-mabi=n32 -march=mips3`
+// (big-endian MIPS-III, 32-bit addresses) and runs it under
+// `qemu-mipsn32`, holding it to the reference backend's stdout bytes, exit
+// status and trap-or-not. Six directories today, the four StreamDB
+// containers among them, plus `forma` -- which is §5.2's DeModFrame built
+// from a struct literal, and so the one that exercises `@transitus` byte
+// order on a host whose own order is the opposite of the reference's.
+//
+// This fixture itself is checked as the ordinary module it is; the entry's
+// substance is in that phase, the way entry 23's is in `cert_entry23`.
+// `cross_compile` stays reserved as entry 17's deferral token.
 
 publica functio saluta() -> textus {
     redde "Ave, mundus."
 }
 
-// TEST: entry=25 shape=bytes status=deferred needs=backend,cross_compile
+// TEST: entry=25 shape=bytes status=run

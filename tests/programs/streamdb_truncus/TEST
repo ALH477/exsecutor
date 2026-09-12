@@ -19,4 +19,4 @@
 # agree on every header in this corpus. Mutant 4 in the commit message is
 # where the form is proved, on a header made by hand, because the corpus
 # cannot make one.
-TEST: expect-exit=1 stdin=vendor/streamdb-v3/negative/corpus.trunc300.streamdb sources=examples/streamdb/lector_streamdb.exsc,examples/streamdb/probatio.exsc
+TEST: expect-exit=1 stdin=vendor/streamdb-v3/negative/corpus.trunc300.streamdb sources=examples/streamdb/lector_streamdb.exsc,examples/streamdb/probatio.exsc cross=yes

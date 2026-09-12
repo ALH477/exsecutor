@@ -1,11 +1,16 @@
 # 0015 — The N64 target: `mensura` is the address width, the IR's `ptr` is not
 
-**Status:** Accepted as design, 2026-09-12. **Nothing implemented.** The
-milestone is C4 in `docs/design/c-backend.md`; this ADR decides what C4
-builds and corrects `finding 18` there, which costed it wrongly in two
-places. The measurements below are real and re-runnable; every one of them
-was taken against the **`mensura` = 64** compiler this repository ships
-today, which is the point decision 1 turns on.
+**Status:** Accepted, 2026-09-12. **Implemented and running.**
+`--hospes mips64-none-o64` is accepted; §14 entry 25 is `status=run`, and
+`tests/run.sh`'s cross phase emits six `cross=yes` program directories for
+that row, cross-compiles them big-endian with 32-bit addresses and runs
+them under emulation against the reference backend's observables. Decision
+6 is **corrected in place below** on measurement the cross phase itself
+made possible. The milestone is C4 in `docs/design/c-backend.md`, whose
+`finding 18` this ADR corrects in two places. The measurements in the
+Context below were taken *before* the row existed, against the
+**`mensura` = 64** compiler — which is the point decision 1 turns on, and
+the reason they are not evidence about the artifact C4 emits.
 
 **Relates to:** spec §5.2, §5.4, §9.2, §9.3, §9.5, §14; ADR 0007 (numeric
 semantics are declared), ADR 0012 (two backends, the differential method);
@@ -174,13 +179,31 @@ A natural C rendering of those structs on o64 is 12 and 32 bytes with
 standing between that disagreement and a wrong-offset read is the
 `_Static_assert` set in `tests/c/exsrt_shim.c:61-73`.
 
-The fix is the cheap one: **pin the shim's offsets with explicit padding**
-to the literal offsets `interface.inc` fixes, instead of letting the C
-compiler choose a layout and then testing whether it guessed right. The
-asserts stay, and then they hold at both widths. This keeps one layout,
-owned by the compiler, and leaves `runtime.md` hazard H4 exactly as
-tracked — two copies of one layout, kept in step by hand — rather than
-adding a third possibility.
+The fix is the cheap one: **pin the shim's offsets as literals** rather
+than letting the C compiler choose a layout and then testing whether it
+guessed right.
+
+**Corrected on measurement, 2026-09-12, after the cross phase existed to
+test it.** The premise above is wrong about *why*. The emitted unit treats
+a Scriptor, a Lector and an ambitus as **opaque bytes**: it allocates the
+slot, hands the pointer back, and never interprets a field. Only the shim
+interprets them, and it both writes and reads every offset, so it is
+self-consistent at any value. Mutating the descriptor from offset 8 to
+offset 4 leaves the whole cross phase passing.
+
+What is genuinely shared is the **size** of the slot the unit allocates; a
+shim that writes past it overflows it. The cross phase does not catch that
+either — `SCR_SIZE` mutated from 16 to 32 also passes — because a
+freestanding MIPS build carries no sanitizer, where the hosted x86-64
+differential build runs everything under UBSan. So `tests/c/exsrt_shim.c`'s
+`_Static_assert`s remain the real guard on these numbers, and the MIPS
+shim's literals are consistency and documentation.
+
+The decision stands as written — literal offsets, not a compiler-chosen
+layout — because it keeps the numbers `interface.inc` fixes visible where a
+reader can compare them. Its *justification* was overstated, and this is
+the correction rather than a quiet edit. `runtime.md` hazard H4 now tracks
+three copies of one layout instead of two.
 
 ### 5. n32 under qemu is the certificate; o64 is the deployment
 

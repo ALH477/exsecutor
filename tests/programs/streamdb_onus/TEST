@@ -20,4 +20,4 @@
 # the payload, so the size and crc at `offset - 8` are unchanged -- which is
 # exactly why this case proves the PAYLOAD CRC is computed and not merely the
 # header check. The header check is proved by mutant 1 in the commit message.
-TEST: expect-exit=0 stdin=vendor/streamdb-v3/negative/corpus.payload-flip.streamdb sources=examples/streamdb/lector_streamdb.exsc,examples/streamdb/probatio.exsc
+TEST: expect-exit=0 stdin=vendor/streamdb-v3/negative/corpus.payload-flip.streamdb sources=examples/streamdb/lector_streamdb.exsc,examples/streamdb/probatio.exsc cross=yes

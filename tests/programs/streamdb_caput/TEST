@@ -23,4 +23,4 @@
 # (PROVENANCE.md, `pack2.c`): a single-flush container has one slot that ever
 # validates, so corrupting it fails the open instead of demonstrating the
 # fallback.
-TEST: expect-exit=0 stdin=vendor/streamdb-v3/negative/corpus.header-flip.streamdb sources=examples/streamdb/lector_streamdb.exsc,examples/streamdb/probatio.exsc
+TEST: expect-exit=0 stdin=vendor/streamdb-v3/negative/corpus.header-flip.streamdb sources=examples/streamdb/lector_streamdb.exsc,examples/streamdb/probatio.exsc cross=yes

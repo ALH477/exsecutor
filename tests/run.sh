@@ -109,6 +109,12 @@ DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-156}"
 DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-26}"
 DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-104}"
 
+# The cross phase's own floor, deliberately NOT folded into the differential
+# numbers above: a cross-compiled, emulated run of a 32-bit-`mensura` unit is
+# a different claim from a host build of a 64-bit one, and one number
+# reporting both would name neither. §14 entry 25, ADR 0015.
+CROSS_PROGRAM_FLOOR="${CROSS_PROGRAM_FLOOR:-6}"
+
 PASS=0
 FAIL=0
 
@@ -368,7 +374,7 @@ run_conformance_tests() {
   echo "== conformance suite (tests/conformance/, spec §14) =="
   local dir="$REPO_ROOT/tests/conformance"
   local fixture_floor=25
-  local run_floor=10
+  local run_floor=11
 
   if [[ ! -d "$dir" ]]; then
     bad "tests/conformance/ does not exist"
@@ -847,15 +853,20 @@ cert_entry23() {
 # run_binary BIN OUT ERR [STDIN] -- prints "exit N", "signal N" or "timeout".
 # STDIN is a path (absolute, or already resolved by the caller); absent or
 # empty means /dev/null.
+# run_binary BIN OUT ERR [STDIN] [RUNNER] [TIMEOUT]
+# RUNNER, when given, is prepended to the command -- `qemu-mipsn32` for the
+# cross phase, which cannot execute a big-endian MIPS binary directly. The
+# empty environment is kept: qemu-user needs nothing from it.
 run_binary() {
-  python3 - "$1" "$2" "$3" "${4:-}" <<'PY'
+  python3 - "$1" "$2" "$3" "${4:-}" "${5:-}" "${6:-20}" <<'PY'
 import subprocess, sys
-exe, out, err, inp = sys.argv[1:5]
+exe, out, err, inp, runner, tmo = sys.argv[1:7]
+cmd = ([runner] if runner else []) + [exe]
 with open(out, 'wb') as o, open(err, 'wb') as e:
     i = open(inp, 'rb') if inp else None
     try:
-        r = subprocess.run([exe], stdin=(i or subprocess.DEVNULL), stdout=o,
-                           stderr=e, env={}, timeout=20)
+        r = subprocess.run(cmd, stdin=(i or subprocess.DEVNULL), stdout=o,
+                           stderr=e, env={}, timeout=float(tmo))
     except subprocess.TimeoutExpired:
         print('timeout')
         sys.exit(0)
@@ -886,11 +897,11 @@ PY
 # and the C prelude issues the syscalls itself (c-backend.md D1, [OPEN]).
 check_run() {
   local label="$1" bin="$2" work="$3" want_exit="$4" want_abort="$5" ref="$6"
-  local sref="${7:-}" doaudit="${8:-audit}"
+  local sref="${7:-}" doaudit="${8:-audit}" runner="${9:-}" tmo="${10:-20}"
   local out="$work.stdout" err="$work.stderr" status rcode=0
   local inp=""
   [[ -n "$sref" ]] && inp="$REPO_ROOT/$sref"
-  status="$(run_binary "$bin" "$out" "$err" "$inp")"
+  status="$(run_binary "$bin" "$out" "$err" "$inp" "$runner" "$tmo")"
 
   if [[ -n "$want_abort" ]]; then
     if [[ "$status" == "signal 4" ]] &&
@@ -948,7 +959,7 @@ parse_run_keys() {
   # Empty, not "0": empty means "no C-specific verdict given, so parity with
   # the reference's own key applies". A default of "0" would silently claim
   # parity with success even where emit-exit= says the reference refuses.
-  k_c_emit_exit=""; k_c_exsc_exit=""; k_c_differentia=""
+  k_c_emit_exit=""; k_c_exsc_exit=""; k_c_differentia=""; k_cross=""
   local kv
   for kv in "$@"; do
     case "$kv" in
@@ -979,12 +990,23 @@ parse_run_keys() {
       # nobody greps for. The value set is CLOSED (below), so a typo is a
       # failed fixture rather than a new, silently accepted reason.
       c-differentia=*) k_c_differentia="${kv#c-differentia=}" ;;
+      # OPT-IN TO THE CROSS PHASE, declared the same way and for the same
+      # reason as c-differentia= above, but with the polarity reversed: the
+      # differential phase is opt-OUT because every host build is cheap,
+      # while a qemu run is 10-50x and a directory that takes 7 s natively
+      # would take minutes. So the cross phase is opt-IN -- `cross=yes` and
+      # nothing else -- and the set of directories that carry it is a fact
+      # you can grep for rather than a glob inside the harness.
+      cross=*)       k_cross="${kv#cross=}" ;;
       sources=*)     k_sources="${kv#sources=}" ;;
       status=*)      k_status="${kv#status=}" ;;
       needs=*)       k_needs="${kv#needs=}" ;;
       *) bad "$label: unknown directive key '$kv'"; return 1 ;;
     esac
   done
+  if [[ -n "$k_cross" && "$k_cross" != "yes" ]]; then
+    bad "$label: cross='$k_cross' -- the only value is 'yes'"; return 1
+  fi
   if [[ "$k_status" != "run" && "$k_status" != "deferred" ]]; then
     bad "$label: unknown status='$k_status' (expected run|deferred)"; return 1
   fi
@@ -1847,6 +1869,170 @@ run_program_tests() {
   note "$deferred program directories DEFERRED (type-checked only; not counted as passing)"
 }
 
+# ---------------------------------------------------------------------------
+# PHASE 6: the cross phase -- §14 entry 25, ADR 0015.
+#
+# THE CLAIM. A unit emitted for `--hospes mips64-none-o64`, cross-compiled
+# and RUN big-endian with 32-bit addresses, produces the reference backend's
+# observables: stdout bytes, exit status, and trap-or-not with the abort kind.
+# The same three D6 compares on, checked by the same `check_run`, so one key
+# reads three backends.
+#
+# WHY IT IS WORTH ITS RUNTIME, beyond the N64. Spec §9.5 claims the emitted
+# text "depends on no assumption" about the host's byte order -- `nativus`
+# places go through helpers the C compiler picks from its own target, and
+# `maior`/`minor` places byte by byte. That claim has been in the spec since
+# the section was written and NOTHING had ever tested it, because every
+# target in this repository's closure is little-endian. This phase is the
+# first big-endian execution of anything this compiler produced.
+#
+# WHY n32 AND NOT o64. clang does not implement `-mabi=o64` ("unknown target
+# ABI"), and a GCC that does is not in the binary cache, so putting one in
+# the closure would mean building a cross toolchain from source on every
+# fresh checkout. n32 shares with o64 every property the emitted text could
+# depend on -- big-endian, MIPS-III, 32-bit addresses, 64-bit registers --
+# and, decisively, THE TEXT UNDER TEST IS THE SAME TEXT, because both are
+# `--hospes mips64-none-o64`. What differs is argument passing and the
+# compiler, and every call in the built program has both sides compiled
+# together here, so no ABI boundary is crossed that is not internal.
+# ADR 0015 decision 5 states the gap: the o64 ABI itself is [UNTESTED] in
+# this repository, and linking into a ROM is [OPEN].
+#
+# WHY IT IS OPT-IN. `cross=yes` on a tests/programs/ directory, and nothing
+# else. Emulation is 10-50x, so the 96 directories cannot all be run; the
+# differential phase is opt-OUT because a host build is cheap. Declared per
+# directory rather than matched by name in here, for the reason
+# c-differentia= gives at length.
+#
+# A MISSING TOOL IS A FAILURE OF THE PHASE, NOT A SKIP -- the rule the
+# differential phase already applies to gcc and clang. A silent skip is the
+# false green this file's floors exist to prevent.
+run_cross_tests() {
+  echo "== cross phase: mips64-none-o64, big-endian, under emulation =="
+
+  local shim="$REPO_ROOT/tests/c/exsrt_shim_mips.c"
+  if [[ ! -f "$shim" ]]; then
+    bad "cross: tests/c/exsrt_shim_mips.c is missing -- nothing can be linked"
+    return
+  fi
+  local tool
+  for tool in clang ld.lld qemu-mipsn32; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+      bad "cross: $tool not found on PATH -- this phase needs it (ADR 0015 decision 4)"
+      return
+    fi
+  done
+  # run_binary runs the child with env={}, so it has no PATH of its own and a
+  # bare `qemu-mipsn32` would not resolve. Every other caller passes an
+  # absolute path to the binary itself; the runner needs the same treatment.
+  local qemu
+  qemu="$(command -v qemu-mipsn32)"
+
+  local workdir
+  workdir="$(mktemp -d)" || { bad "cross: mktemp failed"; return; }
+
+  # Assemble exsc here rather than expecting build/exsc: `nix flake check`
+  # stages the repository's sources into a sandbox and runs this script, and
+  # nothing in that sandbox has run `make`. run_differential_tests builds its
+  # own for the same reason.
+  local exsc="$workdir/exsc"
+  if ! "$FASMG" "$REPO_ROOT/compiler/x86_64/exsc.asm" "$exsc" \
+       >"$workdir/exsc.asmlog" 2>&1; then
+    bad "cross: exsc.asm failed to assemble -- the cross phase cannot run"
+    sed 's/^/         /' "$workdir/exsc.asmlog"
+    rm -rf "$workdir"; return
+  fi
+  chmod +x "$exsc"
+
+  # -G0 -mno-abicalls is not a preference: without it the MIPS ABI addresses
+  # small objects through $gp, which a crt0 that is not here would have set
+  # up, and the program segfaults before reaching exs_initium. Found by
+  # running it. `-fno-builtin` keeps the shim's own memcpy/memset honest.
+  local cflags="--target=mips64-unknown-linux-musl -mabi=n32 -march=mips3"
+  cflags="$cflags -ffreestanding -fno-builtin -nostdlib -static -O2 -std=c11"
+  cflags="$cflags -G0 -mno-abicalls -fno-pic -Wall -Wno-unused-function"
+  local ldflags="-fuse-ld=lld -Wl,-e,_start -Wl,--build-id=none"
+
+  local found=0 ran=0 d name ref srcs
+  shopt -s nullglob
+  for d in "$REPO_ROOT"/tests/programs/*/; do
+    name="$(basename "$d")"
+    [[ -f "$d/TEST" ]] || continue
+    local directive
+    directive="$(grep -m1 '^[[:space:]]*TEST:' "$d/TEST" 2>/dev/null || true)"
+    [[ -n "$directive" ]] || continue
+    directive="${directive#*TEST:}"
+    # shellcheck disable=SC2086
+    parse_run_keys "cross/$name" $directive || continue
+    [[ "$k_cross" == "yes" ]] || continue
+    found=$((found + 1))
+    if [[ "$k_status" != "run" ]]; then
+      note "cross/$name: status=$k_status -- not run"
+      continue
+    fi
+
+    srcs=()
+    if [[ -n "$k_sources" ]]; then
+      local IFS=,
+      for s in $k_sources; do srcs+=("$REPO_ROOT/$s"); done
+      unset IFS
+    else
+      local f
+      for f in "$d"*.exsc; do srcs+=("$f"); done
+    fi
+    if [[ "${#srcs[@]}" -eq 0 ]]; then
+      bad "cross/$name: no sources"; continue
+    fi
+
+    local w="$workdir/$name"
+    if ! "$exsc" aedifica --hospes mips64-none-o64 "${srcs[@]}" --emitte c \
+         -o "$w.c" >"$w.emitlog" 2>&1; then
+      bad "cross/$name: exsc --hospes mips64-none-o64 --emitte c failed"
+      sed 's/^/         /' "$w.emitlog"; continue
+    fi
+    if ! grep -q '_Static_assert(sizeof(void \*) == 4,' "$w.c"; then
+      bad "cross/$name: the emitted unit does not assert 32-bit addresses"
+      continue
+    fi
+    # NIX_HARDENING_ENABLE= because nixpkgs' cc-wrapper injects flags
+    # (-fzero-call-used-regs=used-gpr) that clang cannot apply to a MIPS
+    # target and rejects outright, and it warns about any cross --target.
+    # Both belong to the wrapper, not to the emitted C. The variable is
+    # meaningless off nixpkgs, so setting it costs nothing there.
+    # shellcheck disable=SC2086
+    if ! env NIX_HARDENING_ENABLE= clang $cflags $ldflags "$w.c" "$shim" \
+         -o "$w.bin" >"$w.cclog" 2>&1; then
+      bad "cross/$name: clang cannot build the mips64 unit"
+      grep -v 'cc-wrapper is currently not designed' "$w.cclog" |
+        sed 's/^/         /'; continue
+    fi
+    grep -v 'cc-wrapper is currently not designed' "$w.cclog" >"$w.ccreal" || true
+    [[ -s "$w.ccreal" ]] && note "cross/$name: clang said:$(sed 's/^/ /' "$w.ccreal" | head -3)"
+    ok "cross/$name: emits and cross-builds for big-endian MIPS-III, 32-bit addresses"
+
+    ref=""
+    if [[ -n "$k_stdout" ]]; then
+      ref="$k_stdout"
+    elif [[ -f "$d/expected.out" ]]; then
+      ref="tests/programs/$name/expected.out"
+    fi
+    # noaudit: the audit is a statement about what the REFERENCE backend puts
+    # in a binary, and this one is clang's. The 120 s timeout is emulation,
+    # not slack -- the reference does the corpus in 0.044 s.
+    check_run "cross/$name" "$w.bin" "$w" "$k_expect_exit" "$k_abort" "$ref" \
+      "$k_stdin" noaudit "$qemu" 120 || true
+    ran=$((ran + 1))
+  done
+  shopt -u nullglob
+  rm -rf "$workdir"
+
+  note "discovered $found program directories opted into the cross phase (floor $CROSS_PROGRAM_FLOOR)"
+  floor_check "cross program directories" "$found" "$CROSS_PROGRAM_FLOOR"
+  note "$ran of them ran"
+  floor_check "cross runs" "$ran" "$CROSS_PROGRAM_FLOOR"
+}
+
+
 run_unit_tests
 echo
 run_conformance_tests
@@ -1856,6 +2042,8 @@ echo
 run_program_tests
 echo
 run_differential_tests
+echo
+run_cross_tests
 echo
 echo "== summary =="
 echo "pass: $PASS  fail: $FAIL"

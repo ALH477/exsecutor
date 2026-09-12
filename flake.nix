@@ -384,6 +384,18 @@
           # assertion beside exscPkg below is what keeps that true.
           pkgs.gcc
           pkgs.clang
+          # verification-only, as gcc/clang/python3/binutils above are: the CROSS
+          # phase (spec 14 entry 25, ADR 0015) cross-compiles the mips64-none-o64
+          # unit with the clang already here and RUNS it big-endian under
+          # emulation. `lld` because there is no MIPS `ld` in this closure, and
+          # `qemu-user` for `qemu-mipsn32`. Both are in the binary cache, which is
+          # why this phase costs a download rather than an hour of building a
+          # cross GCC -- nixpkgs' pkgsCross MIPS toolchain is NOT cached, and ADR
+          # 0015 decision 4 chose against it on exactly that ground. exsc still
+          # never invokes a compiler, a linker or an emulator: spec 12 puts execve
+          # on no allowlist, and these are the harness's, not the compiler's.
+          pkgs.lld
+          pkgs.qemu-user
           pkgs.gnumake
           pkgs.file
         ];
@@ -660,6 +672,17 @@
             # missing one is a phase failure, not a skip, so they are check
             # inputs and not optional.
             pkgs.gcc pkgs.clang
+            # verification-only, as gcc/clang/python3/binutils above are: the CROSS
+            # phase (spec 14 entry 25, ADR 0015) cross-compiles the mips64-none-o64
+            # unit with the clang already here and RUNS it big-endian under
+            # emulation. `lld` because there is no MIPS `ld` in this closure, and
+            # `qemu-user` for `qemu-mipsn32`. Both are in the binary cache, which is
+            # why this phase costs a download rather than an hour of building a
+            # cross GCC -- nixpkgs' pkgsCross MIPS toolchain is NOT cached, and ADR
+            # 0015 decision 4 chose against it on exactly that ground. exsc still
+            # never invokes a compiler, a linker or an emulator: spec 12 puts execve
+            # on no allowlist, and these are the harness's, not the compiler's.
+            pkgs.lld pkgs.qemu-user
           ];
           dontUnpack = true;
           buildCommand = ''

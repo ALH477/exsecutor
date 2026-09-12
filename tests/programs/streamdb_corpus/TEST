@@ -31,4 +31,4 @@
 #
 # 0.044 s wall, three runs, on the tree this landed in: 80,300 syscalls at
 # one byte each, and no buffered read (probatio.exsc says why).
-TEST: expect-exit=0 stdin=vendor/streamdb-v3/corpus.streamdb sources=examples/streamdb/lector_streamdb.exsc,examples/streamdb/probatio.exsc
+TEST: expect-exit=0 stdin=vendor/streamdb-v3/corpus.streamdb sources=examples/streamdb/lector_streamdb.exsc,examples/streamdb/probatio.exsc cross=yes

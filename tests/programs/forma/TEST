@@ -3,4 +3,4 @@
 # through `f sicut acies<u8, 17>`, checks all 17 bytes against the vendored
 # example frame, and decodes it back. tests/unit/lwr_forma.asm pins the IR
 # this file lowers to; this directory runs it.
-TEST: expect-exit=0
+TEST: expect-exit=0 cross=yes

@@ -6,4 +6,4 @@
 # The gate checks the same run end to end; this entry puts it inside
 # tests/run.sh, under the same directive as every other program, so a
 # regression shows up in the suite and not only at the gate.
-TEST: expect-exit=0 stdout=examples/saluta.expected sources=examples/saluta.exsc,examples/imprime.exsc,examples/initium.exsc
+TEST: expect-exit=0 stdout=examples/saluta.expected sources=examples/saluta.exsc,examples/imprime.exsc,examples/initium.exsc cross=yes
