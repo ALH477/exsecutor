@@ -7,9 +7,15 @@ after `860e678`, which vendored its basis): the same pure functions give
 HydraModem's symbol stream on all 137 words of D9's basis, 137/137
 (`tests/programs/hydramodem_basis/`) — which, *given* the affinity D9
 argues from the code and does not measure, is agreement on every 17-byte
-input. Sections 1–11 are the design as written before M1, kept as written
-except where a marker is retired or a finding has moved on; section 12
-records where M1 departed from them and what it found, section 13 is M2.
+input. **M5 implemented** (`76ca763`): the sine table is a 48-entry array
+literal (D4, as amended) and all four certificates are byte-identical
+before and after. **M3, the receiver, is `docs/design/receptor.md`**: its
+R2 runs (`8deb727`; the three WAVs decode, 140 words round-trip through
+this transmitter's `sona`), its R3 does not. M4's reference renders are
+vendored (`6121656`) and nothing here reads them. Sections 1–11 are the
+design as written before M1, kept as written except where a marker is
+retired or a finding has moved on; section 12 records where M1 departed
+from them and what it found, section 13 is M2.
 Markers left standing are on things no test runs. Measurements are listed
 in section 11 (the design's), 12 and 13; each scratch measurement was made
 with tools that never ship (`prototypes/README.md`'s rule). `spec §N` cites
@@ -1096,7 +1102,11 @@ become measurements). Language needed, in order of how hard each is:
 `[OPEN]` items forced: stdin under `ambitus`; equal-width sign-change
 `sicut`; array creation; possibly signed shifts. Certified by: the three
 WAVs decoding to their filenames' frames; M1's output decoding; the
-perturbation sweep.
+perturbation sweep. **Designed and, as R2, done**: `docs/design/receptor.md`
+(R2 `8deb727`: the three WAVs decode, 140 words round-trip in one process,
+`tests/programs/receptio_*/`); the reader is `8524028`, array literals
+`54ba744`, the sign-change cast spec §5.4 (`dafb5e2`); no signed shift was
+needed at R2. The perturbation sweep and the timing loop are R3, not done.
 
 **M4 — other profiles.** The aux-cable profile at `spp = 40` (`c_k =
 1, 2`, a 40-entry table, 16-symbol preamble: `hydra_profile.c:22-39`);
@@ -1111,14 +1121,21 @@ which is M5's evidence. Excluded by construction: any profile where
 `sr/baud` is not an integer (44.1 kHz at 1000 baud), because D3's
 memorylessness fails there and the reference's output is then a
 `double` accumulation this design does not model; and finding 5's Python
-"aux-cable", which is a different modem.
+"aux-cable", which is a different modem. **Renders vendored, program not
+written**: `vendor/hydramodem-tx/profiles/` holds twelve `frame_tx` WAVs
+(`6121656`) for aux-cable-cli, 4-FSK, 8-FSK and 125 baud; no Exsecutor
+transmitter or receiver targets any of them yet.
 
 **M5 — array literals**, if M3's and M4's tables make the case D4 opens.
 The three questions D4 lists are the decision's content; the evidence is
 `sinus` (one table, nine values, eleven lines), M3's `cos`/`sin` per tone,
 M4's per-`spp` tables, and M3's metric and traceback arrays, which are
 not literals at all but zero-initialised storage — possibly a different
-construct, and the design should not conflate them.
+construct, and the design should not conflate them. **Done**: the
+amendment is spec §8.6 (`bd316cd`, ADR 0014 — one construct with two forms,
+`[e1, …, en]` and `[e; N]`, the second being the zero-initialised storage),
+the implementation `54ba744`, and this transmitter's table `76ca763` (D4,
+as amended).
 
 ## 10. What retires each marker
 
@@ -1130,8 +1147,8 @@ construct, and the design should not conflate them.
 | D9 claim 1 (affinity of the Exsecutor symbol stream) | M2 | 137/137 against the vendored basis | **tested**, M2: `tests/programs/hydramodem_basis/`, 137/137; the premise itself stays argued (section 13) — agreement at 137 points, consistent at 19 more |
 | D9 consequence (all 2^136 inputs) | M2 | the same, plus M1's blocks | argued, never measured — as entry 23's; section 13 lists its premises and what of each is measured |
 | D2's blind spots: a constant-0 CRC; a defect confined to data bits 136–151 | M2 | the basis | **closed**, M2: both fail the basis at word 0 (symbols 55 and 73) and still pass M1's three WAVs, as predicted (section 13) |
-| the survey's receiver figures `[UNREPRODUCED]` | M3 | the perturbation sweep | — |
-| array literals `[OPEN]` | M5 | — | a spec amendment, if taken |
+| the survey's receiver figures `[UNREPRODUCED]` | M3 | the perturbation sweep | **partly reproduced** by `receptor.md` section 11 with the reference binary: "+200 Hz decodes, +300 fails" (its finding 7, explained), the 37-of-40 threshold (read at `hydra_modem.c:278`), the −6 dB floor (finding 8). The ppm range, 1-bit quantisation and the streaming peak threshold were not re-run; R3 |
+| array literals `[OPEN]` | M5 | — | **retired**: spec §8.6 amended (`bd316cd`), implemented `54ba744` (`tests/unit/{cst,chk_ty,lwr}_acies.asm`, `tests/programs/acies/`), `sinus`'s table a literal since `76ca763` with 4/4 certificates byte-identical |
 | `T[1] = 3849` and the three other dead values `[UNTESTED]` | M4 or never | a profile that reads an odd index | — |
 
 ## 11. What was measured for this document
@@ -1175,7 +1192,8 @@ figures re-measurable by re-running the same recipes.
 - **Not measured:** any complete Exsecutor transmitter; the affinity of
   the Exsecutor code (an argument, section 7); the receiver figures. (The
   transmitter has been measured since: sections 12 and 13. The affinity
-  and the receiver figures still have not.)
+  still has not; the receiver figures partly have, by `receptor.md`
+  section 11 — section 10's row says which.)
 
 ## 12. M1 as built: where it departs from the design, and what it found
 

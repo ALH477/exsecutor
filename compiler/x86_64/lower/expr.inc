@@ -1041,8 +1041,10 @@ proc __lwr_shortcircuit, lwrsp, lwrn
 endp
 
 ; __lwr_cast(st, lwrn) -> eax -- a SCALAR `sicut`. Widening is `zext`/`sext`
-; BY SOURCE SIGN, narrowing is `trunc` (IR 2.3's `[OPEN]` on narrowing
-; semantics stands; the opcode does not), int<->float is `itof`/`ftoi`,
+; BY SOURCE SIGN, narrowing is `trunc` (spec §5.4 as amended in dafb5e2
+; defines narrowing and the equal-width sign change as exactly this
+; truncation; this comment said the spec's `[OPEN]` stood, and it did until
+; then), int<->float is `itof`/`ftoi`,
 ; `f32`<->`f64` is `fext`/`ftrunc`, and a cast between two types that lower
 ; to the same IR type emits nothing at all. The aggregate cast (spec §5.2) is
 ; never here: its type is not scalar, so it reaches `lwr_expr_agg`.

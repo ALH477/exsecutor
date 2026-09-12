@@ -442,7 +442,7 @@ potestas Hospes = { alloc, archivum, horologium, ambitus }
 
 **Standard input, output and error belong to `ambitus`.** They are handed to a process by its environment, not found on a filesystem: a program that writes to its terminal has touched nothing under `archivum`, and borrowing that atom for it would over-grant in exactly the way §10.3's audit exists to expose. `examples/README.md` recorded this as `[OPEN]` when the companion program was written; it is closed by placing the streams, not by spending a root on a twelfth atom.
 
-**The streams' two prelude types.** Standard output is written through `Scriptor`, a capability-bearing `structura` with mark `{ambitus}`, obtained by `Scriptor.ad_exitum(a: ambitus) -> Scriptor` — an associated function with no receiver, total — and written one byte at a time by `s.scribe_octeto(b: u8) -> mensura` (`docs/design/wire-codec.md` D7; `tests/unit/prelude_scribe_octeto.asm`, `tests/programs/octeti/`) or as a `textus` by `s.scribe(t)` (§11). Standard input is read through **`Lector`**, the same record with the same mark, obtained by `Lector.ab_introitu(a: ambitus) -> Lector` and read one byte at a time by `l.lege_octeto() -> u16`: the byte, 0–255, or **256** at end of input and on a read error, the two undistinguished — provisional in exactly `scribe`'s way until `eventus` has syntax, when the call becomes `-> eventus<u8>`. `read(0)` is in `ambitus`'s admitted syscall set already; the compiler itself never issues it. `[UNTESTED]`: `docs/design/receptor.md` D1 is the design; no routine exists. The part after the `_` in both constructors is a noun the preposition governs, and neither `ad` nor `ab` decomposes under §3.1 — recorded there as an open question for the lexicon, not resolved here.
+**The streams' two prelude types.** Standard output is written through `Scriptor`, a capability-bearing `structura` with mark `{ambitus}`, obtained by `Scriptor.ad_exitum(a: ambitus) -> Scriptor` — an associated function with no receiver, total — and written one byte at a time by `s.scribe_octeto(b: u8) -> mensura` (`docs/design/wire-codec.md` D7; `tests/unit/prelude_scribe_octeto.asm`, `tests/programs/octeti/`) or as a `textus` by `s.scribe(t)` (§11). Standard input is read through **`Lector`**, the same record with the same mark, obtained by `Lector.ab_introitu(a: ambitus) -> Lector` and read one byte at a time by `l.lege_octeto() -> u16`: the byte, 0–255, or **256** at end of input and on a read error, the two undistinguished — provisional in exactly `scribe`'s way until `eventus` has syntax, when the call becomes `-> eventus<u8>`. `read(0)` is in `ambitus`'s admitted syscall set already; the compiler itself never issues it. `docs/design/receptor.md` D1 is the design; the routine is `compiler/x86_64/prelude/prelude.asm`'s `exsrt_lector_lege_octeto`, pinned by `tests/unit/prelude_lege_octeto.asm` (the four bytes `0x00 0x7f 0x80 0xff` in order, then 256 twice, then 256 on a refused descriptor) and run from source by `tests/programs/lector/` (`cat`, 41 bytes in and the same 41 out), `lector_numerus/` (the count as the exit status) and the receiver's `tests/programs/receptio_*/` (38,060 bytes a WAV). Because the prelude gates by atom and not by call, every binary whose closure holds `ambitus` carries the reader whether it reads or not. The part after the `_` in both constructors is a noun the preposition governs, and neither `ad` nor `ab` decomposes under §3.1 — recorded there as an open question for the lexicon, not resolved here.
 
 ## 4.7 The entry point
 
@@ -862,11 +862,16 @@ performance and never changes the value.
   other directions: `trunc u8` of `i8` −56 is 200 (signed to unsigned,
   equal width), `trunc i32` of `i64` −1 is −1 (signed narrowing),
   `trunc u4` of `u8` 171 is 11; `tests/unit/bfa_emit_narrow.asm` pins the
-  emitted text. So from source, narrowing from a **signed** source or
-  into a signed destination, and an equal-width **signed-to-unsigned**
-  change, are `[UNTESTED]` — the lowering emits the same `trunc` for
-  them and the IR fixture runs that `trunc`, but no program has written
-  one.
+  emitted text. From source the receiver adds the equal-width
+  **signed-to-unsigned** change: `examples/hydramodem/receptor.exsc`
+  (`mollia`) writes `d sicut u64` on an `i64` magnitude and the reverse
+  `sicut i64` on the shifted result, run 316 times a decode by every
+  `tests/programs/receptio_*/` directory, and `recipe.exsc` narrows the
+  reader's `u16` to `u8` for every byte of the header. So from source,
+  narrowing from a **signed** source or into a signed destination
+  (`i64 sicut u8`, `i64 sicut i32`) is still `[UNTESTED]` — the lowering
+  emits the same `trunc` for it and `conv_roundtrip.ir` runs that `trunc`,
+  but no program has written one.
 - **Exclusive or and shifts** are the contextual words `aut`, `sursum`,
   `deorsum` (§8.4 tier 2; precedence in §8.6). `docs/design/wire-codec.md`
   D1. Exercised: parsed (`tests/unit/cst_shift_xor.asm`), typed
@@ -1052,7 +1057,7 @@ Xeon 2.10 GHz, gcc 13.3, `-O2`. Sources in `prototypes/stage0-bench/` — `[UNRE
 2. **Non-atomic refcounts where nothing crosses a thread boundary.** The difference between +46% and free. Load-bearing, not an optimization.
 3. **Parameters are borrowed by default** (`guaranteed` convention). Retaining on each visit costs +85%.
 4. **`structura` is a value type. Always.** No implicit boxing.
-5. **Arrays of value types are unboxed and contiguous.** `acies<f32>` is a flat buffer. An `acies` value comes from an array literal — `[e1, …, en]` or `[e; N]`, §8.6, `[UNTESTED]` — or from the byte view of a `@transitus` struct (§5.2); a binding declared without one is not zero-filled, and an element read or written before the binding is assigned is `EXS-E0307`.
+5. **Arrays of value types are unboxed and contiguous.** `acies<f32>` is a flat buffer. An `acies` value comes from an array literal — `[e1, …, en]` or `[e; N]`, §8.6; `tests/programs/acies/` runs both — or from the byte view of a `@transitus` struct (§5.2); a binding declared without one is not zero-filled, and an element read or written before the binding is assigned is `EXS-E0307`.
 6. **Reference semantics are explicit**: `refero<T>`.
 
 ## 6.4 Reference types and FFI
@@ -1249,7 +1254,7 @@ All already in evidence in this document, recorded here rather than introduced.
 | `->` | result type | §4.2 |
 | `+` `+%` `+\|` | trapping, wrapping, saturating arithmetic | §5.4 |
 | `( )` | parameter lists, argument lists, grouping | §4.2 |
-| `[ ]` | indexing; array literals (§8.6, `[UNTESTED]`) | §5.1 |
+| `[ ]` | indexing; array literals (§8.6; `tests/unit/cst_acies.asm`) | §5.1 |
 | `{ }` | blocks, capability rows, `ego` sections | §4.2, §10.1 |
 | `,` | separator | §4.2 |
 | `;` | statement terminator | §4.5 |
@@ -1648,13 +1653,20 @@ and is used in every position where a `{` block follows an expression:
 the right-hand side of `sub` — so `si x {` is a condition and a block, and a
 literal in one of those positions is parenthesised.
 
-**Array literals** — `[UNTESTED]`: specified here from
-`docs/design/receptor.md` D2, the HydraModem receiver's design, with no
-fixture yet; the transmitter's design (`docs/design/modem.md` D4) recorded
-the first evidence for them and deferred the decision to a program with
-the receiver's tables and buffers in hand. Two forms, both in **operand
-position** — a `[` after an operand is the index — and one token decides
-between them after `[ Expr`:
+**Array literals** — specified here from `docs/design/receptor.md` D2,
+the HydraModem receiver's design; the transmitter's design
+(`docs/design/modem.md` D4) recorded the first evidence for them and
+deferred the decision to a program with the receiver's tables and buffers
+in hand. Parsed, typed, lowered and run: `tests/unit/cst_acies.asm` (both
+forms, `a[0]` still an index and `[1, 2][0]` a literal then an index, the
+three `EXS-E0201`s), `tests/unit/chk_ty_acies.asm` (every rejection below
+beside an accepted twin), `tests/unit/lwr_acies.asm` (source-order
+evaluation, ascending stores, the repeat as a loop), `tests/programs/acies/`
+(a literal at every admitted element type, the transmitter's 48-entry
+sine table read back against the function that computes it), and the
+receiver and transmitter in `examples/hydramodem/`, which are written in
+them. Two forms, both in **operand position** — a `[` after an operand is
+the index — and one token decides between them after `[ Expr`:
 
 - `[e1, e2, …, en]`, `n ≥ 1`, commas between, no trailing comma (as in
   every other list here), of type `acies<T, n>`;
@@ -1682,10 +1694,17 @@ is how a program asks for zeros — the rule struct literals took above,
 for the same reason. A struct literal is re-admitted inside `[ ]` as
 already stated, so `[S { a: 1 }; 4]` is a literal of four structs. The
 literal is admitted in `ExprNS`: `[` cannot begin a block. A repeat form
-lowers to a loop, not to `N` stores. Whether a literal may initialise a
-module-level `firma` is admitted in principle (decision 5 makes one a
-constant) and untested. Tuples, slices, open-ended ranges, named arguments
-and compound assignment are `[OPEN]`; none of them needs a new peek.
+lowers to a loop, not to `N` stores (the reference lowering unrolls at or
+below eight elements and loops above, `tests/unit/lwr_acies.asm`; the
+bytes are the same). Whether a literal may initialise a module-level
+`firma` is admitted in principle (decision 5 makes one a constant) and
+**does not lower today**: the front end accepts `publica firma probatio:
+acies<u16, 4> = [1, 2, 3, 4];` and the lowering traps on the first read
+under `-o`, because a module `firma`'s initializer must be a plain literal
+node (`docs/design/modem.md` D4, measured) — an implementation gap, not a
+rule; a table is written as a function returning the literal until it is
+closed. Tuples, slices, open-ended ranges, named arguments and compound
+assignment are `[OPEN]`; none of them needs a new peek.
 
 ### Types
 
@@ -1932,7 +1951,7 @@ refusing symbolic comparisons — is what makes that last one possible.
   labelled `rumpe`/`perge`; a `sub` list form; `si`/`discerne` as expressions.
   Struct literals were on this list and are settled above
   (`tests/unit/cst_structlit.asm`); array literals were on it and are
-  specified above, `[UNTESTED]`, with no fixture yet.
+  settled above (`tests/unit/cst_acies.asm`).
 - `[OPEN]` `sub` inside `per`/`quisque` bodies (§8.5).
 - `[OPEN]` Whether an unbounded `dum` is admitted outside the `certus` profile.
   The grammar makes `terminus` optional so that its absence is a CST fact the
@@ -2176,7 +2195,7 @@ A dependency that gains `rete` in a new version is a one-line diff in a checked-
 - Human formatting requires `sermo`, always.
 - Paths are an abstract type with `hostPlatform`-dependent semantics, not strings.
 - Time is a capability (`horologium`); time zones are data.
-- **I/O reports failure as `eventus`; a count is never silently short.** A closed descriptor is discovered at the write, which a bare `mensura` cannot report, so `Scriptor.scribe` returns `eventus<mensura>` (`docs/design/runtime.md`, finding 10); `examples/imprime.exsc` and §14 entry 12 write `-> mensura` and are `[OPEN]` until `eventus` has its syntax. `Lector.lege_octeto` (§4.6) is provisional the same way: its `-> u16` carries 256 for end of input and for an error alike, and becomes `-> eventus<u8>` when the syntax exists. `[UNTESTED]`
+- **I/O reports failure as `eventus`; a count is never silently short.** A closed descriptor is discovered at the write, which a bare `mensura` cannot report, so `Scriptor.scribe` returns `eventus<mensura>` (`docs/design/runtime.md`, finding 10); `examples/imprime.exsc` and §14 entry 12 write `-> mensura` and are `[OPEN]` until `eventus` has its syntax. `Lector.lege_octeto` (§4.6) is provisional the same way: its `-> u16` carries 256 for end of input and for an error alike (`tests/unit/prelude_lege_octeto.asm` pins both), and becomes `-> eventus<u8>` when the syntax exists.
 - Grapheme segmentation ships in the core, not a third-party package. This was Rust's mistake.
 - **The Unicode data version is a content-addressed dependency** of every `ego` transitively using text. `plica_unicode` is stable only against a pinned table.
 

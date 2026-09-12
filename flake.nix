@@ -90,8 +90,11 @@
       # resolve `fontes` as content-addressed dependencies, honour
       # `hospites`/`potestates`, split `exitus` into lib/dev/doc outputs --
       # and, centrally, compile *Exsecutor* (.xsc) source by invoking `exsc`.
-      # None of that is implementable today, because `exsc` does not exist
-      # (compiler/x86_64/exsc.asm is absent). Rather than fake it:
+      # None of that is implementable today: `exsc` exists (this function
+      # builds it, below) but has no `ego` reader, so there is nothing for
+      # the function to resolve `fontes` or `potestates` from. (This comment
+      # said "`exsc` does not exist" until the documentation pass that
+      # corrected it.) Rather than fake it:
       #
       # [UNIMPLEMENTED]:
       #   - `fontes` dependency resolution against declared content hashes

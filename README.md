@@ -153,10 +153,10 @@ with no arguments prints its usage, its options, and its exit-status table.
 ```
 compiler/           the compiler: x86_64/ is the machine-specific body, shared/ is not
 docs/spec/          the specification -- source of truth
-docs/decisions/     ADRs 0001-0012, immutable once written; superseded, never edited
+docs/decisions/     ADRs 0001-0014, immutable once written; superseded, never edited (a status line and an Open list may be updated)
 docs/design/        design documents: hypotheses with a status line, built against, and amended by what building found
 docs/asm-conventions.md   the binding rules for every line of assembly here
-examples/           the hello world, its golden output, and their README
+examples/           the hello world, its golden output, HydraModem's transmitter and receiver, and their READMEs
 prototypes/         Python design probes -- never shipped, never on the build closure (§18)
 tests/              unit fixtures, the §14 conformance suite, the Stage 1 diagnostics corpus
 tools/              the audits, generators, and the publish gate; nothing here is on the build path except as a check
@@ -238,7 +238,7 @@ are byte-exact exceptions and why).
      Every figure is from running the named command at the named commit.
      Refresh it here and nowhere else. -->
 
-## Status as of `ad30abb` (2026-09-11)
+## Status as of `9ede8bf` (2026-09-11)
 
 Every figure here was produced by running the named command at this commit, in
 the `nix develop` shell, on `x86_64-linux`.
@@ -261,10 +261,14 @@ $ ./hello | cmp - examples/saluta.expected && echo BYTES MATCH
 BYTES MATCH
 ```
 
-101 bytes, no trailing newline. Its entire syscall surface is one `write(1)`
-and `exit_group` — audited against `{Mundus, ambitus}`, the capabilities the
-program actually has, with the socket family a hard failure because `rete` is
-not among them.
+101 bytes, no trailing newline. Its syscall surface is `write(1)`,
+`exit_group`, and a `read(0)` it never issues — audited against
+`{Mundus, ambitus}`, the capabilities the program actually has, with the
+socket family a hard failure because `rete` is not among them. The `read` is
+there because the runtime prelude gates its routines per capability *atom*,
+not per call: a binary whose closure holds `ambitus` carries the standard
+streams' reader as well as their writers (`docs/design/runtime.md` 2.6). What
+the audit proves is a property of the closure, and that is exact.
 
 **A real wire format, certified.** HydraMesh's DCF `DeModFrame` — a 17-byte
 production quantum with eleven independent implementations — is written in
@@ -278,9 +282,8 @@ entry 23: laws: 218/218 (section 4), 136/136 (section 5)
 ```
 
 The codec declares no capability; the 8,671-byte certificate binary writes a
-2,502-byte stream and its syscalls are `write`, `exit_group` and the `read`
-the `ambitus` gate carries whether or not a program calls it (the gate is per
-atom, not per call — `docs/design/runtime.md` 2.6). Three
+2,502-byte stream and its syscalls are `read`, `write` and `exit_group`, the
+`read` being the atom's, as above. Three
 mechanical mutants (the CRC polynomial, one field's byte order, two fields
 swapped) each fail at the vector `docs/design/wire-codec.md` predicts. The
 certificate's theorem extends 246 vectors to all 2^108 frames *given* that the
@@ -292,10 +295,10 @@ hex literals, struct literals and one aggregate cast — spec §5.2, §5.4, §8.
 
 **An acoustic modem, byte for byte.** HydraModem's transmitter — 2-FSK at
 48 kHz and 1000 baud, CRC-16, a K=7 convolutional code, an interleaver and
-CPFSK modulation — is written in Exsecutor (`examples/hydramodem/`, 460
-lines). It writes WAV files **byte-identical** to HydraModem's own reference
-transmitter, built from source and vendored at `vendor/hydramodem-tx/`
-(ADR 0013):
+CPFSK modulation — is written in Exsecutor (`examples/hydramodem/`; the
+transmitter's seven files are 563 lines by `wc -l`). It writes WAV files
+**byte-identical** to HydraModem's own reference transmitter, built from
+source and vendored at `vendor/hydramodem-tx/` (ADR 0013):
 
 ```
 hydramodem_loopback: stdout byte-identical to vendor/hydramodem-tx/d310123400a1ffffdeadbeef0a1b2ca961.wav
@@ -309,13 +312,62 @@ and the per-symbol memorylessness of the modulator, it extends to
 byte-identical audio for every one of 2^136 inputs, *given* that the stream is
 affine over GF(2). That is argued from the code, not measured
 (`docs/design/modem.md` §13 lists the premises). It uses no floating point, no
-signed arithmetic, no bitwise and/or and no remainder, and each program's
-syscalls are `write`, `exit_group` and `ambitus`'s `read`. The receiver is
-not written yet.
+signed arithmetic, no bitwise and/or and no remainder. Its sine table is now a
+48-entry array literal (M5, `76ca763`); the four certificates above did not
+move by a byte when it changed. Reference renders of four more profiles
+(4-FSK, 8-FSK, 125 baud, and the aux-cable profile as far as HydraModem's own
+CLI can express it) are vendored under `vendor/hydramodem-tx/profiles/`; no
+Exsecutor program targets them yet.
+
+**And the modem's receiver, certified by its verdicts.** The other half —
+`receptor.exsc`, `recipe.exsc`, `circuitus.exsc`, 654 lines — reads a WAV
+from standard input and writes the 17-byte frame it carries, or exits 1 (no
+sync), 2 (CRC) or 3 (not a WAV it will decode) and writes nothing. It is
+integer arithmetic throughout, with every bound proved from `|x| ≤ 32768` and
+a 7-bit oscillator table: no floating point, no division, no bitwise and/or,
+no signed shift (`docs/design/receptor.md`, ADR 0014). Certified at
+milestone R2 by decode success, not bit identity — a receiver's internal
+state is one implementation's arithmetic, and HydraModem's is `double` —
+against HydraModem's own reference renders and a loopback through this
+transmitter:
+
+```
+receptio_loopback:  stdin vendor/hydramodem-tx/d310123400a1ffffdeadbeef0a1b2ca961.wav -> 17 bytes, byte-identical
+receptio_exemplum:  stdin vendor/hydramodem-tx/d31312340001ffffdeadbeefab12cd24c0.wav -> 17 bytes, byte-identical
+receptio_vacuum:    stdin vendor/hydramodem-tx/d310000000000000000000000000005b80.wav -> 17 bytes, byte-identical
+receptio_circuitus: 140 words out through the transmitter's `sona` and back, in one process: 140/140
+receptio_caput:     a header at 44,100 Hz -> exit 3, nothing written
+```
+
+One WAV decode takes 26 ms wall at this commit (five runs, all 0.026 s; about
+10 ms of it system time for 38,060 one-byte `read`s); the 140-word loopback
+1.4 s. Nine mutants behave as `receptor.md` section 6 predicted: five fail
+(the trellis taps, the interleaver's stride, the sync word complemented, both
+oscillators on one tone, the threshold above 40) and four **decode anyway**
+— a one-bit sync change, a threshold of 36, the plateau's first origin, a
+one-off in the table — which are the certificate's stated blind spots, not a
+harness defect. **R3 — robustness — is not done:** no impaired vector
+(noise, clock offset, frequency offset) has been fed to this receiver, the
+timing loop is not written, and `vendor/hydramodem-rx/` does not exist at
+this commit. Nothing above claims otherwise.
+
+**Two language features the receiver forced, both landed:**
+
+- **A standard-input reader.** `Lector.ab_introitu(a: ambitus)` and
+  `l.lege_octeto() -> u16` — one byte, or 256 at end of input — in the
+  runtime prelude, mirroring `Scriptor.ad_exitum` / `scribe_octeto`; spec
+  §4.6, `8524028`. End of input and a read error are the same 256 until
+  `eventus` has syntax, and the spec says so. `tests/programs/lector/` is
+  `cat` over 41 bytes, proved against its own input file.
+- **Array literals, both forms.** `[e1, …, en]` and `[e; N]` in operand
+  position, typed from the expectation or the first element, `N` part of the
+  type, no implicit zero-fill; spec §8.6, `54ba744`. Parsed, typed, lowered
+  and run (`tests/unit/{cst,chk_ty,lwr}_acies.asm`, `tests/programs/acies/`),
+  and every buffer and table in the receiver is written in them.
 
 **What runs:**
 
-- `make all` → `build/exsc`, **422,035 bytes**, freestanding, no libc.
+- `make all` → `build/exsc`, **426,389 bytes**, freestanding, no libc.
 - **All three stages of §16 reach end to end.** Stage 1: the §8.1 source gate,
   the lexer, the lossless CST, the typed AST. Stage 2: name resolution, types,
   capability rows, packed layout — the lexicon pass is built and **not
@@ -323,34 +375,52 @@ not written yet.
   language's own canonical names, which its fixture asserts. Stage 3: the
   lowering to SSA IR, the verifier, and the fasmg reference backend — phi,
   narrow integers at any width with trapping and wrapping arithmetic, byte
-  order and sub-byte bit fields, arrays with bounds checks — with its runtime
+  order and sub-byte bit fields, arrays with bounds checks, array literals, a
+  `copy` that is a loop above 128 bytes (`9ede8bf`, so a struct literal with a
+  144,000-byte array field compiles in constant text) — with its runtime
   prelude.
 - **Both kill criteria that could fire have been evaluated.** Stage 1's
   (diagnostics) fired, was fixed, and was re-measured against a checked-in
   corpus — `docs/design/diagnostics-review.md`, final section, and
   `tests/diagnostics/`. Stage 2's (`sub` resolution needing a search) does not
   fire, argued first in `docs/design/checker.md` §2.1.
-- `tests/run.sh`: **663 pass, 0 fail** — 163 unit fixtures; 48 IR fixtures and
-  15 Exsecutor programs, each compiled, assembled, **run**, and syscall-audited;
+- `tests/run.sh`: **700 pass, 0 fail** — 166 unit fixtures; 49 IR fixtures and
+  22 Exsecutor programs, each compiled, assembled, **run**, and syscall-audited;
   10 of 24 conformance entries running, each required to emit exactly its
   expected code and nothing else (the other 14 report `DEFERRED` and are never
-  counted as passing).
+  counted as passing); 0 program directories deferred.
 - `make audit`: PASS — the nine allowlisted syscalls and nothing else, on the
-  real binary. `make reproduce`: PASS, byte-identical across directory, `TZ`,
-  locale, `SOURCE_DATE_EPOCH`, umask and hostname. `tools/spec-check.sh`: PASS,
-  49 error codes in sync with §13. `nix flake check`: green.
+  real binary. `make reproduce`: PASS, byte-identical (426,389 bytes) across
+  directory, `TZ`, locale, `SOURCE_DATE_EPOCH`, umask and hostname.
+  `tools/spec-check.sh`: PASS, 49 error codes in sync with §13.
+  `tools/syscall-audit.sh --self-test`: PASS, including the prelude's own
+  reader binary accepted under `Mundus,ambitus` and rejected under `Mundus`.
+  `nix flake check`: green (run by the gate).
 
 **What does not run yet.** Most of the language beyond what these programs use
 is `rassert`-refused rather than lowered: `contrahe` and its reduction triple,
 lambdas, `eventus`, generics, floating point, and every `numeri` but the
-default. Bitwise and/or, division and remainder are unspecified
-(`[OPEN]`); narrowing `sicut` is truncation (spec §5.4). The checker refuses a correct program where a
-`poscit sicut s` function calls another with the same `s` (`EXS-E0421`; the
-spec is right, `docs/design/wire-codec.md` finding 9). The C backend (§9.2's
-reach backend) does not exist; neither does the `ego` reader, the module
-system, the LSP, or `exsc emenda`. `EXS-E0105` (confusables) has no hermetic
-data source. The emitted program's capability mask is an over-approximation
-with the exact fix recorded beside it.
+default. Bitwise and/or, division, remainder and signed shifts are unspecified
+(`[OPEN]`); narrowing and equal-width `sicut` are truncation (spec §5.4), with
+narrowing from a signed source still unwritten by any program. An array
+literal at module scope (`publica firma t: acies<u16, 4> = [1, 2, 3, 4];`)
+type-checks and traps in the lowering under `-o` — the transmitter's table is
+a function returning the literal for that reason (`docs/design/modem.md` D4).
+A large local array is bounded only by the stack: `[0; 1000000]` of `i64`
+runs and `[0; 2000000]` is a SIGSEGV with no diagnostic (re-measured at this
+commit under the default 8 MiB `RLIMIT_STACK`), because the emitter has no
+stack probe and §13 has no code for it. `exsc` running out of its own
+compilation arena says so on stderr since `9ede8bf` and still exits 132, as
+that commit's mutation run recorded. The checker
+refuses a correct program where a `poscit sicut s` function calls another
+with the same `s` (`EXS-E0421`; the spec is right, `docs/design/wire-codec.md`
+finding 9). The C backend (§9.2's reach backend) does not exist; neither does
+the `ego` reader, the module system, the LSP, or `exsc emenda`. `EXS-E0105`
+(confusables) has no hermetic data source. The emitted program's capability
+mask is an over-approximation with the exact fix recorded beside it, and,
+separately, every `ambitus` binary carries `read` whether it reads or not
+(above) — a property of the closure the audit states exactly, and of the
+binary that a per-call gate would tighten.
 
 <!-- END STATUS BLOCK -->
 

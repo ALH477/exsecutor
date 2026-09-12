@@ -251,6 +251,22 @@ straddles.) `copy n` is bytes only; a struct holding references is copied as
 bytes plus one `retain` per reference field known from the layout. Bounds are
 explicit `chk` instructions, so both backends trap at the same point.
 
+The reference emitter gives `copy n` two forms, chosen by
+`BFA_COPY_UNROLL_MAX = 128` in `backend_fasmg/emit.inc` (`9ede8bf`): at or
+below 128 bytes it is unrolled at compile time into 8-byte steps and a
+4/2/1 tail, the text every pinned fixture has always seen (`copy 7`,
+`copy 17`); above it the 8-byte steps become a runtime loop with the
+counter in the instruction's own stack slot — the emitter keeps no value in
+a register across an instruction, so the loop needs no fourth scratch — and
+the same tail after, a fixed dozen lines at any `n`. The unrolled form is
+~7.35 bytes of fasmg per byte copied, and a struct literal with an
+`acies<i64, 18000>` field (six lines of source, a 144,000-byte `copy`) used
+to exhaust the compilation arena, which is sized from the *source*
+(`docs/design/receptor.md` finding 20). The bytes moved are the same either
+way: `tests/ir/copy_magna.ir` (100,003 bytes through the loop, five
+positions checked including one past the end) and
+`tests/programs/copia_magna/`.
+
 ### 2.8 ARC: `retain`/`release` are instructions
 
 Emitted by the AST-to-IR lowering at every scope exit on every path (`redde`,

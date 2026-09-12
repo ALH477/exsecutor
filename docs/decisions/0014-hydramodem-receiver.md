@@ -10,8 +10,12 @@ inputs, section 11 there). Since R2 the Exsecutor program exists:
 and all nine mutants of section 6 behave as predicted (section 12 there).
 The reader and the array literal ran before it. Decision 1's **impaired
 set** and decision 2's `vendor/hydramodem-rx/` remain `[UNTESTED]` and are
-R3's. Decision 1's `Praefixa` did not survive the emitter — four arrays
-instead, receptor.md finding 20 — which changes no verdict and no bound.
+R3's, which is in progress in a separate change and not claimed here.
+Decision 1's `Praefixa` did not survive the emitter at R2 — four arrays
+instead, receptor.md finding 20 — which changes no verdict and no bound;
+the emitter has since been fixed (`9ede8bf`, `tests/programs/copia_magna/`)
+and the receiver keeps its four arrays. After R2, M5 (`76ca763`) made the
+transmitter's table a literal with every receiver certificate byte-identical.
 **Relates to:** ADR 0011 (the first external certificate), ADR 0013 (the
 transmitter, the second); spec §3.1, §4.6, §5.4, §6.3, §8.6, §11, §12;
 `vendor/hydramodem-tx/`; the proposed `vendor/hydramodem-rx/`.
@@ -143,13 +147,15 @@ ablative it asks for. The lexicon pass is disabled; the question is
   upstream moves. Pinned to the same commit as the transmitter's.
 - ~~Nothing runs.~~ The reader, the literal, an index store through a field,
   `i64` multiplication from source, the two casts of finding 13 and the
-  harness's `stdin=` key all run as of R2. **The 640 KB struct of prefix
-  sums does not and cannot**: a struct literal's aggregate field is `copy`d
-  and the emitter unrolls a `copy n` into n/8 instructions, so the
-  compilation arena traps (receptor.md finding 20, with the sweep). Four
+  harness's `stdin=` key all run as of R2. ~~**The 640 KB struct of prefix
+  sums does not and cannot**~~: at R2 a struct literal's aggregate field was
+  `copy`d and the emitter unrolled a `copy n` into n/8 instructions, so the
+  compilation arena trapped (receptor.md finding 20, with the sweep). Four
   arrays passed one per parameter cost nothing — no call needs more than six
-  words — and the finding is reported for the backend's owner rather than
-  worked around in the emitter.
+  words — and the finding was reported for the backend's owner rather than
+  worked around in the emitter. Fixed there since (`9ede8bf`: a `copy`
+  above 128 bytes is a loop; `tests/programs/copia_magna/` is the struct
+  that trapped, now exit 0). The receiver still uses the four arrays.
 - R3's timing loop wants a signed division by a power of two, which is a
   signed shift (`[OPEN]`) or a sign-and-magnitude workaround; decided at
   R3 with the vectors, not here.
@@ -159,9 +165,10 @@ ablative it asks for. The lexicon pass is disabled; the question is
 - No new `EXS-E` code. Every array-literal diagnostic is one of six
   existing classes (`receptor.md` section 4); the receiver's exit codes
   are values, not diagnostics.
-- The transmitter is untouched. Replacing its `discerne` table by a
-  literal is M5, certified by the M1 WAVs and the M2 basis staying
-  byte-identical.
+- The transmitter is untouched by this ADR. Replacing its `discerne` table
+  by a literal is M5, certified by the M1 WAVs and the M2 basis staying
+  byte-identical — done since, `76ca763`, 4/4 and the five `receptio_*`
+  directories unchanged.
 
 ## Open
 
@@ -176,6 +183,8 @@ ablative it asks for. The lexicon pass is disabled; the question is
   prediction.
 - **The names** (decision 4): a rule for associated constructors, or
   different names, when `lexicon.norma` exists.
-- **Other profiles** (M4) and the transmitter's table as a literal (M5):
-  sketched in `receptor.md` section 9, with what language each needs —
-  nothing beyond this ADR's two amendments.
+- **Other profiles** (M4): sketched in `receptor.md` section 9, with what
+  language it needs — nothing beyond this ADR's two amendments. The
+  reference renders for four more profiles are vendored (`6121656`,
+  `vendor/hydramodem-tx/profiles/`); no Exsecutor program reads them yet.
+  ~~The transmitter's table as a literal (M5)~~ — done, `76ca763`.

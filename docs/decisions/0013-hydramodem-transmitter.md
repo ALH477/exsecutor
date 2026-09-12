@@ -10,8 +10,13 @@ functions give HydraModem's symbol stream on all 137 basis words, 137/137
 predicted basis word and symbol, the constant-0 CRC among them — which
 under M1 still passes. Given the affinity of both symbol streams, argued
 from their code and not measured, that is byte-identical audio for every
-17-byte input (`modem.md` section 13 lists the premises). The text below
-is the decision as taken; the Open section is updated.
+17-byte input (`modem.md` section 13 lists the premises). Since then: the
+receiver (ADR 0014, R2, `8deb727`) decodes all three vendored WAVs and
+round-trips 140 words through this transmitter's `sona`; M5 (`76ca763`)
+made the sine table an array literal with all four certificates
+byte-identical; M4's reference renders for four more profiles are vendored
+(`6121656`) and nothing in Exsecutor reads them yet. The text below is the
+decision as taken; the Open section is updated.
 **Relates to:** ADR 0011 (the first external certificate); spec §4.6, §5.2,
 §5.4, §8.6, §9.3, §14; `vendor/hydramodem-tx/`, `docs/design/modem.md`.
 
@@ -156,9 +161,18 @@ milestone with three tables in hand, not taken on one.
 - **The reference modulator's memorylessness** is measured at 1,140
   renders and argued for the rest from its rounding bound (`modem.md` D3,
   §13's P5).
-- **The receiver** needs a stdin reader under `ambitus` (a spec/prelude
+- ~~**The receiver** needs a stdin reader under `ambitus` (a spec/prelude
   decision), signed multiply-accumulate, array creation, and possibly
-  signed shifts — the `[OPEN]` items M3 will force (`modem.md` §9).
+  signed shifts — the `[OPEN]` items M3 will force (`modem.md` §9).~~
+  Closed by ADR 0014 and R2 (`8deb727`): the reader (`8524028`) and array
+  literals (`54ba744`) are the two amendments it took; signed
+  multiply-accumulate needed nothing new; R2 has no signed shift and R3's
+  timing loop is where that question is decided.
 - **Other profiles** are limited to those where `sr/baud` is an integer;
   the 44.1 kHz variant HydraModem's README mentions is not, and the
-  design does not claim it.
+  design does not claim it. Reference renders for aux-cable (as far as the
+  CLI can express it), 4-FSK, 8-FSK and 125 baud are vendored (`6121656`);
+  no Exsecutor transmitter targets them yet.
+- ~~**Array literals**~~ — decision 4 deferred them to "a milestone with
+  three tables in hand"; taken by ADR 0014, landed `54ba744`, and this
+  transmitter's table became one at M5 (`76ca763`).

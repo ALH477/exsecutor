@@ -1,11 +1,15 @@
 # Runtime prelude — design plan (Stage 3)
 
-Status: **built** (decc0f0): `compiler/x86_64/prelude/` runs under nine fixtures,
-its `scribe` binary prints `examples/saluta.expected` with `write` and
-`exit_group` only, and 612b0c9's `program.inc` wrapped it into a program that
-ran. Section 2.4's code block held its count in r11 across the syscall and was
-corrected against the build. This line said "no prelude exists" until
-2026-09-10; the rest of the sentence was also true then:
+Status: **built** (decc0f0): `compiler/x86_64/prelude/` runs under twelve
+fixtures (nine when this line was first written; `scribe_octeto`,
+`lege_octeto` and `sine_ambitus` since), its `scribe` binary prints
+`examples/saluta.expected` with `write` and `exit_group` only, and 612b0c9's
+`program.inc` wrapped it into a program that ran. Since `8524028` the blob
+also holds `Lector`, the standard-input reader (section 2.4, as amended), and
+every program whose closure holds `ambitus` carries `read` as well as `write`
+(section 2.6, as amended). Section 2.4's code block held its count in r11
+across the syscall and was corrected against the build. This line said "no
+prelude exists" until 2026-09-10; the rest of the sentence was also true then:
 no file under `compiler/` is touched by this document. `spec §N` cites
 `docs/spec/exsecutor-spec-v0.4.md`; `IR n.m` cites `docs/design/ssa-ir.md`;
 `AST n.m` cites `docs/design/typed-ast.md`; `CHK n.m` cites
@@ -357,6 +361,34 @@ allowlist) `[OPEN]`. `initium.exsc` discards `scribe`'s result, so the
 hello world exits 0 even when stdout is closed — a property of the
 example, recorded rather than fixed.
 
+**`Lector`, the other direction** (added `8524028`, on `docs/design/
+receptor.md` D1's design, after spec §4.6 was amended to name it): `structura
+Lector { a: ambitus, descriptor: i32 }`, the same 16-byte record with the
+same mark `{ambitus}`, obtained by `Lector.ab_introitu(a)` —
+`exsrt_lector_ab_introitu(ret, a)`, `ad_exitum`'s three instructions reading
+`ExsAmbitus.in` where that reads `.out`, total — and read one byte at a time
+by `l.lege_octeto() -> u16` — `exsrt_lector_lege_octeto(l) -> u16`: one
+`read(0)` of one byte into the routine's own frame (the syscall wants an
+address), returning the byte, 0–255, or **256** at end of input. `EINTR` is
+retried; a zero-length read is *not* retried, since for `read` that is the
+end of input, not `scribe`'s "nothing moved, go again"; `EAGAIN` and every
+other `-errno` return 256 too, so **end of input and error are not
+distinguished** — `scribe`'s hole in the other direction, provisional until
+`eventus` has syntax, when the call becomes `-> eventus<u8>` and the sentinel
+goes (spec §11). `tests/unit/prelude_lege_octeto.asm` pins the descriptor
+(0, through `interface.inc`'s own offset), the four bytes `0x00 0x7f 0x80
+0xff` in order, 256 twice at end of input (the sentinel is sticky, which is
+what lets a driver stop), and 256 on a descriptor the kernel refuses;
+`tests/programs/lector/` is `cat` over 41 bytes and `lector_numerus/`
+returns the count as its exit status. The reader sits inside the same
+`if EXS_POTESTAS_AMBITUS` as the writers, and `prelude_sine_ambitus.asm`
+fails to assemble if it is moved out — which matters more for the reader
+than it did for the writer, because the unit phase's audit is against the
+compiler's nine, `read` included, and would not notice an ungated one.
+`Lector` has no field rows in `interface.inc`: members resolve by name
+through one pool, so a second `a` behind `Scriptor.a` would be unreachable;
+its mark is written down once, in `chk_row_pre_marks`.
+
 **Where `Scriptor` lives, and what changes with `norma`.** Today: prelude
 assembly with an interface the checker pre-seeds — there is no module
 system, no import (spec §8.6 decision 5), and no `norma` source to compile,
@@ -518,8 +550,19 @@ can be told the atoms and compute the same union:
 | `Filum`, `machina`, `sermo`, `Crudum` | `[OPEN]` | no |
 
 Three consequences, stated so they are not misread. (a) **The hello
-world's binary uses `write` and `exit_group` and nothing else**, a strict
-subset of `exsc`'s nine, and passes today's audit unchanged. (b) A
+world's binary uses `write`, `exit_group` and — since `8524028` — `read`,
+and nothing else**, a strict subset of `exsc`'s nine, and passes today's
+audit unchanged. The `read` is there whether or not the program reads: the
+gate is `if EXS_POTESTAS_AMBITUS` around the whole atom's routines, not
+around each call, so a binary whose closure holds `ambitus` carries the
+reader beside the writers. (This sentence said "`write` and `exit_group`
+and nothing else" from decc0f0 until the reader landed; `tests/run.sh`
+asserts the three-syscall set on entry 23 and on every program it runs,
+and the publish gate audits the hello world against `{Mundus, ambitus}`.)
+An emitted program could in principle be gated per routine actually
+called — the emitter knows which `exsrt_` labels the module references —
+and that is `[OPEN]`; what the audit claims is a property of the *closure*,
+and that claim is exact either way. (b) A
 compiled program is not `exsc`: **CLAUDE.md's "no socket-family syscall,
 ever" is about the compiler and is not weakened here** — the compiler's
 binary never contains one; a *program's* binary contains one **iff** its
@@ -576,10 +619,17 @@ section 2 has a fixture that assembles the blob **alone** — a
 eleven constants and `EXS_MXCSR` itself, supplies a hand-written
 `bfausr_initium`, runs, and is audited — before any emitted program
 exists (section 6 names them). `emit.inc` was proven the same way against
-hand-written IR. The claims below are `[UNTESTED]` until those run:
+hand-written IR. The claims below were `[UNTESTED]` until those ran; all
+but the last are now pinned by the twelve `tests/unit/prelude_*.asm`
+fixtures `prelude/README.md` tables, and the last is still `[UNTESTED]`
+for the reason it gives:
 
 - `exsrt_scriptor_scribe` on a 101-byte view writes 101 bytes and returns
   101; on a 0-byte view issues no syscall and returns 0.
+- `exsrt_lector_lege_octeto` returns the bytes of its input in order,
+  256 at end of input and 256 again after, and 256 on a descriptor the
+  kernel refuses (`prelude_lege_octeto.asm`, fed through the harness's
+  `stdin=` key so the descriptor read is the one `ab_introitu` derived).
 - `exsrt_retain` on `rc = 2⁶⁴−1` aborts with `abortus 2`; on `rc = 0` with
   `abortus 3`; `exsrt_release` from 1 calls the destructor exactly once
   with `rc = 0` during it, and a retain inside that destructor aborts 3.

@@ -8,8 +8,13 @@ round-trip through the transmitter's own `sona`, and all nine mutants of
 section 6 behave as predicted. Section 12 records what was measured on the
 Exsecutor program; **D3's `Praefixa` struct is the one decision that did not
 survive contact with the emitter** (finding 20), and one figure of section 11
-does not reproduce (finding 21). Everything R3 — the timing loop, the
-impaired vectors, `vendor/hydramodem-rx/` — is still design only.
+does not reproduce (finding 21). Finding 20's emitter defect was fixed after
+R2 (`9ede8bf`: a `copy` above 128 bytes is a loop; `tests/programs/
+copia_magna/` is the struct that used to crash), and R2's receiver was **not**
+rewritten to use `Praefixa` — it still passes four arrays, and nothing about
+its verdicts changed. Everything R3 — the timing loop, the impaired vectors,
+`vendor/hydramodem-rx/` — is design only as of this revision; R3 is being
+implemented in a separate change and nothing of it is claimed here.
 
 Before that, what had run was a scratch integer model of exactly this design
 (section 11: Python, never shipped,
@@ -49,10 +54,11 @@ The constraint is the one modem.md §1 states: the language says only what
 it has settled. The transmitter needed nothing new. The receiver needs two
 things, and the design's first job is to show they are the only two:
 
-1. **A way to read.** No program can read standard input. `read(0)` is in
-   `ambitus`'s admitted syscall set (`prelude/README.md`, "The syscall
-   table, per atom") and no routine issues it; `tools/syscall-audit.sh`
-   says so in its own comment. D1.
+1. **A way to read.** When this was written no program could read standard
+   input: `read(0)` was in `ambitus`'s admitted syscall set
+   (`prelude/README.md`, "The syscall table, per atom") and no routine
+   issued it; `tools/syscall-audit.sh` said so in its own comment. D1 —
+   landed in `8524028`.
 2. **A way to create an array.** An `acies` is born only from a
    `@transitus` struct or as a copy (modem.md finding 6, sharpened at M1:
    the first element *write* is already `EXS-E0307`). A receiver holds
@@ -60,7 +66,7 @@ things, and the design's first job is to show they are the only two:
    decision buffer; none of them can be written without first existing.
    D2, the array literal — the amendment modem.md D4 deferred to "a
    milestone with three tables in hand". The receiver brings the tables
-   (the two local oscillators) and the buffers.
+   (the two local oscillators) and the buffers. Landed in `54ba744`.
 
 Everything else — signed integers, `i64` multiply, comparison on signed
 values, a variable shift count on `u64`, `dum … terminus` — is settled or
@@ -133,9 +139,10 @@ certificate.
 
 ## 3. Decisions
 
-Two spec amendments (D1, D2), both `[UNTESTED]`; no new §13 code (section
-4). D3–D9 are the receiver; D10 is the timing loop deferred; D11 the
-certificates; D12 where things live.
+Two spec amendments (D1, D2), both `[UNTESTED]` when written and both since
+landed and run (section 10); no new §13 code (section 4). D3–D9 are the
+receiver; D10 is the timing loop deferred; D11 the certificates; D12 where
+things live.
 
 ### D1 The reader: `Lector.ab_introitu(a)` and `l.lege_octeto() -> u16`
 
@@ -172,8 +179,9 @@ cannot be — WC D7's reason); reading stdin as a file under `archivum`
 
 **Cost.** 38,060 syscalls a WAV, one per byte. The transmitter's 38,060
 one-byte writes take 31–39 ms (modem.md D7, §12); reads are the same
-shape and `[UNTESTED]`. A buffered reader, when one exists, changes no
-byte and no verdict.
+shape, and measured at R2: one WAV decode is 25 ms wall, 13 ms of it system
+time (section 12). A buffered reader, when one exists, changes no byte and
+no verdict.
 
 **The names, checked against spec §3.1.** `Lector` is §3.7's own worked
 derivation (`lector structura reader`): supine stem `lect-` + `-or`,
@@ -195,8 +203,8 @@ mirrors of each other, and the resolution belongs with `lexicon.norma`.
 `ambitus`'s admitted set; the compiler itself never issues it (only
 emitted programs do, under the gate `EXS_POTESTAS_AMBITUS`). No allowlist
 changes. `prelude/README.md`'s table row and `tools/syscall-audit.sh`'s
-comment both say "`read` is `[UNIMPLEMENTED]`, no reader exists yet"; the
-implementer retires both sentences (finding 17 — other trees, reported).
+comment both said "`read` is `[UNIMPLEMENTED]`, no reader exists yet"; the
+implementer retired both sentences in `8524028` (finding 17).
 
 **Spec.** §4.6 (the streams under `ambitus`) now names both types and
 their one-byte calls; §11's I/O bullet carries the sentinel beside
@@ -207,9 +215,12 @@ before it exists.
 
 **Retired by:** a `tests/unit/prelude_lege_octeto.asm` fixture of
 `prelude_scribe_octeto.asm`'s shape (bytes `0x00 0x7f 0x80 0xff`, then 256
-at end of input, then 256 again; `audit=pass` with `read` and
-`exit_group` only); `tests/programs/lector/` reading a few bytes from a
-`stdin=` file; and R2's three WAV tests.
+at end of input, then 256 again; `audit=pass`); `tests/programs/lector/`
+reading a few bytes from a `stdin=` file; and R2's three WAV tests. **All
+three exist and run** (`8524028`, `8deb727`); the fixture's audit reports
+`read`, `write` and `exit_group`, not `read` and `exit_group` only, because
+the blob's writers sit in the same `ambitus` gate and the audit sees the
+binary, not the calls.
 
 ### D2 Array literals: `[e1, …, en]` and `[e; N]`
 
@@ -266,7 +277,9 @@ per element (`slot`, then `index` + `store` in ascending order); a repeat
 is `e` into a temporary, then a `u64` loop of `per`'s shape storing it —
 **a loop, not an unrolled sequence**, so `[0; 20481]` is a dozen
 instructions and not 20,481. A backend may recognise `[0; N]` as a fill;
-that is an implementation and the bytes are the same.
+that is an implementation and the bytes are the same. (As built, `54ba744`:
+the repeat form unrolls at or below `LWR_ARRAY_UNROLL = 8` and loops above
+it — `tests/unit/lwr_acies.asm` pins one of each.)
 
 **Grammar** (§8.6): `Primary ::= … | ArrayLit`,
 `ArrayLit ::= '[' Expr (',' Expr)* ']' | '[' Expr ';' INT ']'`. After
@@ -285,22 +298,25 @@ type, and the same rule keeps the two in step); inferring the count from
 the declared type (`[0; _]`) — a second way to say one thing.
 
 **What this retires from the transmitter, and does not change.** M1's
-`sinus` is a nine-arm `discerne` over thirteen quarter-wave values
-because no literal existed (modem.md D4). It becomes a thirteen-element
-literal folded by the same identities — **M5**, section 9 — with the M1
-WAVs staying byte-identical as its test. Not changed here: this design
-does not edit `examples/hydramodem/modulator.exsc`.
+`sinus` was a nine-arm `discerne` over thirteen quarter-wave values
+because no literal existed (modem.md D4). It was to become a literal folded
+by the same identities — **M5**, section 9 — with the M1 WAVs staying
+byte-identical as its test. Not changed by this design, which does not edit
+`examples/hydramodem/modulator.exsc`; done since by `76ca763`, as a
+48-entry literal with the fold applied where the table is written
+(modem.md D4).
 
-**Retired by:** `tests/unit/cst_arraylit.asm` (both forms, every
+**Retired by:** `tests/unit/cst_acies.asm` (both forms, every
 `ExprNS` position, the trailing comma and the empty list `EXS-E0201`, a
-`[` after an operand still an index); `tests/unit/chk_ty_arraylit.asm`
+`[` after an operand still an index); `tests/unit/chk_ty_acies.asm`
 (expected type, first-element type, the pending-only list `EXS-E0308`,
 the count mismatch `EXS-E0303`, a `textus` element `EXS-E0305`, `[e; 0]`
-`EXS-E0308`, the literal a non-lvalue `EXS-E0306`);
-`tests/unit/lwr_arraylit.asm` (source-order evaluation, ascending stores,
+`EXS-E0308`, a `firma` array's element store `EXS-E0306`);
+`tests/unit/lwr_acies.asm` (source-order evaluation, ascending stores,
 the repeat as a loop); `tests/programs/acies/` (a table read back, a
 `[0; N]` written through indices); and R2, whose receiver cannot exist
-without them.
+without them. The fixtures were planned under the names `*_arraylit.asm`
+and landed as `*_acies.asm` (`54ba744`); all four run.
 
 ### D3 The WAV is read once, its header verified through `Caput`, and only four prefix arrays are kept
 
@@ -343,17 +359,22 @@ of `acies` type is laid out by the checker (spec §5.2 forbids it only in
 `@transitus` types); a 640 KB local and an index store through a field
 place, `p.i0[k] = v`, are `[UNTESTED]` (findings 16, 11).
 
-**`Praefixa` CANNOT BE BUILT, and R2 keeps four arrays instead.** A struct
-literal's aggregate field is lowered into a temporary and then `copy`d, and
-`__bfa_emit_copy` (`compiler/x86_64/backend_fasmg/emit.inc:3828`) unrolls a
-`copy n` into n/8 emitted instructions — so one 163,848-byte field is about a
-megabyte of fasmg text and the compilation arena `rassert`s: SIGILL, exit 132,
-no diagnostic. Measured: a field of `acies<i64, 17000>` compiles (999,057
-bytes of asm), `acies<i64, 18000>` traps. A **plain local** `acies<i64,
-20481>` is a *loop* past `LWR_ARRAY_UNROLL` (`lower/expr.inc:2268`) and costs
-40,577 bytes of asm at any size, which is why `tests/programs/acies/` runs
-20,000 elements and this does not. Finding 20 has the sweep. R2 therefore
-passes four `acies<i64, 20481>` locals one per parameter, and the seven-word
+**`Praefixa` COULD NOT BE BUILT AT R2, and R2 keeps four arrays instead.**
+A struct literal's aggregate field is lowered into a temporary and then
+`copy`d, and `__bfa_emit_copy` (`compiler/x86_64/backend_fasmg/emit.inc`)
+unrolled a `copy n` into n/8 emitted instructions — so one 163,848-byte
+field was about a megabyte of fasmg text and the compilation arena
+`rassert`ed: SIGILL, exit 132, no diagnostic. Measured: a field of
+`acies<i64, 17000>` compiled (999,057 bytes of asm), `acies<i64, 18000>`
+trapped. A **plain local** `acies<i64, 20481>` is a *loop* past
+`LWR_ARRAY_UNROLL` (`lower/expr.inc`) and costs 40,577 bytes of asm at any
+size, which is why `tests/programs/acies/` runs 20,000 elements and this did
+not. Finding 20 has the sweep, and its retirement: since `9ede8bf` a `copy`
+above `BFA_COPY_UNROLL_MAX = 128` bytes is a runtime loop, and
+`tests/programs/copia_magna/` — a struct literal with one `acies<i64, 18000>`
+field, the exact shape that trapped — compiles and runs. R2's receiver was
+written before that fix and passes four `acies<i64, 20481>` locals one per
+parameter; it has not been rewritten to use `Praefixa`, and the seven-word
 problem this decision was taken for never arises, because no function needs
 all four *and* a count *and* an origin: `vis` takes one tone's I and Q and an
 origin (three words), `acquire` the four arrays and a count (five), `mollia`
@@ -374,7 +395,11 @@ the type already says, and the audit would then show `mmap`); prefix sums
 at a reduced width (D5 shows `i64` is needed and sufficient).
 
 **Retired by:** R2's three WAV tests; `tests/programs/hydramodem_rx_caput/`
-feeding each rejected header field in turn (exit 3, no output).
+feeding each rejected header field in turn (exit 3, no output). As landed:
+the three WAV tests run, and the header directory is `receptio_caput/`, one
+field (the sample rate), whose own `TEST` records that it proves the header
+path rejects and writes nothing, not the rate field in particular; the
+field-by-field sweep is not written (section 12).
 
 ### D4 Samples signed through the view; the Q7 oscillator table, thirteen values folded
 
@@ -404,7 +429,8 @@ re-derivation gets the same table. Written as a 48-element `acies<i64,
 48>` literal (D2, section 7), with the negative entries spelled `-17` …
 `-127` — a negation is a `Unary` over the literal and the checker admits
 the magnitude by the signed bound (`checker/types/types.inc`, the
-`-128: i8` note); running one is `[UNTESTED]`.
+`-128: i8` note); R2's `tabula()` is exactly that literal and every
+decode reads it.
 
 **Why seven bits are enough — and, on an aligned window, exact.** The
 crude bound first: the table's rounding error is at most 0.5 in 127, so a
@@ -469,13 +495,15 @@ Every `+`, `-` and `*` on these values is the trapping kind (spec §5.4),
 and the bounds are what make the traps unreachable: a receiver that
 overflowed would abort, not decode wrongly, and the bounds say it cannot
 abort on any input the header check admits. `i64` multiplication from
-source is `[UNTESTED]` (only `u64` products run, modem.md §9) — finding
-14.
+source was `[UNTESTED]` when this was written (only `u64` products ran,
+modem.md §9) — finding 14, retired by R2: `x * t[m0]` runs 4 × 19,008
+times a decode and `i * i + q * q` some 150,000 times (section 10).
 
-**Retired by:** R2 (every bound is exercised at the vendored amplitude);
-`tests/programs/hydramodem_rx_plenus/`, a synthetic full-scale input
-(every sample ±32768 on the tones) that must not abort — the one input
-that reaches the bounds rather than a tenth of them.
+**Retired by:** R2 (every bound is exercised at the vendored amplitude —
+done, section 12: no trap in 1,430 decodes); `tests/programs/
+hydramodem_rx_plenus/`, a synthetic full-scale input (every sample ±32768
+on the tones) that must not abort — the one input that reaches the bounds
+rather than a tenth of them — **not written**.
 
 ### D6 Acquisition as the reference does it, in integers
 
@@ -553,10 +581,13 @@ a `u64`); then every soft bit is its magnitude `deorsum k` with its sign
 put back. The magnitude is `(E_1 − E_0) sicut u64` or `(E_0 − E_1) sicut
 u64` by the sign of the comparison — an equal-width `i64 → u64` cast of a
 non-negative value, the bit pattern unchanged: a reinterpretation by spec
-§5.4 as amended in the follow-up (finding 13), run from source only in
-the `u8 → i8` direction (`tests/programs/angusta/`: `200 sicut i8` is
-`−56`) and at the IR in this one (`conv_roundtrip.ir`), so `[UNTESTED]`
-from source. `k` is a `u64` because the shift count
+§5.4 as amended in the follow-up (finding 13). When this was written it
+had run from source only in the `u8 → i8` direction
+(`tests/programs/angusta/`: `200 sicut i8` is `−56`) and at the IR in this
+one (`conv_roundtrip.ir`); since R2 `receptor.exsc`'s `mollia` writes
+`d sicut u64` on an `i64` and every `receptio_*` decode runs it 316 times,
+so the `i64 → u64` direction runs from source too. `k` is a `u64` because
+the shift count
 must have the operand's type (spec §5.4), and **a variable count on `u64`
 is settled**: `chk_ty_bitops.asm` types it, `shift_narrow.ir` runs one.
 One `k` for the frame rather than one per bit, so the relative weights of
@@ -671,9 +702,9 @@ around them.
 **R2.** Three program tests, `tests/programs/hydramodem_rx_{loopback,
 exemplum,vacuum}/`, each `stdin=vendor/hydramodem-tx/<frame>.wav`,
 `expect-exit=0`, and an `expected.out` of the frame's 17 bytes (the
-harness's existing binary-stdout comparison; the `stdin=` key does not
-exist and is finding 15). And one loopback test,
-`tests/programs/hydramodem_circuitus/`: a driver compiled with
+harness's existing binary-stdout comparison; the `stdin=` key did not
+exist when this was written and is finding 15, since retired). And one
+loopback test, `tests/programs/hydramodem_circuitus/`: a driver compiled with
 `quantum.exsc`, `modulator.exsc` and `receptor.exsc` that, for the zero
 word, the 136 one-hot words and the three frames, synthesises the 19,008
 samples in memory with the transmitter's own `sona(k, i)` (M1's, unchanged
@@ -686,8 +717,10 @@ No process pipe, no second binary, no harness change beyond `stdin=`:
 `tx | rx` is what this test *is*, with the pipe replaced by the language's
 own by-value struct. Estimated cost: 140 decodes at a few million integer
 operations each, against the basis driver's 100 ms for 10 million
-(modem.md §13) — some seconds, within the 20-second limit, `[UNTESTED]`;
-if not, the directory splits in two.
+(modem.md §13) — some seconds, within the 20-second limit, `[UNTESTED]`
+when written; if not, the directory splits in two. As landed (`8deb727`)
+the directories are `tests/programs/receptio_{loopback,exemplum,vacuum}/`
+and `receptio_circuitus/`, and the loopback takes 1.17 s (section 12).
 
 **R3.** A new vendored tree, **`vendor/hydramodem-rx/`**, on
 `vendor/hydramodem-tx/`'s provenance discipline (ADR 0013 item 1: program
@@ -769,10 +802,12 @@ vendored and the receiver runs.
 parameter, no `initium` — beside `modulator.exsc`; `recipe.exsc`, the
 stdin driver, the only file of its unit naming `Mundus` and `Lector`;
 `circuitus.exsc`, the loopback driver. Tests in `tests/programs/
-hydramodem_rx_*/` and `hydramodem_circuitus/` with `sources=` pointing at
-`examples/`, exactly modem.md D8's arrangement and for its reason. The
-binary of the stdin driver audits to `read`, `write` and `exit_group`; the
-loopback driver to `write` and `exit_group` — it never reads.
+receptio_*/` (planned here as `hydramodem_rx_*/` and `hydramodem_circuitus/`)
+with `sources=` pointing at `examples/`, exactly modem.md D8's arrangement
+and for its reason. The binary of the stdin driver audits to `read`, `write`
+and `exit_group`; so does the loopback driver's, although it never reads —
+the prelude gates by atom, not by call (`docs/design/runtime.md` 2.6), so
+every `ambitus` binary carries `exsrt_lector_lege_octeto` since `8524028`.
 
 ## 4. Error codes, checked against §13
 
@@ -795,6 +830,11 @@ is a runtime trap, not a diagnostic; D5's bounds are what keep it
 unreachable.
 
 ## 5. The program's shape
+
+The plan as written before R2. What runs differs in two places the
+retirement table records: `Praefixa` is four arrays (finding 20) and
+`mixtio` was never written (finding 22); `examples/hydramodem/receptor.exsc`
+is the program.
 
 | file | contents | capability |
 |---|---|---|
@@ -872,15 +912,19 @@ verdict. And, run for the record and not certified: the AWGN cliff, at
 −7 and −8 dB with six seeds each on one frame, reported as counts for the
 reference and for the receiver side by side.
 
-## 7. Worked example, as designed — `[UNTESTED]`
+## 7. Worked example, as designed — superseded by `examples/hydramodem/`
 
-Written against the language as it runs at the commit of this file plus
-D1 and D2. `per i in 0..48`, `0..316`, `0..64` type as `mensura` (spec
-§8.5); `i64` arithmetic and comparison from source have run at `i8` and
-`i32` (`angusta`, `discerne`) and not at `i64`; `*` on `i64`, a 48-element
-`i64` literal with negative entries, a 640 KB struct of arrays, an index
-store through a field, an `acies` returned by value, `Lector`, and the
-two array-literal forms have not run at all.
+Written against the language as it ran at the commit of this file plus
+D1 and D2, and kept as the design's record; the program that runs is
+`examples/hydramodem/receptor.exsc` with `recipe.exsc` and
+`circuitus.exsc`, which depart from this text where findings 20, 22 and
+23 say. When this was written, `per i in 0..48`, `0..316`, `0..64` typed
+as `mensura` (spec §8.5); `i64` arithmetic and comparison from source had
+run at `i8` and `i32` (`angusta`, `discerne`) and not at `i64`; `*` on
+`i64`, a 48-element `i64` literal with negative entries, a 640 KB struct
+of arrays, an index store through a field, an `acies` returned by value,
+`Lector`, and the two array-literal forms had not run at all. All of those
+run now except the 640 KB struct, which R2 does not use (finding 20).
 
 ```exsecutor
 // examples/hydramodem/receptor.exsc -- pure; no `poscit`, no `initium`.
@@ -1238,13 +1282,29 @@ The four below were found by implementing R2 and are numbered after it.
     with the source's own length. A **plain local** `acies<i64, N>` takes the
     repeat form's *loop* (`lower/expr.inc:2268`, `LWR_ARRAY_UNROLL = 8`) and
     is 40,577 bytes of asm at N = 20,481 and at N = 200,000 alike.
-    Not fixed here, and the fix is not obvious: a `copy` above some size
+    Not fixed at R2, and the fix was not obvious: a `copy` above some size
     wants a loop, which needs a counter register the emitter's three-scratch
     contract does not have spare, and a struct literal that lowered its
     fields straight into the destination would change the aliasing
     semantics D2 was careful about (`a = [a[1], a[0]]`). Reported for the
     backend's owner. The workaround costs the receiver nothing: four
     parameters instead of one, and no call needs more than six words.
+    **Retired by `9ede8bf`.** The counter lives in the `copy`'s own stack
+    slot, not a register: above `BFA_COPY_UNROLL_MAX = 128` bytes
+    `__bfa_emit_copy` writes a loop — `rax` the destination, `rdx` the
+    source, `rcx` the word in flight, the count in memory — then the same
+    4/2/1 tail, a fixed dozen lines at any size; at or below 128 the text
+    is byte-identical to before, so every pinned fixture is unchanged.
+    `tests/ir/copy_magna.ir` copies 100,003 bytes and checks five positions
+    including one past the end; `tests/programs/copia_magna/` is the
+    six-line `acies<i64, 18000>` struct literal above, which compiles and
+    exits 0. The same commit made `rt/arena.inc`'s exhaustion say what it
+    knows on stderr (bytes wanted, used, capacity) before trapping, so the
+    "printing nothing at all" half of this finding is gone too; the status
+    is still 132, because §13 has no code for `exsc` running out of its own
+    memory and none was invented. R2's receiver is unchanged: it still
+    passes four arrays, and rewriting it to `Praefixa` is nobody's
+    milestone.
 21. **One of section 11's figures does not reproduce.** "prefix sums
     ≤ 7.0 × 10⁹" is wrong by 3.7×: the maximum over the three clean WAVs
     is **2.61 × 10¹⁰** (the all-zero frame; 1.53 × 10¹⁰ and 1.67 × 10¹⁰ for
@@ -1331,14 +1391,18 @@ byte-identical — `cmp` reports nothing. Language needed: D2. This is the
 receiver's cosine table which is also its sine table. The third data
 point turned out to be the buffers — `[0; N]` — which are not tables at
 all and which modem.md §9 rightly said not to conflate: D2 gives them a
-second form rather than a second construct.
+second form rather than a second construct. **Done**, `76ca763`, with one
+departure: all 48 entries are written (the fold applied where the table is
+written, not read), the dead entries as 0 — what the `aliter` arm produced
+— and the four transmitter certificates and five `receptio_*` directories
+stay byte-identical (modem.md D4, as amended).
 
 ## 10. What retires each marker
 
 | decision or claim | milestone | the test as planned | what retires it |
 |---|---|---|---|
 | D1 `Lector`, `ab_introitu`, `lege_octeto` `[UNTESTED]`; the 256 sentinel | prelude, then R2 | `tests/unit/prelude_lege_octeto.asm`; `tests/programs/lector/` | **retired**: those fixtures run, and R2's four stdin tests read 38,060 bytes apiece through them |
-| D2 array literals `[UNTESTED]`, both forms, typing, the six codes | checker, then R2 | `cst_arraylit.asm`, `chk_ty_arraylit.asm`, `lwr_arraylit.asm`, `tests/programs/acies/` | **retired**: those run, and `receptor.exsc` is written in both forms — the 48-entry signed table, `[0; 20481]`, `[0; 10112]`, `[-4611686018427387904; 64]` |
+| D2 array literals `[UNTESTED]`, both forms, typing, the six codes | checker, then R2 | `cst_arraylit.asm`, `chk_ty_arraylit.asm`, `lwr_arraylit.asm`, `tests/programs/acies/` | **retired**, `54ba744`: those run as `tests/unit/{cst,chk_ty,lwr}_acies.asm` and `tests/programs/acies/`, and `receptor.exsc` is written in both forms — the 48-entry signed table, `[0; 20481]`, `[0; 10112]`, `[-4611686018427387904; 64]` |
 | D3 header check; D4 the table; D5 the bounds; D6 acquisition; D7 the metric; D8 the trellis; D9 the residue | R2 | `tests/programs/receptio_{loopback,exemplum,vacuum}/`, `receptio_circuitus/` (140/140), `receptio_caput/` | **retired** by those five directories, all green. D3's `Praefixa` is *not* what shipped (finding 20); D5's `hydramodem_rx_plenus/`, a full-scale synthetic input, is **not written** — the bounds are exercised at 0.9 of full scale and no higher |
 | section 6's five failing mutants and four negative controls | R2 | the mutation run over a copy of `examples/hydramodem/` | **retired**: 9 of 9 observed as predicted, section 12 |
 | D7's argument (the difference is the sounder metric) | never fully | R3's vectors are consistent with it; a proof is not a test | stays an argument, as D9's affinity does |
@@ -1349,7 +1413,11 @@ second form rather than a second construct.
 | findings 11, 15, 16 (in-place mutation; `stdin=`; a 640 KB local) | the implementer's trees | — | 15 and 16 **retired** (the key exists; the frames are 661,344 and 812,224 bytes and run). 11 stands: the accumulate loop is still written twice, once per driver |
 | finding 14 (`*` on `i64` from source `[UNTESTED]`) | R2 | — | **retired**: `x * t[m0]` runs 4 × 19,008 times a decode and `i * i + q * q` ~150,000 times, on every one of the five directories |
 | section 5's function table (`mixtio`; `Praefixa` in five signatures) | R2 | — | **superseded** by findings 20 and 22; section 5 is the design's plan and `examples/hydramodem/receptor.exsc` is what runs |
-| M4's per-profile tables and the scaled acquisition sum; M5's byte-identity | M4, M5 | `cmp` on the M1 WAVs and the M2 basis after M5 | — |
+| finding 20 (a large `copy` unrolled; a struct literal's big array field traps the compiler) | the backend's tree | a struct literal with an `acies<i64, 18000>` field compiling | **retired**, `9ede8bf`: `tests/ir/copy_magna.ir` (100,003 bytes through the loop form), `tests/programs/copia_magna/` (the struct that trapped, exit 0). The receiver is not rewritten to use it |
+| finding 21 (section 11's prefix-sum maximum) | — | — | stays `[UNREPRODUCED]` as a figure of the scratch model; section 12's 2.61 × 10¹⁰ is the measured value and the bound covers both |
+| findings 22, 23 (`mixtio` dropped; the refinement's guard) | R2 | — | recorded as departures, not defects: 22 changes no arithmetic, 23 changes no verdict on any input observed |
+| M5's byte-identity | M5 | `cmp` on the M1 WAVs and the M2 basis after M5 | **retired**, `76ca763`: 4/4 transmitter certificates and 5/5 `receptio_*` unchanged (modem.md D4) |
+| M4's per-profile tables and the scaled acquisition sum | M4 | new `frame_tx` renders per profile | the renders are vendored (`6121656`, `vendor/hydramodem-tx/profiles/`, twelve WAVs); no Exsecutor program reads them yet |
 
 ## 11. What was measured for this document
 
@@ -1370,7 +1438,8 @@ every figure re-measurable by the recipe named.
   959, score 40, plateau 938–981, refinement 0, shift 33. **137 basis
   renders** (the zero word and the 136 one-hot words, rendered by the
   scratch `frame_tx`): **137/137**, every one back to its word.
-- **The bounds, observed** on the clean frames: prefix sums ≤ 7.0 × 10⁹;
+- **The bounds, observed** on the clean frames: prefix sums ≤ 7.0 × 10⁹
+  (`[UNREPRODUCED]` — finding 21; R2's re-measurement is 2.61 × 10¹⁰);
   |I|, |Q| ≤ 86,994,364; |soft| ≤ 8.11 × 10¹⁵; known-prefix energy 3.24 ×
   10¹⁷; path metrics ≤ 2.98 × 10⁸; the wrong tone's window energy
   **exactly 0** at all 356 windows of all three frames, at origins 959 and
@@ -1475,5 +1544,12 @@ where finding 21 says otherwise.
 - **Not measured at R2:** anything impaired (that is R3); a full-scale input
   (`hydramodem_rx_plenus/` is not written, so the bounds are exercised at
   0.9 of full scale); the timing loop in any form; `Praefixa` working, since
-  it does not compile; the per-field header sweep D3 asks for, of which
-  `receptio_caput/` is one field.
+  it did not compile at R2 (the emitter has since been fixed, `9ede8bf`, and
+  the receiver has not been rewritten to use it); the per-field header sweep
+  D3 asks for, of which `receptio_caput/` is one field.
+- **After R2, not part of it:** `76ca763` (M5) replaced the transmitter's
+  `discerne` table with a literal and re-ran all five `receptio_*`
+  directories, byte-identical; `9ede8bf` changed the emitter's `copy` above
+  128 bytes to a loop and left every `receptio_*` certificate unchanged
+  (`tests/run.sh` 700/0 at that commit). Neither changed a verdict, a bound
+  or a byte of the receiver's output.

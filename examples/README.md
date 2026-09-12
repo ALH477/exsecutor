@@ -1,21 +1,28 @@
 # examples/
 
-Exsecutor source, two programs, both compiled and run by `tests/run.sh`:
+Exsecutor source, three programs, all compiled and run by `tests/run.sh`:
 
 - **the hello world** — `saluta.exsc`, `imprime.exsc`, `initium.exsc`,
   below; `tests/programs/saluta/` and `tools/publish-gate.sh` run it;
-- **`hydramodem/`** — a transmitter for HydraModem's acoustic modem that
-  writes, byte for byte, the WAV HydraModem's own reference transmitter
+- **`hydramodem/`, the transmitter** — for HydraModem's acoustic modem,
+  writing, byte for byte, the WAV HydraModem's own reference transmitter
   writes for the same frame. `hydramodem/README.md` has how to build and
   run it; `tests/programs/hydramodem_*/` compare its output with the
   vendored reference WAVs, and `hydramodem_basis/` compares its symbol
   streams on a 137-word basis, which under the design's affinity argument
-  covers every 17-byte input.
+  covers every 17-byte input;
+- **`hydramodem/`, the receiver** — reads one of those WAVs from standard
+  input and writes the 17-byte frame back out, or exits with a code that
+  says why not. `tests/programs/receptio_*/` feed it the three vendored
+  WAVs, a bad header, and 140 words round-tripped through the transmitter
+  in one process. Its certificate is decode success, not bit identity, and
+  `docs/decisions/0014-hydramodem-receiver.md` says why; robustness under
+  impaired input (R3) is not done.
 
 This file said "nothing here compiles — there is no compiler" until
 2026-09-10, and then, until the hydramodem commit, that nothing here was
 type-checked or compiled to code, which the hello world's test had already
-made false.
+made false. It then said there were two programs, until the receiver.
 
 ## `saluta.exsc`
 
@@ -115,8 +122,10 @@ The third file, and the only one that can run: the entry point §4.7 pins,
 `publica functio initium(m: Mundus) -> u8`. Its whole authority is the one
 `Mundus` parameter; `ambitus` is derived from it and bound with `sub`, and
 `Scriptor.ad_exitum` turns it into the writer `imprime_gutenbergio` needs.
-`[UNTESTED]` — it parses and builds a typed AST; the `Scriptor` it names is
-the runtime prelude's, pinned in `docs/design/runtime.md`.
+The `Scriptor` it names is the runtime prelude's, pinned in
+`docs/design/runtime.md`. This sentence carried `[UNTESTED]` — "it parses
+and builds a typed AST" — until the publish gate met: it compiles, assembles,
+runs and writes the 101 bytes (`tests/programs/saluta/`).
 
 ### The Latin
 
@@ -132,15 +141,28 @@ noticed rather than discovered later.
 
 ## `hydramodem/`
 
-The second program: HydraModem's transmitter. Six files, one compilation
+The second program: HydraModem's transmitter. Seven files, one compilation
 unit per frame — `quantum.exsc` (the frame's type and its CRC),
 `modulator.exsc` (the transmitter, pure: no `poscit`, no capability),
 `emitte.exsc` (the writer) and one of three drivers, each an `initium`
-holding one frame as a `DeModFrame` struct literal. Only the driver names
-`Mundus`. `hydramodem/README.md` says how to build it, what it computes and
-what three frames do and do not prove; `docs/design/modem.md` is the design.
+holding one frame as a `DeModFrame` struct literal, or `basis.exsc`, the
+137-word symbol-stream driver. Only the driver names `Mundus`.
+`hydramodem/README.md` says how to build it, what it computes and what three
+frames do and do not prove; `docs/design/modem.md` is the design.
 
-It is written without bitwise and or or, division, remainder, signed
-arithmetic or array literals, none of which the language has settled. Its
-sine table is a `discerne`; designing it found that no `discerne` had ever
-compiled with `-o`, and that was fixed first (`tests/programs/discerne/`).
+It is written without bitwise and or or, division, remainder or signed
+arithmetic, none of which the language has settled. Its sine table was a
+`discerne` — designing it found that no `discerne` had ever compiled with
+`-o`, and that was fixed first (`tests/programs/discerne/`) — and is a
+48-entry array literal since `76ca763`, once array literals landed for the
+receiver; the WAVs did not change by a byte.
+
+The third program, in the same directory: the receiver. `receptor.exsc`
+(pure: the oscillator table, the window energies, acquisition, the soft
+bits, a 64-state soft Viterbi, the CRC residue), `recipe.exsc` (the
+standard-input driver, the only file in `examples/` that names `Lector`) and
+`circuitus.exsc` (the loopback driver, which reads nothing). It is the
+program that forced the two language additions since the transmitter — a
+reader under `ambitus` and array literals — and `docs/design/receptor.md`
+is its design. What it does *not* use is as deliberate as the transmitter's
+list: no floating point, no division, no bitwise and/or, no signed shift.

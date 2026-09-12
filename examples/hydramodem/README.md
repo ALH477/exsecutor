@@ -76,7 +76,7 @@ checked. `modulator.exsc` is in the unit because the receiver reuses its
 | file | what it is | authority |
 |---|---|---|
 | `quantum.exsc` | `DeModFrame` (spec §5.2's declaration) and the CRC-16 HydraModem appends | none |
-| `modulator.exsc` | the transmitter: the tone of each symbol, the samples each tone becomes, the WAV header | none: pure |
+| `modulator.exsc` | the transmitter: the tone of each symbol, the 48-entry sine table (an array literal since M5), the samples each tone becomes, the WAV header | none: pure |
 | `emitte.exsc` | walks that layout and writes every byte to a `Scriptor` | whatever the `Scriptor` carries |
 | `loopback.exsc`, `exemplum.exsc`, `vacuum.exsc` | one `initium` each, holding one frame as a struct literal | `Mundus`, from which `ambitus` |
 | `basis.exsc` | the certificate driver: no WAV, but the 356 tones of each of 137 words, one byte a tone — compiled with `quantum.exsc` and `modulator.exsc` only | `Mundus`, from which `ambitus` |
@@ -86,9 +86,13 @@ checked. `modulator.exsc` is in the unit because the receiver reuses its
 
 Only a driver names `Mundus`. `modulator.exsc` and `receptor.exsc` declare no
 `poscit` and take no capability, so they are pure in spec §4.1 rule 6's sense:
-they may compute, and they may not observe or touch the host. The compiled
-transmitter's syscalls are `write` and `exit_group` and nothing else; the
-receiver's add `read`; the test harness audits each binary for exactly that.
+they may compute, and they may not observe or touch the host. Every compiled
+driver's syscalls are `read`, `write` and `exit_group` and nothing else — the
+transmitter's and the loopback's included, although neither reads, because
+the runtime prelude gates its routines per capability atom and `ambitus`
+carries both streams' routines (`docs/design/runtime.md` 2.6). The test
+harness audits each binary against `{Mundus, ambitus}` and asserts exactly
+that set.
 
 ## What it does
 
@@ -109,17 +113,45 @@ The default profile (HydraMesh `hydramodem/src/hydra_profile.c`): 48 kHz,
    little-endian samples.
 
 What it does **not** use, because the language has not settled them: bitwise
-and or or, division, remainder, signed arithmetic, array literals. None of
-them is needed. A remainder is a counter walked and wrapped; a bit is read
-by comparing with `0x80` and shifting; a negative sample is `0 -% v` in
-`u16`; the sine table is a `discerne`. `modulator.exsc`'s comments say where
-each piece comes from in HydraModem's source.
+and or or, division, remainder, signed arithmetic. None of them is needed. A
+remainder is a counter walked and wrapped; a bit is read by comparing with
+`0x80` and shifting; a negative sample is `0 -% v` in `u16`.
+`modulator.exsc`'s comments say where each piece comes from in HydraModem's
+source.
 
-Array literals have since settled (spec §8.6) and the receiver is written in
-them; the transmitter is **not** changed to match, because its certificate is
-byte identity and a table rewritten is a table to re-certify. That is milestone
-M5 in `docs/design/receptor.md` section 9, and `tests/programs/acies/` already
-tabulates `sinus` as a literal and compares all 48 entries with the function.
+The sine table was a nine-arm `discerne` until array literals settled (spec
+§8.6, landed for the receiver) and milestone M5 rewrote it as the 48 values
+written down once — `tabula_sinus()`, a function returning the literal,
+because a module-level `firma` array does not lower yet (`docs/design/
+modem.md` D4). A table rewritten is a table to re-certify: the three WAV
+certificates and the 137-word basis were re-run and are byte-identical
+before and after, and `tests/programs/acies/` still tabulates the function
+and compares all 48 entries.
+
+## The array literals in the unit
+
+Every buffer and table in these files is one of spec §8.6's two forms; there
+is no other way to make an `acies` here. Listed so a reader can see what the
+feature carries:
+
+| file | literal | what it is |
+|---|---|---|
+| `modulator.exsc` | 48 `u16` values, list form | the sine table `T[m]`, two's-complement, the quarter-wave fold applied where it is written (M5) |
+| `receptor.exsc` | 48 `i64` values, list form, negatives spelled `-17` … `-127` | the Q7 oscillator table `T7[m]`; thirteen values and two identities, written out |
+| `receptor.exsc` | `[b0, b1]` | two bytes viewed as an `Exemplum`, the sample's sign read through the transmitter's own struct |
+| `receptor.exsc` | `[0; 40]`, `[0; 316]` (twice), `[0; 158]`, `[0; 19]` | the 40 known symbols; the soft bits before and after the deinterleaver's walk; the 158 decoded bits; the 19 bytes whose residue must be 0 |
+| `receptor.exsc` | `[-4611686018427387904; 64]` (twice) | the path metrics, −2⁶² as the reference's −1e30; `[0; 10112]`, the one-bit-per-state decision buffer, 158 × 64 |
+| `recipe.exsc` | `[0; 44]`, `[0; 20481]` (four) | the header bytes before they are read as a `Caput`; the four prefix sums, index 0 holding 0 |
+| `circuitus.exsc` | `[0; 19008]`, `[0; 20481]` (four) | one frame's synthesised samples; the same four prefix sums |
+
+The repeat form unrolls at eight elements or fewer and is a loop above that,
+so `[0; 20481]` is a dozen instructions; a large local array is bounded by
+nothing but the stack (`recipe.exsc`'s `initium` frame is 661,344 bytes,
+`circuitus.exsc`'s `circui` 812,224 — 9.7 % of the 8 MiB default — and
+nothing checks it). The four prefix sums are four locals rather than one
+struct because at R2 a struct literal with a 164 KB array field made the
+compiler exhaust its arena (`docs/design/receptor.md` finding 20); the
+emitter has since been fixed (`9ede8bf`), and the receiver keeps the four.
 
 ## How it is checked
 
@@ -205,8 +237,10 @@ the receiver in the same process, and checked byte for byte. Its output is 140
 zero bytes, so a failing word names itself by its offset.
 
 `tx | rx` is what that last test *is*, with the pipe replaced by an array. It
-takes 1.2 s; one WAV decode takes 25 ms, of which most is 38,060 one-byte
-`read` syscalls.
+takes 1.4 s (three runs, 1.38–1.41 s, at `9ede8bf` on the machine that wrote
+this); one WAV decode takes 26 ms (five runs, all 0.026 s), of which about
+10 ms is system time for 38,060 one-byte `read` syscalls. A WAV render by the
+transmitter, for comparison, is 20 ms.
 
 What the certificate **cannot** see is stated rather than hidden:
 `docs/design/receptor.md` section 6 names four mutants that decode anyway — a
@@ -217,3 +251,9 @@ decode, which is the result the design predicts; the five that must fail (the
 generator taps swapped, the interleaver's stride, the sync word complemented,
 both oscillators on one tone, the threshold raised past 40) all fail, each in
 the predicted way.
+
+What is **not** done is robustness — milestone R3 in `receptor.md`: no
+noise-, clock- or frequency-impaired WAV has been fed to this receiver, the
+reference's timing loop has no counterpart here, and the vendored impaired
+set with HydraModem's own verdicts (`vendor/hydramodem-rx/`) does not exist
+in this tree. The receiver above is certified on clean input only.

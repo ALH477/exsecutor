@@ -22,9 +22,14 @@ itself and never reaches `OUT`.
 `prelude.asm` and `prelude_data.asm` assemble and run, under twelve fixtures
 (below). `interface.inc` part A — the layout constants — is checked against
 the blob every time both are assembled together. `interface.inc` part B — the
-serialized `Decl` rows — is `[UNTESTED]`: `checker/resolve/` does not exist,
-nothing has consumed it, and when the checker lands its own `Decl` record
-wins.
+serialized `Decl` rows, `EXS_IFACE_DECL_COUNT = 11` since `8524028` added
+`Lector`, `ab_introitu` and `lege_octeto` as rows 8–10 (rows are appended,
+never inserted) — is consumed by `checker/types/prim.inc` and
+`lower/lower.inc`: every prelude call a program makes resolves through it.
+This paragraph said part B was `[UNTESTED]` because `checker/resolve/` did
+not exist; the checker exists and the hello world's `Scriptor.ad_exitum`
+and the receiver's `Lector.ab_introitu` are typed and lowered from these
+rows.
 
 ## What a wrapper must define before including the blob
 
@@ -206,7 +211,13 @@ Measured, not asserted — `tools/syscall-audit.sh` on each fixture binary:
 
 The gating is therefore checked in both directions: `scribe`'s `write` and
 `lege_octeto`'s `read` disappear when `ambitus` is 0, and `mmap`/`munmap`
-appear only when `alloc` is 1. That is runtime.md H2 kept per atom. The
+appear only when `alloc` is 1. The gate is **per atom, not per call**: a
+compiled program whose closure holds `ambitus` carries both writers and the
+reader whether or not it calls them, so since `8524028` every such binary —
+the hello world, the entry-23 certificate, every `hydramodem_*` transmitter
+— audits to `read`, `write` and `exit_group`, and `tests/run.sh` asserts
+exactly that set (`docs/design/runtime.md` 2.6; `receptor.md` finding 17).
+What the audit proves is a property of the closure, which is unchanged. That is runtime.md H2 kept per atom. The
 `ambitus` half is no longer only measured: `prelude_sine_ambitus` assembles
 the blob with the atom at 0 and fails to assemble if any `ambitus` routine or
 record is still defined. (The audit alone cannot catch that in the unit
@@ -229,7 +240,7 @@ resolve is a *failure*, not a skip.
 
 ## The fixtures
 
-Eleven, all under `tests/unit/`, all discovered and run by `tests/run.sh` from
+Twelve, all under `tests/unit/`, all discovered and run by `tests/run.sh` from
 their `; TEST:` directive. Each assembles the blob **alone**, with a
 hand-written `bfausr_initium` in place of an emitted one — the way
 `emit.inc` was proven against hand-written IR before a lowering existed.
@@ -265,7 +276,7 @@ or one at a time:
 ```sh
 INCLUDE=vendor/fasmg-x86 fasmg tests/unit/prelude_scribe.asm /tmp/scribe
 chmod +x /tmp/scribe && /tmp/scribe; echo $?          # 101
-tools/syscall-audit.sh /tmp/scribe                    # write, write, exit_group
+tools/syscall-audit.sh /tmp/scribe                    # exit_group, write x3, read: the whole ambitus atom
 ```
 
 The `abortus N` line is on fd 2; `tests/run.sh` compares an exit status and

@@ -3,11 +3,14 @@
 Four phases, run by `tests/run.sh` (no arguments; this is what `make test`
 calls):
 
-1. **`tests/unit/`** — real, running today. `.asm` fixtures assembled
-   directly with `fasmg`, independent of the Exsecutor compiler. Right now
-   the only thing that can actually be tested in this repo is the
-   toolchain itself (`fasmg` + `vendor/fasmg-x86`) and `tools/syscall-audit.sh`,
-   so that is what these fixtures exercise.
+1. **`tests/unit/`** — `.asm` fixtures assembled directly with `fasmg`,
+   each `include`-ing the compiler modules it exercises (or none: the four
+   harness fixtures below). 166 of them (`UNIT_FIXTURE_FLOOR`), covering
+   the macro dialect, every `rt/` module, the Unicode consumers, `diag/`,
+   the lexer, the CST, the AST, the checker, the lowering, the backend and
+   its verifier, the driver, and the prelude. This item once said the only
+   thing testable here was the toolchain itself; that was true for the first
+   four fixtures.
 2. **`tests/conformance/`** — spec §14's 24-entry suite. **All 24 cases
    are written; 10 run.** `exsc` now exists, so the entries the lexer can
    decide are checked against a real diagnostic: 3 (bidi in a comment,
@@ -68,11 +71,21 @@ calls):
    whole fasmg program `bfa_emit_program` makes of it, with the hello
    world's closure `{Mundus, ambitus}` and MXCSR `0x1F80`. The phase
    assembles that, runs it, and checks the exit status or abort and stdout.
-   48 fixtures (`IR_FIXTURE_FLOOR`).
+   49 fixtures (`IR_FIXTURE_FLOOR`); the newest, `copy_magna.ir`, moves
+   100,003 bytes through the emitter's loop form of `copy` (above 128 bytes)
+   and checks five positions, one of them past the end.
 4. **`tests/programs/`** — Exsecutor sources, RUN. Each directory is one
    program: `exsc aedifica --hospes x86_64-linux SRC... -o OUT`, `fasmg OUT
-   BIN`, run, check. 21 programs run (`PROGRAM_FIXTURE_FLOOR`); none is
+   BIN`, run, check. 22 programs run (`PROGRAM_FIXTURE_FLOOR`); none is
    deferred (the `status=deferred` mechanism below stays for the next one).
+   Beside the hello world and the arithmetic, loop, `discerne`, cast and
+   struct programs: `lector/` and `lector_numerus/` (the reader, below),
+   `acies/` (array literals at every admitted element type, with the
+   transmitter's sine table tabulated and compared entry by entry against
+   the function), and `copia_magna/` (a struct literal with an
+   `acies<i64, 18000>` field — the exact shape that used to exhaust the
+   compiler's arena with SIGILL and no message, `docs/design/receptor.md`
+   finding 20, and now compiles and exits 0).
    Four are HydraModem's transmitter, `examples/hydramodem/`: three WAVs
    (`hydramodem_{loopback,exemplum,vacuum}/`) and the 137-word symbol-stream
    basis (`hydramodem_basis/`, `docs/design/modem.md` D9), each `cmp`ed
@@ -88,8 +101,10 @@ calls):
    loopback: 140 words out through the transmitter's `sona` and back through
    the receiver in one process, one byte a word, 140 zeros expected, so a
    failing word names itself by its offset. It is the slowest directory in
-   the suite at 1.2 s; one WAV decode is 25 ms, most of it 38,060 one-byte
-   `read` syscalls.
+   the suite at 1.4 s (`9ede8bf`, three runs 1.38–1.41 s); one WAV decode is
+   26 ms, about 10 ms of it system time for 38,060 one-byte `read`
+   syscalls. Robustness — impaired input, a timing loop — is R3 and is not
+   in this suite.
 
 Phases 3 and 4 are the first in this script to execute code a compiler
 *emitted*. Until them a `tests/unit/` fixture could only compare emitted
@@ -104,11 +119,13 @@ a shipped artifact, and is checked every time it is built instead.
 
 ## What is deliberately absent
 
-- **`tests/conformance/` entries.** See above. When `exsc` exists, each of
-  the 24 rows in spec §14 needs a source fixture plus an expectation (a
-  diagnostic code for 15 of them; byte-identical output under varied
-  conditions for #16, which is exactly what `tools/reproduce.sh` already
-  checks; byte-identical output cross-host for #17).
+- **`tests/conformance/` entries that run.** See above: all 24 are written,
+  10 run, 14 are `DEFERRED` on a named component. (This item was written
+  when `exsc` did not exist and said what each of the 24 rows would need: a
+  source fixture plus an expectation — a diagnostic code for most; byte-
+  identical output under varied conditions for #16, which is what
+  `tools/reproduce.sh` checks on the compiler itself; byte-identical output
+  cross-host for #17.)
 
   **§14's source-policy coverage gap is closed.** It once exercised only
   three of §13's six source-policy codes; `EXS-E0101`, `EXS-E0104` and
@@ -132,9 +149,10 @@ a shipped artifact, and is checked every time it is built instead.
   abort, not a compile failure. Entry 1 is a capability absence with no code
   assigned. A runner that assumes one shape will quietly mis-handle four.
 
-- **Performance/benchmark tests.** Nothing to benchmark yet. CLAUDE.md:
-  "Never report a benchmark you did not run" — there will be no benchmark
-  fixtures here until there is something real to measure.
+- **Performance/benchmark tests.** None. CLAUDE.md: "Never report a
+  benchmark you did not run" — the timings quoted in this file and the
+  design documents are one-off measurements attributed to a commit, not
+  fixtures, and nothing fails when they move.
 - **aarch64/riscv64 fixtures.** The compiler is x86-64 assembly (spec
   §18); those hosts are full rewrites, not a fixture-file difference.
 - **LSP/formatter tests.** Both deferred per spec §18.2.
@@ -165,11 +183,11 @@ stuck suite: `timeout` exits 124, which matches no fixture's
 `expect-exit=`. It went in with the reader, whose loop ends only when the
 end-of-input sentinel arrives.
 
-Current fixtures: see `UNIT_FIXTURE_FLOOR` in `tests/run.sh` (124 as of
-b9c0abc; this sentence said 46 for a long time), covering the macro dialect,
-every `rt/` module, the Unicode consumers, `diag/`, the lexer, the CST, the
-AST, the driver, the backend and its verifier, the prelude, and the
-checker. The four below are
+Current fixtures: see `UNIT_FIXTURE_FLOOR` in `tests/run.sh` (166 as of
+9ede8bf; 124 at b9c0abc, and this sentence said 46 for a long time),
+covering the macro dialect, every `rt/` module, the Unicode consumers,
+`diag/`, the lexer, the CST, the AST, the driver, the backend and its
+verifier, the prelude, the checker and the lowering. The four below are
 the originals and are listed because each one proves something about the
 *harness* rather than about a compiler module — including two negative cases
 that prove the audit catches what it claims to.
@@ -275,12 +293,13 @@ directory with its `TEST` file, then raise `IR_FIXTURE_FLOOR` or
 `PROGRAM_FIXTURE_FLOOR` in `tests/run.sh` in the same commit, and show it is
 not vacuous (CONTRIBUTING.md: break the thing, watch it fail, restore).
 
-**A new `tests/conformance/` entry (once `exsc` exists):** add the source
-fixture under `tests/conformance/`, then extend
-`run_conformance_tests()` in `tests/run.sh` to compile it and check the
-expected diagnostic code (or, for entries 16–17, the expected
-byte-identical-output property) — that function is currently a stub
-specifically waiting for this.
+**A new `tests/conformance/` entry:** a spec amendment to §14 first
+(entries are cited by number; append, never renumber), then the source
+fixture under `tests/conformance/` with its `// TEST: entry=N shape=…
+expect-code=… status=run` line, and raise `fixture_floor` in
+`run_conformance_tests()` in the same commit. Un-deferring an existing
+entry is turning `status=deferred needs=…` into `status=run` once the
+named component exists, and seeing it emit exactly its code.
 
 ## A limitation that no longer holds
 
