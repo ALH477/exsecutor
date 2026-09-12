@@ -253,7 +253,7 @@ run_conformance_tests() {
   # anywhere in the fixture, `//`-commented, space-separated key=value
   # tokens, mirroring directive_of's own format one section up:
   #
-  #   // TEST: entry=<1-24> shape=<code|bytes|cert|abort|nocap>
+  #   // TEST: entry=<1-25> shape=<code|bytes|cert|abort|nocap>
   #            [expect-code=EXS-E0XXX] status=<run|deferred> [needs=<token>]
   #            [sources=A,B]
   #
@@ -367,7 +367,7 @@ run_conformance_tests() {
   #                    floor, something silently stopped working.
   echo "== conformance suite (tests/conformance/, spec §14) =="
   local dir="$REPO_ROOT/tests/conformance"
-  local fixture_floor=24
+  local fixture_floor=25
   local run_floor=10
 
   if [[ ! -d "$dir" ]]; then
@@ -450,8 +450,8 @@ run_conformance_tests() {
       bad "$name: directive missing entry=/shape=/status= (got: '$directive')"
       continue
     fi
-    if [[ ! "$entry" =~ ^[0-9]+$ || "$entry" -lt 1 || "$entry" -gt 24 ]]; then
-      bad "$name: entry='$entry' is not a §14 entry number (1-24)"
+    if [[ ! "$entry" =~ ^[0-9]+$ || "$entry" -lt 1 || "$entry" -gt 25 ]]; then
+      bad "$name: entry='$entry' is not a §14 entry number (1-25)"
       continue
     fi
     seen_entries[$entry]=$(( ${seen_entries[$entry]:-0} + 1 ))

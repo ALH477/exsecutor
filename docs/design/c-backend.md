@@ -1387,7 +1387,17 @@ Numbered; each names the document and the sentence.
 
 18. **The `mips64-none-o64` row is not two constants, and finding 6's
     closing sentence ("it is two `mov ecx, 64`s away, not a redesign")
-    over-promised.** C3 looked at what the change actually is, and stopped
+    over-promised.** *(Superseded in part by **ADR 0015**, 2026-09-12, which
+    measured two of the four costs below and found them wrong: the
+    `BfaModule` ptr-width field is not needed at all, because nothing but
+    the reference backend reads that width — so `ir.inc` is not entered;
+    and a runnable certificate does not need a cross toolchain in the
+    closure, because the clang already there cross-compiles to big-endian
+    MIPS and `lld`/`qemu-user` are cached. The record below stands as
+    written and is not rewritten; read it with ADR 0015 beside it. What
+    this finding never names, and what ADR 0015 says is the real substance
+    of C4, is that the row makes `mensura` 32 for the first time.)*
+    C3 looked at what the change actually is, and stopped
     rather than half-doing it:
     - `lower/ty.inc`'s two `mov ecx, 64` (`.ref`, `.refc`) are indeed two
       constants, and `mensura` is indeed already parameterised — finding 6

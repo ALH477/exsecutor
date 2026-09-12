@@ -1,0 +1,38 @@
+// §14 entry 25 -- `exsc aedifica --hospes mips64-none-o64 --emitte c` over
+// the StreamDB reader, cross-compiled and RUN big-endian with 32-bit
+// addresses -> stdout byte-identical to the reference backend's over
+// `vendor/streamdb-v3/`. SHAPE is byte-identical-output, like 16 and 17.
+//
+// HOW IT DIFFERS FROM ENTRY 17, which is the other `--hospes` entry: 17
+// compares the cross-compiled *text* against what a native build produces,
+// and 25 compares what the cross-compiled artifact *does*. A target whose
+// emitted text is right and whose semantics are wrong passes 17 and fails
+// 25. §9.5 and ADR 0015 decision 5.
+//
+// WHAT MAKES THIS ROW DIFFERENT FROM EVERY OTHER: its `mensura` is 32, so
+// `+` traps at 2^32 rather than 2^64 (ADR 0015 decision 1 and 3). That is
+// the target's semantics and not a backend disagreement, and it is the
+// half of this entry that the emulated run does NOT by itself certify --
+// the StreamDB reader was written narrow-safe, keeping file offsets in
+// `u64` and narrowing to `mensura` only after a bounds test, so it behaves
+// identically at either width. What certifies the width is a checker
+// fixture over `chk_set_target(..., 32)` plus the assertion that the two
+// rows' emitted text differs by more than the prologue's one
+// `_Static_assert` line. A green run here must not be read as covering it.
+//
+// The source under test is not this file. Like entry 17, the property is
+// about the target rather than about any source property, so this file is
+// deliberately an ordinary, already-valid module; the certificate proper
+// runs the StreamDB reader (`examples/streamdb/`) against the same
+// vendored corpus entry 23's method produced.
+//
+// DEFERRED: `--hospes mips64-none-o64` is refused by name by this build
+// (`driver/run.inc`), and the cross phase that would run it does not exist
+// yet. Both are C4 -- `docs/design/c-backend.md`, ADR 0015. `cross_compile`
+// is the deferral token, shared with entry 17.
+
+publica functio saluta() -> textus {
+    redde "Ave, mundus."
+}
+
+// TEST: entry=25 shape=bytes status=deferred needs=backend,cross_compile

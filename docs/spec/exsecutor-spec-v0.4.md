@@ -2122,10 +2122,17 @@ Nix's trichotomy as language-level concepts: `buildPlatform`, `hostPlatform`, `t
 **`exsc` with no `--hospes` is an error.** No default-to-build-platform. This is not a cross-compilation mode — it falls directly out of "target is a capability, not ambient state," and it is the most Nix-aligned decision in the document. Native compilation is the case where `build == host`, spelled out.
 
 **The value set is a closed table**, one row per value, and a value is the
-same word §10.1's `hospites` list uses. A row fixes the width of `mensura`
-and therefore of every address — the one fact the C backend's emitted text
-must assert (`_Static_assert(sizeof(void *) == …)`) rather than leave to
-the C compiler. A row fixes **nothing about byte order**: the reference
+same word §10.1's `hospites` list uses. A row fixes the width of `mensura`,
+and `mensura` is the target's `usize`, so the row fixes the width of an
+address *as the program sees it* — the one fact the C backend's emitted
+text must assert (`_Static_assert(sizeof(void *) == …)`) rather than leave
+to the C compiler. It does **not** fix the width of the IR's `ptr`, `ref`
+or `refc`, which are interned at 64 on every row and are not a target
+fact: no consumer reads that number except the reference backend, which
+refuses any row but its own. (This sentence previously said the row fixed
+`mensura` "and therefore of every address", which read as a claim about
+the IR and cost `docs/design/c-backend.md` finding 18 an item it did not
+need. ADR 0015 decision 2.) A row fixes **nothing about byte order**: the reference
 backend's host is little-endian by construction, and the C backend's
 emitted text reads every `nativus` place through helpers the C compiler
 selects from its own target's order and every `maior`/`minor` place byte
@@ -2146,6 +2153,17 @@ invocation, not the source). A well-formed module whose declared `numeri`
 (§5.4) the named target cannot honour is `EXS-E0701`. `[UNTESTED]` — the
 table beyond `x86_64-linux` is `docs/design/c-backend.md` D2 and nothing
 implements it.
+
+The `mips64-none-o64` row is scheduled as C4 and decided by ADR 0015. Two
+things about it are settled and worth stating where the table is, because
+both were got wrong once: its `mensura` is 32, which makes `+` trap at
+2^32 on that row and is the target's semantics rather than a backend
+disagreement; and the emitted text's independence from the host's byte
+order — asserted in the paragraph above since this section was written —
+was **measured** on 2026-09-12, big-endian MIPS-III under emulation,
+byte-identical to the reference backend over `vendor/streamdb-v3/`. That
+measurement used a 64-bit `mensura` and so says nothing about the 32-bit
+half. `[UNTESTED]`
 
 ## 9.6 The two-hash invariant
 
@@ -2443,9 +2461,9 @@ recoverable and over-committing is not. `0204`-`0209`, `0211`-`0219` and
 
 # 14. Conformance suite
 
-Ships with v1. Twenty of the twenty-four entries must **fail to compile**.
-The other four must compile and are judged by what they
-produce: 15 by a runtime abort, 16 and 17 by byte-identical output, and 23 by
+Ships with v1. Twenty of the twenty-five entries must **fail to compile**.
+The other five must compile and are judged by what they
+produce: 15 by a runtime abort, 16, 17 and 25 by byte-identical output, and 23 by
 byte-identical agreement with an external certificate. `tests/run.sh`'s five
 fixture shapes — `code`, `nocap`, `abort`, `bytes`, `cert` — are exactly this
 partition. (This sentence previously excepted only 16 and 17, which was false
@@ -2476,6 +2494,7 @@ for 15 since it was written and for 23 since it was added;
 22. `u4:maior` — byte order on a sub-byte field → `EXS-E0201`
 23. `DeModFrame` encode/decode → byte-identical to all 246 vectors of `vendor/hydramesh-wire/golden_vectors.json`
 24. Implementation whose mark exceeds the trait's declared ceiling, reached only through a generic → `EXS-E0510`
+25. `exsc aedifica --hospes mips64-none-o64 --emitte c` over the StreamDB reader, cross-compiled and run big-endian with 32-bit addresses → stdout byte-identical to the reference backend's over `vendor/streamdb-v3/`
 
 Entries 18-20 close a gap: §8.1 defines six source-policy codes and only three
 of them (`E0102`, `E0103`, `E0105`) had an entry, while `E0101`, `E0104` and
@@ -2495,6 +2514,18 @@ whose passing means something to somebody else. They are appended
 rather than interleaved because existing entries are referenced by number
 elsewhere in the tree, and renumbering a referenced list is the same mistake as
 renumbering a code.
+
+Entry 25 is appended under that same rule, and it is the second entry that
+checks a `--hospes` row rather than a source property. It differs from 17 in
+what it compares: 17 asks whether cross-compiling produces the same *text* a
+native build produces, while 25 asks whether the cross-compiled artifact
+*behaves* the same — so 17 would pass on a target whose emitted text is
+correct and whose semantics are not, and 25 would not. It is the only entry
+whose subject is a target with a `mensura` narrower than 64, which is what
+makes `+` trap at 2^32 there (§9.5, ADR 0015). The reader it certifies is the
+one entry 23's method produced, so 25 leans on `vendor/streamdb-v3/` the way
+23 leans on `vendor/hydramesh-wire/`, and the two together are what a second
+backend and a second target are worth.
 
 ---
 

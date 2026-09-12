@@ -164,9 +164,11 @@ a shipped artifact, and is checked every time it is built instead.
   from reading `entry23/codex.exsc`, not measured; the example frame in the
   stream's third section is one non-basis spot check of it.
 
-  **24 entries, five rule shapes.** Most are "rejects with exactly code
-  EXS-Exxxx". Entries 16 and 17 instead require byte-identical output across
-  conditions and hosts. Entry 23 is the certificate. Entry 15 is a runtime
+  **25 entries, five rule shapes.** Most are "rejects with exactly code
+  EXS-Exxxx". Entries 16, 17 and 25 instead require byte-identical output
+  across conditions and hosts — 17 compares the cross-compiled text, 25
+  compares what the cross-compiled artifact does. Entry 23 is the
+  certificate. Entry 15 is a runtime
   abort, not a compile failure. Entry 1 is a capability absence with no code
   assigned. A runner that assumes one shape will quietly mis-handle four.
 
