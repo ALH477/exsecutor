@@ -240,7 +240,7 @@ are byte-exact exceptions and why).
      Every figure is from running the named command at the named commit.
      Refresh it here and nowhere else. -->
 
-## Status as of `5417576` (2026-09-12)
+## Status as of `0640e78` (2026-09-12)
 
 Every figure here was produced by running the named command at this commit, in
 the `nix develop` shell, on `x86_64-linux`.
