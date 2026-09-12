@@ -1,18 +1,18 @@
 # tests/
 
-Four phases, run by `tests/run.sh` (no arguments; this is what `make test`
+Six phases, run by `tests/run.sh` (no arguments; this is what `make test`
 calls):
 
 1. **`tests/unit/`** — `.asm` fixtures assembled directly with `fasmg`,
    each `include`-ing the compiler modules it exercises (or none: the four
-   harness fixtures below). 166 of them (`UNIT_FIXTURE_FLOOR`), covering
+   harness fixtures below). 170 of them (`UNIT_FIXTURE_FLOOR`), covering
    the macro dialect, every `rt/` module, the Unicode consumers, `diag/`,
    the lexer, the CST, the AST, the checker, the lowering, the backend and
    its verifier, the driver, and the prelude. This item once said the only
    thing testable here was the toolchain itself; that was true for the first
    four fixtures.
-2. **`tests/conformance/`** — spec §14's 24-entry suite. **All 24 cases
-   are written; 10 run.** `exsc` now exists, so the entries the lexer can
+2. **`tests/conformance/`** — spec §14's 25-entry suite. **All 25 cases
+   are written; 11 run.** `exsc` now exists, so the entries the lexer can
    decide are checked against a real diagnostic: 3 (bidi in a comment,
    `EXS-E0103`), 5 (non-NFC, `E0102`), 18 (BOM, `E0101`), 19 (mixed-script,
    `E0104`), 20 (CRLF, `E0106`). The wire-codec branch's `@transitus`
@@ -50,14 +50,18 @@ calls):
    the parser — and was fixed in place; both `xа` occurrences still raise
    `E0104`, which is one element of the set, not two.
 
+   **Entry 25 runs**, and phase 6 below is what carries it: the N64 row's
+   emitted unit, cross-compiled and executed big-endian with 32-bit
+   addresses, against the reference backend.
+
    The other 14 report **`DEFERRED`** with what they wait on —
    `type_checker`, `capability_checker`, `import_closure`, `ffi_checker`,
    `lexicon_checker`, `backend`, `runtime`, `cross_compile`,
    `parser_error_recovery` — and are **never counted as passing**. A suite
-   reporting 24/24 while running 10 would be worse than no suite.
+   reporting 25/25 while running 11 would be worse than no suite.
 
    Five rule shapes, and a runner assuming one will quietly mishandle four:
-   reject-with-exact-code (most), byte-identical output (16, 17), external
+   reject-with-exact-code (most), byte-identical output (16, 17, 25), external
    certificate (23), runtime abort (15), capability absence with no code
    assigned (1).
 
@@ -127,7 +131,38 @@ calls):
    directory set is a rounding error beside `receptio_circuitus/`, which is
    why the reader reads one byte per syscall and has no buffer.
 
-Phases 3 and 4 are the first in this script to execute code a compiler
+5. **the differential phase** — ADR 0012. Every eligible `tests/ir/` fixture
+   and `tests/programs/` directory is also emitted as C (`--emitte c`) and
+   built four ways, gcc and clang at `-O0` and `-O2`, all under
+   UndefinedBehaviorSanitizer, and each build must match the reference on
+   the same three observables. Eligibility is opt-OUT, declared per
+   directory with `c-differentia=` and never matched by name in the harness.
+   `DIFFERENTIAL_BUILD_FLOOR`, `DIFFERENTIAL_PROGRAM_FLOOR` and
+   `DIFFERENTIAL_PROGRAM_BUILD_FLOOR`.
+
+6. **the cross phase** — §14 entry 25, ADR 0015. Each `cross=yes` program
+   directory is emitted for `--hospes mips64-none-o64`, cross-compiled with
+   clang `-mabi=n32 -march=mips3` (big-endian MIPS-III, 32-bit addresses,
+   64-bit registers), linked with `ld.lld` against
+   `tests/c/exsrt_shim_mips.c`, and RUN under `qemu-mipsn32` — held to the
+   reference backend's stdout bytes, exit status and trap-or-not by the same
+   `check_run`. Six directories (`CROSS_PROGRAM_FLOOR`): the four StreamDB
+   containers, `saluta`, and `forma`, which is the one that exercises
+   `@transitus` byte order on a host whose order is the opposite of the
+   reference's.
+
+   Opt-IN, not opt-out, and that asymmetry is deliberate: a host build is
+   cheap, an emulated one is 10–50×. The phase's floors are its own and are
+   **not** folded into the differential numbers — an emulated cross run of a
+   32-bit-`mensura` unit is a different claim from a host build of a 64-bit
+   one, and one number reporting both would name neither.
+
+   It is the only phase that runs anything big-endian. Spec §9.5 has claimed
+   since it was written that the emitted text assumes nothing about the
+   host's byte order; every other target here is little-endian, so until
+   this phase existed that claim had never been executed.
+
+Phases 3, 4 and 6 are the first in this script to execute code a compiler
 *emitted*. Until them a `tests/unit/` fixture could only compare emitted
 text — it cannot `execve` — and the running half was done by hand and
 reported (`bfa_emit_tier1.asm`'s header says so). Every binary either phase
@@ -206,7 +241,7 @@ stuck suite: `timeout` exits 124, which matches no fixture's
 `expect-exit=`. It went in with the reader, whose loop ends only when the
 end-of-input sentinel arrives.
 
-Current fixtures: see `UNIT_FIXTURE_FLOOR` in `tests/run.sh` (166 as of
+Current fixtures: see `UNIT_FIXTURE_FLOOR` in `tests/run.sh` (170 as of
 9ede8bf; 124 at b9c0abc, and this sentence said 46 for a long time),
 covering the macro dialect, every `rt/` module, the Unicode consumers,
 `diag/`, the lexer, the CST, the AST, the driver, the backend and its

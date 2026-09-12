@@ -362,7 +362,7 @@ no mask anywhere in the header, index or record parsing.
 
 **What runs:**
 
-- `make all` → `build/exsc`, **453,732 bytes**, freestanding, no libc.
+- `make all` → `build/exsc`, **453,972 bytes**, freestanding, no libc.
 - **All three stages of §16 reach end to end.** Stage 1: the §8.1 source gate,
   the lexer, the lossless CST, the typed AST. Stage 2: name resolution, types,
   capability rows, packed layout — the lexicon pass is built and **not
@@ -379,20 +379,27 @@ no mask anywhere in the header, index or record parsing.
   corpus — `docs/design/diagnostics-review.md`, final section, and
   `tests/diagnostics/`. Stage 2's (`sub` resolution needing a search) does not
   fire, argued first in `docs/design/checker.md` §2.1.
-- `tests/run.sh`: **1351 pass, 0 fail** in 3 m 46 s — 166 unit fixtures; 50 IR
+- `tests/run.sh`: **1378 pass, 0 fail** — 170 unit fixtures; 50 IR
   fixtures and 96 Exsecutor programs, each compiled, assembled, **run**, and
   syscall-audited (70 of those programs are the receiver's impaired vectors);
-  and a **differential phase**: 156 IR builds and 104 program builds in which
+  a **differential phase**: 156 IR builds and 104 program builds in which
   the C backend's output must agree with the reference's on stdout bytes, exit
   status and trap-or-not, across gcc and clang at `-O0` and `-O2`, every one
   under `-fsanitize=undefined -fno-sanitize-recover=all`. They agree
-  everywhere; zero sanitizer reports;
-  10 of 24 conformance entries running, each required to emit exactly its
-  expected code and nothing else (the other 14 report `DEFERRED` and are never
-  counted as passing); 0 program directories deferred.
+  everywhere; zero sanitizer reports. And a **cross phase**: six of those
+  directories are also emitted for `--hospes mips64-none-o64`,
+  cross-compiled to big-endian MIPS-III with 32-bit addresses, and **run
+  under emulation** against the same three observables — the first
+  big-endian execution of anything this compiler produces, and the thing
+  that finally tests §9.5's standing claim that the emitted text assumes
+  nothing about byte order. 11 of 25 conformance entries run, each required
+  to emit exactly its expected code and nothing else (the other 14 report
+  `DEFERRED` and are never counted as passing); 0 program directories
+  deferred.
 - `make audit`: PASS — the nine allowlisted syscalls and nothing else, on the
-  real binary. `make reproduce`: PASS, byte-identical (426,389 bytes) across
-  directory, `TZ`, locale, `SOURCE_DATE_EPOCH`, umask and hostname.
+  real binary. `make reproduce`: PASS on four artifacts — the compiler
+  itself and three emitted C units, one of them the N64 row's — byte-identical
+  across directory, `TZ`, locale, `SOURCE_DATE_EPOCH`, umask and hostname.
   `tools/spec-check.sh`: PASS, 49 error codes in sync with §13.
   `tools/syscall-audit.sh --self-test`: PASS, including the prelude's own
   reader binary accepted under `Mundus,ambitus` and rejected under `Mundus`.
@@ -419,11 +426,15 @@ finding 9). The C backend exists in **library mode only** — a translation
 unit of pure functions, no entry point, no runtime, no ARC — and refuses 23
 of the 60 IR opcodes by name, every one of them an opcode the reference
 backend does not lower either (floats, `div`/`rem`, the overflow predicates,
-`callind`, the reductions). A 32-bit-pointer `--hospes` row, which the N64
-needs, is **not** there: `ptr` is interned at 64 bits in a file the C backend
-reuses unchanged, and the reference emitter would silently miscompile such a
-module rather than refuse it (`docs/design/c-backend.md` finding 18). Neither
-does the `ego` reader, the module system, the LSP, or `exsc emenda`. `EXS-E0105`
+`callind`, the reductions). The N64 row, `--hospes mips64-none-o64`, **is**
+there and runs — it is the only row whose `mensura` is 32, so `+` traps at
+2^32 on it, and its emitted unit is cross-compiled and executed big-endian
+with 32-bit addresses against the reference backend on every run of the
+suite (§14 entry 25, ADR 0015). What is **not** there is the o64 ABI itself,
+which the certificate runs the n32 ABI as a proxy for, and any ROM: the
+reader's live stack frame is about 140 KB against libultra's 8–16 KB thread
+stacks, so linking it into Kiln needs a stack budget nobody has drawn.
+Neither does the `ego` reader, the module system, the LSP, or `exsc emenda`. `EXS-E0105`
 (confusables) has no hermetic data source. The emitted program's capability
 mask is an over-approximation with the exact fix recorded beside it, and,
 separately, every `ambitus` binary carries `read` whether it reads or not

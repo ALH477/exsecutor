@@ -1214,7 +1214,7 @@ C1 is done; C2's harness landed with it. What each says now:
 | **C1** skeleton and prologue measurements — **DONE** | (1) the measurement table of D3, filled in, **first**; (2) `compiler/x86_64/backend_c/{emit_c,program_c}.inc` — the 37 lowerings, the 23 refusals by name, the prologue, mangling; (3) `--emitte c`, `-o` required, `--hospes` rows, `CHK_F_PROGRAM` not set; (4) `tests/unit/bfc_emit_*.asm` pinning emitted text per opcode family, `bfc_mangle.asm`, `driver_emitte_c*.asm` for D2's three-way split | D2, D3 (as measured), D4 rows (text), D5 mangling, D1 (the unit compiles) | the hello world's IR through `emit_c`, compiled by `gcc -std=c11 -pedantic -Wall -Wextra` with the shim, prints `examples/saluta.expected` and exits 0 — by hand, recorded in the commit |
 | **C2** the differential harness — **DONE** (in C1 and C3) | landed in C1: `tests/ir/emit_c.asm`, `tests/c/exsrt_shim.c`, `run_differential_tests` over `tests/ir/`, `c-emit-exit=`/`c-exsc-exit=`, `checks.test` and the devShell gaining `gcc` and `clang`, the eval-time closure assertion. **Landed in C3, closing what was owed:** the program corpus (a second loop in the same phase; `exsc … --emitte c -o out.c` per directory; `c-differentia=` with its closed reason set; `program_sources` shared with `run_program_tests` so the two phases cannot disagree about what the unit is; two floors), and `tools/reproduce.sh` diffing two `--emitte c` units | D6 for both corpora, D5 determinism, D1 (the unit runs) | `tests/ir/`: 39 lowerable × 4 = 156 builds agreeing, plus 11 rejections at matching exit status. `tests/programs/`: 26 eligible directories × 4 = 104 builds, all agreeing; 70 declared ineligible by name; `reproduce.sh` byte-identical on two units across divergent cwd/TZ/locale/epoch/umask/hostname. `nix flake check` green |
 | **C3** the reader — **host half DONE** | `examples/streamdb/` in Exsecutor, `tests/programs/streamdb_*/` driving it from `initium` over `vendor/streamdb-v3/` on stdin, **both backends**; the Python expectation. The reference half landed with section 6; the C half is section 6.7 | D7 (host half), section 6, and what C2 owed | the semantic stream of section 6 — every key byte-exact with CRC verified, the counts, the error outcomes — **identical under both backends** on all four containers under all sixteen C builds, and equal to the expectation; five mutants, three of which the corpus catches and two of which need hand-made input (section 6.4) |
-| **C4** the N64 cross-compile | `--hospes mips64-none-o64`: `lower/ty.inc`'s two `ref`/`refc` constants, a ptr width on `BfaModule` with `bfa_ty_ptr` reading it, a refusal by name in the reference emitter so a 32-bit `ptr` is not silently emitted as 64-bit x86-64, a `mips64-elf-gcc` in the test closure, and a `checks.n64` that compiles the C3 unit with Kiln's toolchain and gates. **Finding 18 costs each of the five**; two are `backend_fasmg/`'s tree and one is a flake decision | D7 (target half), D2's o64 row | the object compiles under Kiln's flags with no `.d` instruction and `nm -u` = `{exsrt_abortus}` (+ `memcpy`); linked into a Kiln test ROM by hand and recorded, not gated `[OPEN]` |
+| **C4** the N64 cross-compile — **DONE** | `--hospes mips64-none-o64` accepted: the row's width to `chk_set_target` (one call site, which had been a literal 64), a `== 4` arm in `program_c.inc`, and a refusal by name in the reference emitter so a narrow address is named rather than mis-described. **Nothing in `lower/` and nothing in `ir.inc`** — ADR 0015 decision 2. The certificate is `tests/run.sh`'s cross phase: six `cross=yes` directories emitted for the row, cross-compiled `-mabi=n32 -march=mips3` and RUN under `qemu-mipsn32`, held to the reference's three observables. Closure cost `lld` + `qemu-user`, both cached; not a cross GCC | D7 (target half), D2's o64 row | **met.** §14 entry 25 `status=run`; six directories agree byte for byte, `forma` among them, so `@transitus` byte order is exercised big-endian. Kiln's own `mips64-elf-gcc` 14.4.0 compiles the o64 reader clean at `-Wall -Wextra -Werror` with its ROM flags **plus `-fno-fast-math`** — 14,616 bytes, `nm -u` = `{exsrt_abortus, memset}` (**`memset`**, not `memcpy`: `-ftrivial-auto-var-init=pattern` produces it), zero FP-register references. Linked into a Kiln ROM: still `[OPEN]`, and that `[OPEN]` now includes a stack budget — the reader's live frame is ~140 KB at `mensura` = 32 against libultra's 8–16 KB thread stacks (ADR 0015 Open) |
 
 Later, not scheduled: `div`/`rem`/`muls`/`*ov` in both backends; floats in
 both (and `EXS-E0701` becomes reachable); whole-program mode with a C
@@ -1387,16 +1387,28 @@ Numbered; each names the document and the sentence.
 
 18. **The `mips64-none-o64` row is not two constants, and finding 6's
     closing sentence ("it is two `mov ecx, 64`s away, not a redesign")
-    over-promised.** *(Superseded in part by **ADR 0015**, 2026-09-12, which
-    measured two of the four costs below and found them wrong: the
-    `BfaModule` ptr-width field is not needed at all, because nothing but
-    the reference backend reads that width — so `ir.inc` is not entered;
-    and a runnable certificate does not need a cross toolchain in the
-    closure, because the clang already there cross-compiles to big-endian
-    MIPS and `lld`/`qemu-user` are cached. The record below stands as
-    written and is not rewritten; read it with ADR 0015 beside it. What
-    this finding never names, and what ADR 0015 says is the real substance
-    of C4, is that the row makes `mensura` 32 for the first time.)*
+    over-promised.** *(**DONE, 2026-09-12, and two of its four costs were
+    wrong.** The row is accepted; §14 entry 25 runs. What C4 actually
+    changed: the width handed to `chk_set_target` — which this finding
+    never lists, and which had been a literal 64 with a comment already
+    stale — one `_Static_assert` arm in `program_c.inc`, and the refusal in
+    `emit.inc`. Nothing in `lower/`, and **nothing in `ir.inc`**: ADR 0015
+    decision 2 keeps `ptr`/`ref`/`refc` interned at 64 on every row, because
+    the C backend switches on a type's KIND and asks C for
+    `sizeof(void *)`, and `lwr_ty_ir` sizes from the checker's
+    `AstType.width`. The file this backend reuses unchanged by contract was
+    never in the way. And the certificate needed no cross toolchain: the
+    clang already in the closure cross-compiles to big-endian MIPS-III, and
+    `lld` and `qemu-user` are cached where a cross GCC is not.
+    The third bullet's "silently miscompile" was also too harsh — measured,
+    a `ptr@32` already died, but with a message that is factually wrong
+    about 32; the refusal now says what is actually wrong
+    (`tests/unit/bfa_emit_narrow_addr.asm`).
+    What this finding never names is what ADR 0015 calls C4's real
+    substance: the row makes `mensura` 32 for the first time in the
+    project's history, so the o64 unit is a **different, larger C file**
+    — 139,144 bytes against 137,742, differing in 2,344 lines, not one.
+    The record below stands as written and is not rewritten.)*
     C3 looked at what the change actually is, and stopped
     rather than half-doing it:
     - `lower/ty.inc`'s two `mov ecx, 64` (`.ref`, `.refc`) are indeed two

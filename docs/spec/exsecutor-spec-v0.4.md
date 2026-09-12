@@ -2150,20 +2150,31 @@ architecture from which one could be read. `[OPEN]`. A value not in the
 table, or one whose row does not list the backend asked for, is a usage
 error — exit nonzero, a message, no `EXS-E` code (§9.3: a flag is about the
 invocation, not the source). A well-formed module whose declared `numeri`
-(§5.4) the named target cannot honour is `EXS-E0701`. `[UNTESTED]` — the
-table beyond `x86_64-linux` is `docs/design/c-backend.md` D2 and nothing
-implements it.
+(§5.4) the named target cannot honour is `EXS-E0701`.
 
-The `mips64-none-o64` row is scheduled as C4 and decided by ADR 0015. Two
-things about it are settled and worth stating where the table is, because
-both were got wrong once: its `mensura` is 32, which makes `+` trap at
-2^32 on that row and is the target's semantics rather than a backend
-disagreement; and the emitted text's independence from the host's byte
-order — asserted in the paragraph above since this section was written —
-was **measured** on 2026-09-12, big-endian MIPS-III under emulation,
-byte-identical to the reference backend over `vendor/streamdb-v3/`. That
-measurement used a 64-bit `mensura` and so says nothing about the 32-bit
-half. `[UNTESTED]`
+**What each row is worth, as evidence.** The single `[UNTESTED]` this
+paragraph used to carry covered all three rows at once and is now false of
+two of them, so it is split:
+
+- `x86_64-linux` — both backends, and the whole suite runs on it.
+- `mips64-none-o64` — **tested.** §14 entry 25: the emitted unit is
+  cross-compiled and RUN big-endian with 32-bit addresses, and agrees with
+  the reference backend on stdout bytes, exit status and trap-or-not over
+  `vendor/streamdb-v3/`. Two things are still `[UNTESTED]` and are named
+  rather than folded in: the **o64 ABI itself**, since the certificate runs
+  the n32 ABI as a proxy — it shares byte order, address width, register
+  width, ISA and the emitted text, and differs in argument passing — and
+  **linkage into an N64 ROM**, which is `[OPEN]`. ADR 0015 decision 5.
+- `riscv64-linux` — **stays `[UNTESTED]`.** Nothing runs a riscv64 binary.
+  The only evidence is that it emits text byte-identical to
+  `x86_64-linux`'s, which holds because both rows are 64-bit and is not a
+  claim that the result executes. The mips64 result must not be read as
+  covering it.
+
+The byte-order independence asserted three paragraphs above was itself
+`[UNTESTED]` from the day it was written until 2026-09-12, because every
+target in the test closure is little-endian. Entry 25 is the first
+big-endian execution of anything this compiler produces, and it holds.
 
 ## 9.6 The two-hash invariant
 

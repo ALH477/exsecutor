@@ -171,10 +171,15 @@ cmp_pair "the exsc binary" "$OUT_A" "$OUT_B" || RC=1
 #
 # Each is emitted in BOTH build directories, so the two runs differ in cwd,
 # in the absolute path of every source file, in TZ, locale,
-# SOURCE_DATE_EPOCH, umask and (where unshare allows) hostname. `--hospes
-# x86_64-linux` is fixed: the row is an input to the text by design (it
-# contributes one `_Static_assert` line), so varying it would be testing a
-# different claim.
+# SOURCE_DATE_EPOCH, umask and (where unshare allows) hostname. The
+# `--hospes` row is FIXED WITHIN a unit and varied BETWEEN units: the row is
+# an input to the text by design, so varying it inside one comparison would
+# be testing a different claim. `streamdb-o64` is the same two sources at
+# `--hospes mips64-none-o64`, which is a genuinely different and larger text
+# -- `mensura` is 32 there, and that is written through the unit as literal
+# widths -- so it is the third unit and not a variation of the second.
+# Without it the newest width path in the emitter would be the one path
+# whose determinism nothing checks.
 #
 # A failure here is NOT a failure of exsc's own reproducibility: the first
 # half passing and this one failing localises the defect to the C emitter,
@@ -182,14 +187,15 @@ cmp_pair "the exsc binary" "$OUT_A" "$OUT_B" || RC=1
 if [[ "$TESTING_FIXTURE" -eq 0 ]]; then
   chmod +x "$OUT_A"
   # emit_one WORKDIR EXSC OUT TZ LOCALE EPOCH UMASK HOSTNAME SRC...
+  # emit_one WORKDIR EXSC OUT TZ LOCALE EPOCH UMASK HOSTNAME HOSPES SRC...
   emit_one() {
     local workdir="$1" exsc="$2" out="$3" tz="$4" locale="$5" epoch="$6"
-    local umask_val="$7" host="$8"; shift 8
+    local umask_val="$7" host="$8" hospes="$9"; shift 9
     local inner srcs=""
     local s; for s in "$@"; do srcs="$srcs '$workdir/$s'"; done
     inner="cd '$workdir' && umask '$umask_val' && env -i PATH='$PATH' HOME='$HOME' \
 TZ='$tz' LC_ALL='$locale' LANG='$locale' SOURCE_DATE_EPOCH='$epoch' \
-'$exsc' aedifica --hospes x86_64-linux$srcs --emitte c -o '$out' >/dev/null 2>&1"
+'$exsc' aedifica --hospes '$hospes'$srcs --emitte c -o '$out' >/dev/null 2>&1"
     if [[ "$HOSTNAME_VARY" -eq 1 ]]; then
       unshare --uts -r -- bash -c "hostname '$host' && $inner"
     else
@@ -199,17 +205,19 @@ TZ='$tz' LC_ALL='$locale' LANG='$locale' SOURCE_DATE_EPOCH='$epoch' \
 
   echo
   for unit in \
-    "saluta:examples/saluta.exsc examples/imprime.exsc examples/initium.exsc" \
-    "streamdb:examples/streamdb/lector_streamdb.exsc examples/streamdb/probatio.exsc"
+    "saluta:x86_64-linux:examples/saluta.exsc examples/imprime.exsc examples/initium.exsc" \
+    "streamdb:x86_64-linux:examples/streamdb/lector_streamdb.exsc examples/streamdb/probatio.exsc" \
+    "streamdb-o64:mips64-none-o64:examples/streamdb/lector_streamdb.exsc examples/streamdb/probatio.exsc"
   do
     uname_="${unit%%:*}"
+    uhospes="${unit#*:}"; uhospes="${uhospes%%:*}"
     # shellcheck disable=SC2206
-    usrcs=(${unit#*:})
+    usrcs=(${unit##*:})
     ca="$DIR_A/unit-$uname_.c"
     cb="$DIR_B/unit-$uname_.c"
-    echo "reproduce: --emitte c, unit '$uname_' (${#usrcs[@]} sources), condition sets A and B"
-    emit_one "$DIR_A" "$OUT_A" "$ca" "UTC" "C" "0" "022" "repro-host-a" "${usrcs[@]}" || true
-    emit_one "$DIR_B" "$OUT_A" "$cb" "Pacific/Kiritimati" "C.UTF-8" "999999999" "077" "repro-host-b" "${usrcs[@]}" || true
+    echo "reproduce: --emitte c, unit '$uname_' (--hospes $uhospes, ${#usrcs[@]} sources), condition sets A and B"
+    emit_one "$DIR_A" "$OUT_A" "$ca" "UTC" "C" "0" "022" "repro-host-a" "$uhospes" "${usrcs[@]}" || true
+    emit_one "$DIR_B" "$OUT_A" "$cb" "Pacific/Kiritimati" "C.UTF-8" "999999999" "077" "repro-host-b" "$uhospes" "${usrcs[@]}" || true
     if [[ ! -s "$ca" || ! -s "$cb" ]]; then
       echo "REPRODUCE: FAIL -- --emitte c wrote nothing for unit '$uname_'" >&2
       echo "  (a unit of 0 bytes compared against another of 0 bytes is the" >&2
