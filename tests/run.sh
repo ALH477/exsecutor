@@ -1193,6 +1193,17 @@ run_differential_tests() {
     ok "exsc: assembles with both backends in it"
     local hw=( "$REPO_ROOT/examples/saluta.exsc" "$REPO_ROOT/examples/imprime.exsc"
                "$REPO_ROOT/examples/initium.exsc" )
+    # Every row also checks that STDOUT IS EMPTY. `--emitte c` is the fourth
+    # value of one table and the only one naming an ARTIFACT rather than a
+    # stage dump: D2 says it "writes the translation unit there, writes
+    # nothing to stdout", and driver/run.inc's own -o check says the same.
+    # It did not hold. `drv_emit_dump` has three arms -- tokens, cst, and ast
+    # as the FALL-THROUGH -- so `--emitte c` dumped the typed AST to stdout
+    # beside the unit, every time, and no C1 check saw it because every call
+    # site redirects stdout to a file nobody reads. This assertion is why the
+    # next such regression is loud. It is checked on the REFUSALS too: a
+    # refusal that dumped a stage would be a stage dump for an invocation
+    # that produced no artifact.
     drv_case() {  # LABEL WANT-EXIT ARGS...
       local lbl="$1" want="$2"; shift 2
       local rc=0
@@ -1202,6 +1213,12 @@ run_differential_tests() {
       else
         bad "driver: $lbl -> exit $rc, expected $want"
         sed 's/^/         /' "$workdir/drv.err"
+      fi
+      if [[ -s "$workdir/drv.out" ]]; then
+        bad "driver: $lbl wrote $(wc -c <"$workdir/drv.out" | tr -d ' ') bytes to stdout; --emitte c writes its unit to OUT and nothing to stdout (c-backend.md D2)"
+        head -c 300 "$workdir/drv.out" | sed 's/^/         /'
+      else
+        ok "driver: $lbl wrote nothing to stdout"
       fi
     }
     drv_case "--emitte c without -o" 2 \

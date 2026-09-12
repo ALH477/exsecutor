@@ -1169,7 +1169,21 @@ proc drv_aedifica, argc, argv
 	; resolved it to (0 where nothing was found, or where the target was a
 	; type-position name pass 1 does not resolve -- see checker/resolve/
 	; resolve.inc's header); driver/msg.inc's usage text says so.
+	;
+	; `--emitte c` IS NOT A STAGE DUMP. It is the fourth value of one table
+	; and the only one that names an ARTIFACT: it writes a translation unit
+	; to OUT and writes NOTHING to stdout (c-backend.md D2, and the -o check
+	; above says so in as many words). `drv_emit_dump` has three arms --
+	; tokens, cst, and ast as the fall-through -- so reaching it with
+	; DRV_EMIT_C dumped the typed AST to stdout beside the unit, which is
+	; both a stdout stream D2 promises is empty and spec 18.2's stage-dump
+	; mitigation firing for a flag that asked for no stage. Found by running
+	; `exsc --emitte c` and looking at fd 1, not by reading; the C1 harness
+	; never looked because every call site redirects stdout. The C emission
+	; itself is far below, at `.emit_c`.
 	cmp	dword [r15 + DrvCtx.emitte], DRV_EMIT_NONE
+	je	.report
+	cmp	dword [r15 + DrvCtx.emitte], DRV_EMIT_C
 	je	.report
 	call	drv_emit_dump
 	jmp	.report
