@@ -1,0 +1,55 @@
+; TEST: expect-exit=0 c-emit-exit=4
+;
+; THE ONE FIXTURE WHERE THE TWO BACKENDS LEGITIMATELY DISAGREE, and the
+; reason `c-emit-exit=` exists at all (docs/design/c-backend.md D6 step 4).
+;
+; `retain`/`release` are two of the reference's 37 lowerings: emit.inc's
+; `__bfa_emit_arc` calls the prelude's ARC routines over an object header the
+; runtime owns. The C backend in LIBRARY MODE has no runtime and no object
+; header -- D1 withholds both deliberately, because the first consumer is a
+; freestanding N64 library that can host neither -- so it refuses the pair BY
+; NAME rather than emitting something that would compile and be wrong:
+;
+;   bfc: emitter: retain/release: no object header exists in library mode
+;
+; So this fixture's directive says `emit-exit=0` (the reference lowers it)
+; and `c-emit-exit=4` (the C emitter refuses it), and the differential phase
+; reports the difference as INTENDED rather than as a failure. Twenty-one of
+; the other twenty-two refusals need no such key: the C backend refuses them
+; because the REFERENCE refuses them, so parity is the default and the
+; default is right.
+;
+; THE ARC LIVES IN A FUNCTION NOTHING CALLS, and that is deliberate. The
+; reference's half must ASSEMBLE AND RUN to be worth anything -- a fixture
+; checked only as far as emission would not notice the day the reference's
+; ARC lowering stopped assembling. But EXECUTING `retain` needs a `refc`
+; pointing at a real object header, and `initium`'s only caller is the
+; prelude's entry stub, which passes one argument. So `@arca` carries the
+; pair and is never reached: the reference emits it, the assembler accepts
+; it, the program runs `@initium` alone and exits 0, and the C emitter still
+; meets `retain` while walking the module and still refuses.
+;
+; The operand is `refc` and not `ptr` because verifier rule 6 admits only
+; `ref`/`refc` for the ARC pair -- a `slot`'s `ptr` fails the VERIFIER (exit
+; 5) before either emitter is reached, and a fixture that never reaches the
+; emitter proves nothing about what the emitter does. Found by running it.
+;
+; Mutation (run): __bfc_refuse's `.arc` arm deleted so `retain` falls through
+; to `.other` -> still exit 4, but the message names no opcode; the arm
+; pointed at `.divrem` -> exit 4 with a message naming an opcode that is not
+; here. Neither is caught by an exit status alone, which is why the refusal
+; text is printed into the run log and read there.
+
+functio @arca (refc) -> void {
+b0:
+%0 = param refc 0
+retain %0
+release %0
+ret
+}
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = iconst u8 0
+ret %1
+}

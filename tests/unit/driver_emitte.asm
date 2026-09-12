@@ -35,8 +35,9 @@
 ;   3. `__drv_dump_buf`'s arithmetic: a fresh arena, one nearly exhausted by
 ;      six bytes short of an 8-aligned boundary, and one already past its
 ;      limit (the defensive clamp a real arena should never reach).
-;   4. `--emitte`'s three-way parse through `drv_parse`: the three accepted
-;      values, a rejected one, and the repeated-option refusal every other
+;   4. `--emitte`'s parse through `drv_parse`: the FOUR accepted
+;      values -- tokens, cst, ast and c (c-backend.md D2's reach-backend
+;      artifact) -- a rejected one, and the repeated-option refusal every other
 ;      `aedifica` option already gets (§9.3's reasoning, applied here by
 ;      driver/cli.inc exactly as it is to `--diagnostica`).
 ;
@@ -353,6 +354,13 @@ DE_KIND_COUNT = (de_kindtab_end - de_kindtab) / 16
   de_s_tokens   db 'tokens',0
   de_s_cst      db 'cst',0
   de_s_ast      db 'ast',0
+  ; The fourth value (docs/design/c-backend.md D2). Unlike the other three
+  ; it is an ARTIFACT rather than a stage dump -- it requires -o and writes
+  ; a C translation unit there -- but that is driver/run.inc's half of the
+  ; rule. THIS file owns the PARSE, and the parse is a fourth row of one
+  ; table: it must set DrvCtx.emitte to DRV_EMIT_C and must be refused when
+  ; repeated, exactly as the other three are.
+  de_s_c        db 'c',0
   de_s_bogus    db 'xml',0
 
 de_av_tokens:
@@ -373,18 +381,26 @@ de_av_ast:
 de_av_ast_end:
 DE_AV_AST_N = (de_av_ast_end - de_av_ast) / 8
 
+de_av_c:
+	dq de_s_exsc, de_s_aedifica, de_s_hospes, de_s_triple
+	dq de_s_emitte, de_s_c, de_s_src
+de_av_c_end:
+DE_AV_C_N = (de_av_c_end - de_av_c) / 8
+
 de_accept_tab:
 	dq DE_AV_TOKENS_N, de_av_tokens
 	dq DE_AV_CST_N,    de_av_cst
 	dq DE_AV_AST_N,    de_av_ast
+	dq DE_AV_C_N,      de_av_c
 de_accept_tab_end:
 DE_ACCEPT_COUNT = (de_accept_tab_end - de_accept_tab) / 16
-  assert DE_ACCEPT_COUNT = 3
+  assert DE_ACCEPT_COUNT = 4
 
 de_accept_want:
 	dd DRV_EMIT_TOKENS
 	dd DRV_EMIT_CST
 	dd DRV_EMIT_AST
+	dd DRV_EMIT_C
 de_accept_want_end:
   assert (de_accept_want_end - de_accept_want) / 4 = DE_ACCEPT_COUNT
 

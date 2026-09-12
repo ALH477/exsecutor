@@ -302,9 +302,13 @@ drv_s_usage:
 	db 'options, all of them accepted only by `aedifica`:', 10
 	db '  --hospes TRIPLE      target triple. REQUIRED: spec 9.5 makes an absent', 10
 	db '                       --hospes an error. There is no default-to-build-platform.', 10
-	db '                       This build only targets x86_64-linux (exit 4 on any', 10
-	db '                       other triple): the reference backend is x86-64 fasmg', 10
-	db '                       text and there is no other backend to pick.', 10
+	db '                       The value set is a CLOSED TABLE, one row per triple,', 10
+	db '                       and the row fixes the width of `mensura` and `ptr`:', 10
+	db '                         x86_64-linux     64  both backends', 10
+	db '                         riscv64-linux    64  --emitte c only', 10
+	db '                         mips64-none-o64  32  not yet -- scheduled', 10
+	db '                       Anything else, a row whose only backend was not', 10
+	db '                       asked for, or the o64 row: exit 4, with the reason.', 10
 	db '  SOURCE               the file to compile. Positional, and REPEATABLE:', 10
 	db '                       spec 12 says the files named form one compilation', 10
 	db '                       unit -- one module, one artifact -- and that their', 10
@@ -333,6 +337,16 @@ drv_s_usage:
 	db '                       >tree.txt` puts only the tree in tree.txt. `ast` dumps', 10
 	db '                       after the checker runs, so its `d` slots show what', 10
 	db '                       the checker resolved (0 where it found nothing).', 10
+	db '                       A fourth value, `c`, is not a dump but an ARTIFACT:', 10
+	db '                       it takes the REACH backend, REQUIRES -o OUT, writes', 10
+	db '                       one C11 translation unit there and nothing to stdout.', 10
+	db '                       The unit is a LIBRARY -- a definition per function,', 10
+	db '                       no entry point, no runtime -- so a module with no', 10
+	db '                       `initium` is accepted rather than EXS-E0424. It', 10
+	db '                       imports one symbol, which whoever links it supplies:', 10
+	db '                         _Noreturn void exsrt_abortus(unsigned kind);', 10
+	db '                       exsc does not and cannot run a C compiler (spec 12:', 10
+	db '                       execve is on no allowlist). Compile OUT yourself.', 10
 	db 10
 	db 'exit status:', 10
 	db '  0  the requested work completed and there was nothing to report', 10

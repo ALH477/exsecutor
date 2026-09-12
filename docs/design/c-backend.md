@@ -1,9 +1,24 @@
 # The C backend — design for spec §9.2's reach backend, library mode first
 
-Status: **design only; nothing implemented.** No line of `compiler/x86_64/backend_c/`
-exists, no C has been emitted, no C compiler has been run on anything this file
-describes. Every claim below about what GCC or Clang does is stated from memory
-and is `[UNTESTED]` until C1's first task (section 7) runs it. `spec §N` cites
+Status: **C1 is implemented and green.** `compiler/x86_64/backend_c/`
+exists (`emit_c.inc`, `program_c.inc`, `prologue.c.in`); `--emitte c` emits;
+the incantation table of D3 has been run under gcc 15.3.0 and clang 21.1.8
+and is filled in below, with three cells that did not hold. The differential
+harness of D6 runs as a `tests/run.sh` phase: **39 of the 49 IR fixtures are
+lowerable and all 39 agree with the reference under four toolchains — gcc and
+clang, `-O0` and `-O2`, `-fsanitize=undefined -fno-sanitize-recover=all` —
+for 156 checked builds; the other 10 are rejection fixtures and the C
+emitter's exit status matches the reference's on every one.** C2's work
+largely landed with C1 because the harness was the only way to know the
+lowerings were right.
+
+What is still `[OPEN]` or `[UNTESTED]` is marked where it stands: floats
+(D8), whole-program mode (D1), the StreamDB reader (D7, section 6), the
+`mips64-none-o64` row (D2, refused by name — see finding 6, which was wrong
+about why), and `tools/reproduce.sh` over two `--emitte c` units (D5's
+determinism claim is checked here only by the two 64-bit `--hospes` rows
+emitting identical bytes and by `exsc --emitte c` agreeing byte for byte with
+the `emit_c` harness). `spec §N` cites
 `docs/spec/exsecutor-spec-v0.4.md` as amended in the same commit as this file;
 `IR n.m` cites `docs/design/ssa-ir.md`; `RT n` cites `docs/design/runtime.md`;
 `WC Dn` cites `docs/design/wire-codec.md`; ADR 0012 is
@@ -26,10 +41,28 @@ section; its format survey is another agent's and is not in this file.
 
 A second emitter over the same IR. `backend_fasmg/{ir,parse,print,verify}.inc`
 — 1,562 + 4,038 + 2,342 + 5,187 = 13,129 lines at `dbe1d64` — are reused
-unchanged; the include chain is strictly linear (`ir → parse → print →
-verify → emit → program`, each file including exactly one other, `ir.inc`'s
-header) so `backend_c/emit_c.inc` includes `backend_fasmg/verify.inc` and
-`backend_c/program_c.inc` includes `emit_c.inc`, with no diamond. What is
+unchanged, and C1 touched **no line of `backend_fasmg/`**.
+
+The include chain is not what this paragraph first said. It said
+`backend_c/emit_c.inc` includes `backend_fasmg/verify.inc`, keeping the chain
+linear. That is impossible: **`exsc` contains both backends** — `--emitte c`
+and a plain `-o` are two flags of one binary — and `lower/ssa.inc` already
+includes `backend_fasmg/program.inc`, which includes `emit.inc`, which
+includes `verify.inc`. A second `include` of a file full of `struct` and
+`proc` definitions fails outright; fasmg has no include guards, and this is
+the same diamond `emit.inc`'s own header records paying for once. So the C
+backend's chain **hangs off** the existing one rather than duplicating its
+tail:
+
+```
+(the consumer brings) … → verify.inc → print.inc → parse.inc → ir.inc
+                       \
+                        program_c.inc → emit_c.inc
+```
+
+`emit_c.inc` includes nothing, and states the contract its header: the
+consumer must already have `backend_fasmg/verify.inc`, or anything that
+brings it. That is exactly what `ir.inc` says of `rt/`. Finding 14. What is
 written fresh is the emitter and the unit skeleton — the reference's are
 4,623 and 528 lines, which is the size estimate and nothing more.
 
@@ -556,6 +589,7 @@ holds is looked up and never walked (IR 4). The audit table is RT 4's with
 
 | this order | is a function of |
 |---|---|
+| prologue, `--hospes` assert, globals, prototypes, definitions | fixed; **globals precede prototypes**, not the other way round as this table first said — globals must precede the *definitions* that name them and are independent of the prototypes, so the one real constraint holds either way, and emitting them before a single call into `bfc_emit_module` keeps that routine self-contained enough for a unit fixture to pin on its own |
 | prototypes, definitions | `Module.funcs` order = declaration order |
 | labels `bk`, values `vk`, slots `sk`, temporaries `tk` | internal ids, creation order |
 | globals `exsi_gN` | global id order; bytes from `gdata` |
@@ -1008,10 +1042,12 @@ The reference is otherwise agreed with byte for byte: every verdict in
 
 ## 7. Milestones
 
+C1 is done; C2's harness landed with it. What each says now:
+
 | milestone | delivers | retires | its certificate |
 |---|---|---|---|
-| **C1** skeleton and prologue measurements | (1) the measurement table of D3, filled in, **first**; (2) `compiler/x86_64/backend_c/{emit_c,program_c}.inc` — the 37 lowerings, the 23 refusals by name, the prologue, mangling; (3) `--emitte c`, `-o` required, `--hospes` rows, `CHK_F_PROGRAM` not set; (4) `tests/unit/bfc_emit_*.asm` pinning emitted text per opcode family, `bfc_mangle.asm`, `driver_emitte_c*.asm` for D2's three-way split | D2, D3 (as measured), D4 rows (text), D5 mangling, D1 (the unit compiles) | the hello world's IR through `emit_c`, compiled by `gcc -std=c11 -pedantic -Wall -Wextra` with the shim, prints `examples/saluta.expected` and exits 0 — by hand, recorded in the commit |
-| **C2** the differential harness | `tests/ir/emit_c.asm`, `tests/c/exsrt_shim.c`, `run_differential_tests`, `c-emit-exit=`/`c-exsc-exit=`, `checks.test` and the devShell gaining `gcc` and `clang`, the closure assertion | D6, D1 (the unit runs), D5 (byte-identical under `reproduce.sh`'s conditions) | 49 + 22 fixtures × 4 builds agreeing with the reference on all three observables, `nix flake check` green |
+| **C1** skeleton and prologue measurements — **DONE** | (1) the measurement table of D3, filled in, **first**; (2) `compiler/x86_64/backend_c/{emit_c,program_c}.inc` — the 37 lowerings, the 23 refusals by name, the prologue, mangling; (3) `--emitte c`, `-o` required, `--hospes` rows, `CHK_F_PROGRAM` not set; (4) `tests/unit/bfc_emit_*.asm` pinning emitted text per opcode family, `bfc_mangle.asm`, `driver_emitte_c*.asm` for D2's three-way split | D2, D3 (as measured), D4 rows (text), D5 mangling, D1 (the unit compiles) | the hello world's IR through `emit_c`, compiled by `gcc -std=c11 -pedantic -Wall -Wextra` with the shim, prints `examples/saluta.expected` and exits 0 — by hand, recorded in the commit |
+| **C2** the differential harness — **mostly done in C1** | landed: `tests/ir/emit_c.asm`, `tests/c/exsrt_shim.c`, `run_differential_tests` over `tests/ir/`, `c-emit-exit=`/`c-exsc-exit=`, `checks.test` and the devShell gaining `gcc` and `clang`, the eval-time closure assertion. **Still owed:** the 22 `tests/programs/` directories (they need `exsc … --emitte c -o out.c` per directory, which `run_program_tests` does not yet drive), and `tools/reproduce.sh` extended to diff two `--emitte c` units | D6 for the IR corpus, D1 (the unit runs) | done for `tests/ir/`: 39 lowerable fixtures × 4 builds = 156, all agreeing, plus 11 rejections at matching exit status; `nix flake check` green |
 | **C3** the reader | `examples/streamdb/` in Exsecutor, `tests/programs/streamdb_*/` driving it from `initium` over `vendor/streamdb-v3/` on stdin, both backends; the Python expectation. **The reference-backend half landed with section 6**: the two sources, the four directories, `expecta.py`, and five mutants; what is left is the `--emitte c` stream and its comparison | D7 (host half), section 6 | the semantic stream of section 6 — every key byte-exact with CRC verified, the counts, the error outcomes — identical under both backends and equal to the expectation; five mutants, three of which the corpus catches and two of which need hand-made input (section 6.4) |
 | **C4** the N64 cross-compile | the `lower/` change of finding 6 (`mensura` from the `--hospes` row), `--hospes mips64-none-o64`, a `checks.n64` that compiles the C3 unit with Kiln's toolchain and gates | D7 (target half), D2's o64 row | the object compiles under Kiln's flags with no `.d` instruction and `nm -u` = `{exsrt_abortus}` (+ `memcpy`); linked into a Kiln test ROM by hand and recorded, not gated `[OPEN]` |
 
@@ -1056,15 +1092,29 @@ Numbered; each names the document and the sentence.
    uses the reference's own two-check rule (IR 2.2) as the thing it must
    agree with, not as the method. ADR 0012's *result* — parity, no signed
    overflow anywhere — is unchanged.
-6. **The lowering maps `mensura` to `u64` unconditionally** (the `per i in
-   0..17` loop is "a `u64` loop", WC §8; `lower/ty.inc`). D2's
-   `mips64-none-o64` row needs it to be `u32` there, and the checker's
-   layout of `mensura`-typed fields likewise. That is `lower/`'s and
-   `checker/`'s tree, reported and not done here; C4 waits on it. Until
-   then a unit emitted for `x86_64-linux` and compiled for o64 truncates
-   every index to 32 bits at the `(uintptr_t)` cast — correct for any
-   array under 4 GB and wrong in principle, which is why the prologue's
-   `sizeof(void *)` assert exists: that unit does not compile for o64.
+6. **~~The lowering maps `mensura` to `u64` unconditionally~~ — WRONG, and
+   corrected in C1.** It does not. `lower/ty.inc`'s `.mensura` arm reads
+   `[lwrw]`, the width *the checker recorded*, and the checker takes it from
+   `chk_set_target(chk_c, ptrbits)`, which `checker.inc`'s own header says
+   exists precisely so that "pass 4's `mensura` is concrete only once this
+   is set". The plumbing was already there and already parameterised. The
+   one hardcoded site was **the driver's**, `run.inc`'s `mov esi, 64` with
+   the comment "the pointer width of the one triple `--hospes` accepts",
+   beside a note predicting its own replacement: *"a second accepted triple,
+   the day one exists, is a small table here (triple bytes → ptrbits) in
+   place of the single compare below — not a redesign."* C1 wrote that
+   table. `mensura` was never the obstacle.
+
+   **What the obstacle actually is**, found by looking: `lower/ty.inc`
+   interns `ref` and `refc` at width 64 unconditionally (`mov ecx, 64`,
+   twice), and `bfa_ty_ptr` interns `ptr` at width 64 in `ir.inc` itself —
+   which is a file this milestone reuses *unchanged by contract*. Both are
+   other trees, one of them off limits to this milestone by its own rule.
+   So `mips64-none-o64` is refused by name with that reason, and C1 accepts
+   `x86_64-linux` and `riscv64-linux`, which are both 64-bit and need no
+   change anywhere. The o64 row stays C4's, as the milestone table always
+   said — but it is two `mov ecx, 64`s away, not a redesign, and the next
+   person should not go looking in `lower/`'s `mensura` arm for it.
 7. **A `data $N 0 …` global has no C spelling**: C forbids a zero-length
    array. D4 row 47 emits `[1]`. No fixture has one; `[UNTESTED]` that the
    parser admits it.
@@ -1113,6 +1163,44 @@ Numbered; each names the document and the sentence.
     Kiln's link must admit `memcpy` (newlib provides it) — `nm -u` is not
     guaranteed to list only `exsrt_abortus`, and D7's gate already allows
     for it.
+
+14. **`emit_c.inc` cannot include `verify.inc`, and section 1's chain was
+    therefore impossible as drawn.** `exsc` holds BOTH backends, so
+    `verify.inc` is already on its chain through `lower/ssa.inc` →
+    `backend_fasmg/program.inc` → `emit.inc`. `emit_c.inc` includes nothing
+    and states the consumer's obligation in its header, the way `ir.inc`
+    does for `rt/`. Section 1 is corrected above. Found by assembling
+    `exsc.asm`, not by reading.
+
+15. **Clang warns on every unused `static inline` helper; GCC does not.**
+    The prologue and the `exsi_*` helpers are one fixed blob by design (D5:
+    the text is a function of `exsc`'s bytes), so a unit that uses no shifts
+    still carries `exsi_shl_u`, and Clang says so 18 times per unit under
+    `-Wall`. Measured both ways. The blob is the design and not a defect,
+    and the differential harness passes `-Wno-unused-function` with that
+    reason recorded at the flag. **Everything outside the blob — every line
+    the lowering actually emits — is clean under `-Wall -Wextra -pedantic`
+    with nothing suppressed**, which is the claim that matters and which the
+    39 lowerable fixtures demonstrate. D3's "`-std=c11` clean under
+    `-Wall -Wextra -pedantic` is the target" is met for the emitted
+    lowerings and qualified for the carried blob. (The harness also passes
+    `-Wno-cpp` / `-Wno-#warnings`: nixpkgs' wrappers inject
+    `-D_FORTIFY_SOURCE=2` after the caller's flags — neither `-U` nor `=0`
+    wins, measured — and glibc's `<features.h>` then `#warning`s at `-O0`.
+    That is this host's packaging talking to its own libc from inside a
+    system header, with no emitted line involved.)
+
+16. **A `proc` slot named `al` or `st` shadows a register.**
+    `docs/asm-conventions.md` §4.1 says slot names are plain unmangled
+    globals, and its burned-name list is about collisions with other
+    *project* labels. It does not say that the x86 register names are also
+    burned, and they are: `slot al, dd` for an alignment made `ir.inc`'s
+    `mov al, byte [kind]` fail with "invalid combination of operands",
+    naming neither the slot nor the file. `slot st, dd` for a stride does
+    the same against the x87 stack register. Both were renamed (`algn`,
+    `strd`); `program.inc` had already learned the general lesson and named
+    its own argument `gptr2`. Worth adding to §4.1 when that file is next
+    touched — reported, not done, since it is another tree's.
 
 ## 9. What retires each marker
 

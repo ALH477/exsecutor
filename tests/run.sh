@@ -50,7 +50,7 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # this -- the test is `found < floor` -- so a floor that drifts below the real
 # count still catches the failure mode that matters: a discovery mechanism
 # silently finding nothing. Drift costs precision, not the guarantee.
-UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-166}"
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-168}"
 
 # The same guarantee for the two run phases below: tests/ir/*.ir fixtures,
 # and tests/programs/*/ directories. Same rule -- `found < floor` fails --
@@ -68,8 +68,19 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-166}"
 # per vendored impaired vector (receptio_vec_*, seventy of them): the
 # certificate of ADR 0014 decision 1 is a per-file verdict, and seventy
 # directories is what "per file" means here.
-IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-49}"
+IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-50}"
 PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-96}"
+
+# The differential phase (run_differential_tests, below), which compiles the
+# C backend's emitted units and runs them against the same expectations the
+# reference backend is held to. Its floor counts BUILDS THAT RAN AND WERE
+# CHECKED, not fixtures: the phase's whole claim is "four toolchains agreed
+# with the reference on every fixture C1 lowers", and a floor on fixtures
+# would still read green if three of the four builds silently stopped
+# happening. 39 of the 49 IR fixtures are lowerable (the other 10 are
+# rejections, checked separately and by exit status), times gcc and clang
+# times -O0 and -O2 = 156.
+DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-156}"
 
 PASS=0
 FAIL=0
@@ -831,13 +842,24 @@ else:
 PY
 }
 
-# check_run LABEL BIN WORK EXPECT_EXIT ABORT STDOUT_REF [STDIN_REF] -- runs
-# BIN, checks the keys above, audits it. EXPECT_EXIT/ABORT/STDOUT_REF/
-# STDIN_REF are "" when unset; STDIN_REF is repo-root-relative.
+# check_run LABEL BIN WORK EXPECT_EXIT ABORT STDOUT_REF [STDIN_REF] [AUDIT]
+# -- runs BIN, checks the keys above, audits it. EXPECT_EXIT/ABORT/
+# STDOUT_REF/STDIN_REF are "" when unset; STDIN_REF is repo-root-relative.
 # Returns 0 iff every check passed (each check also counts ok/bad itself).
+#
+# AUDIT is "audit" (the default, and what every existing caller gets by
+# omitting it) or "noaudit". The one caller that passes "noaudit" is
+# run_differential_tests: a binary built by gcc or clang from the emitted C
+# plus tests/c/exsrt_shim.c is a HOSTED, dynamically linked glibc program,
+# and its syscall surface is glibc's rather than the emitted code's. Auditing
+# it would not be a weaker check, it would be a check of the wrong thing --
+# spec 10.3's audit is a statement about what the REFERENCE backend puts in a
+# binary, and the reference's own build is audited one phase earlier. The C
+# target's syscall surface becomes checkable when whole-program mode exists
+# and the C prelude issues the syscalls itself (c-backend.md D1, [OPEN]).
 check_run() {
   local label="$1" bin="$2" work="$3" want_exit="$4" want_abort="$5" ref="$6"
-  local sref="${7:-}"
+  local sref="${7:-}" doaudit="${8:-audit}"
   local out="$work.stdout" err="$work.stderr" status rcode=0
   local inp=""
   [[ -n "$sref" ]] && inp="$REPO_ROOT/$sref"
@@ -877,11 +899,13 @@ check_run() {
     head -c 400 "$out" | sed 's/^/         /'; rcode=1
   fi
 
-  if "$AUDIT" --potestates Mundus,ambitus "$bin" >"$work.auditlog" 2>&1; then
-    ok "$label: syscall surface within {Mundus, ambitus}"
-  else
-    bad "$label: syscall surface exceeds {Mundus, ambitus}"
-    sed 's/^/         /' "$work.auditlog"; rcode=1
+  if [[ "$doaudit" == "audit" ]]; then
+    if "$AUDIT" --potestates Mundus,ambitus "$bin" >"$work.auditlog" 2>&1; then
+      ok "$label: syscall surface within {Mundus, ambitus}"
+    else
+      bad "$label: syscall surface exceeds {Mundus, ambitus}"
+      sed 's/^/         /' "$work.auditlog"; rcode=1
+    fi
   fi
   return "$rcode"
 }
@@ -894,6 +918,10 @@ parse_run_keys() {
   local label="$1"; shift
   k_expect_exit=""; k_abort=""; k_stdout=""; k_emit_exit="0"; k_exsc_exit="0"
   k_sources=""; k_status="run"; k_needs=""; k_stdin=""
+  # Empty, not "0": empty means "no C-specific verdict given, so parity with
+  # the reference's own key applies". A default of "0" would silently claim
+  # parity with success even where emit-exit= says the reference refuses.
+  k_c_emit_exit=""; k_c_exsc_exit=""
   local kv
   for kv in "$@"; do
     case "$kv" in
@@ -903,6 +931,16 @@ parse_run_keys() {
       stdin=*)       k_stdin="${kv#stdin=}" ;;
       emit-exit=*)   k_emit_exit="${kv#emit-exit=}" ;;
       exsc-exit=*)   k_exsc_exit="${kv#exsc-exit=}" ;;
+      # The C backend's own verdict, for the ONE case where the two backends
+      # legitimately differ: `retain`/`release`, which the reference lowers
+      # and library mode cannot (no object header exists there). The default
+      # is PARITY -- the C emitter must exit exactly as emit-exit= says the
+      # reference does -- so reject_emit_straddle.ir needs neither key, and
+      # neither does anything else today. The keys exist so the harness can
+      # SAY a difference is intended rather than a name being special-cased
+      # inside it, and parse_run_keys still fails on an unknown key.
+      c-emit-exit=*) k_c_emit_exit="${kv#c-emit-exit=}" ;;
+      c-exsc-exit=*) k_c_exsc_exit="${kv#c-exsc-exit=}" ;;
       sources=*)     k_sources="${kv#sources=}" ;;
       status=*)      k_status="${kv#status=}" ;;
       needs=*)       k_needs="${kv#needs=}" ;;
@@ -920,7 +958,8 @@ parse_run_keys() {
     bad "$label: needs= without status=deferred"; return 1
   fi
   local n
-  for n in "$k_expect_exit" "$k_abort" "$k_emit_exit" "$k_exsc_exit"; do
+  for n in "$k_expect_exit" "$k_abort" "$k_emit_exit" "$k_exsc_exit" \
+           "$k_c_emit_exit" "$k_c_exsc_exit"; do
     if [[ -n "$n" && ! "$n" =~ ^[0-9]+$ ]]; then
       bad "$label: '$n' is not a decimal status"; return 1
     fi
@@ -1044,6 +1083,261 @@ run_ir_tests() {
   shopt -u nullglob
   rm -rf "$workdir"
   floor_check "IR fixtures in tests/ir/" "$found" "$IR_FIXTURE_FLOOR" IR_FIXTURE_FLOOR
+}
+
+run_differential_tests() {
+  # -------------------------------------------------------------------------
+  # ADR 0012's differential test, over tests/ir/*.ir. Two backends compile
+  # the same IR; the three OBSERVABLES must agree -- the bytes written to
+  # stdout, the exit status, and trap-or-not with the abort KIND when both
+  # trap. Not the emitted text: there is none in common, which is the whole
+  # point of having a reference (docs/design/c-backend.md D6).
+  #
+  # HOW AGREEMENT IS CHECKED WITHOUT RUNNING BOTH BINARIES HERE. Each
+  # fixture's `; TEST:` directive IS the reference's pinned behaviour --
+  # run_ir_tests above has just assembled the reference's output and held it
+  # to exactly these keys. So checking the C build against the same directive
+  # checks it against the reference, and a fixture whose C build met its own
+  # directive but differed from the reference would have to be a fixture
+  # whose directive the reference does not meet, which run_ir_tests failed on
+  # one phase earlier. The directive is the shared expectation, and both
+  # phases are held to it.
+  #
+  # FOUR BUILDS PER FIXTURE: {gcc, clang} x {-O0, -O2}, every one with
+  # -fsanitize=undefined -fno-sanitize-recover=all, linked with
+  # tests/c/exsrt_shim.c. A UBSan report is a failure on its own -- it aborts
+  # the process, so it shows up as a wrong exit status, and its text is
+  # printed. Both compilers because ADR 0012 asks for both and the prologue's
+  # incantations are the first thing that differs between them (the measured
+  # table in c-backend.md D3 has three rows where they disagree); both
+  # optimisation levels because a trapping helper has a `__has_builtin` fast
+  # path at -O2 that -O0 does not take.
+  #
+  # REFUSALS ARE CHECKED FOR PARITY. A fixture with `emit-exit=N` requires
+  # emit_c to exit N too, unless `c-emit-exit=` says the two legitimately
+  # differ. That covers the ten rejection fixtures -- 3 parse, 4 emitter,
+  # 5 verifier -- and it is a real check: emit_c runs the SAME parser and the
+  # SAME verifier, so a divergence there would mean the C path had somehow
+  # reached a different front end.
+  #
+  # A MISSING COMPILER IS A FAILURE OF THE PHASE, NOT A SKIP -- the same
+  # choice run_ir_tests makes for a missing fasmg. A harness that finds
+  # nothing must not report success; flake.nix puts gcc and clang in
+  # checks.test's inputs precisely so this never has to be a skip.
+  # -------------------------------------------------------------------------
+  echo "== differential tests (C backend vs the reference, tests/ir/) =="
+  if ! command -v "$FASMG" >/dev/null 2>&1; then
+    bad "fasmg not found on PATH -- cannot build emit_c"
+    return
+  fi
+  local cc missing=0
+  for cc in gcc clang; do
+    if ! command -v "$cc" >/dev/null 2>&1; then
+      bad "$cc not found on PATH -- the differential phase needs both (ADR 0012)"
+      missing=1
+    fi
+  done
+  [[ "$missing" -eq 1 ]] && return
+
+  local workdir; workdir="$(mktemp -d)"
+  local emit="$workdir/emit_c"
+  if "$FASMG" "$REPO_ROOT/tests/ir/emit_c.asm" "$emit" >"$workdir/emit_c.asmlog" 2>&1; then
+    chmod +x "$emit"
+    ok "emit_c.asm: assembles"
+  else
+    bad "emit_c.asm: assemble failed -- no differential test can run"
+    sed 's/^/         /' "$workdir/emit_c.asmlog"
+    rm -rf "$workdir"
+    return
+  fi
+  # emit_c is held to the compiler's own closed nine exactly as emit_ir is,
+  # and for the same reason: it is what every result below is trusted
+  # through. Note what this also proves -- emit_c contains no `execve`,
+  # because there is none to contain. exsc never runs a C compiler; this
+  # script does, and this script is verification tooling.
+  if "$AUDIT" "$emit" >"$workdir/emit_c.auditlog" 2>&1; then
+    ok "emit_c: audit verdict=pass (the compiler's nine syscalls)"
+  else
+    bad "emit_c: audit verdict=fail"
+    sed 's/^/         /' "$workdir/emit_c.auditlog"
+  fi
+
+  # -------------------------------------------------------------------------
+  # D2's three-way split, end to end against a real exsc. This is NOT a unit
+  # fixture because it cannot be one: `drv_aedifica` needs argc/argv and real
+  # files on disk, which is the same reason driver_status.asm gives for not
+  # opening one ("a fixture that opens one has to know where it is"). The
+  # PARSE half -- that `--emitte c` is a fourth value of one table -- is
+  # tests/unit/driver_emitte.asm's; this is the half that needs a process.
+  #
+  # Each row is a refusal with a DIFFERENT reason, and the point of checking
+  # all of them is that they must not collapse into one:
+  #   --emitte c without -o        usage error (2): an artifact needs a file
+  #   an unknown triple            exit 4: not a row of the table
+  #   mips64-none-o64              exit 4: a row this build cannot honour --
+  #                                named separately, because calling a value
+  #                                the design lists "unknown" would be false
+  #   riscv64-linux without c      exit 4: a row whose only backend is the C
+  #                                one, asked for without asking for it
+  # And two acceptances, which prove the refusals are not simply "everything
+  # fails": both 64-bit rows emit, and -- since the row contributes only a
+  # `sizeof(void *)` assert and both rows are 64-bit -- they emit the SAME
+  # BYTES, which is D5's determinism claim reduced to its smallest testable
+  # form. The last check is the one that ties the two harnesses together:
+  # `exsc --emitte c` and `emit_c` must agree byte for byte on the same
+  # program, the same equality tests/ir/saluta.ir's header records for the
+  # reference side.
+  local exsc="$workdir/exsc"
+  if "$FASMG" "$REPO_ROOT/compiler/x86_64/exsc.asm" "$exsc" >"$workdir/exsc.asmlog" 2>&1; then
+    chmod +x "$exsc"
+    ok "exsc: assembles with both backends in it"
+    local hw=( "$REPO_ROOT/examples/saluta.exsc" "$REPO_ROOT/examples/imprime.exsc"
+               "$REPO_ROOT/examples/initium.exsc" )
+    drv_case() {  # LABEL WANT-EXIT ARGS...
+      local lbl="$1" want="$2"; shift 2
+      local rc=0
+      "$exsc" "$@" >"$workdir/drv.out" 2>"$workdir/drv.err" || rc=$?
+      if [[ "$rc" == "$want" ]]; then
+        ok "driver: $lbl -> exit $rc"
+      else
+        bad "driver: $lbl -> exit $rc, expected $want"
+        sed 's/^/         /' "$workdir/drv.err"
+      fi
+    }
+    drv_case "--emitte c without -o" 2 \
+      aedifica --hospes x86_64-linux --emitte c "${hw[@]}"
+    drv_case "--hospes aarch64-linux (not in the table)" 4 \
+      aedifica --hospes aarch64-linux --emitte c "${hw[@]}" -o "$workdir/a.c"
+    drv_case "--hospes mips64-none-o64 (a row C1 cannot honour)" 4 \
+      aedifica --hospes mips64-none-o64 --emitte c "${hw[@]}" -o "$workdir/a.c"
+    drv_case "--hospes riscv64-linux without --emitte c" 4 \
+      aedifica --hospes riscv64-linux "${hw[@]}" -o "$workdir/a.asm"
+    drv_case "--hospes x86_64-linux --emitte c" 0 \
+      aedifica --hospes x86_64-linux --emitte c "${hw[@]}" -o "$workdir/x86.c"
+    drv_case "--hospes riscv64-linux --emitte c" 0 \
+      aedifica --hospes riscv64-linux --emitte c "${hw[@]}" -o "$workdir/rv.c"
+    if cmp -s "$workdir/x86.c" "$workdir/rv.c"; then
+      ok "driver: the two 64-bit rows emit byte-identical units"
+    else
+      bad "driver: the two 64-bit rows differ, and both are 64-bit"
+    fi
+    if "$emit" <"$REPO_ROOT/tests/ir/saluta.ir" >"$workdir/hw.c" 2>/dev/null &&
+       cmp -s "$workdir/hw.c" "$workdir/x86.c"; then
+      ok "driver: exsc --emitte c is byte-identical to emit_c on the hello world"
+    else
+      bad "driver: exsc --emitte c and emit_c disagree on the hello world"
+      diff "$workdir/hw.c" "$workdir/x86.c" 2>&1 | head -20 | sed 's/^/         /'
+    fi
+  else
+    bad "exsc.asm failed to assemble -- the driver's half of D2 cannot be checked"
+    sed 's/^/         /' "$workdir/exsc.asmlog"
+  fi
+
+  local shim="$REPO_ROOT/tests/c/exsrt_shim.c"
+  if [[ ! -f "$shim" ]]; then
+    bad "tests/c/exsrt_shim.c is missing -- nothing can be linked"
+    rm -rf "$workdir"; return
+  fi
+  # Two suppressions, each for something that is NOT a property of the
+  # emitted C, each named rather than folded into a blanket -w:
+  #
+  #   -Wno-unused-function   The prologue and the exsi_* helpers are ONE
+  #     FIXED BLOB (c-backend.md D5: the text is a function of exsc's bytes),
+  #     so a unit that uses no shifts still carries exsi_shl_u. GCC is silent
+  #     about an unused `static inline`; Clang warns, 18 times per unit.
+  #     Measured, both ways; recorded as c-backend.md finding 15. The blob is
+  #     the design, not a defect, and a consumer of the emitted C passes this
+  #     same flag (Kiln will) exactly as one does for any header-shaped set
+  #     of inline helpers. Everything OUTSIDE the blob -- every line the
+  #     lowering actually emits -- is clean under -Wall -Wextra -pedantic
+  #     with nothing suppressed, which is the claim that matters and is what
+  #     the 39 lowerable fixtures demonstrate.
+  #
+  #   -Wno-cpp / -Wno-#warnings   nixpkgs' compiler wrappers inject
+  #     -D_FORTIFY_SOURCE=2 AFTER the caller's flags, so neither
+  #     -U_FORTIFY_SOURCE nor -D_FORTIFY_SOURCE=0 wins (measured: both still
+  #     leave the warning). glibc's <features.h> then `#warning`s at -O0,
+  #     because fortification needs optimisation. That is this HOST's
+  #     packaging talking to its own libc from inside a system header; no
+  #     emitted line is involved, and it was 78 warnings in the log for a
+  #     fact about nixpkgs. The two spellings are the same suppression under
+  #     the two compilers, and both are passed to both -- each accepts the
+  #     other's as an unknown-warning option without complaint.
+  local cflags="-std=c11 -Wall -Wextra -fsanitize=undefined -fno-sanitize-recover=all"
+  cflags="$cflags -Wno-unused-function"
+
+  local found=0 builds=0 src
+  shopt -s nullglob
+  for src in "$REPO_ROOT"/tests/ir/*.ir; do
+    found=$((found + 1))
+    local name; name="$(basename "$src" .ir)"
+    local w="$workdir/$name"
+    echo "-- $name.ir"
+    local directive; directive="$(directive_of "$src")"
+    if [[ -z "$directive" ]]; then
+      bad "$name: no '; TEST:' directive"; continue
+    fi
+    # shellcheck disable=SC2086
+    parse_run_keys "$name" $directive || continue
+
+    # The verdict this fixture's C build must reach: its own c-emit-exit= if
+    # it has one, else parity with the reference's emit-exit=.
+    local want_emit="$k_emit_exit"
+    local why="parity with emit-exit="
+    if [[ -n "$k_c_emit_exit" ]]; then
+      want_emit="$k_c_emit_exit"
+      why="c-emit-exit= (a stated difference)"
+    fi
+
+    local erc=0
+    "$emit" <"$src" >"$w.c" 2>"$w.emitlog" || erc=$?
+    if [[ "$want_emit" != "0" ]]; then
+      if [[ "$erc" == "$want_emit" ]]; then
+        ok "$name: emit_c refuses it, exit=$erc ($why)"
+        sed 's/^/         /' "$w.emitlog"
+      else
+        bad "$name: emit_c exit=$erc, expected $want_emit ($why)"
+        sed 's/^/         /' "$w.emitlog"
+      fi
+      continue
+    fi
+    if [[ "$erc" -ne 0 ]]; then
+      bad "$name: emit_c exit=$erc, expected 0 ($why)"
+      sed 's/^/         /' "$w.emitlog"; continue
+    fi
+    want_one_outcome "$name" || continue
+
+    local opt
+    for cc in gcc clang; do
+      for opt in -O0 -O2; do
+        local tag="$name [$cc $opt]"
+        local bin="$w.$cc$opt.bin"
+        local nowarn="-Wno-cpp"
+        [[ "$cc" == clang ]] && nowarn="-Wno-#warnings"
+        # shellcheck disable=SC2086
+        if ! "$cc" $cflags $nowarn "$opt" -o "$bin" "$w.c" "$shim" >"$w.cclog" 2>&1; then
+          bad "$tag: the emitted C does not compile"
+          sed 's/^/         /' "$w.cclog"
+          continue
+        fi
+        # A warning is not a failure, but it is reported: c-backend.md D3
+        # makes `-Wall -Wextra` clean the target, and a warning that nobody
+        # sees is a target nobody holds.
+        if [[ -s "$w.cclog" ]]; then
+          note "$tag: compiler said:"
+          sed 's/^/         /' "$w.cclog"
+        fi
+        builds=$((builds + 1))
+        check_run "$tag" "$bin" "$w.$cc$opt" \
+                  "$k_expect_exit" "$k_abort" "$k_stdout" "$k_stdin" noaudit || true
+      done
+    done
+  done
+  shopt -u nullglob
+  rm -rf "$workdir"
+  floor_check "IR fixtures in tests/ir/" "$found" "$IR_FIXTURE_FLOOR" IR_FIXTURE_FLOOR
+  floor_check "differential builds run and checked" "$builds" \
+              "$DIFFERENTIAL_BUILD_FLOOR" DIFFERENTIAL_BUILD_FLOOR
 }
 
 run_program_tests() {
@@ -1232,6 +1526,8 @@ echo
 run_ir_tests
 echo
 run_program_tests
+echo
+run_differential_tests
 echo
 echo "== summary =="
 echo "pass: $PASS  fail: $FAIL"

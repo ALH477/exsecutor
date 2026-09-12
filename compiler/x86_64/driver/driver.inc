@@ -101,4 +101,12 @@
 ; §18.2.
 ; -----------------------------------------------------------------------------
 
+; The REACH backend (docs/design/c-backend.md), for `--emitte c`. It goes
+; here and not in exsc.asm because it must follow `lower/lower.inc`, which
+; brings the reference backend's whole chain (program -> emit -> verify ->
+; print -> parse -> ir) -- backend_c/ hangs off that chain rather than
+; duplicating its tail, so it must not be included where verify.inc is not
+; yet defined. emit_c.inc's header states the contract.
+include '../backend_c/program_c.inc'
+
 include 'run.inc'

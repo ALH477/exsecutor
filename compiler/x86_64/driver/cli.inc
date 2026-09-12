@@ -245,6 +245,38 @@ DRV_EMIT_NONE   = -1
 DRV_EMIT_TOKENS = 0
 DRV_EMIT_CST    = 1
 DRV_EMIT_AST    = 2
+; `c` is unlike the other three: it is an ARTIFACT, not a stage dump. It
+; requires `-o OUT`, writes the translation unit there, writes nothing to
+; stdout and emits no fasmg (docs/design/c-backend.md D2). It extends this
+; flag rather than adding a `--backend` because `--emitte` already carries
+; the "this instead of a program" meaning, and one flag with four values is
+; one table here.
+DRV_EMIT_C      = 3
+
+; ---- the closed `--hospes` table, c-backend.md D2 --------------------------
+; Spec 9.5 gives `--hospes` no default and forbids guessing one; what was
+; missing until now was a table of what each accepted value FIXES. One row
+; per value, and the row says the width of `mensura` -- and therefore of
+; `ptr` -- which is the one fact the emitted C must assert rather than leave
+; to the C compiler.
+;
+;   value             mensura/ptr   backends
+;   x86_64-linux      64            reference, C
+;   riscv64-linux     64            C only
+;   mips64-none-o64   32            C only -- NOT ACCEPTED BY THIS BUILD
+;
+; The third row is parsed and refused. The obstacle is not here and is not
+; `mensura`, which the checker already parameterises through
+; `chk_set_target` and which `lower/ty.inc` already reads from: it is that
+; `lower/ty.inc` interns `ref`/`refc` at width 64 unconditionally and
+; `ir.inc`'s `bfa_ty_ptr` interns `ptr` at 64, and those are two other
+; trees -- one of them a file the C backend reuses UNCHANGED by contract.
+; Reported, not done; c-backend.md finding 6 is corrected in the same
+; commit, because it said `mensura` was the hardcoded thing and it is not.
+DRV_HOSPES_NONE    = 0
+DRV_HOSPES_X86_64  = 1
+DRV_HOSPES_RISCV64 = 2
+DRV_HOSPES_MIPS64  = 3		; parsed so the refusal can name the reason
 
 ; ---- option spellings ------------------------------------------------------
 drv_o_hospes db '--hospes',0
@@ -258,6 +290,11 @@ drv_v_json   db 'json',0
 drv_v_tokens db 'tokens',0
 drv_v_cst    db 'cst',0
 drv_v_ast    db 'ast',0
+drv_v_c      db 'c',0
+; the rows of the --hospes table, above
+drv_v_x86_64  db 'x86_64-linux',0
+drv_v_riscv64 db 'riscv64-linux',0
+drv_v_mips64  db 'mips64-none-o64',0
 
 ; The pseudo-path a `--env` key is lexed under. It reaches nothing but the
 ; interner and a discarded diagnostic vector; it exists because
@@ -280,7 +317,7 @@ drv_m_envkey   db '--env: KEY does not spell an identifier (spec 8.2): ',0
 drv_m_envdup   db '--env: a repeated KEY is an error, not a last-wins (spec 9.3): ',0
 drv_m_epoch    db '--epoch: expected decimal seconds since the Unix epoch, got: ',0
 drv_m_diagn    db '--diagnostica: expected textus or json, got: ',0
-drv_m_emitte   db '--emitte: expected tokens, cst or ast, got: ',0
+drv_m_emitte   db '--emitte: expected tokens, cst, ast or c, got: ',0
 
 ; ---- small predicates ------------------------------------------------------
 
@@ -941,8 +978,18 @@ proc drv_parse, argc, argv
 	lea	rdx, [drv_v_ast]
 	call	drv_arg_is
 	test	eax, eax
-	jz	.bad_emitte
+	jz	.try_c
 	mov	dword [r15 + DrvCtx.emitte], DRV_EMIT_AST
+	mov	dword [r15 + DrvCtx.emitteset], 1
+	jmp	.next
+  .try_c:
+	mov	rdi, [vp]
+	mov	rsi, [vn]
+	lea	rdx, [drv_v_c]
+	call	drv_arg_is
+	test	eax, eax
+	jz	.bad_emitte
+	mov	dword [r15 + DrvCtx.emitte], DRV_EMIT_C
 	mov	dword [r15 + DrvCtx.emitteset], 1
 	jmp	.next
 

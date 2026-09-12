@@ -161,10 +161,25 @@ drv_m_todo2  db 'only `aedifica` does anything: it reads the SOURCE files, appli
 drv_m_todolsp db '`lsp` is marked [OPEN] Deferred in spec 18.2 -- it needs the lossless CST, which does not exist.',0
 drv_m_nohospes db 'aedifica: --hospes TRIPLE is required. Spec 9.5: exsc with no --hospes is an error, and there is no default-to-build-platform.',0
 drv_m_emptyhospes db 'aedifica: --hospes: TRIPLE must not be empty',0
-; The only triple this assembly implementation has anything to target --
-; see the comment on drv_aedifica's third required-field check, above.
-drv_t_x86_64_linux db 'x86_64-linux',0
-drv_m_hospesunsup db 'aedifica: --hospes: this build only targets x86_64-linux (the reference backend emits x86-64 fasmg text and there is no second backend to pick; spec 9.5 forbids guessing one), got: ',0
+; The `--hospes` table's three messages. Its rows live in cli.inc beside the
+; value spellings; these say what each refusal is. The old single message
+; said "there is no second backend to pick", which stopped being true the
+; day `--emitte c` existed -- text is not permanent (spec 8.3), and this is
+; the amendment.
+drv_m_hospesunsup db 'aedifica: --hospes: not a value this build accepts. The closed table is x86_64-linux (both backends), riscv64-linux (--emitte c only) and mips64-none-o64 (not yet, see below). Spec 9.5 forbids guessing one. Got: ',0
+drv_m_hospesnoc db 'aedifica: --hospes: this value names no reference backend, so it needs --emitte c. The reference backend emits x86-64 fasmg text and targets x86_64-linux alone. Got: ',0
+drv_m_hospeso64 db 'aedifica: --hospes: mips64-none-o64 is a row of the design table that this build cannot yet honour. Its 32-bit `ptr` needs lower/ty.inc, which interns ref/refc at width 64 unconditionally, and backend_fasmg/ir.inc`s bfa_ty_ptr -- other trees, and one of them a file the C backend reuses unchanged. Scheduled as C4 (docs/design/c-backend.md section 7). Got: ',0
+; The driver's `--hospes` row travels into `bfc_emit_unit` unchanged, so the
+; two enumerations must agree value for value. Asserted at ASSEMBLY time
+; rather than trusted: they are declared in two files, one of which
+; (backend_c/) is meant to be usable without driver/ at all, and a silent
+; renumbering would emit a unit asserting the wrong pointer width.
+assert DRV_HOSPES_NONE    = BFC_HOSPES_NONE
+assert DRV_HOSPES_X86_64  = BFC_HOSPES_X86_64
+assert DRV_HOSPES_RISCV64 = BFC_HOSPES_RISCV64
+assert DRV_HOSPES_MIPS64  = BFC_HOSPES_MIPS64
+
+drv_m_emitcnoout db 'aedifica: --emitte c requires -o OUT. Unlike tokens, cst and ast, it emits an ARTIFACT rather than a stage dump: spec 12 makes OUT the emitted text exsc never assembles, and the reproducibility gates diff OUT files. A C translation unit on stdout would be the one emitted text with no file to diff.',0
 drv_m_nosrc  db 'aedifica: no SOURCE given',0
 drv_m_trunc  db 'a diagnostic did not fit its buffer and was truncated; the output above is incomplete. That is a limit of this compiler, not of the source.',0
 drv_m_okpfx  db 'aedifica: ',0
@@ -176,6 +191,7 @@ drv_m_okbare db ': the front end accepts this source -- it lexes, parses, and bu
 ; caller can check without opening the file.
 drv_m_wrote  db 'aedifica: wrote ',0
 drv_m_wrote2 db ' -- fasmg source, not a binary: assemble it with `fasmg OUT BIN` (spec 12, OUT is emitted text and exsc never assembles it). Bytes: ',0
+drv_m_wrote2c db ' -- one C11 translation unit of this module`s functions, not a binary and not fasmg source: compile it with your own C compiler (spec 12, OUT is emitted text and exsc never compiles it; spec 12 also puts execve on no allowlist). It is a LIBRARY: it has no entry point and imports one symbol, `_Noreturn void exsrt_abortus(unsigned kind)`. Bytes: ',0
 drv_m_lwrfail db 'aedifica: the lowering refused this module and no object was written. That is a compiler bug, not a fact about this source (spec 16 Stage 3).',0
 drv_m_okunit db ' and the other SOURCE files given with it: the front end accepts this compilation unit -- it lexes and parses all of it and builds ONE typed AST from it (spec 12: the files named form one module). No object was requested, so none was written. Files in the unit: ',0
 drv_m_emitgate db ': --emitte was given, but this source failed the spec 8.1 source-hygiene gate, so it was never tokenized -- there is no token stream, no CST and no typed AST to dump. Nothing was written to stdout. See the diagnostic below.',0
@@ -797,6 +813,7 @@ proc drv_aedifica, argc, argv
 		slot drvent, dq		; -> its DrvSrc
 		slot drvmdl, dq		; -> BfaModule, the lowered IR (`-o` only)
 		slot drvpot, dq		; the eleven-bit capability mask
+		slot drvhos, dd		; the accepted DRV_HOSPES_* row
 		slot drvop,  dq		; -> OUT's bytes }  bfa_emit_program's
 		slot drvol,  dq		; ... and how many }  two return values
 	endl
@@ -833,13 +850,64 @@ proc drv_aedifica, argc, argv
 	cmp	dword [r15 + DrvCtx.nsrc], 0
 	je	.no_source
 
-	; ---- the target: only x86_64-linux exists in this build -------------
+	; ---- the target: one row of `--hospes`'s closed table ---------------
+	; What used to be one compare against `x86_64-linux` is now the small
+	; table that compare's own comment anticipated ("a second accepted
+	; triple, the day one exists, is a small table here (triple bytes ->
+	; ptrbits) in place of the single compare below -- not a redesign").
+	; The day has arrived: docs/design/c-backend.md D2 gives the table and
+	; the C backend is the second backend that compare said did not exist.
+	;
+	; A row is accepted iff SOME backend in this build can honour it:
+	;   x86_64-linux     both backends
+	;   riscv64-linux    the C backend only, so `--emitte c` is required
+	;   mips64-none-o64  refused outright -- its 32-bit `ptr` needs
+	;                    lower/ty.inc and ir.inc, which are other trees
+	; Each refusal is a USAGE error, exit 4, no EXS-E code: the fault is in
+	; the invocation, not in the source (spec 9.3), which is the same class
+	; `drv_m_hospesunsup` always was.
+	mov	dword [drvhos], DRV_HOSPES_NONE
 	mov	rdi, [r15 + DrvCtx.hospes]
 	mov	rsi, [r15 + DrvCtx.hospesn]
-	lea	rdx, [drv_t_x86_64_linux]
+	lea	rdx, [drv_v_x86_64]
 	call	drv_arg_is
 	test	eax, eax
-	jz	.hospes_unsupported
+	jz	.not_x86
+	mov	dword [drvhos], DRV_HOSPES_X86_64
+	jmp	.hospes_known
+  .not_x86:
+	mov	rdi, [r15 + DrvCtx.hospes]
+	mov	rsi, [r15 + DrvCtx.hospesn]
+	lea	rdx, [drv_v_riscv64]
+	call	drv_arg_is
+	test	eax, eax
+	jz	.not_riscv
+	mov	dword [drvhos], DRV_HOSPES_RISCV64
+	; this row names no reference backend, so it needs --emitte c
+	cmp	dword [r15 + DrvCtx.emitte], DRV_EMIT_C
+	jne	.hospes_needs_c
+	jmp	.hospes_known
+  .not_riscv:
+	mov	rdi, [r15 + DrvCtx.hospes]
+	mov	rsi, [r15 + DrvCtx.hospesn]
+	lea	rdx, [drv_v_mips64]
+	call	drv_arg_is
+	test	eax, eax
+	jnz	.hospes_o64
+	jmp	.hospes_unsupported
+  .hospes_known:
+
+	; ---- --emitte c requires -o OUT --------------------------------------
+	; Unlike tokens/cst/ast, `c` is an artifact rather than a dump: it is
+	; written to OUT and nothing goes to stdout, because spec 12 says OUT is
+	; emitted text exsc never assembles and the reproducibility gates diff
+	; OUT files. A C unit on stdout would be the one emitted text with no
+	; file to diff (c-backend.md D2).
+	cmp	dword [r15 + DrvCtx.emitte], DRV_EMIT_C
+	jne	.emitte_c_ok
+	cmp	qword [r15 + DrvCtx.outpath], 0
+	je	.emitte_c_no_out
+  .emitte_c_ok:
 
 	; ---- the source: every file of the §12 unit, into one buffer ---------
 	lea	rdi, [srclen]
@@ -1037,6 +1105,17 @@ proc drv_aedifica, argc, argv
 					; touched again until then next run
 	xor	r8, r8
 	cmp	qword [r15 + DrvCtx.outpath], 0
+	je	.chk_nomain
+	; `--emitte c` writes a LIBRARY: one translation unit of functions,
+	; with no entry point and no runtime (docs/design/c-backend.md D1). So
+	; `-o` does not mean "a program was asked for" on that path and a
+	; missing `initium` is not EXS-E0424. This closes spec 4.7's [OPEN]
+	; sentence for the C target only -- "no library artifact exists for the
+	; reference backend, so -o on a module without initium ... is
+	; EXS-E0424" -- and the reference's half of it stays true and stays
+	; [OPEN], which is why the flag is suppressed HERE rather than the
+	; sentence being deleted.
+	cmp	dword [r15 + DrvCtx.emitte], DRV_EMIT_C
 	je	.chk_nomain
 	mov	r8, CHK_F_PROGRAM		; -o was given: a PROGRAM was asked
 					; for (spec §4.1 rule 2), so a missing
@@ -1265,6 +1344,18 @@ proc drv_aedifica, argc, argv
 	; and the image for those is `BFA_MXCSR_AD_PAREM` (runtime.md 2.7).
 	; The day `--numeri` or an `ego` reader exists, this is where the other
 	; two `BFA_MXCSR_*` images get chosen from.
+	; ---- which backend ---------------------------------------------------
+	; `--emitte c` takes the REACH backend, and takes NONE of the two
+	; arguments above: library mode has no capability closure to gate on
+	; and no MXCSR image to set, because it emits no entry point and no
+	; runtime (c-backend.md D1). What it takes instead is the `--hospes`
+	; row, which contributes exactly one `_Static_assert` line to the unit.
+	; The capability computation is skipped rather than computed and
+	; discarded, so a module whose closure the checker cannot answer still
+	; emits a C library.
+	cmp	dword [r15 + DrvCtx.emitte], DRV_EMIT_C
+	je	.emit_c
+
 	mov	rdi, [r15 + DrvCtx.ast]
 	call	__drv_potestates
 	mov	[drvpot], rax
@@ -1276,6 +1367,20 @@ proc drv_aedifica, argc, argv
 	call	bfa_emit_program	; rax = the bytes, rdx = how many
 	mov	[drvop], rax
 	mov	[drvol], rdx
+	jmp	.wrote_pick
+
+  .emit_c:
+	mov	rdi, [drvmdl]
+	mov	rsi, [r15 + DrvCtx.arena]
+	mov	edx, [drvhos]		; a DRV_HOSPES_* row; BFC_HOSPES_* has
+					; the same three values by construction,
+					; and __bfc_prog_hospes refuses any row
+					; it cannot honour rather than trusting
+					; the driver to have filtered it
+	call	bfc_emit_unit		; rax = the bytes, rdx = how many
+	mov	[drvop], rax
+	mov	[drvol], rdx
+  .wrote_pick:
 
 	mov	rdi, [r15 + DrvCtx.outpath]
 	mov	rsi, [r15 + DrvCtx.outpathn]
@@ -1294,6 +1399,12 @@ proc drv_aedifica, argc, argv
 	mov	rsi, [r15 + DrvCtx.outpath]
 	mov	rdx, [r15 + DrvCtx.outpathn]
 	lea	rcx, [drv_m_wrote2]
+	cmp	dword [r15 + DrvCtx.emitte], DRV_EMIT_C
+	jne	.wrote_kind
+	lea	rcx, [drv_m_wrote2c]	; it is not fasmg source and it is not
+					; a binary, and saying "assemble it with
+					; fasmg" of a C file would be wrong
+  .wrote_kind:
 	mov	r8, [drvol]
 	call	drv_msgu
   .wrote_quiet:
@@ -1341,15 +1452,45 @@ proc drv_aedifica, argc, argv
 	mov	eax, DRV_EXIT_USAGE
 	return
   .hospes_unsupported:
-	; Not a usage error -- the triple is well-formed, this build simply has
-	; no backend for anything but x86_64-linux. See the comment on this
-	; proc's third required-field check, above, for why that is exit 4.
+	; The triple is well-formed; it is simply not a row of the table. See
+	; the comment on this proc's third required-field check, above, for why
+	; that is exit 4 rather than exit 2.
 	lea	rdi, [drv_m_hospesunsup]
 	mov	rsi, [r15 + DrvCtx.hospes]
 	mov	rdx, [r15 + DrvCtx.hospesn]
 	xor	rcx, rcx
 	call	drv_msg
 	mov	eax, DRV_EXIT_TODO
+	return
+  .hospes_needs_c:
+	; A row whose only backend is the C one, asked for without `--emitte c`.
+	; The value is in the table and the fault is still in the invocation.
+	lea	rdi, [drv_m_hospesnoc]
+	mov	rsi, [r15 + DrvCtx.hospes]
+	mov	rdx, [r15 + DrvCtx.hospesn]
+	xor	rcx, rcx
+	call	drv_msg
+	mov	eax, DRV_EXIT_TODO
+	return
+  .hospes_o64:
+	; The row exists in the design's table and this build cannot honour it.
+	; Named separately from an unknown triple because the two are different
+	; facts: this one is scheduled work with a stated blocker, and saying
+	; "unknown" of a value the design lists would be false.
+	lea	rdi, [drv_m_hospeso64]
+	mov	rsi, [r15 + DrvCtx.hospes]
+	mov	rdx, [r15 + DrvCtx.hospesn]
+	xor	rcx, rcx
+	call	drv_msg
+	mov	eax, DRV_EXIT_TODO
+	return
+  .emitte_c_no_out:
+	lea	rdi, [drv_m_emitcnoout]
+	xor	rsi, rsi
+	xor	rdx, rdx
+	xor	rcx, rcx
+	call	drv_msg
+	mov	eax, DRV_EXIT_USAGE
 	return
   .no_source:
 	lea	rdi, [drv_m_nosrc]
