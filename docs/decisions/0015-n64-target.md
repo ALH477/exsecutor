@@ -262,17 +262,61 @@ The honest labelling that follows, and which §9.5 must carry:
 
 ## Open
 
-- **The ROM's stack budget.** `Arbor`
-  (`examples/streamdb/lector_streamdb.exsc:191-199`) is about 69,640 bytes
-  at `mensura` = 64 and 53,252 at 32; with `probatio`'s 64 KB buffer and
-  `arbor_percurre`'s locals the live frame is roughly **180 KB at 64 and
-  ~140 KB at 32**, and it is returned through the hidden-return pointer, so
-  the *caller* owns those bytes. libultra thread stacks are conventionally
-  8–16 KB. Under qemu's 8 MB stack this passes silently: **the certificate
-  will be green and the ROM will overflow.** Linking into a Kiln ROM is
-  `[OPEN]` and that `[OPEN]` includes a measured stack budget. This is not a
-  C4 correctness defect — it is a fact about the reader that C4 is the first
-  thing to make consequential.
+- **The ROM's stack budget — MEASURED, 2026-09-12, and it does not fit.**
+  The estimate first written here ("roughly 180 KB at 64 and ~140 KB at 32")
+  was derived from the source and was **wrong**. Measured with
+  `mips64-elf-gcc 14.4.0 -mabi=o64 -fstack-usage` on the emitted o64 unit:
+
+  | frame | bytes |
+  |---|---|
+  | `exs_arbor_percurre`, one frame | **127,184** (`-Os`); 127,224 (`-O2`) |
+  | `exs_suffixum_percurre` | 8,832 |
+  | deepest callee below either (`exs_caput_elige`) | 328 |
+  | `Arbor`, which the **caller** owns via the hidden-return pointer | 53,252 |
+  | `acies<u8, 65536>`, if the caller holds it too (`probatio` does) | 65,536 |
+
+  So the deepest live stack is **246,300 bytes ≈ 241 KB** in `probatio`'s
+  shape, and **≈ 177 KB** is the floor for any caller at all, since the
+  `Arbor` result and `arbor_percurre`'s own frame are unavoidable even if the
+  container bytes are pointed at DMA'd RDRAM rather than copied to the stack.
+  Corroborated twice. `exs_initium` in the full unit measures 122,136 against
+  118,788 predicted for a caller holding both aggregates. And the clang
+  already in this repository's closure, at `-mabi=n32 -march=mips3 -Os`,
+  measures `arbor_percurre` at 127,224 — within 40 bytes of Kiln's GCC — so
+  the number is a property of the emitted C rather than of one toolchain, and
+  it can be re-measured without leaving the flake:
+
+  ```
+  exsc aedifica --hospes mips64-none-o64 examples/streamdb/lector_streamdb.exsc \
+       --emitte c -o rdr.c
+  clang --target=mips64-unknown-elf -mabi=n32 -march=mips3 -ffreestanding \
+        -fno-builtin -std=c11 -Os -G0 -mno-abicalls -fstack-usage -c rdr.c -o /dev/null
+  sort -t$'\t' -k2 -rn rdr.su | head
+  ```
+
+  It is **not gated**, and deliberately: there is no ROM to overflow yet, so a
+  floor on a frame size would be a number with no consequence attached.
+
+  libultra thread stacks are conventionally 8–16 KB, and
+  `nix/checks/asset-budget.nix` sets a 3 MB working ceiling out of 4 MB
+  RDRAM. **So the reader cannot be linked into a Kiln ROM as written**, and
+  no stack Kiln would plausibly grant makes it fit — this is a factor of
+  15–30, not a tuning problem.
+
+  Under qemu's 8 MB stack it all passes silently, which is exactly the
+  failure mode worth naming: **the certificate is green and the ROM would
+  overflow.** The cross phase cannot see this and should not be expected to.
+
+  The cause is recorded, and is not a C4 defect. §6.3 decision 3 makes a
+  parameter **borrowed**, so a function cannot fill an array it was handed
+  (`receptor.md` finding 11, `c-backend.md:998-1008`): `arbor_percurre` must
+  therefore *return* `Arbor` by value and hold every `acies` as a stack
+  local. Three ways out, none of them C4's and none free: caller-supplied
+  output arrays, which is a language feature; static storage, which needs
+  the module-level `firma` array that still traps under `-o`; or smaller
+  bounds — `nodi_maximi` 2048 and `pila_maxima` 1025 are what dominate, and
+  cutting them changes what the certificate certifies. Linking into a Kiln
+  ROM stays `[OPEN]`, and this is the reason rather than a to-do.
 - **`prelude/interface.inc:87`'s `EXS_IFACE_T_U64`** is commented "`mensura`
   on x86_64-linux", which is the tell that it was known to be
   target-specific. `lower/lower.inc:154,169` maps it to an unconditional

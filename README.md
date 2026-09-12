@@ -432,8 +432,14 @@ there and runs — it is the only row whose `mensura` is 32, so `+` traps at
 with 32-bit addresses against the reference backend on every run of the
 suite (§14 entry 25, ADR 0015). What is **not** there is the o64 ABI itself,
 which the certificate runs the n32 ABI as a proxy for, and any ROM: the
-reader's live stack frame is about 140 KB against libultra's 8–16 KB thread
-stacks, so linking it into Kiln needs a stack budget nobody has drawn.
+reader's deepest live stack **measures 241 KB** (`mips64-elf-gcc -mabi=o64
+-fstack-usage`; `arbor_percurre` alone is a 127,184-byte frame) against
+libultra's 8–16 KB thread stacks and a 3 MB working ceiling, so it **cannot
+be linked into a ROM as written** — a factor of 15–30, not a tuning problem.
+The cause is §6.3 decision 3: a parameter is borrowed, so a function cannot
+fill an array it was handed, and `arbor_percurre` must return its 53,252-byte
+result by value with every `acies` a stack local. ADR 0015's Open section has
+the table and the three ways out.
 Neither does the `ego` reader, the module system, the LSP, or `exsc emenda`. `EXS-E0105`
 (confusables) has no hermetic data source. The emitted program's capability
 mask is an over-approximation with the exact fix recorded beside it, and,
