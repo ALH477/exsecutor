@@ -1214,7 +1214,7 @@ Numbered; each names the document and the sentence.
 | D5 mangling | C1 | `tests/unit/bfc_mangle.asm` |
 | D5 determinism | C2 | `tools/reproduce.sh` extended to diff two `--emitte c` units |
 | D6 | C2 | `run_differential_tests` green in `nix flake check` |
-| D6's closure assertion | C2 | `nix flake check` with a deliberately added `pkgs.gcc` on `packages.exsc` fails at evaluation (run once by hand, recorded) |
+| D6's closure assertion | C1 | **done, run once by hand**: `pkgs.gcc` added to `buildExsecutorPackage`'s `nativeBuildInputs` makes `nix build .#exsc` fail at EVALUATION -- `error: an integer with value '2' is not equal to an integer with value '1'`, pointing at `assertBuildClosure`, before any derivation is instantiated. Reverted immediately; the assertion is `flake.nix:175`. |
 | D7, section 6 | C3, C4 | the reader's certificate; the N64 gates |
 | D1's whole-program mode | — | `[OPEN]`, not scheduled |
 
