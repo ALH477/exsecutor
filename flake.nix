@@ -318,6 +318,19 @@
       # LGPL-3.0-only identifier. Same digest discipline as fasmg-x86 and
       # hydramesh-wire above: PROVENANCE.md excluded, LC_ALL=C pinned.
       modemVendorDigest = "f3d58691816242e1e0de86d60ef2defb7a323a6c85551c12a2e3f96f721c6ac2"; # LC_ALL=C
+
+      # vendor/hydramodem-rx: seventy impaired WAVs made from the three above
+      # (white noise, sample-clock offsets, carrier-frequency offsets) and
+      # verdicta.tsv, HydraModem's own frame_rx verdict on each --
+      # vendor/hydramodem-rx/PROVENANCE.md has the generator verbatim, the
+      # integers every vector is a function of, and the per-file digests. The
+      # OTHER kind of evidence from hydramodem-tx: that tree is what the
+      # reference produces, this one is what it judges (ADR 0014 decision 2).
+      # Program output vendored as a test certificate, not code; nothing here
+      # links into exsc and the files keep upstream's LGPL-3.0-only
+      # identifier. Same digest discipline as the three above: PROVENANCE.md
+      # excluded, LC_ALL=C pinned.
+      rxVendorDigest = "4d8769c2a544057600d7271cfc75bac58dfe2801d97a9486eb6dbcddcc9ca05e"; # LC_ALL=C
     in
     {
       packages.${system} = {
@@ -528,6 +541,41 @@
           '';
         };
 
+        # Same check again, for vendor/hydramodem-rx (ADR 0014 decision 2: the
+        # impaired set and the reference receiver's verdict on each). Its own
+        # check and not an extension of modem-vendor-integrity above, because
+        # the two trees are re-vendored for different reasons and a single
+        # digest over both would not say which moved.
+        rx-vendor-integrity = pkgs.stdenvNoCC.mkDerivation {
+          name = "check-vendor-hydramodem-rx-integrity";
+          nativeBuildInputs = [ pkgs.coreutils pkgs.findutils ];
+          dontUnpack = true;
+          buildCommand = ''
+            set -e
+            export LC_ALL=C
+            mkdir -p work/vendor
+            cp -r --no-preserve=mode -- ${./vendor/hydramodem-rx} work/vendor/hydramodem-rx
+            cd work
+            actual="$(find vendor/hydramodem-rx -type f ! -name PROVENANCE.md | sort | xargs sha256sum | sha256sum | cut -d' ' -f1)"
+            echo "expected (LC_ALL=C): ${rxVendorDigest}"
+            echo "actual   (LC_ALL=C): $actual"
+            if [ "$actual" != "${rxVendorDigest}" ]; then
+              echo "" >&2
+              echo "FAIL: vendor/hydramodem-rx content hash does not match." >&2
+              echo "These are impaired WAVs derived from HydraModem's own" >&2
+              echo "transmitter output by the integer generator printed in" >&2
+              echo "PROVENANCE.md, plus the reference receiver's verdict on" >&2
+              echo "each. They are never edited here. A mismatch means a local" >&2
+              echo "edit or a re-vendor; report it rather than updating this" >&2
+              echo "digest to match -- the verdicts are attached to THESE" >&2
+              echo "bytes and mean nothing attached to others." >&2
+              exit 1
+            fi
+            mkdir -p "$out"
+            echo "$actual" > "$out"/digest
+          '';
+        };
+
         test = pkgs.stdenvNoCC.mkDerivation {
           name = "check-unit-tests";
           nativeBuildInputs = [
@@ -552,6 +600,10 @@
             # reference files (stdout=vendor/hydramodem-tx/<name>); without
             # them here those tests would have nothing to compare against.
             cp -r --no-preserve=mode -- ${./vendor/hydramodem-tx} repo/vendor/hydramodem-tx
+            # tests/programs/receptio_vec_*/ read these seventy impaired WAVs
+            # on stdin (stdin=vendor/hydramodem-rx/<kind>/<name>.wav); without
+            # them here those directories would have nothing to decode.
+            cp -r --no-preserve=mode -- ${./vendor/hydramodem-rx} repo/vendor/hydramodem-rx
             chmod +x repo/tests/run.sh repo/tools/*.sh
             # The sandbox has no /usr/bin/env, and tests/run.sh invokes the
             # audit as an executable -- so the `#!/usr/bin/env bash` shebang is

@@ -23,6 +23,16 @@ vendor/fasmg-x86/** -text
 # reason vendor/fasmg-x86/** is pinned above.
 vendor/hydramodem-tx/** -text
 
+# vendor/hydramodem-rx/ is the same discipline for the other direction: seventy
+# impaired WAVs derived from those three by the integer generator
+# vendor/hydramodem-rx/PROVENANCE.md prints, and verdicta.tsv, HydraModem's own
+# receiver's verdict on each. The verdicts are attached to THESE bytes, so a
+# checkout that rewrote one would leave a recorded verdict pointing at a file
+# that no longer exists. verdicta.tsv is tab-separated text and would survive
+# `text=auto`, but it is inside the digest with the WAVs and is pinned with
+# them for that reason.
+vendor/hydramodem-rx/** -text
+
 # --- tests/conformance/: byte-exact by definition, DO NOT NORMALISE ---
 #
 # These fixtures exist to violate §8.1 on purpose. entry20_crlf.exsc must
@@ -71,3 +81,4 @@ examples/hydramodem/*.wav -text
 # PROVENANCE.md is ours, not upstream's, and is excluded from the digest.
 vendor/fasmg-x86/PROVENANCE.md text eol=lf
 vendor/hydramodem-tx/PROVENANCE.md text eol=lf
+vendor/hydramodem-rx/PROVENANCE.md text eol=lf
