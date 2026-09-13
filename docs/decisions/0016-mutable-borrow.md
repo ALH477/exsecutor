@@ -81,9 +81,32 @@ the first. `exs_arbor_percurre`'s 127,016-byte frame is, measured by slot:
 | four field temporaries, built then copied into that local `Arbor` | 49,152 |
 | genuine traversal working state | 24,612 |
 
-Writing through a caller-supplied `Arbor` deletes the double storage:
-**246,300 → 24,940 bytes of stack**, with the 52 KB `Arbor` movable to static
-storage. That is what makes a Kiln ROM possible.
+Writing through a caller-supplied `Arbor` removes the 53,252 from the callee.
+
+**Corrected, 2026-09-12, on measurement.** An earlier draft of this section said
+"246,300 → 24,940 bytes of stack", which compared a *total* live stack against a
+*callee-only* frame. The honest arithmetic, all on the 32-bit-`mensura` row:
+
+| | bytes |
+|---|---|
+| `arbor_percurre` today | 127,016 |
+| ... of which the `Arbor` the borrow removes | 53,252 |
+| ... of which six array-literal temporaries **the borrow does not remove** | 53,248 |
+| ... genuine traversal working state | ~20,516 |
+
+The 53,248 is a *second* defect, independent of borrowing: a struct literal
+lowers each aggregate field to its own slot and then copies it in, so the six
+`[0; 2048]` initialisers cost the struct's size twice. Measured on a minimal
+case — `structura S { n: mensura, v: acies<u64,2048> }` built from a literal
+emits **two** slots, 16,392 and 16,384 — while a bare
+`mutabilis x: acies<u64,2048> = [0; 2048]` emits one. So the borrow alone would
+*relocate* those temporaries to whichever caller initialises the storage, not
+remove them: measured, initialising an `Arbor` costs a caller 139,328.
+
+Both levers together take the callee to ~20,500 and leave the caller paying
+53,252 for storage it needs anyway — which is what lets decision 4 stay strict
+rather than trading a safety rule for a number. Kiln's own stack is the
+callee's, because the engine holds the `Arbor` in its own storage.
 
 ## Decision
 

@@ -1,0 +1,70 @@
+// The first program in this tree that runs a mutable borrow (ADR 0016).
+//
+// Two callees fill storage the CALLER owns: one an `acies`, one a `structura`.
+// Neither returns the aggregate, so neither pays for a copy, and the writes are
+// visible here because `&mutabilis T` is a borrow of the caller's own slot.
+//
+// What each exit status means:
+//   0  every byte the callees wrote was read back here
+//   1  the `acies` did not carry the callee's writes
+//   2  the struct's scalar field did not
+//   3  the struct's array field did not
+//   4  the immutable borrow's READ disagreed with the same bytes read directly
+
+publica structura Par {
+    n: u8
+    v: acies<u8, 4>
+}
+
+// A mutable borrow of an array: the callee writes, the caller sees it.
+publica functio imple(v: &mutabilis acies<u8, 4>) -> u8 {
+    (*v)[0] = 65;
+    (*v)[1] = 66;
+    (*v)[2] = 67;
+    (*v)[3] = 68;
+    redde 0;
+}
+
+// A mutable borrow of a struct: a scalar field and an array field.
+publica functio orna(p: &mutabilis Par) -> u8 {
+    (*p).n = 77;
+    (*p).v[0] = 87;
+    (*p).v[3] = 90;
+    redde 0;
+}
+
+// An IMMUTABLE borrow reads and may not write -- the refusal is
+// tests/unit/chk_ty_param_write.asm's row 8, and this is the accepted half.
+publica functio lege(v: &acies<u8, 4>) -> u8 {
+    redde (*v)[0];
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma s = Scriptor.ad_exitum(m.ambitus());
+
+    mutabilis b: acies<u8, 4> = [48; 4];
+    firma i0 = imple(b);
+    si b[0] ne 65 { redde 1; }
+    si b[1] ne 66 { redde 1; }
+    si b[2] ne 67 { redde 1; }
+    si b[3] ne 68 { redde 1; }
+
+    mutabilis p = Par { n: 0, v: [48; 4] };
+    firma i1 = orna(p);
+    si p.n ne 77 { redde 2; }
+    si p.v[0] ne 87 { redde 3; }
+    si p.v[3] ne 90 { redde 3; }
+
+    si lege(b) ne b[0] { redde 4; }
+
+    // ABCD, then the struct's own three bytes, then a newline.
+    mutabilis n: mensura = s.scribe_octeto(b[0]);
+    n = n + s.scribe_octeto(b[1]);
+    n = n + s.scribe_octeto(b[2]);
+    n = n + s.scribe_octeto(b[3]);
+    n = n + s.scribe_octeto(p.n);
+    n = n + s.scribe_octeto(p.v[0]);
+    n = n + s.scribe_octeto(p.v[3]);
+    n = n + s.scribe_octeto(10);
+    redde 0;
+}

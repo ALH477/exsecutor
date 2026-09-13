@@ -1,0 +1,18 @@
+# The first program that RUNS a mutable borrow (ADR 0016, milestone M3).
+#
+# Before this directory the tree had no `&mutabilis` program at all: rows 7-11
+# of tests/unit/chk_ty_param_write.asm check what the CHECKER says inside a
+# callee, and nothing checked that a caller actually sees the writes. This does,
+# on both aggregate kinds the coercion admits -- an `acies` and a `structura` --
+# and it checks the bytes twice: once with `si ... ne`, which decides the exit
+# status, and once by writing them to stdout, which `cmp` decides.
+#
+# stdout is ABCDMWZ and a newline: A-D from the array the first callee filled,
+# then M (77), W (87) and Z (90) from the struct's scalar field and its array
+# field's first and last elements.
+#
+# The three rules M3 added are all exercised here in their ACCEPTING form. The
+# refusing forms are the unit fixture's: a `firma` argument is EXS-E0306, two
+# arguments sharing a root with one mutable is EXS-E0310, and a borrow in a
+# function type is EXS-E0309.
+TEST: expect-exit=0

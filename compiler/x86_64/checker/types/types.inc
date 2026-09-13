@@ -1478,6 +1478,119 @@ proc __chk_ty_rootmut, chkt_wRM, chkt_nRM
 	return
 endp
 
+; __chk_ty_rootdecl(w, n) -> rax = the declaration id at the root of place `n`,
+; or 0 when it has none (unresolved, a prelude reference, or an expression that
+; is not a place at all).
+;
+; This is `__chk_ty_rootmut`'s spine and NOT a refactor of it. That routine
+; fuses the walk with a verdict, and its dereference arm deliberately stops and
+; answers rather than continuing -- eleven rows of
+; `tests/unit/chk_ty_param_write.asm` pin exactly that behaviour. Duplicating
+; seven instructions is cheaper than risking them, and the two answer different
+; questions: "may this be written through" there, "which binding is this"
+; here.
+;
+; A DEREFERENCE CONTINUES THE WALK here, which is the one deliberate
+; difference: `EXS-E0310` asks whether two arguments name the same storage, and
+; `(*p)[0]` and `*p` both name what `p` points at, so `p` is the root of both.
+; ADR 0016 decision 5 records that the rule compares root bindings and sees
+; neither offsets nor aliasing through a `refero`.
+proc __chk_ty_rootdecl, chkt_wRD, chkt_nRD
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [chkt_wRD]
+	mov	r12, [chkt_nRD]
+  .walk:
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_kind
+	cmp	rax, AST_MEMBER
+	je	.down
+	cmp	rax, AST_INDEX
+	je	.down
+	cmp	rax, AST_UNARY
+	je	.unary
+	cmp	rax, AST_PATH
+	je	.path
+	jmp	.none
+  .down:
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_node
+	mov	ecx, [rax + AstNode.a]
+	mov	r12, rcx
+	jmp	.walk
+  .unary:
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_node
+	movzx	ecx, word [rax + AstNode.aux]
+	cmp	ecx, AST_U_DEREF
+	jne	.none
+	mov	ecx, [rax + AstNode.a]
+	mov	r12, rcx
+	jmp	.walk
+  .path:
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_seg0
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	__chk_ty_node
+	mov	ecx, [rax + AstNode.d]
+	test	ecx, ecx
+	jz	.none			; unresolved: pass 1 said so already
+	mov	rdi, rcx
+	call	__chk_ty_is_pre
+	test	eax, eax
+	jnz	.none			; a prelude reference is not a binding
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_seg0
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	__chk_ty_node
+	mov	eax, [rax + AstNode.d]
+	return
+  .none:
+	xor	eax, eax
+	return
+endp
+
+; __chk_ty_mutroot(w, n) -> eax = 1 if place `n`'s root is a `mutabilis`
+; BINDING. A parameter root can never satisfy this: `ast/from_cst.inc`'s
+; `.param` arm builds a `Decl` with no flags at all, so `AST_F_MUTABILIS` is
+; never set on one. That is deliberate for now and makes re-borrowing -- passing
+; a `&mutabilis` parameter onward as another `&mutabilis` argument -- a
+; refusal; ADR 0016 does not discuss re-borrowing and this is the conservative
+; direction. `[OPEN]`
+proc __chk_ty_mutroot, chkt_wMR, chkt_nMR
+	uses	rbx
+	locals
+	endl
+	mov	rbx, [chkt_wMR]
+	mov	rdi, rbx
+	mov	rsi, [chkt_nMR]
+	call	__chk_ty_rootdecl
+	test	eax, eax
+	jz	.no
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	esi, eax
+	call	ast_decl_at
+	movzx	ecx, byte [rax + AstDecl.kind]
+	cmp	ecx, AST_D_BINDING
+	jne	.no
+	movzx	ecx, byte [rax + AstDecl.flags]
+	test	ecx, AST_F_MUTABILIS
+	jz	.no
+	mov	eax, 1
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
 ; __chk_ty_arraykind(w, n) -> eax = 1 if node `n` is an array literal in
 ; either form. The one question `__chk_ty_want` asks before it types anything.
 proc __chk_ty_arraykind, chkt_wAK, chkt_nAK

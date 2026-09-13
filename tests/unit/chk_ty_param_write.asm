@@ -76,9 +76,27 @@
 ; what an aggregate parameter is for.
 ;
 ; `&mutabilis T` (ADR 0016 decision 1) is the marked exception, and rows 7-11
-; are it. What is NOT here is the CALL SITE: an argument of type `T` does not
-; yet coerce to a `&mutabilis T` parameter, so no program can call one of
-; these functions. That is M3, with `EXS-E0310`'s aliasing rule.
+; are it. Rows 12-19 are the CALL SITE (M3):
+;
+;	12 a `mutabilis` argument binds to `&mutabilis`	accepted
+;	13 a `firma` argument does not			EXS-E0306
+;	14 a `firma` argument to `&` (read-only)	accepted
+;	15 the wrong type entirely			EXS-E0303
+;	16 an unassigned argument			EXS-E0307
+;	17 one storage twice, one of them mutable	EXS-E0310
+;	18 two distinct bindings			accepted
+;	19 `&mutabilis` in a function TYPE		EXS-E0309
+;
+; Row 13 checks a rule as much as a code: EXS-E0306 and NOT also EXS-E0303,
+; because the guard returns before `__chk_ty_same`. One diagnostic, the more
+; specific code -- the rule `chk_ty_bitops.asm` states for E0305 before E0303.
+;
+; Row 16 pins that ADR 0016 decision 4 is unchanged: the callee's writes do NOT
+; discharge the caller's definite-assignment obligation. Someone will read that
+; as a bug, so it is a row rather than a sentence.
+;
+; The accepting rows also RUN, as `tests/programs/mutabilis/` -- these check
+; what the checker says, that one checks that the caller sees the writes.
 ;
 ; Exit 0 = every row held; 10+N = row N's diagnostic count; 40+N = row N's
 ; code; 99 = setup.
@@ -371,6 +389,85 @@ segment readable
 	'publica functio f(p: &P) -> u8 {', 10, '    (*p).a = 7;', 10, \
 	'    redde 0;', 10, '}', 10>
 
+  ; ---- the CALL SITE (M3) --------------------------------------------------
+  ; Rows 12-19. The accepting forms also run as a program,
+  ; tests/programs/mutabilis/ -- these check what the checker SAYS, that one
+  ; checks that the caller sees the writes.
+
+  macro fx_callee
+	db 'publica functio imple(v: &mutabilis acies<u8, 4>) -> u8 {', 10, \
+	   '    (*v)[0] = 90;', 10, '    redde 0;', 10, '}', 10, \
+	   'publica functio lege(v: &acies<u8, 4>) -> u8 {', 10, \
+	   '    redde (*v)[0];', 10, '}', 10
+  end macro
+
+  ; 12 -- a `mutabilis` argument binds to `&mutabilis`: the point of M3
+  fx_mca: fx_callee
+	db 'publica functio f() -> u8 {', 10, \
+	   '    mutabilis b: acies<u8, 4> = [0; 4];', 10, \
+	   '    redde imple(b);', 10, '}', 10
+  fx_mca_LEN = $ - fx_mca
+
+  ; 13 -- a `firma` argument does not. EXS-E0306 and NOT also EXS-E0303: one
+  ;       diagnostic, the more specific code.
+  fx_fca: fx_callee
+	db 'publica functio f() -> u8 {', 10, \
+	   '    firma b: acies<u8, 4> = [0; 4];', 10, \
+	   '    redde imple(b);', 10, '}', 10
+  fx_fca_LEN = $ - fx_fca
+
+  ; 14 -- a `firma` argument to an IMMUTABLE borrow is the ordinary read-only
+  ;       case and stays free
+  fx_fci: fx_callee
+	db 'publica functio f() -> u8 {', 10, \
+	   '    firma b: acies<u8, 4> = [0; 4];', 10, \
+	   '    redde lege(b);', 10, '}', 10
+  fx_fci_LEN = $ - fx_fci
+
+  ; 15 -- the wrong type entirely still reaches EXS-E0303: the coercion is a
+  ;       guard, not a hole
+  fx_wca: fx_callee
+	db 'publica functio f() -> u8 {', 10, \
+	   '    mutabilis b: acies<u8, 8> = [0; 8];', 10, \
+	   '    redde imple(b);', 10, '}', 10
+  fx_wca_LEN = $ - fx_wca
+
+  ; 16 -- definite assignment is UNCHANGED and stays the caller's obligation
+  ;       (ADR 0016 decision 4): an unassigned argument is EXS-E0307, not an
+  ;       assignment discharged by the callee
+  fx_uca: fx_callee
+	db 'publica functio f() -> u8 {', 10, \
+	   '    mutabilis b: acies<u8, 4>;', 10, \
+	   '    redde imple(b);', 10, '}', 10
+  fx_uca_LEN = $ - fx_uca
+
+  macro fx_duo
+	db 'publica functio duo(x: &mutabilis acies<u8, 4>, y: acies<u8, 4>) -> u8 {', 10, \
+	   '    (*x)[0] = 90;', 10, '    redde y[0];', 10, '}', 10
+  end macro
+
+  ; 17 -- one storage as a mutable argument and another argument: EXS-E0310
+  fx_al1: fx_duo
+	db 'publica functio f() -> u8 {', 10, \
+	   '    mutabilis b: acies<u8, 4> = [0; 4];', 10, \
+	   '    redde duo(b, b);', 10, '}', 10
+  fx_al1_LEN = $ - fx_al1
+
+  ; 18 -- two distinct bindings are fine
+  fx_al2: fx_duo
+	db 'publica functio f() -> u8 {', 10, \
+	   '    mutabilis b: acies<u8, 4> = [0; 4];', 10, \
+	   '    mutabilis c: acies<u8, 4> = [0; 4];', 10, \
+	   '    redde duo(b, c);', 10, '}', 10
+  fx_al2_LEN = $ - fx_al2
+
+  ; 19 -- a mutable borrow in a FUNCTION TYPE is EXS-E0309 (ADR 0016 decision
+  ;       6): `AstType` for an `AST_TY_FN` has no room for a per-parameter bit,
+  ;       and admitting one would make the coercion reachable through a
+  ;       higher-order call where the callee is not statically known
+  fx_src fx_fnty, <'publica functio f(g: functio(&mutabilis acies<u8, 4>) -> u8) -> u8 {', 10, \
+	'    redde 0;', 10, '}', 10>
+
   ; dq source, its length; dd the expected diagnostic count and the expected
   ; code of diagnostic 0 (read only when the count is nonzero)
   macro fx_row src, count, code
@@ -390,6 +487,14 @@ segment readable
 	fx_row fx_ibr,      0, 0
 	fx_row fx_mbf,      0, 0
 	fx_row fx_ibf,      1, 306
+	fx_row fx_mca,      0, 0
+	fx_row fx_fca,      1, 306
+	fx_row fx_fci,      0, 0
+	fx_row fx_wca,      1, 303
+	fx_row fx_uca,      1, 307
+	fx_row fx_al1,      1, 310
+	fx_row fx_al2,      0, 0
+	fx_row fx_fnty,     1, 309
   FX_NROWS = ($ - fx_tab) / FX_ROW
 
 segment readable writeable

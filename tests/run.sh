@@ -75,7 +75,7 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-171}"
 # certificate of ADR 0014 decision 1 is a per-file verdict, and seventy
 # directories is what "per file" means here.
 IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-50}"
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-96}"
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-97}"
 
 # The differential phase (run_differential_tests, below), which compiles the
 # C backend's emitted units and runs them against the same expectations the
@@ -106,8 +106,8 @@ DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-156}"
 #     each one unit over several inputs), so the phase compiles 18 distinct
 #     units and RUNS 104 binaries. The count that matters is the runs: each
 #     is one comparison against the reference over a different input.
-DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-26}"
-DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-104}"
+DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-27}"
+DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-108}"
 
 # The cross phase's own floor, deliberately NOT folded into the differential
 # numbers above: a cross-compiled, emulated run of a 32-bit-`mensura` unit is

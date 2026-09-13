@@ -94,6 +94,8 @@ proc chk_ty_of_node, chkt_wq, chkt_nq
 		slot chkt_dq, dq
 		slot chkt_xq, dq
 		slot chkt_iq, dq
+		slot chkt_iq2, dq	; a `fn` parameter's interned type
+		slot chkt_pnq, dq	; that parameter's type NODE, for a span
 		slot chkt_tq, 16
 	endl
 	mov	rbx, [chkt_wq]
@@ -204,9 +206,29 @@ proc chk_ty_of_node, chkt_wq, chkt_nq
 	call	ast_extra_at
 	mov	rdi, rbx
 	mov	rsi, rax
+	mov	[chkt_pnq], rax		; the parameter's TYPE NODE, for the span
 	call	chk_ty_of_node
-	mov	rdi, [rbx + ChkTyWork.wtre]
+	; A MUTABLE BORROW MAY NOT APPEAR IN A FUNCTION TYPE (ADR 0016 decision
+	; 6). `AstType` for an `AST_TY_FN` records parameters as a run of type
+	; ids with no room for a per-parameter bit, so the permission could not
+	; be carried here even if it were wanted -- and `__chk_ty_call` reads
+	; parameter types off the `fn` type, so admitting one would make the
+	; call-site coercion reachable through a higher-order call, where the
+	; callee is not statically known. `EXS-E0309`: an annotation not
+	; applicable in this position. `[OPEN]`
+	mov	[chkt_iq2], rax
+	mov	rdi, rbx
 	mov	rsi, rax
+	call	__chk_ty_ismutborrow
+	test	eax, eax
+	jz	.fn_ok
+	mov	rdi, rbx
+	mov	rsi, 309
+	mov	rdx, [chkt_pnq]
+	call	__chk_ty_raise
+  .fn_ok:
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_iq2]
 	call	ast_list_push
 	inc	r13
 	jmp	.fn_p

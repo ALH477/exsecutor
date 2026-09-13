@@ -115,10 +115,17 @@ ceiling is not approached.
 
 Its gate is the one that matters: **the StreamDB certificate stream must be
 byte-identical**, all four vendored containers, on both backends and through
-the cross phase, while `-fstack-usage` shows `arbor_percurre`'s frame falling
-from 127,016 bytes to roughly 24,600. A certificate that changes means the
-rewrite changed what the reader computes; a frame that does not fall means the
-feature did not do its job. Both are checkable, and neither is an opinion.
+the cross phase, while `-fstack-usage` shows the frame fall.
+
+**The gate as first written measured `arbor_percurre` alone, and that was
+wrong** — it would pass while the total live stack barely moved, because the
+borrow relocates the six array-literal temporaries to whichever caller
+initialises the storage rather than removing them. Measure **both** frames,
+`exs_arbor_percurre` and `exs_initium`, on the o64 row. Targets: the callee
+127,016 → ~20,500, and probatio's total 246,300 → ~139,300. A certificate that
+changes means the rewrite changed what the reader computes; a frame that does
+not fall means the feature did not do its job. Both are checkable, and neither
+is an opinion.
 
 **M5 — the second consumer.** `receptor.md` finding 11's accumulate loop is
 written twice, in `recipe.exsc` and `circuitus.exsc`, for exactly this reason.

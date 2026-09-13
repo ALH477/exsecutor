@@ -436,10 +436,14 @@ reader's deepest live stack **measures 241 KB** (`mips64-elf-gcc -mabi=o64
 -fstack-usage`; `arbor_percurre` alone is a 127,184-byte frame) against
 libultra's 8–16 KB thread stacks and a 3 MB working ceiling, so it **cannot
 be linked into a ROM as written** — a factor of 15–30, not a tuning problem.
-The cause is §6.3 decision 3: a parameter is borrowed, so a function cannot
-fill an array it was handed, and `arbor_percurre` must return its 53,252-byte
-result by value with every `acies` a stack local. ADR 0015's Open section has
-the table and the three ways out.
+The cause is **not** §6.3 decision 3, which six places in this tree cite for
+it and which is one sentence about retains: it is `docs/design/ssa-ir.md`
+section 2.9's, and ADR 0016 amends it. `&mutabilis T`, a mutable borrow, is
+landing so that `arbor_percurre` can fill storage its caller owns instead of
+returning a 53,252-byte result by value. Closing that gap also closed two
+soundness defects — `firma` was violable by handing a binding to a callee, and
+an immutable borrow granted writes. ADR 0015's Open section has the stack
+table; ADR 0016 has the feature.
 Neither does the `ego` reader, the module system, the LSP, or `exsc emenda`. `EXS-E0105`
 (confusables) has no hermetic data source. The emitted program's capability
 mask is an over-approximation with the exact fix recorded beside it, and,

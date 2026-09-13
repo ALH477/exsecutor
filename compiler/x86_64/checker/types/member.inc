@@ -676,6 +676,150 @@ proc __chk_ty_recv, chkt_wRC, chkt_nRC
 	return
 endp
 
+; __chk_ty_borrowparam(w, argn, pty) -> eax = 1 if parameter type `pty` is a
+; borrow that argument `argn` may be bound to, having raised `EXS-E0306` itself
+; when it may not; 0 if `pty` is not a borrow at all and the caller should
+; compare types the ordinary way.
+;
+; THE CALL SITE IS IMPLICIT (ADR 0016 decision 3): `imple(b)`, not
+; `imple(&mutabilis b)`. An aggregate argument already passes by address with no
+; sigil, so requiring one only here would be the language's single exception.
+;
+; THIS IS AN ACCEPTANCE RULE AND NOT A RETYPING, which is the hardest
+; constraint in the milestone and the opposite of what "coerce" suggests. The
+; argument node's `ty` stays `T`. If it became the borrow's id, `lwr_expr_arg`
+; would see `lwr_ty_scalar = 1` for it and take the scalar path --
+; `__lwr_path`'s `.slot` arm would emit a `lwr_load` of a `ptr` out of the
+; array's first eight bytes and pass THAT as the argument. A silent miscompile
+; with no `rassert` anywhere on the path. The mutation in this milestone's
+; commit does exactly that and watches a program produce wrong bytes.
+;
+; AGGREGATES ONLY (decision 2 of this milestone's plan). `acies` and a
+; `structura` are the two kinds an argument already passes as an address, so
+; accepting them costs the lowering nothing. A scalar `&mutabilis u64` stays
+; uncallable: `&scalar` needs `AST_F_ADDRTAKEN`, which is defined, tested once
+; and set by nothing, so it would lower to the value rather than the address
+; (ADR 0016's Open section). `textus` is excluded with the other non-aggregates
+; -- it is two words and nothing asks for `&textus`. `[OPEN]`
+proc __chk_ty_borrowparam, chkt_wBP, chkt_nBP, chkt_tBP
+	uses	rbx, r12, r13
+	locals
+		slot chkt_iBP, dq	; the borrowed-of type
+	endl
+	mov	rbx, [chkt_wBP]
+	mov	r12, [chkt_nBP]
+	mov	r13, [chkt_tBP]
+	test	r13, r13
+	jz	.notborrow
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	esi, r13d
+	call	ast_type_at
+	cmp	byte [rax + AstType.kind], AST_TY_BORROW
+	jne	.notborrow
+	mov	ecx, [rax + AstType.a]
+	mov	[chkt_iBP], rcx
+	movzx	ecx, byte [rax + AstType.sign]
+	push	rcx			; the mutable bit, wanted after the
+					; calls below
+	; the borrowed-of type must be an aggregate
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	esi, [chkt_iBP]
+	call	ast_type_at
+	movzx	ecx, byte [rax + AstType.kind]
+	cmp	ecx, AST_TY_ACIES
+	je	.isagg
+	cmp	ecx, AST_TY_STRUCT
+	je	.isagg
+	pop	rcx
+	jmp	.notborrow		; a borrow of something this rule does
+					; not cover: let `__chk_ty_same` speak
+  .isagg:
+	; type the argument, then require it to BE the borrowed-of type. The
+	; argument keeps that type; nothing is rewritten.
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_expr
+	mov	rdi, rbx
+	mov	rsi, rax
+	mov	rdx, r12
+	call	__chk_ty_settled
+	cmp	rax, [chkt_iBP]
+	je	.matches
+	pop	rcx
+	jmp	.notborrow		; the wrong type entirely: `EXS-E0303`
+					; from `__chk_ty_same`, as before
+  .matches:
+	pop	rcx
+	test	ecx, ecx
+	jz	.ok			; `&T` -- an immutable borrow asks nothing
+					; of the argument beyond its type
+	; `&mutabilis T` requires a `mutabilis` root (decision 3). `EXS-E0306`
+	; and NOT also `EXS-E0303`: one diagnostic, the more specific code, the
+	; rule `chk_ty_bitops.asm` states for `EXS-E0305` before `EXS-E0303`.
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_mutroot
+	test	eax, eax
+	jnz	.ok
+	mov	rdi, rbx
+	mov	rsi, 306
+	mov	rdx, r12
+	call	__chk_ty_raise
+  .ok:
+	mov	eax, 1
+	return
+  .notborrow:
+	xor	eax, eax
+	return
+endp
+
+; __chk_ty_ismutborrow(w, ty) -> eax = 1 if `ty` is `&mutabilis T`.
+proc __chk_ty_ismutborrow, chkt_wMB, chkt_tMB
+	uses	rbx
+	locals
+	endl
+	mov	rbx, [chkt_wMB]
+	cmp	qword [chkt_tMB], 0
+	je	.no
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	esi, [chkt_tMB]
+	call	ast_type_at
+	cmp	byte [rax + AstType.kind], AST_TY_BORROW
+	jne	.no
+	cmp	byte [rax + AstType.sign], 0
+	je	.no
+	mov	eax, 1
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
+; __chk_ty_sameroot(w, a, b) -> eax = 1 if places `a` and `b` have the same,
+; resolved root declaration. The whole of `EXS-E0310`'s reasoning.
+proc __chk_ty_sameroot, chkt_wSR, chkt_aSR, chkt_bSR
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [chkt_wSR]
+	mov	rdi, rbx
+	mov	rsi, [chkt_aSR]
+	call	__chk_ty_rootdecl
+	test	eax, eax
+	jz	.no
+	mov	r12, rax
+	mov	rdi, rbx
+	mov	rsi, [chkt_bSR]
+	call	__chk_ty_rootdecl
+	cmp	eax, r12d
+	jne	.no
+	mov	eax, 1
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
 ; __chk_ty_call(w, n) -> rax = the result type of a call.
 proc __chk_ty_call, chkt_wCL, chkt_nCL
 	uses	rbx, r12, r13, r14
@@ -688,6 +832,8 @@ proc __chk_ty_call, chkt_wCL, chkt_nCL
 		slot chkt_pCL, dq	; the parameter count
 		slot chkt_eCL, dq	; the parameter list `extra` offset
 		slot chkt_iCL, dq
+		slot chkt_jCL, dq
+		slot chkt_mCL, dq	; the mutable-borrow argument found, or 0
 	endl
 	mov	rbx, [chkt_wCL]
 	mov	r12, [chkt_nCL]
@@ -793,6 +939,15 @@ proc __chk_ty_call, chkt_wCL, chkt_nCL
 	mov	rsi, [chkt_eCL]
 	call	ast_extra_at
 	mov	r14, rax
+	; The receiver is parameter 0 and reaches `__chk_ty_same` rather than
+	; `__chk_ty_want`, so it needs the borrow rule of its own or a
+	; `&mutabilis` receiver would be compared instead of bound.
+	mov	rdi, rbx
+	mov	rsi, [chkt_rCL]
+	mov	rdx, r14
+	call	__chk_ty_borrowparam
+	test	eax, eax
+	jnz	.written
 	mov	rdi, rbx
 	mov	rsi, [chkt_rCL]
 	call	__chk_ty_ty
@@ -807,7 +962,7 @@ proc __chk_ty_call, chkt_wCL, chkt_nCL
   .arg:
 	mov	rax, [chkt_iCL]
 	cmp	rax, [chkt_cCL]
-	jae	.result
+	jae	.alias
 	mov	rdi, [rbx + ChkTyWork.wtre]
 	mov	rsi, [chkt_oCL]
 	add	rsi, [chkt_iCL]
@@ -826,9 +981,16 @@ proc __chk_ty_call, chkt_wCL, chkt_nCL
 	mov	rsi, [chkt_eCL]
 	add	rsi, rax
 	call	ast_extra_at
+	mov	r14, rax		; the parameter type id
 	mov	rdi, rbx
 	mov	rsi, r13
-	mov	rdx, rax
+	mov	rdx, r14
+	call	__chk_ty_borrowparam
+	test	eax, eax
+	jnz	.arg_next
+	mov	rdi, rbx
+	mov	rsi, r13
+	mov	rdx, r14
 	call	__chk_ty_want
 	jmp	.arg_next
   .arg_untyped:
@@ -844,6 +1006,87 @@ proc __chk_ty_call, chkt_wCL, chkt_nCL
   .arg_next:
 	inc	qword [chkt_iCL]
 	jmp	.arg
+
+	; ---- `EXS-E0310`: two arguments of one call naming one storage ------
+	; ADR 0016 decision 5. Today `f(b, b)` with one mutable output is
+	; accepted and the callee reads through one name storage it is writing
+	; through the other. The rule is SYNTACTIC and CONSERVATIVE: it compares
+	; root bindings, and sees neither two offsets into one object nor
+	; aliasing through a `refero` or a `*T`. `lowering.md`'s hazard H5 -- the
+	; same question for the HIDDEN result pointer, `s = f(s)` -- is untouched
+	; and stays `[OPEN]`.
+	;
+	; ONE diagnostic, not one per pair: the first aliased pair raises and
+	; the scan stops. The span is the call, as `EXS-E0304` and `EXS-E0305`
+	; use in this proc, because the fault is the call's shape rather than
+	; either argument's.
+  .alias:
+	mov	qword [chkt_iCL], 0
+  .al_i:
+	mov	rax, [chkt_iCL]
+	cmp	rax, [chkt_cCL]
+	jae	.result
+	; is the parameter this argument lands on a mutable borrow?
+	mov	rax, [chkt_iCL]
+	cmp	qword [chkt_rCL], 0
+	je	.al_pidx
+	inc	rax
+  .al_pidx:
+	cmp	rax, [chkt_pCL]
+	jae	.al_next
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_eCL]
+	add	rsi, rax
+	call	ast_extra_at
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	__chk_ty_ismutborrow
+	test	eax, eax
+	jz	.al_next
+	; argument `i` is a mutable borrow. Compare its root with the receiver's
+	; and with every other written argument's.
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_oCL]
+	add	rsi, [chkt_iCL]
+	call	ast_extra_at
+	mov	[chkt_mCL], rax
+	cmp	qword [chkt_rCL], 0
+	je	.al_j0
+	mov	rdi, rbx
+	mov	rsi, [chkt_mCL]
+	mov	rdx, [chkt_rCL]
+	call	__chk_ty_sameroot
+	test	eax, eax
+	jnz	.al_bad
+  .al_j0:
+	mov	qword [chkt_jCL], 0
+  .al_j:
+	mov	rax, [chkt_jCL]
+	cmp	rax, [chkt_cCL]
+	jae	.al_next
+	cmp	rax, [chkt_iCL]
+	je	.al_jnext
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_oCL]
+	add	rsi, [chkt_jCL]
+	call	ast_extra_at
+	mov	rdi, rbx
+	mov	rsi, [chkt_mCL]
+	mov	rdx, rax
+	call	__chk_ty_sameroot
+	test	eax, eax
+	jnz	.al_bad
+  .al_jnext:
+	inc	qword [chkt_jCL]
+	jmp	.al_j
+  .al_next:
+	inc	qword [chkt_iCL]
+	jmp	.al_i
+  .al_bad:
+	mov	rdi, rbx
+	mov	rsi, 310
+	mov	rdx, r12
+	call	__chk_ty_raise
 
   .result:
 	; `Call.d` -- checker.md section 2.5: the chosen impls of a generic
