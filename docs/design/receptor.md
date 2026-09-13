@@ -1197,7 +1197,7 @@ Numbered; each names the document and the line.
    `docs/spec/exsecutor-spec-v0.4.md`; §4.2 uses `Scriptor` as a type in
    an example, §11 names `Scriptor.scribe`'s return, §12 says the prelude's
    names are pre-seeded. The surface lived in `docs/design/runtime.md`
-   §2.4 and `prelude/interface.inc`. The amendment for D1 puts the
+   section 2.4 and `prelude/interface.inc`. The amendment for D1 puts the
    *streams'* two types, their constructors and their one-byte calls in
    §4.6, which is where the spec says the streams live — `Scriptor`'s
    with a citation to the fixtures that run it, `Lector`'s `[UNTESTED]`.
@@ -1260,7 +1260,15 @@ Numbered; each names the document and the line.
     modem.md D4 did, so the receiver's table cannot depend on a `libm`.
     The design's own text is what caught it: "quarter-wave symmetry" is
     a property one can check on 48 entries, and it did not hold.
-11. **Mutation through a borrowed aggregate parameter has no form.** A
+11. *(**Corrected, 2026-09-12, ADR 0016.** The rule cited here to spec §6.3
+    decision 3 is not in §6.3, which is one sentence about **retains** and says
+    nothing about writing. The prohibition is `docs/design/ssa-ir.md` section 2.9's,
+    and section 2.9 now admits `&mutabilis T`. Measured while finding this: mutation
+    through a borrowed aggregate parameter already worked, which made `firma`
+    violable by handing a binding to a callee. The finding stands as written;
+    the attribution was wrong.)*
+
+    **Mutation through a borrowed aggregate parameter has no form.** A
     function that fills the prefix sums must own them: a parameter is
     borrowed (spec §6.3 decision 3, IR 2.9), `obsigna` copies before it
     writes, and no fixture assigns through a `&T`. Returning a 640 KB
@@ -1323,7 +1331,7 @@ Numbered; each names the document and the line.
 17. **Other trees the implementer must touch, reported here:**
     `prelude/README.md`'s per-atom table ("`read` is `[UNIMPLEMENTED]`")
     and "What is not here"; `tools/syscall-audit.sh`'s `ambitus` comment;
-    `docs/design/runtime.md` §2.4 (a `Lector` beside `Scriptor`) and its
+    `docs/design/runtime.md` section 2.4 (a `Lector` beside `Scriptor`) and its
     fixture list; `prelude/interface.inc` rows for the type, its two
     fields, `ab_introitu` and `lege_octeto`; `tests/run.sh` (finding 15).
 18. **modem.md §9's prediction for M3 narrowed.** It listed "a stdin

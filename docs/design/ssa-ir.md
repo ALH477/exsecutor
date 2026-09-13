@@ -287,7 +287,13 @@ declared return is an aggregate; (2) dictionaries, one `ptr` per generic
 parameter in declaration order (spec §7.1); (3) capability carriers, one
 `ptr` per row item in row order — ascending atom id; an interned row has no written order (`checker.md` section 2.8) — (section 2.10); (4) declared parameters
 in order. Scalars, `ptr`, `ref` by value; aggregates by `ptr` to caller-owned
-storage the callee reads and never writes. References: parameters borrowed
+storage the callee reads and never writes — **unless the parameter is declared
+`&mutabilis T`** (spec §6.3 decision 3, §8.6), which is a mutable borrow the
+callee may write through and the caller must have definitely assigned. The
+IR does not distinguish the two: both are one `ptr` in group (4), and the
+permission is a Stage 2 fact erased before any backend sees it, exactly as a
+capability row is. Nothing in the IR or either backend changed to admit it.
+References: parameters borrowed
 (spec §6.3, decision 3 — the callee retains only what it stores); returned
 references owned, one retain transferred to the caller. A function value is a
 `ptr` to a closure whose first word is the code address; `callind` passes it

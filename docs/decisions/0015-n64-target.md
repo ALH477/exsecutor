@@ -307,7 +307,14 @@ The honest labelling that follows, and which §9.5 must carry:
   failure mode worth naming: **the certificate is green and the ROM would
   overflow.** The cross phase cannot see this and should not be expected to.
 
-  The cause is recorded, and is not a C4 defect. §6.3 decision 3 makes a
+  The cause is recorded, and is not a C4 defect. **(Corrected 2026-09-12 by
+  ADR 0016: the citation below is wrong. §6.3 decision 3 is one sentence about
+  retains and says nothing about writing; the prohibition is
+  `docs/design/ssa-ir.md` section 2.9's, and section 2.9 now admits `&mutabilis T`. Worse,
+  the prohibition was not even enforced — mutation through a borrowed
+  aggregate parameter already worked, making `firma` violable through a call.
+  The first of the three ways out below is therefore also a soundness fix, and
+  it is being taken.)** §6.3 decision 3 makes a
   parameter **borrowed**, so a function cannot fill an array it was handed
   (`receptor.md` finding 11, `c-backend.md:998-1008`): `arbor_percurre` must
   therefore *return* `Arbor` by value and hold every `acies` as a stack

@@ -1055,7 +1055,7 @@ Xeon 2.10 GHz, gcc 13.3, `-O2`. Sources in `prototypes/stage0-bench/` — `[UNRE
 
 1. **Arena allocation via `alloc`.** 2.8× over malloc — larger than every refcounting effect combined. `Arena.reconde()` resets in O(1). Documentation leads with **preallocate-and-reset**; creating an arena inside an audio callback is itself an allocation.
 2. **Non-atomic refcounts where nothing crosses a thread boundary.** The difference between +46% and free. Load-bearing, not an optimization.
-3. **Parameters are borrowed by default** (`guaranteed` convention). Retaining on each visit costs +85%.
+3. **Parameters are borrowed by default** (`guaranteed` convention). Retaining on each visit costs +85%. This decision is about **retains** and nothing else: the callee retains only what it stores. It has been widely miscited — by `docs/design/receptor.md` finding 11, `docs/design/c-backend.md` findings 12 and 14, ADR 0015 and two example programs — as the reason a function cannot write into an aggregate it was handed. That rule is real but it is **not here**: it is `docs/design/ssa-ir.md` section 2.9's, and section 2.9 now admits the marked exception below. A parameter declared `&mutabilis T` is a **mutable borrow**: the callee may write through it, and still retains nothing, so decision 3 is untouched. Unmarked, a write through a parameter is `EXS-E0306` — which until 2026-09-12 it was not, making `firma` violable by handing a binding to a callee (ADR 0016). Two arguments of one call may not name the same storage when either is a mutable borrow: `EXS-E0310`.
 4. **`structura` is a value type. Always.** No implicit boxing.
 5. **Arrays of value types are unboxed and contiguous.** `acies<f32>` is a flat buffer. An `acies` value comes from an array literal — `[e1, …, en]` or `[e; N]`, §8.6; `tests/programs/acies/` runs both — or from the byte view of a `@transitus` struct (§5.2); a binding declared without one is not zero-filled, and an element read or written before the binding is assigned is `EXS-E0307`.
 6. **Reference semantics are explicit**: `refero<T>`.
@@ -1708,7 +1708,7 @@ assignment are `[OPEN]`; none of them needs a new peek.
 
 ### Types
 
-`Type ::= ('&' | '*')* CoreType (':' IDENT | 'apud' IDENT)*`. Prefixes are the
+`Type ::= ('&' ['mutabilis'] | '*')* CoreType (':' IDENT | 'apud' IDENT)*`. Prefixes are the
 reference and raw-pointer sigils; suffixes are byte order (`u32:maior`) and
 placement (`acies<f32, 1024> apud machina`, §5.5). `maior` `minor` `nativus`
 are contextual. A `:` after a `CoreType` is a suffix; a `:` after an
@@ -1814,7 +1814,7 @@ Terminals are §8.4's tokens; `IDENT` `INT` `STRING` are the lexer's classes.
     Literal       ::= INT | STRING                           (* INT: decimal or 0x hex, §8.4; the rest [OPEN] *)
     ArithOp       ::= '+' | '+%' | '+|' | '-' | '-%' | '-|' | '*'
 
-    Type          ::= ('&' | '*')* CoreType (':' IDENT | 'apud' IDENT)*
+    Type          ::= ('&' ['mutabilis'] | '*')* CoreType (':' IDENT | 'apud' IDENT)*
     CoreType      ::= BitType | Path [GenericArgs] | '(' Type ')'
                     | 'dyn' Path [GenericArgs] [TypeRow]
                     | 'functio' '(' [Type (',' Type)*] ')' '->' Type [TypeRow]
@@ -2361,6 +2361,7 @@ Scratch work without ambient authority: `exsc curre --potestates omnes scratch.e
 | `EXS-E0307` | control flow misuse |
 | `EXS-E0308` | literal cannot be typed or does not fit its width |
 | `EXS-E0309` | type expression or annotation not applicable |
+| `EXS-E0310` | aliased mutable argument |
 | `EXS-E0311` | integer index applied to `textus` |
 | `EXS-E0321` | `:nativus` in a `@transitus` type |
 | `EXS-E0322` | implicit padding in a `@transitus` type |

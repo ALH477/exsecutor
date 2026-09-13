@@ -1104,7 +1104,15 @@ test is `(c sursum 31) deorsum 31` and its final xor is `aut 0xffffffff`), and
 no CRC table: the whole corpus asks for about 35 KB of CRC, so the bitwise
 form is cheaper than the array literal it would take to avoid.
 
-12. **A function cannot fill an array it was handed.** A parameter is borrowed
+12. *(**Corrected, 2026-09-12, ADR 0016.** The rule cited here to spec §6.3
+    decision 3 is not in §6.3, which is one sentence about **retains** and says
+    nothing about writing. The prohibition is `docs/design/ssa-ir.md` section 2.9's,
+    and section 2.9 now admits `&mutabilis T`. Measured while finding this: mutation
+    through a borrowed aggregate parameter already worked, which made `firma`
+    violable by handing a binding to a callee. The finding stands as written;
+    the attribution was wrong.)*
+
+    **A function cannot fill an array it was handed.** A parameter is borrowed
     (§6.3 decision 3) and there is no `&T` to assign through, so
     "caller-supplied output buffer" — this section's own asking shape — has no
     form. The reader owns each output and returns it by value (`Arbor` is

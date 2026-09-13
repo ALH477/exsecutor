@@ -173,7 +173,7 @@ their bytes, id = first-use index — the same scheme as IR 2.2, richer:
 | `mensura` | — | spec §5.2; concrete after `--hospes` (spec §9.5) |
 | `textus` `octeti` `scalares` `grapha` | — | spec §5.1, distinct, non-coercing |
 | `ptr` `ref` `refc` | `a` = T | `*T`, `refero<T>`, `refero_communis<T>` (spec §6.4) |
-| `borrow` | `a` = T | `&T` `[OPEN]`: spec §7.2 defers ownership, so what `&` means beyond "address of" is not settled |
+| `borrow` | `a` = T | `&T` is an **immutable** borrow, `&mutabilis T` a mutable one (spec §8.6, ADR 0016). The `[OPEN]` that stood here — "spec §7.2 defers ownership, so what `&` means beyond address-of is not settled" — is closed for parameters: `&` means address-of plus a write permission, and ownership stays deferred because neither form transfers one. A mutable borrow in a **function type** is still `[OPEN]`: `AST_TY_FN` has nowhere to record a per-parameter bit |
 | `acies` | `a` = T, `width` = N | spec §5.4, lane count in the type |
 | `struct` `alias` `iface` `param` | `a` = decl | nominal; `alias` (`typus`) as alias-or-new-type is `[OPEN]` |
 | `fn` | `a` = extra (params… result), `width` = param count, `b` = row | spec §4.2: the row is *in the type* |
@@ -225,7 +225,7 @@ Reduction shape lives on the loop: `ForHead` carries the `contrahe` list and
 the `forma` identifier. `summa_ordinata`/`summa_arborea` are ordinary `Call`
 nodes; that they lower to `redinit`/`contrib`/`redfin` is the lowering's
 recognition of the resolved `Decl`, and whether they are library functions or
-intrinsics was `[OPEN]` until `docs/design/runtime.md` §2.2 gave the rule — a
+intrinsics was `[OPEN]` until `docs/design/runtime.md` section 2.2 gave the rule — a
 name is an intrinsic iff its lowering has no `call` form — under which
 `summa_*` are the only intrinsics and `m.ambitus()` is a call (spec §5.4
 writes them with no declaration site; the prelude's pre-seeded `Decl`
