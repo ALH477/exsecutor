@@ -131,7 +131,21 @@ authors believed was in force, which is why the defect went three milestones
 without being noticed. (An earlier draft of this ADR guessed "exactly one
 construct does". That was written before it was checked, and it was wrong.)
 
-### 3. The argument must be a `mutabilis` binding
+### 3. The call site is implicit, and the argument must be a `mutabilis` binding
+
+`imple(b)`, not `imple(&mutabilis b)`. An aggregate argument is **already**
+passed by address today with no sigil, so requiring one only in the mutable
+case would make this the single place in the language where an aggregate
+argument needs decoration. The signature carries the permission, and there is
+no overloading, so the callee is always statically known from the call.
+
+An explicit call-site form is `[OPEN]`: `&mutabilis b` in *operand* position
+does not parse (only the `Type` grammar gained the marker), and adding it would
+be a second §8.6 amendment for readability rather than for meaning.
+
+The consequence is a coercion rule, which is M3's work: an argument of type `T`
+coerces to a `&mutabilis T` parameter when, and only when, its root is a
+`mutabilis` binding.
 
 `imple(b)` where the parameter is `&mutabilis` and `b` is `firma` is
 `EXS-E0306`. Without this, decision 2 moves the hole rather than closing it:
@@ -191,6 +205,20 @@ visible in the signature. Spending `Crudum` on an output parameter would
 over-grant in precisely the way §10.3's audit exists to expose, and would put
 every embedded reader — the whole point of the exercise — behind a capability
 a ROM has no business holding.
+
+### 8. A dereference of an immutable borrow is not writable
+
+Found while implementing decision 1, and it would have made the whole feature
+decoration. `__chk_ty_rootmut` stops its walk at a dereference and answers
+"writable", on the correct ground that `*p = v` writes what `p` points at and
+`firma p: *u8` is an immutable *pointer* to a mutable place. That is right for
+`*T` and wrong for `&T`: an immutable borrow points at a place the callee may
+not write. So `(*v)[0] = 1` through a `&acies<u8, 4>` was accepted.
+
+It is now `EXS-E0306`. The walk refuses a dereference through a path whose
+declaration is an immutable borrow, and keeps the old answer for a dereference
+of anything that is not a plain path — the conservative direction, and `[OPEN]`
+because there is no way to write one today that reaches the check.
 
 ## Consequences
 

@@ -2234,13 +2234,32 @@ proc __cst_type, p
 	mov	esi, PUN_AMP
 	call	__cst_pun
 	test	eax, eax
-	jnz	.take_sigil
+	jnz	.take_amp
 	mov	rdi, rbx
 	mov	esi, PUN_STAR
 	call	__cst_pun
 	test	eax, eax
 	jz	.core
-  .take_sigil:
+	mov	rdi, rbx
+	call	__cst_bump
+	jmp	.sigil
+  .take_amp:
+	mov	rdi, rbx
+	call	__cst_bump
+	; `&mutabilis T`, a mutable borrow (ADR 0016 decision 1). Accepted only
+	; after `&`: there is no `*mutabilis T`, because `*T` already admits a
+	; write and already costs `Crudum`.
+	;
+	; NO NEW PEEK, which is why the marker is here and not before the
+	; parameter's name (spec section 8.6 fixes the peek set). This arm has
+	; already committed to a type, and `mutabilis` is a tier-1 reserved word
+	; (spec section 8.4), so it can never begin a type name -- one token,
+	; decided by one compare, with nothing to back out of.
+	mov	rdi, rbx
+	mov	esi, KW_MUTABILIS
+	call	__cst_kw
+	test	eax, eax
+	jz	.sigil
 	mov	rdi, rbx
 	call	__cst_bump
 	jmp	.sigil

@@ -1346,8 +1346,63 @@ proc __chk_ty_rootmut, chkt_wRM, chkt_nRM
 	je	.down
 	cmp	rax, AST_PATH
 	je	.path
-	jmp	.yes			; a dereference, or anything
-					; `__chk_ty_isplace` already refused
+	cmp	rax, AST_UNARY
+	je	.unary
+	jmp	.yes			; anything `__chk_ty_isplace` already
+					; refused
+  .unary:
+	; A DEREFERENCE stops the walk, because `*p = v` writes what `p` points
+	; at and not `p` -- `firma p: *u8` is an immutable POINTER to a mutable
+	; place. That is right for `*T`, and it was wrong for `&T`: an
+	; IMMUTABLE borrow points at a place the callee may not write, so
+	; `(*v)[0] = 1` through a `&acies<u8, 4>` was accepted and made
+	; `&mutabilis` decoration rather than a permission (measured while
+	; landing ADR 0016 decision 1).
+	;
+	; So: a deref through a path whose declaration is an immutable borrow is
+	; refused; everything else still stops the walk and answers writable.
+	; A deref of anything that is not a plain path keeps the old answer,
+	; which is the conservative direction and is `[OPEN]` -- there is no way
+	; to write one today that reaches here.
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_node
+	movzx	ecx, word [rax + AstNode.aux]
+	cmp	ecx, AST_U_DEREF
+	jne	.yes
+	mov	r12d, [rax + AstNode.a]		; the dereferenced operand
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_kind
+	cmp	rax, AST_PATH
+	jne	.yes
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_seg0
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	__chk_ty_node
+	mov	r13d, [rax + AstNode.d]
+	test	r13, r13
+	jz	.yes
+	mov	rdi, r13
+	call	__chk_ty_is_pre
+	test	eax, eax
+	jnz	.yes
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, r13
+	call	ast_decl_at
+	mov	ecx, [rax + AstDecl.ty]
+	test	ecx, ecx
+	jz	.yes
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	esi, ecx
+	call	ast_type_at
+	cmp	byte [rax + AstType.kind], AST_TY_BORROW
+	jne	.yes
+	cmp	byte [rax + AstType.sign], 0
+	je	.no			; an immutable borrow
+	jmp	.yes
   .down:
 	mov	rdi, rbx
 	mov	rsi, r12
@@ -1396,7 +1451,20 @@ proc __chk_ty_rootmut, chkt_wRM, chkt_nRM
 	; It is a flat refusal first, deliberately: the defect is worth closing
 	; on its own, and a fix that waits for a feature is a fix that ships late.
 	cmp	ecx, AST_D_PARAM
-	je	.no
+	jne	.yes
+	; A parameter is writable only when its type is a MUTABLE borrow,
+	; `&mutabilis T` (ADR 0016 decision 1). Every other parameter answers
+	; "no", which is the defect fix above.
+	mov	ecx, [rax + AstDecl.ty]
+	test	ecx, ecx
+	jz	.no			; untyped: pass 2 said so already
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	esi, ecx
+	call	ast_type_at
+	cmp	byte [rax + AstType.kind], AST_TY_BORROW
+	jne	.no
+	cmp	byte [rax + AstType.sign], 0
+	je	.no			; `&T` -- an IMMUTABLE borrow
 	jmp	.yes
   .binding:
 	movzx	ecx, byte [rax + AstDecl.flags]

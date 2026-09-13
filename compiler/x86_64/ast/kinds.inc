@@ -185,6 +185,9 @@ AST_FOR_QUISQUE	= 0x01	; `For`
 AST_ROW_SICUT	= 0x01	; `RowItem` -- `a` is a parameter NAME, not a `Path`
 AST_PTR_REF	= 0	; `TyPtr` -- `&T`
 AST_PTR_RAW	= 1	; `TyPtr` -- `*T`
+AST_PTR_REFMUT	= 2	; `TyPtr` -- `&mutabilis T`, a MUTABLE borrow (ADR 0016).
+			;   There is no `*mutabilis T`: `*T` already admits a write
+			;   and already costs `Crudum`.
 AST_SFX_ORDER	= 0	; `TySuffix` -- `: IDENT` (byte order, spec §5.2)
 AST_SFX_APUD	= 1	; `TySuffix` -- `apud IDENT` (placement, spec §5.5)
 

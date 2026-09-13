@@ -164,12 +164,25 @@ proc chk_ty_of_node, chkt_wq, chkt_nq
 	mov	rsi, [chkt_aq]
 	call	chk_ty_of_node
 	mov	r13, rax
-	mov	rsi, AST_TY_BORROW
 	cmp	qword [chkt_xq], AST_PTR_RAW
-	jne	.ptr_kind
-	mov	rsi, AST_TY_PTR
-  .ptr_kind:
+	je	.ptr_raw
+	; `&T` and `&mutabilis T` are both `borrow`, distinguished by the sign
+	; byte -- 1 is mutable (ADR 0016 decision 1; ast/node.inc's `sign`
+	; comment says why that byte rather than a second kind). They intern as
+	; distinct type ids, which is what makes `&mutabilis T` a different type
+	; from `&T` rather than an annotation on one.
 	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, r13
+	xor	rdx, rdx
+	cmp	qword [chkt_xq], AST_PTR_REFMUT
+	jne	.ptr_borrow
+	mov	rdx, 1
+  .ptr_borrow:
+	call	ast_type_borrow
+	jmp	.done
+  .ptr_raw:
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, AST_TY_PTR
 	mov	rdx, r13
 	xor	rcx, rcx
 	call	ast_type_una

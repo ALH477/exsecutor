@@ -217,6 +217,28 @@ proc ast_type_una, tree, kind, a, width
 	return
 endp
 
+; A borrow. `mut` is 1 for `&mutabilis T` and 0 for `&T`, and it travels in
+; the `sign` byte, so the two intern as distinct type ids (node.inc says why
+; that byte and not a distinct kind). Width stays 0, as `ast_type_una` leaves
+; it: nothing gives a borrow a slot of its own today, and the zero is a
+; recorded hazard rather than a number anyone reads.
+proc ast_type_borrow, tree, a, mut
+	locals
+		slot t0, 16
+	endl
+	lea	rdi, [t0]
+	call	ast_type_clear
+	mov	byte [t0 + AstType.kind], AST_TY_BORROW
+	mov	rax, [mut]
+	mov	[t0 + AstType.sign], al
+	mov	rax, [a]
+	mov	[t0 + AstType.a], eax
+	mov	rdi, [tree]
+	lea	rsi, [t0]
+	call	ast_type_intern
+	return
+endp
+
 ; A function type. `off` is an `Ast.extra` offset holding `nparams` parameter
 ; type ids followed by the RESULT type id -- `nparams + 1` entries -- and
 ; `row` is a row id or 0. Spec §4.2: the row is IN THE TYPE, which is what

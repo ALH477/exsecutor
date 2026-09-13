@@ -713,6 +713,8 @@ proc __ast_w_type, w, red
 		slot wt_core, dq
 		slot wt_cur,  dq
 		slot wt_ga,   dq
+		slot wt_mut,  dq	; a `mutabilis` seen in the prefix scan,
+					;   waiting for the `&` it belongs to
 	endl
 	mov	rbx, [w]
 	mov	r12, [red]
@@ -721,6 +723,7 @@ proc __ast_w_type, w, red
 	call	__ast_w_nkid
 	mov	[wt_n], rax
 	mov	qword [wt_ga], 0
+	mov	qword [wt_mut], 0
 
 	; The generic arguments, if any, before the core that owns them.
 	mov	rdi, rbx
@@ -885,6 +888,20 @@ proc __ast_w_type, w, red
 	mov	rdi, rbx
 	lea	rsi, [wt_sub]
 	call	__ast_w_kind
+	cmp	eax, CST_TK_KEYWORD
+	jne	.pfx_notkw
+	; The prefix sigils are walked RIGHT TO LEFT, and `mutabilis` sits
+	; immediately after its `&`, so it is met one step BEFORE that `&`.
+	; Remember it and let the `&` below consume it (ADR 0016).
+	mov	rdi, rbx
+	lea	rsi, [wt_sub]
+	mov	rdx, AST_W_MUTABILIS
+	call	__ast_w_isw
+	test	eax, eax
+	jz	.pfx
+	mov	qword [wt_mut], 1
+	jmp	.pfx
+  .pfx_notkw:
 	cmp	eax, CST_TK_PUNCT
 	jne	.pfx
 	mov	rdi, rbx
@@ -903,6 +920,10 @@ proc __ast_w_type, w, red
 	jmp	.pfx_mk
   .pfx_ref:
 	mov	r14, AST_PTR_REF
+	cmp	qword [wt_mut], 0
+	je	.pfx_mk
+	mov	r14, AST_PTR_REFMUT
+	mov	qword [wt_mut], 0
   .pfx_mk:
 	mov	rdi, rbx
 	mov	rsi, r12

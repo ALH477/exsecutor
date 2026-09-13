@@ -100,7 +100,15 @@ assert sizeof.AstDecl = 32
 ; "placement is in the type" literally true rather than conventionally so.
 struct AstType
 	field kind,  db		; AST_TY_* (ast/kinds.inc)
-	field sign,  db		; AST_SIGN_*  -- `int` only
+	field sign,  db		; AST_SIGN_* for `int`; on a `borrow`, 1 means
+				;   MUTABLE -- `&mutabilis T` (ADR 0016). Chosen over a
+				;   distinct AST_TY_BORROWMUT kind deliberately: seven
+				;   places switch on AST_TY_BORROW, and a kind missed at
+				;   any of them -- `lwr_ty_scalar` and `lwr_ty_ir` above
+				;   all -- fails silently by sizing a borrow as an
+				;   aggregate or as zero bytes. A sign byte changes none
+				;   of them, and the two still intern as distinct types
+				;   because `sign` is part of the key.
 	field order, db		; AST_ORD_*   -- spec §5.2
 	field place, db		; AST_PLACE_* -- spec §5.5
 	field width, dd		; bit width, lane count, or parameter count

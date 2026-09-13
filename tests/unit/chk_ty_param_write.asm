@@ -57,6 +57,17 @@
 ;	4  write an element of a `mutabilis` local	accepted   (unchanged)
 ;	5  write a field of a `mutabilis` local		accepted   (unchanged)
 ;	6  READ an element through a parameter		accepted   (unchanged)
+;	7  write through `&mutabilis acies`		accepted   -- the point
+;	8  write through `&acies`			EXS-E0306
+;	9  READ through `&acies`			accepted
+;	10 write a field through `&mutabilis P`		accepted
+;	11 write a field through `&P`			EXS-E0306
+;
+; Rows 8 and 11 closed a SECOND hole, found while landing row 7. This
+; routine's "a dereference stops the walk and answers writable" is right for
+; `*T` -- `firma p: *u8` is an immutable POINTER to a mutable place -- and was
+; wrong for `&T`, so a write through an IMMUTABLE borrow was accepted and
+; `&mutabilis` would have been decoration rather than a permission.
 ;
 ; Rows 3-6 are here because the interesting risk in this change is not that
 ; the refusal fails to fire, it is that it fires too widely: a routine that
@@ -64,10 +75,10 @@
 ; particular pins that a parameter is still READABLE, which is the whole of
 ; what an aggregate parameter is for.
 ;
-; `&mutabilis T` (ADR 0016 decision 1) is the marked exception and is NOT
-; here: it does not parse yet, and M1 is deliberately a flat refusal so the
-; defect closes without waiting for the feature. When it lands, row 1 gains a
-; marked twin that is accepted, and this header should say so.
+; `&mutabilis T` (ADR 0016 decision 1) is the marked exception, and rows 7-11
+; are it. What is NOT here is the CALL SITE: an argument of type `T` does not
+; yet coerce to a `&mutabilis T` parameter, so no program can call one of
+; these functions. That is M3, with `EXS-E0310`'s aliasing rule.
 ;
 ; Exit 0 = every row held; 10+N = row N's diagnostic count; 40+N = row N's
 ; code; 99 = setup.
@@ -332,6 +343,34 @@ segment readable
   fx_src fx_read, <'publica functio lege(v: acies<u8, 4>) -> u8 {', 10, \
 	'    redde v[0];', 10, '}', 10>
 
+  ; 7 -- `&mutabilis`: a write through a MUTABLE borrow is the point
+  fx_src fx_mbw, <'publica functio f(v: &mutabilis acies<u8, 4>) -> u8 {', 10, \
+	'    (*v)[0] = 90;', 10, '    redde 0;', 10, '}', 10>
+
+  ; 8 -- `&`: a write through an IMMUTABLE borrow is refused. This one closed
+  ;      a second hole: `__chk_ty_rootmut`'s "a dereference stops the walk and
+  ;      answers writable" is right for `*T` -- `firma p: *u8` is an immutable
+  ;      POINTER to a mutable place -- and was wrong for `&T`, so this was
+  ;      ACCEPTED and `&mutabilis` was decoration rather than a permission.
+  fx_src fx_ibw, <'publica functio f(v: &acies<u8, 4>) -> u8 {', 10, \
+	'    (*v)[0] = 90;', 10, '    redde 0;', 10, '}', 10>
+
+  ; 9 -- reading through an immutable borrow stays accepted, which is what one
+  ;      is for
+  fx_src fx_ibr, <'publica functio f(v: &acies<u8, 4>) -> u8 {', 10, \
+	'    redde (*v)[0];', 10, '}', 10>
+
+  ; 10 -- the same pair over a struct field, since `.f` and `[i]` reach
+  ;       `__chk_ty_rootmut` by different arms
+  fx_src fx_mbf, <'publica structura P {', 10, '    a: u8', 10, '}', 10, \
+	'publica functio f(p: &mutabilis P) -> u8 {', 10, '    (*p).a = 7;', 10, \
+	'    redde 0;', 10, '}', 10>
+
+  ; 11 -- and its immutable twin
+  fx_src fx_ibf, <'publica structura P {', 10, '    a: u8', 10, '}', 10, \
+	'publica functio f(p: &P) -> u8 {', 10, '    (*p).a = 7;', 10, \
+	'    redde 0;', 10, '}', 10>
+
   ; dq source, its length; dd the expected diagnostic count and the expected
   ; code of diagnostic 0 (read only when the count is nonzero)
   macro fx_row src, count, code
@@ -346,6 +385,11 @@ segment readable
 	fx_row fx_mut,      0, 0
 	fx_row fx_mutfield, 0, 0
 	fx_row fx_read,     0, 0
+	fx_row fx_mbw,      0, 0
+	fx_row fx_ibw,      1, 306
+	fx_row fx_ibr,      0, 0
+	fx_row fx_mbf,      0, 0
+	fx_row fx_ibf,      1, 306
   FX_NROWS = ($ - fx_tab) / FX_ROW
 
 segment readable writeable
