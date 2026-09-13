@@ -263,6 +263,11 @@ The honest labelling that follows, and which §9.5 must carry:
 ## Open
 
 - **The ROM's stack budget — MEASURED, 2026-09-12, and it does not fit.**
+  *(**Superseded by ADR 0016's "What it bought", same day.** The first of the
+  three ways out named below was taken, together with a lowering fix found
+  while planning it, and `arbor_percurre` now measures **20,680 bytes** on the
+  same toolchain — a 32 KB stack holds it. What follows is left as written: it
+  is the measurement that justified the work.)*
   The estimate first written here ("roughly 180 KB at 64 and ~140 KB at 32")
   was derived from the source and was **wrong**. Measured with
   `mips64-elf-gcc 14.4.0 -mabi=o64 -fstack-usage` on the emitted o64 unit:

@@ -1,6 +1,9 @@
 # 0016 — `&mutabilis T`: a mutable borrow, and the `firma` hole it closes
 
-**Status:** Accepted as design, 2026-09-12. **Nothing implemented.** The design
+**Status:** Accepted, 2026-09-12. **Implemented.** M1 (`14eba50`) closed the
+`firma` hole; M2 (`1ca02b9`) made `&mutabilis T` a type and closed a second hole,
+writes through an immutable borrow; M3 (`d1fdc95`) made it callable and put
+`EXS-E0310` live. M3.5 and M4 are recorded in "What it bought" below. The design
 is `docs/design/mutable-borrow.md`. This ADR exists because the change is two
 things at once — a language feature three milestones have asked for, and the
 fix for a soundness defect measured while designing it — and because it
@@ -271,6 +274,46 @@ because there is no way to write one today that reaches the check.
   pointer. A mutable borrow is net-zero words — it removes the hidden pointer
   and adds a declared one — so it does not relieve `suffixum_percurre`, which
   is already at the limit for a different reason.
+
+## What it bought, measured
+
+The StreamDB reader, rewritten so `arbor_percurre` takes `a: &mutabilis Arbor`
+and `probatio.exsc` owns and zeroes the storage. Frames from Kiln's own
+`mips64-elf-gcc` 14.4.0 at `-mabi=o64 -Os -fstack-usage`:
+
+| | before (`f6a4810`) | M3.5 alone | M3.5 + M4 |
+|---|---|---|---|
+| `exs_arbor_percurre` | 127,184 | 73,952 | **20,680** |
+| `exs_initium` | 122,136 | 122,136 | 122,144 |
+| `exs_suffixum_percurre` | 8,832 | 8,584 | 8,584 |
+
+The callee now fits a 32 KB loader-thread stack. `exs_initium` does not move,
+and was never going to: it held the `Arbor` before, through the hidden result
+pointer, and holds it now as a binding — what changed is that it no longer holds
+a *second* copy in the callee. A Kiln engine holding the `Arbor` in its own
+storage pays only the callee's 20,680.
+
+Two levers and not one, and the second was found while planning the first. The
+127,184 was the `Arbor` (53,252) **plus six array-literal temporaries copied into
+it** (53,248) plus traversal state. The borrow removes the first; the temporaries
+were a separate defect in the lowering of struct literals, fixed as M3.5, and
+without it the borrow would have moved them into the caller rather than removed
+them. My first estimate for this table — "246,300 → 24,940 bytes, 10×" — compared
+a total against a callee-only frame, and is corrected in the Context above.
+
+The certificate is unchanged: all four vendored containers produce byte-identical
+streams, and `streamdb_truncus` still exits 1 having written nothing, which is the
+directory that catches a caller reading a partially-written `Arbor`.
+
+**What it did not buy: a single accumulate loop for the receiver.** The plan was
+to collapse the loop `examples/hydramodem/recipe.exsc` and `circuitus.exsc` each
+carry. It does not fit. Four mutable borrows plus the oscillator table plus the
+bound is six argument words, the ceiling, with **no word left for a `Lector`** —
+so a shared function can only take a sample array already in memory. And
+`recipe.exsc` deliberately never materialises one ("SAMPLES ARE NOT STORED": a
+163,848-byte array it streams past). The two loops also run to different bounds,
+20,481 and 19,008. `receptor.md` finding 11 stays open for the receiver, with
+that arithmetic as the reason.
 
 ## Open
 

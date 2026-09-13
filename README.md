@@ -351,7 +351,7 @@ is certified against the upstream writer's own bytes: all 24 documents
 byte-exact, both suffix searches in traversal order, and three corrupted
 containers behaving exactly as the reference C reader does — including
 falling back to the older commit when the newer header is damaged. The
-emitted C unit is 136,880 bytes and reproduces byte-identically across
+emitted C unit is 136,793 bytes and reproduces byte-identically across
 divergent directory, locale, time zone and hostname.
 
 Declaring the header as a `@transitus` struct forced two zero-pad gaps in the
@@ -431,19 +431,19 @@ there and runs — it is the only row whose `mensura` is 32, so `+` traps at
 2^32 on it, and its emitted unit is cross-compiled and executed big-endian
 with 32-bit addresses against the reference backend on every run of the
 suite (§14 entry 25, ADR 0015). What is **not** there is the o64 ABI itself,
-which the certificate runs the n32 ABI as a proxy for, and any ROM: the
-reader's deepest live stack **measures 241 KB** (`mips64-elf-gcc -mabi=o64
--fstack-usage`; `arbor_percurre` alone is a 127,184-byte frame) against
-libultra's 8–16 KB thread stacks and a 3 MB working ceiling, so it **cannot
-be linked into a ROM as written** — a factor of 15–30, not a tuning problem.
-The cause is **not** §6.3 decision 3, which six places in this tree cite for
-it and which is one sentence about retains: it is `docs/design/ssa-ir.md`
-section 2.9's, and ADR 0016 amends it. `&mutabilis T`, a mutable borrow, is
-landing so that `arbor_percurre` can fill storage its caller owns instead of
-returning a 53,252-byte result by value. Closing that gap also closed two
-soundness defects — `firma` was violable by handing a binding to a callee, and
-an immutable borrow granted writes. ADR 0015's Open section has the stack
-table; ADR 0016 has the feature.
+which the certificate runs the n32 ABI as a proxy for, and any ROM — though
+the reader now **fits** one. Its traversal, `arbor_percurre`, measured a
+127,184-byte frame with Kiln's own `mips64-elf-gcc -mabi=o64 -fstack-usage`,
+against libultra's 8–16 KB thread stacks; it is now **20,680 bytes**, which a
+32 KB loader-thread stack holds, and the reader still compiles clean under
+Kiln's ROM flags at `-Werror`. Two changes did it. `&mutabilis T`, a mutable
+borrow (ADR 0016), lets `arbor_percurre` fill a 53,252-byte `Arbor` its caller
+owns instead of returning one by value; and a struct literal's all-literal
+array fields are now built in place, where the lowering used to build each in
+a temporary and copy it in — 53,248 bytes of that frame. The borrow closed two
+soundness defects on the way: `firma` was violable by handing a binding to a
+callee, and an immutable borrow granted writes. Linking into a Kiln ROM is
+still not done.
 Neither does the `ego` reader, the module system, the LSP, or `exsc emenda`. `EXS-E0105`
 (confusables) has no hermetic data source. The emitted program's capability
 mask is an over-approximation with the exact fix recorded beside it, and,

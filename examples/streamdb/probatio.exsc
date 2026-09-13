@@ -162,7 +162,21 @@ publica functio initium(m: Mundus) -> u8 {
     si indicem_proba(b, indicis_situs, numerus, longitudo) ne 0 {
         redde 6;
     }
-    firma arbor = arbor_percurre(b, arboris_situs, arboris_longitudo);
+    // The caller owns the flattened trie and zeroes it: `arbor_percurre` fills it
+    // through a mutable borrow (ADR 0016) and reads back slots it never wrote,
+    // so the zeroes are part of the answer. Every field is an all-literal
+    // array, which the lowering builds IN PLACE (docs/design/mutable-borrow.md,
+    // M3.5) -- 53,252 bytes of frame rather than twice that.
+    mutabilis arbor = Arbor {
+        numerus: 0,
+        primus: [0; 2048],
+        numeri: [0; 2048],
+        habet: [0; 2048],
+        claves: [0; 2048],
+        idm: [0; 2048],
+        idn: [0; 2048]
+    };
+    firma arboris_nodi = arbor_percurre(arbor, b, arboris_situs, arboris_longitudo);
     si arbor.numerus eq 0 {
         redde 5;
     }

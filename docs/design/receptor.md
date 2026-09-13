@@ -1277,6 +1277,17 @@ Numbered; each names the document and the line.
     module reads the struct it is handed. Reported as a language gap the
     receiver meets and the transmitter did not; not designed around
     here.
+
+    *(**Still open, 2026-09-12, and now for a measured reason rather than a
+    missing feature.** ADR 0016 made `&mutabilis T` a mutable borrow, so a
+    function can fill an array it was handed — the gap this finding named is
+    closed. The duplicated loop is not, because a shared
+    `accumula(i0, q0, i1, q1: &mutabilis acies<i64, 20481>, t, …)` is four
+    borrows plus the table: two words short of taking both the bound and a
+    `Lector`, against the six-word ceiling (`c-backend.md` finding 14). The
+    only form that fits takes samples already in memory, which `recipe.exsc`
+    deliberately never holds, and the two copies run to different bounds,
+    20,481 and 19,008.)*
 12. **The hidden result pointer counts** (WC finding 8, again): four
     arrays plus a count plus an origin plus the pointer is seven words.
     `Praefixa` is the answer, and it is the better one — one thing to

@@ -93,15 +93,23 @@
 //   1024   key capacity, the format's own MAX_KEY_LEN.
 //   64     suffix matches reported.
 //
-// NO CALLER-PROVIDED OUTPUT ARRAY. c-backend.md section 6 asks for
-// `arbor_percurre(b, n, out, cap)` writing into a caller-supplied array. That
-// has no form in the language: a parameter is borrowed (§6.3 decision 3), and
-// docs/design/receptor.md finding 11 is exactly this gap ("Mutation through a
-// borrowed aggregate parameter has no form"). So the flattening OWNS its
-// output and returns it: `arbor_percurre` returns an `Arbor` by value, the
-// shape `tabulam()` in tests/programs/acies/ already runs. Every buffer is
-// still fixed-size and still on the stack -- there is no allocation -- but
-// "caller-supplied" is not what the language can say today.
+// A CALLER-PROVIDED OUTPUT. c-backend.md section 6 asked for
+// `arbor_percurre(b, n, out, cap)` writing into a caller-supplied array, and
+// this file used to say that had no form in the language "because a parameter
+// is borrowed (§6.3 decision 3)". That citation was WRONG: §6.3 decision 3 is
+// one sentence about retains, and the read-only rule was
+// docs/design/ssa-ir.md section 2.9's. ADR 0016 amended it, and
+// `arbor_percurre` now takes `a: &mutabilis Arbor` and fills storage its
+// caller owns. The name is kept: it is c-backend.md section 6's, and the walk
+// still traverses.
+//
+// Measured, and it is the reason the rewrite exists (ADR 0015, a Kiln ROM):
+// with Kiln's own mips64-elf-gcc at -mabi=o64 -Os, the frame when this
+// returned an `Arbor` by value was 127,184 bytes -- a 53,252-byte local
+// `Arbor` plus six array-literal temporaries copied into it -- and it is now
+// 20,680, the five traversal stacks and the scalars. The
+// temporaries went with docs/design/mutable-borrow.md's M3.5, which builds an
+// all-literal array field in place; the local `Arbor` went with the borrow.
 
 // ---- module constants (every comparison below reads these; the `acies<...>`
 // lengths repeat them as literals because a type cannot name one) ----------
@@ -438,8 +446,24 @@ publica functio indicem_quaere(b: acies<u8, 65536>, s: mensura, d: mensura,
 // ---- the trie, flattened --------------------------------------------------
 
 // One pass over the serialised blob at [s, s + n), with an EXPLICIT STACK, no
-// recursion. Returns the flat array; `numerus` is 0 when the blob is
-// malformed.
+// recursion, FILLING the caller's `Arbor` through `a`. Returns `numerus`, which
+// is written only on success and so stays whatever the caller put there -- 0 --
+// when the blob is malformed.
+//
+// THE CALLER'S OBLIGATIONS, both new with the borrow and both load-bearing:
+//
+//   * `a` must arrive ZEROED. The zeroes are not hygiene. `habet` is written
+//     only for value-carrying nodes and read for every reachable node, and
+//     `primus`/`numeri` likewise, so a slot this walk never touches is read as
+//     the caller left it. ADR 0016 decision 4 keeps definite assignment the
+//     caller's obligation, and probatio.exsc meets it with `[0; 2048]`
+//     initialisers, which M3.5 builds in place.
+//   * PARTIAL WRITES ARE NOW CALLER-VISIBLE. A malformed blob stops the walk
+//     part-way, and where the old local `Arbor` was discarded, these bytes are
+//     the caller's. The contract is that nothing reads the array unless
+//     `numerus` is non-zero -- probatio.exsc's `si arbor.numerus eq 0` gate --
+//     and tests/programs/streamdb_truncus/ is what fails if a caller ever
+//     emits a byte before checking.
 //
 // The walk is the reference's `trie_build` transcribed: each frame enters a
 // slot its parent assigned it, bump-allocates a contiguous range for its own
@@ -455,16 +479,7 @@ publica functio indicem_quaere(b: acies<u8, 65536>, s: mensura, d: mensura,
 // accepts; it also means a writer that ever disagreed with this reading would
 // be refused here and admitted there. Said out loud because it is a real
 // difference in strictness and not an improvement by fiat.
-publica functio arbor_percurre(b: acies<u8, 65536>, s: mensura, n: mensura) -> Arbor {
-    mutabilis a = Arbor {
-        numerus: 0,
-        primus: [0; 2048],
-        numeri: [0; 2048],
-        habet: [0; 2048],
-        claves: [0; 2048],
-        idm: [0; 2048],
-        idn: [0; 2048]
-    };
+publica functio arbor_percurre(a: &mutabilis Arbor, b: acies<u8, 65536>, s: mensura, n: mensura) -> mensura {
 
     // The explicit stack: one entry per open node, 1025 deep so that the
     // format's 1024-byte maximum key fits and nothing deeper does.
@@ -504,8 +519,8 @@ publica functio arbor_percurre(b: acies<u8, 65536>, s: mensura, n: mensura) -> A
                 valet = 0;
                 rumpe;
             }
-            a.primus[slot] = gradus;
-            a.numeri[slot] = k;
+            (*a).primus[slot] = gradus;
+            (*a).numeri[slot] = k;
             f_nodus[sp] = slot;
             f_natus[sp] = k;
             f_factus[sp] = 0;
@@ -526,7 +541,7 @@ publica functio arbor_percurre(b: acies<u8, 65536>, s: mensura, n: mensura) -> A
                 rumpe;
             }
             firma ch = f_primus[t] + f_factus[t];
-            a.claves[ch] = b[s + p];
+            (*a).claves[ch] = b[s + p];
             p = p + 1;
             f_factus[t] = f_factus[t] + 1;
             slot = ch;
@@ -560,9 +575,9 @@ publica functio arbor_percurre(b: acies<u8, 65536>, s: mensura, n: mensura) -> A
             firma id = nomen_lege(b, s + p);
             p = p + 16;
             firma nodus = f_nodus[t];
-            a.habet[nodus] = 1;
-            a.idm[nodus] = id.idm;
-            a.idn[nodus] = id.idn;
+            (*a).habet[nodus] = 1;
+            (*a).idm[nodus] = id.idm;
+            (*a).idn[nodus] = id.idn;
             mei = mei + 1;
         } sin tag ne 0 {
             valet = 0;
@@ -589,9 +604,9 @@ publica functio arbor_percurre(b: acies<u8, 65536>, s: mensura, n: mensura) -> A
     }
 
     si valet eq 1 {
-        a.numerus = gradus;
+        (*a).numerus = gradus;
     }
-    redde a;
+    redde (*a).numerus;
 }
 
 // The slot of `nodus`'s child under key byte `clavis`, or `a.numerus` when
