@@ -442,8 +442,10 @@ owns instead of returning one by value; and a struct literal's all-literal
 array fields are now built in place, where the lowering used to build each in
 a temporary and copy it in — 53,248 bytes of that frame. The borrow closed two
 soundness defects on the way: `firma` was violable by handing a binding to a
-callee, and an immutable borrow granted writes. Linking into a Kiln ROM is
-still not done.
+callee, and an immutable borrow granted writes. It is also **linked into a Kiln ROM and run**: Kiln's
+`examples/exsec-streamdb-demo/` opens a container through this reader on a
+32 KB libdragon thread, checks every key against Kiln's own C reader, and in
+Ares prints BOTH READERS AGREE.
 Neither does the `ego` reader, the module system, the LSP, or `exsc emenda`. `EXS-E0105`
 (confusables) has no hermetic data source. The emitted program's capability
 mask is an over-approximation with the exact fix recorded beside it, and,

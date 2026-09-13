@@ -266,8 +266,11 @@ The honest labelling that follows, and which §9.5 must carry:
   *(**Superseded by ADR 0016's "What it bought", same day.** The first of the
   three ways out named below was taken, together with a lowering fix found
   while planning it, and `arbor_percurre` now measures **20,680 bytes** on the
-  same toolchain — a 32 KB stack holds it. What follows is left as written: it
-  is the measurement that justified the work.)*
+  same toolchain — a 32 KB stack holds it. **And it has run there:** Kiln's
+  `examples/exsec-streamdb-demo/` executes the reader on a 32,768-byte
+  libdragon thread and agrees with Kiln's own reader on every key in Ares.
+  What follows is left as written: it is the measurement that justified the
+  work.)*
   The estimate first written here ("roughly 180 KB at 64 and ~140 KB at 32")
   was derived from the source and was **wrong**. Measured with
   `mips64-elf-gcc 14.4.0 -mabi=o64 -fstack-usage` on the emitted o64 unit:
