@@ -328,6 +328,9 @@ segment readable writeable
 	dd	307, 0	; EXS-E0307 -- typing; no derivable edit (Stage 2 amendment)
 	dd	308, 0	; EXS-E0308 -- typing; no derivable edit (Stage 2 amendment)
 	dd	309, 0	; EXS-E0309 -- typing; no derivable edit (Stage 2 amendment)
+	dd	310, 0	; EXS-E0310 -- aliasing at a call site; the edit is to pass
+			;   different storage, or to restructure so one call does not
+			;   both read and write it. Neither is derivable (ADR 0016)
 	dd	311, 0	; EXS-E0311
 	dd	321, 0	; EXS-E0321
 	dd	322, 0	; EXS-E0322

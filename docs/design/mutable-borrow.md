@@ -3,12 +3,13 @@
 The decisions are ADR 0016. This is the implementation: what changes, where,
 in what order, and what each step is checked by.
 
-Its subject is small and its blast radius is not. Nothing in the IR, the
-lowering or either backend changes — the whole feature is a **permission**,
+Its subject is small and so, measured, is its blast radius. Nothing in the IR,
+the lowering or either backend changes — the whole feature is a **permission**,
 decided in Stage 2 and erased before any backend sees it, exactly as a
-capability row is (`ssa-ir.md` section 2.9, amended). What does change is that two
-programs that compile today stop compiling, and one of them is a violation of
-`firma` this milestone exists to end.
+capability row is (`ssa-ir.md` section 2.9, amended). And closing the defect
+breaks no program in this tree: 1381 pass / 0 fail with the refusal in place.
+Nothing here ever wrote through a parameter, which is precisely why a violable
+`firma` survived three milestones.
 
 ## 1. What is already true
 

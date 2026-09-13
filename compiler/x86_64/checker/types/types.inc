@@ -1374,7 +1374,31 @@ proc __chk_ty_rootmut, chkt_wRM, chkt_nRM
 	call	ast_decl_at
 	movzx	ecx, byte [rax + AstDecl.kind]
 	cmp	ecx, AST_D_BINDING
-	jne	.yes
+	je	.binding
+	; A PARAMETER root is not writable. This closes the `[OPEN]` in this
+	; routine's own header, and it closes a defect rather than merely
+	; tightening a rule: until this line, `firma b: acies<u8, 4> = [65; 4];
+	; imple(b);` where `imple` does `v[0] = 90` COMPILED AND MUTATED `b`
+	; (measured at e8de1aa -- it printed the 90). The direct write
+	; `b[0] = 90` on the same binding was already `EXS-E0306`, so
+	; immutability was enforced on the syntax of an assignment and not on
+	; the storage, and any function taking an aggregate could launder a
+	; write to a `firma` binding through a call.
+	;
+	; ADR 0016 decision 2. The rule that makes this the right answer is
+	; `docs/design/ssa-ir.md` section 2.9's -- an aggregate parameter is a
+	; `ptr` to caller-owned storage the callee reads and never writes -- and
+	; NOT spec section 6.3 decision 3, which six places in this tree cite
+	; for it and which is one sentence about retains.
+	;
+	; ADR 0016's `&mutabilis T` is the marked exception, and when it lands
+	; this becomes a test of the parameter's type rather than a flat refusal.
+	; It is a flat refusal first, deliberately: the defect is worth closing
+	; on its own, and a fix that waits for a feature is a fix that ships late.
+	cmp	ecx, AST_D_PARAM
+	je	.no
+	jmp	.yes
+  .binding:
 	movzx	ecx, byte [rax + AstDecl.flags]
 	test	ecx, AST_F_MUTABILIS
 	jz	.no

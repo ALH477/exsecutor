@@ -124,9 +124,12 @@ This is the defect fix, and it needs no new code: §13's `EXS-E0306` is
 already lists "or a parameter" among the things it covers. Widening
 `__chk_ty_rootmut` to stop at a parameter root closes its own `[OPEN]`.
 
-This is a **breaking change** to programs that relied on the accident. Exactly
-one construct in the tree does — the reader's flattening does not, because it
-was written to the rule it believed was in force.
+It is a **breaking change** in principle, and measured, it breaks nothing:
+with the refusal in place the suite is 1381 pass / 0 fail. **Nothing in this
+tree wrote through a parameter** — every program was written to the rule its
+authors believed was in force, which is why the defect went three milestones
+without being noticed. (An earlier draft of this ADR guessed "exactly one
+construct does". That was written before it was checked, and it was wrong.)
 
 ### 3. The argument must be a `mutabilis` binding
 
