@@ -1,0 +1,20 @@
+# Struct-literal array fields built IN PLACE (docs/design/mutable-borrow.md,
+# milestone M3.5). A struct literal used to lower every aggregate field into its
+# own temporary and then copy it in, paying for the field twice; an all-literal
+# array field is now written straight into the struct.
+#
+# The change is claimed to be UNOBSERVABLE, and this directory is the claim in
+# runnable form: the four lines of expected.out cover a binding's initialiser, an
+# assignment to an existing place, `redde` through the hidden result pointer, and
+# a mixed literal whose path field must keep the old temporary, and a fifth line
+# whose array element READS the storage the same literal WRITES -- the case the
+# literal-only rule exists for, and the line that fails if it is widened. It is checked
+# under the reference backend and all four differential C builds.
+#
+# What it does NOT check is the frame size, which is the point of the change and
+# is measured by hand (`-fstack-usage`), per ADR 0015: a floor on a frame size
+# would be a number with no consequence attached. Measured when this landed: a
+# `S { n: mensura, v: acies<u64, 2048> }` literal went from two slots to one
+# (32,808 -> 16,416 bytes), and `arbor_percurre` from 127,184 to 73,952 on
+# Kiln's own mips64-elf-gcc at -mabi=o64.
+TEST: expect-exit=0

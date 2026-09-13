@@ -2043,6 +2043,92 @@ proc lwr_expr_agg, lwrsp, lwrn
 	return
 endp
 
+; __lwr_inplace(st, lwrn) -> eax = 1 if aggregate initialiser `lwrn` may be
+; built DIRECTLY in its struct literal's destination rather than in a
+; temporary that is then copied there.
+;
+; WHY THIS EXISTS. `__lwr_structlit`'s first walk calls `lwr_expr_arg` for
+; every field, and for an aggregate that builds the value in a fresh `slot`
+; and stages its address; the second walk `__lwr_copy`s it into the field. So
+; a struct literal pays for each aggregate field TWICE. Measured on
+; `examples/streamdb/lector_streamdb.exsc`'s `arbor_percurre`, whose `Arbor`
+; is six `[0; 2048]` fields: 53,248 of its 127,016-byte frame is those six
+; temporaries. A minimal `structura S { n: mensura, v: acies<u64, 2048> }`
+; built from a literal emitted TWO slots, 16,392 and 16,384, where a bare
+; `mutabilis x: acies<u64, 2048> = [0; 2048]` emits one -- `lwr_expr_into`
+; already lowers an array literal straight into a destination; only the
+; struct literal's staging stood in the way.
+;
+; WHY LITERAL ELEMENTS ONLY, and why that makes the change need no aliasing
+; argument at all. The two walks exist so that `f = S { a: f.b, b: f.a }` reads
+; both old fields before it writes either, and so initialisers are EVALUATED
+; in source order while fields are STORED in declaration order. An array
+; literal whose every element is a literal has no side effect and reads no
+; storage, so neither ordering can observe when it is built. And it is built
+; at exactly the point the copy used to happen -- the same bytes, into the same
+; field, at the same moment in the second walk. So this is safe for EVERY
+; destination: a fresh binding, an assignment to an existing place, and a
+; `redde` through the hidden-return pointer alike.
+;
+; Anything else keeps the two walks: an element that is a call, a path, a
+; nested aggregate or even a negated literal (`[-7; N]` is a unary minus, not
+; an `AST_LIT`). Widening this to constant-folded elements is `[OPEN]` and
+; would need its own argument about side effects.
+proc __lwr_inplace, lwrsp, lwrn
+	uses	rbx, r12, r13, r14
+	locals
+	endl
+	mov	rbx, [lwrsp]
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_nkind
+	cmp	eax, AST_ARRAYREP
+	je	.rep
+	cmp	eax, AST_ARRAYLIT
+	je	.list
+	jmp	.no
+  .rep:
+	; `[e; N]`: its one element must be a literal
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_node
+	mov	r12d, [rax + AstNode.a]
+	mov	rdi, rbx
+	mov	esi, r12d
+	call	__lwr_nkind
+	cmp	eax, AST_LIT
+	jne	.no
+	jmp	.yes
+  .list:
+	; `[e1, ..., en]`: every element must be a literal
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_node
+	mov	r12d, [rax + AstNode.a]		; the list offset
+	mov	r13d, [rax + AstNode.b]		; the count
+	xor	r14d, r14d
+  .el:
+	cmp	r14d, r13d
+	jge	.yes
+	mov	rdi, rbx
+	mov	esi, r12d
+	mov	edx, r14d
+	call	__lwr_listat
+	mov	rdi, rbx
+	mov	esi, eax
+	call	__lwr_nkind
+	cmp	eax, AST_LIT
+	jne	.no
+	inc	r14d
+	jmp	.el
+  .yes:
+	mov	eax, 1
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
 ; __lwr_structlit(st, lwrn, lwrdst) -- spec §8.6's struct literal, written
 ; through `lwrdst`: every initialiser EVALUATED IN SOURCE ORDER, then every
 ; field STORED IN DECLARATION ORDER (docs/design/wire-codec.md D3). So a
@@ -2111,9 +2197,22 @@ proc __lwr_structlit, lwrsp, lwrn, lwrdst
 	mov	esi, eax
 	call	__lwr_node
 	mov	r13d, [rax + AstNode.b]	; its initialiser
+	; An all-literal array initialiser is built in place during the SECOND
+	; walk (`__lwr_inplace` says why that is unobservable). Stage 0 for it:
+	; IR value ids are 1-based (backend_fasmg/ir.inc), so 0 is never a real
+	; value and cannot be mistaken for one.
+	mov	rdi, rbx
+	mov	esi, r13d
+	call	__lwr_inplace
+	test	eax, eax
+	jz	.eval_arg
+	xor	eax, eax
+	jmp	.eval_stage
+  .eval_arg:
 	mov	rdi, rbx
 	mov	esi, r13d
 	call	lwr_expr_arg		; a scalar's value, an aggregate's `ptr`
+  .eval_stage:
 	mov	rdi, rbx
 	mov	esi, eax
 	call	__lwr_stage
@@ -2220,11 +2319,30 @@ proc __lwr_structlit, lwrsp, lwrn, lwrdst
 	mov	r8d, [lwrdst]
 	mov	r9d, [lwrfo]
 	call	lwr_emit
+	cmp	dword [lwrv], 0
+	je	.inplace
 	mov	rdi, rbx
 	mov	esi, [lwrft]
 	mov	edx, eax
 	mov	ecx, [lwrv]
 	call	__lwr_copy
+	jmp	.next
+  .inplace:
+	; the sentinel the first walk staged: build the literal straight into
+	; `addr %dst off`. r12d still holds this field's FieldInit index from
+	; `.find` -- every call since preserves it.
+	mov	r14d, eax
+	mov	rdi, rbx
+	mov	esi, [lwroff]
+	mov	edx, r12d
+	call	__lwr_listat
+	mov	rdi, rbx
+	mov	esi, eax
+	call	__lwr_node
+	mov	rdi, rbx
+	mov	esi, [rax + AstNode.b]	; the initialiser
+	mov	edx, r14d
+	call	lwr_expr_into
   .next:
 	inc	dword [lwrfd]
 	jmp	.field

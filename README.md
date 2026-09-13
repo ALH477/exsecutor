@@ -351,7 +351,7 @@ is certified against the upstream writer's own bytes: all 24 documents
 byte-exact, both suffix searches in traversal order, and three corrupted
 containers behaving exactly as the reference C reader does — including
 falling back to the older commit when the newer header is damaged. The
-emitted C unit is 137,742 bytes and reproduces byte-identically across
+emitted C unit is 136,880 bytes and reproduces byte-identically across
 divergent directory, locale, time zone and hostname.
 
 Declaring the header as a `@transitus` struct forced two zero-pad gaps in the

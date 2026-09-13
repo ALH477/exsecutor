@@ -107,6 +107,47 @@ refused, `f(b, c)` accepted, and the aliasing rule's stated blind spots
 recorded as fixtures that *pass* so the under-approximation is documented in
 runnable form rather than in prose.
 
+**M3.5 — in-place aggregate fields. DONE.** Found while planning M4, and a
+bigger lever than the borrow itself. A struct literal lowered every aggregate
+field into its own temporary slot in its first walk, then copied it into the
+field in its second, so it paid for each such field **twice**. Measured on a
+minimal `structura S { n: mensura, v: acies<u64, 2048> }` built from a literal:
+two slots, 16,392 and 16,384, where a bare `mutabilis x: acies<u64, 2048> =
+[0; 2048]` emits one — `lwr_expr_into` already lowers an array literal straight
+into a destination, and only the struct literal's staging stood in the way.
+
+`lower/expr.inc`'s `__lwr_inplace` now lets an array-literal field whose every
+element is a literal be built straight into `addr %dst off`. **Literal elements
+only, and that is what makes it need no aliasing argument:** a literal has no
+side effect and reads no storage, and it is built at exactly the point the copy
+used to happen, so the bytes written and their order are unchanged — for a fresh
+binding, an assignment to an existing place and `redde` through the hidden
+result pointer alike. Anything else keeps the two walks, including `[-7; N]`,
+whose element is a unary minus.
+
+| frame, Kiln's `mips64-elf-gcc -mabi=o64 -Os` | before | after |
+|---|---|---|
+| the minimal `S` literal (x86-64, gcc) | 32,808 | **16,416** |
+| `exs_arbor_percurre` | 127,184 | **73,952** |
+| `exs_suffixum_percurre` | 8,832 | 8,584 |
+| `exs_initium` | 122,136 | 122,136 — unchanged, as predicted: its `Arbor` arrives through a hidden result pointer, not a literal |
+
+Clang at `-mabi=n32` agrees within 32 bytes. No source changed. The emitted
+StreamDB unit shrank from 137,742 to 136,880 bytes (x86-64) and 139,144 to
+138,286 (o64); the hello world is unchanged at 8,691, having no aggregate field.
+
+**The gate as first planned was wrong** — it said every emitted unit stays
+byte-identical. The units change by design; what must stay byte-identical is
+every program's **output**, and `make reproduce`'s cross-condition comparison.
+
+`tests/programs/structura_in_loco/` is the claim in runnable form: five lines
+covering a binding, an assignment, `redde`, a mixed literal whose path field
+keeps its temporary, and — the one that matters — `t = Tab { n: 5, a: [90; 4],
+b: [t.a[0]; 3] }`, whose array element READS the storage the same literal
+WRITES. Two walks read the old `t.a[0]` and give `FFF`. Mutation: `__lwr_inplace`
+widened to accept a repeat literal with any element → line 5 prints `ZZZ`, and
+`cmp` fails. That line is what fails if the literal-only rule is ever relaxed.
+
 **M4 — the reader.** `arbor_percurre` becomes
 `arbor_imple(a: &mutabilis Arbor, b: acies<u8, 65536>, s: mensura, n: mensura)`;
 `probatio.exsc` supplies the storage. Net argument words are unchanged — the

@@ -1,0 +1,107 @@
+// A struct literal whose array fields are all-literal is built IN PLACE.
+//
+// `lower/expr.inc`'s `__lwr_inplace` lets an array-literal field whose every
+// element is a literal be written straight into the struct's field, instead of
+// into a temporary that is then copied there. Measured, that halves the frame of
+// every such literal -- `arbor_percurre` in the StreamDB reader falls from
+// 127,184 bytes to 73,952 with no source change.
+//
+// The claim that makes it safe is that the change is UNOBSERVABLE: a literal
+// has no side effect and reads no storage, and it is built at exactly the point
+// the copy used to happen. So this program exercises every destination a struct
+// literal can have, and one that must keep the old two walks:
+//
+//   line 1  a binding's initialiser -- both array-literal forms, list and repeat
+//   line 2  an assignment to an EXISTING place, which is not a fresh slot
+//   line 3  `redde` through the hidden result pointer
+//   line 4  a MIXED literal: one field is a path, so it keeps the temporary,
+//           beside a repeat field built in place and a scalar read from a
+//           place the same literal does not write
+//   line 5  the case the RULE exists for: `t = Tab { n: 5, a: [90; 4],
+//           b: [t.a[0]; 3] }`. `b`'s element READS `t.a[0]` while the same
+//           literal WRITES `t.a`. Two walks evaluate `t.a[0]` first, while it
+//           is still 'F', so `b` is FFF. Build `b` in place too and it is read
+//           after `a` is written, and `b` becomes ZZZ. That is why only
+//           ALL-LITERAL elements are built in place, and this line is what
+//           fails if the predicate is ever widened past that.
+//
+// Each line is the struct's scalar as a digit, its four-byte array, its
+// three-byte array, and a newline. stdout is compared with `cmp`.
+
+publica structura Tab {
+    n: u8
+    a: acies<u8, 4>
+    b: acies<u8, 3>
+}
+
+publica functio fac() -> Tab {
+    redde Tab { n: 3, a: [74, 75, 76, 77], b: [78; 3] };
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma s = Scriptor.ad_exitum(m.ambitus());
+    mutabilis w: mensura = 0;
+
+    // ---- 1: a binding's initialiser ----
+    mutabilis t = Tab { n: 1, a: [65, 66, 67, 68], b: [69; 3] };
+    w = w + s.scribe_octeto(48 + t.n);
+    w = w + s.scribe_octeto(t.a[0]);
+    w = w + s.scribe_octeto(t.a[1]);
+    w = w + s.scribe_octeto(t.a[2]);
+    w = w + s.scribe_octeto(t.a[3]);
+    w = w + s.scribe_octeto(t.b[0]);
+    w = w + s.scribe_octeto(t.b[1]);
+    w = w + s.scribe_octeto(t.b[2]);
+    w = w + s.scribe_octeto(10);
+
+    // ---- 2: an assignment to an existing place ----
+    t = Tab { n: 2, a: [70; 4], b: [71, 72, 73] };
+    w = w + s.scribe_octeto(48 + t.n);
+    w = w + s.scribe_octeto(t.a[0]);
+    w = w + s.scribe_octeto(t.a[1]);
+    w = w + s.scribe_octeto(t.a[2]);
+    w = w + s.scribe_octeto(t.a[3]);
+    w = w + s.scribe_octeto(t.b[0]);
+    w = w + s.scribe_octeto(t.b[1]);
+    w = w + s.scribe_octeto(t.b[2]);
+    w = w + s.scribe_octeto(10);
+
+    // ---- 3: `redde` through the hidden result pointer ----
+    firma f = fac();
+    w = w + s.scribe_octeto(48 + f.n);
+    w = w + s.scribe_octeto(f.a[0]);
+    w = w + s.scribe_octeto(f.a[1]);
+    w = w + s.scribe_octeto(f.a[2]);
+    w = w + s.scribe_octeto(f.a[3]);
+    w = w + s.scribe_octeto(f.b[0]);
+    w = w + s.scribe_octeto(f.b[1]);
+    w = w + s.scribe_octeto(f.b[2]);
+    w = w + s.scribe_octeto(10);
+
+    // ---- 4: mixed -- `a` is a path and keeps the temporary ----
+    firma q: acies<u8, 4> = [80, 81, 82, 83];
+    firma x = Tab { n: t.n, a: q, b: [84; 3] };
+    w = w + s.scribe_octeto(48 + x.n);
+    w = w + s.scribe_octeto(x.a[0]);
+    w = w + s.scribe_octeto(x.a[1]);
+    w = w + s.scribe_octeto(x.a[2]);
+    w = w + s.scribe_octeto(x.a[3]);
+    w = w + s.scribe_octeto(x.b[0]);
+    w = w + s.scribe_octeto(x.b[1]);
+    w = w + s.scribe_octeto(x.b[2]);
+    w = w + s.scribe_octeto(10);
+
+    // ---- 5: an element that reads what the literal writes ----
+    t = Tab { n: 5, a: [90; 4], b: [t.a[0]; 3] };
+    w = w + s.scribe_octeto(48 + t.n);
+    w = w + s.scribe_octeto(t.a[0]);
+    w = w + s.scribe_octeto(t.a[1]);
+    w = w + s.scribe_octeto(t.a[2]);
+    w = w + s.scribe_octeto(t.a[3]);
+    w = w + s.scribe_octeto(t.b[0]);
+    w = w + s.scribe_octeto(t.b[1]);
+    w = w + s.scribe_octeto(t.b[2]);
+    w = w + s.scribe_octeto(10);
+
+    redde 0;
+}
