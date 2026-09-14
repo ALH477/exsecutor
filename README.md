@@ -214,7 +214,7 @@ English text. §13 is the only registry; `compiler/x86_64/diag/codes.inc` is
 generated from it by `tools/gen-codes.py`, and `tools/spec-check.sh` fails on
 drift. A new code is a spec amendment first.
 
-**Conformance is §14.** Twenty-four entries, each a fixture under
+**Conformance is §14.** Twenty-seven entries, each a fixture under
 `tests/conformance/`. The runner distinguishes five rule shapes (reject with
 exactly this code; byte-identical output; external certificate; runtime abort;
 capability absence) and reports an entry it cannot yet run as `DEFERRED`,
@@ -240,7 +240,7 @@ are byte-exact exceptions and why).
      Every figure is from running the named command at the named commit.
      Refresh it here and nowhere else. -->
 
-## Status as of `2984f78` (2026-09-14)
+## Status as of `03e490f` (2026-09-14)
 
 Every figure here was produced by running the named command at this commit, in
 the `nix develop` shell, on `x86_64-linux`.
@@ -377,28 +377,47 @@ spec §14 entry 26) — and byte-identical cross-run big-endian on mips64
 under emulation, the first big-endian `f64` execution this compiler has
 produced (both float picture programs carry `cross=yes`).
 
-![the RGB triangle, rendered by examples/pictura](docs/images/pictura_triangulum.png)
+**The same triangle, eight lanes at a time.** Stage 5's `acies<f32, 8>`
+runs in both backends: whole-acy `+ - * /` is the elementwise operation,
+one IEEE rounding per lane, nothing combined across lanes (spec §5.4's
+admission law). `examples/pictura/octonaria.exsc` rebuilds the render at
+**960×540 with 2×2 supersampled coverage**, the three edge accumulators
+as `acies<f32, 8>`, each stepped by **one packed `vadd` per edge per
+8-pixel group** — coverage and stores stay scalar per lane because the
+language admits no mask shape, by design and on the record. The census,
+greped from the emitted assembly and pinned in the program's TEST header:
+exactly four divisions, all in setup; twelve `addps` and six `mulps`, each
+packed op emitting its two SSE2 halves; zero `subps` and zero `divps`; and,
+on the mips64 qemu run, the C backend's soft `vector_size` lowering
+reproducing all 1,555,215 bytes bit for bit on a target with no SSE at
+all (spec §14 entry 27).
+
+![the RGB triangle at 960x540, rendered lane-parallel by examples/pictura/octonaria.exsc](docs/images/pictura_octonaria.png)
 
 **The language renders its own logo.** `examples/signaculum/` rasterises
 the 3D model behind this README's mark — 1,493 vertices, 2,981 textured
-faces — at 256×256 with a 1/z z-buffer, backface culling and incremental
-edge functions (one `fadd` per pixel per edge; one division per vertex and
-one per face, none in the pixel loop), and writes a 196,623-byte P6 on
+faces — at **512×512** with a 1/z z-buffer, backface culling and
+incremental edge functions now carried **lane-parallel over
+`acies<f64, 8>`**: one packed `vadd` per accumulator per 8-pixel group,
+coverage and the depth test scalar per lane. Zero divisions in the pixel
+loop (three `divsd` in setup, no `divpd` anywhere; the census is pinned in
+`tests/programs/signaculum/TEST`), writing a 786,447-byte P6 on
 stdout. Every float the program holds arrives on stdin as an integer on
 the 2⁻²³ grid and is decoded by one exact power-of-two division, so the
-program and the independent oracle (`prototypes/signaculum_oracle.py`)
-run identical f64 bits from the first operation on; the output is
-byte-identical between the reference backend, all four differential
-toolchains, and the oracle (`tests/programs/signaculum/`). Getting here
+program and the independent oracle (`prototypes/signaculum_oracle.py`, itself
+ported to the same lane pipeline) run identical f64 bits from the first
+operation on; the output is byte-identical between the reference backend,
+all four differential toolchains, the oracle, and the big-endian mips64
+qemu run. Getting here
 closed the last float gap in both emitters — `load`/`store` on float
 types, `nativus` order only, the value as its raw IEEE bit pattern
 (`tests/ir/float_mem.ir`; spec §9.2).
 
-![the Exsecutor logo model, rendered by examples/signaculum](docs/images/signaculum_render.png)
+![the Exsecutor logo model at 512x512, rendered lane-parallel by examples/signaculum](docs/images/signaculum_render.png)
 
 **What runs:**
 
-- `make all` → `build/exsc`, **453,972 bytes**, freestanding, no libc.
+- `make all` → `build/exsc`, **489,213 bytes**, freestanding, no libc.
 - **All three stages of §16 reach end to end.** Stage 1: the §8.1 source gate,
   the lexer, the lossless CST, the typed AST. Stage 2: name resolution, types,
   capability rows, packed layout — the lexicon pass is built and **not
@@ -416,20 +435,22 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   corpus — `docs/design/diagnostics-review.md`, final section, and
   `tests/diagnostics/`. Stage 2's (`sub` resolution needing a search) does not
   fire, argued first in `docs/design/checker.md` §2.1.
-- `tests/run.sh`: **1500 pass, 0 fail** — 176 unit fixtures; 58 IR
-  fixtures and 102 Exsecutor programs, each compiled, assembled, **run**, and
+- `tests/run.sh`: **1564 pass, 0 fail** — 178 unit fixtures; 64 IR
+  fixtures and 104 Exsecutor programs, each compiled, assembled, **run**, and
   syscall-audited (70 of those programs are the receiver's impaired vectors);
-  a **differential phase**: 176 IR builds and 128 program builds in which
+  a **differential phase**: 184 IR builds and 136 program builds in which
   the C backend's output must agree with the reference's on stdout bytes, exit
   status and trap-or-not, across gcc and clang at `-O0` and `-O2`, every one
   under `-fsanitize=undefined -fno-sanitize-recover=all`. They agree
-  everywhere; zero sanitizer reports. And a **cross phase**: eight of those
+  everywhere; zero sanitizer reports. And a **cross phase**: ten of those
   directories are also emitted for `--hospes mips64-none-o64`,
   cross-compiled to big-endian MIPS-III with 32-bit addresses, and **run
   under emulation** against the same three observables — the first
-  big-endian execution of anything this compiler produces, and the thing
+  big-endian execution of anything this compiler produces, now carried by
+  the lane rasterizers too (the soft `vector_size` lowering keeps every
+  lane's bits), and the thing
   that finally tests §9.5's standing claim that the emitted text assumes
-  nothing about byte order. 12 of 26 conformance entries run, each required
+  nothing about byte order. 13 of 27 conformance entries run, each required
   to emit exactly its expected code and nothing else (the other 14 report
   `DEFERRED` and are never counted as passing); 0 program directories
   deferred.
@@ -444,9 +465,11 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
 
 **What does not run yet.** Most of the language beyond what these programs use
 is `rassert`-refused rather than lowered: `contrahe` and its reduction triple,
-lambdas, `eventus`, generics, vector floats (`acies<f32, 8>` — the scalar
-float surface runs; SIMD is its own stage), and every `numeri` but the
-default. Bitwise and/or, integer division and remainder, and signed shifts
+lambdas, `eventus`, generics, and every `numeri` but the
+default. (Vector floats left this list in Stage 5: whole-acy `+ - * /` over
+`acies<f32, 8>`/`acies<f64, 8>` at lane counts 2, 4 and 8 lowers in both
+backends, with extract/splat/mask shapes still refused by design.)
+Bitwise and/or, integer division and remainder, and signed shifts
 are unspecified (`[OPEN]`); narrowing and equal-width `sicut` are truncation
 (spec §5.4), with
 narrowing from a signed source still unwritten by any program. An array
@@ -467,7 +490,7 @@ backends still refuse by name is one maintained set: `div`/`rem`/`muls` and
 the overflow predicates (§5.4 leaves them `[OPEN]`), `fma`, `bitcast`, the
 unordered `fcmp` forms, the reductions, and `callind`, plus the C
 backend's own `retain`/`release` (library mode has no object header). The
-reference lowers 48 of the 60 IR opcodes, the C backend 46; the row-by-row
+reference lowers 52 of the 64 IR opcodes, the C backend 50; the row-by-row
 table in `docs/design/c-backend.md` (D4) is the count. The N64 row, `--hospes mips64-none-o64`, **is**
 there and runs — it is the only row whose `mensura` is 32, so `+` traps at
 2^32 on it, and its emitted unit is cross-compiled and executed big-endian

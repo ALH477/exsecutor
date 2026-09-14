@@ -1,7 +1,8 @@
 # The C backend — design for spec §9.2's reach backend, library mode first
 
 Status: **C1, C2 and C3's host half are implemented and green, and the
-float opcodes are lowered (2026-09-13), and float `load`/`store` with them (2026-09-14).**
+float opcodes are lowered (2026-09-13), and float `load`/`store` with them,
+and the whole vector float group with them (2026-09-14).**
 `compiler/x86_64/backend_c/` exists (`emit_c.inc`, `program_c.inc`,
 `prologue.c.in`); `--emitte c` emits; the incantation table of D3 has been
 run under gcc 15.3.0 and clang 21.1.8 and is filled in below, with three
@@ -121,6 +122,10 @@ The constraints, in the order they bind:
    lowers **46** of the 60, not the reference's 48: `retain`/`release`
    are the reference's but not library mode's (no object header exists,
    D8), so the C refusals are the reference's twelve plus those two.
+   Stage 5.1 appended the vector group (`vadd`/`vsub`/`vmul`/`vdiv`,
+   opcodes 61–64, D4's rows) lowered in both backends in one change, so
+   the figures now read **52 of 64** reference and **50 of 64** here; the
+   refusal set did not change shape.
 2. **The first consumer has no OS.** Kiln links an object into `libkiln.a`:
    newlib's libc and libm exist but the engine's gates forbid libm and
    `malloc` after init, RAM is 4 MB, the ISA is MIPS III with 64-bit
@@ -473,7 +478,7 @@ float type, `cmp`/`fcmp` type disagreement, `fconst` patterns too wide
 for `f32`, `itof u64 → f32`) mirror the reference's row for row.
 
 **The mapping table**, one row per opcode in `ir.inc` order (`BFA_OP_*`,
-1–60). `T` is the instruction's type, `N` its width, `M` the mask
+1–60, plus the Stage 5.1 vector group 61–64). `T` is the instruction's type, `N` its width, `M` the mask
 `exsi_mask(N)` (`UINT64_MAX` at 64, else `(1 << N) - 1`), `S` the sign bit
 `1 << (N-1)`. Value `%k` is `vk`, block `bk` is label `bk`, a `slot`'s
 storage is `sk`, a phi's edge temporary is `tk`; all are internal ids
@@ -548,18 +553,31 @@ after the table; the C1 status column says what C1 does with the row.
 | 58 | `param T i` | the function's parameter `pi`, typed `uint64_t` for every integer, `unsigned char *` for `ptr`; `vk = pi;` | lowered |
 | 59 | `iconst T imm` | `vk = UINT64_C(<canonical pattern in decimal>);` — an `iN` constant prints its sign-extended 64-bit pattern as an unsigned decimal (`i8` −56 is `18446744073709551560`); no signed literal, no hex | lowered |
 | 60 | `fconst F bits` | `vk = exsi_f32_from_bits(UINT64_C(lo));` / `vk = exsi_f64_from_bits(UINT64_C(pattern));` — the two extra words are the raw bit pattern, exactly `iconst`'s mechanism, and the round-trip is exact by construction: a C float literal cannot spell a NaN payload, −0.0 or a subnormal, so the bits go through a `__builtin_memcpy` bit-cast helper (D3's extension set) rather than through decimal text. A pattern with bits at or above 2^32 on an `f32` is refused: `bfc: emitter: fconst: the pattern is not a value of f32 (bits at or above 2^32)`; an integer type is refused: `fconst: the type must be a float (f32/f64) -- iconst is the integer leaf (ssa-ir.md 2.3)` | lowered |
+| 61 | `vadd F.N a b` | `vk = a + b;` over the prologue's `exs_vf32_N`/`exs_vf64_N` — `float`/`double __attribute__((vector_size(N*4/8)))` typedefs (D3's extension set, and the reason no `<emmintrin.h>` ever appears: gcc and clang both lower the elementwise operator, in SSE2 on x86-64 and in soft per-lane code on mips64, so one IR op stays one C statement and every target keeps every lane's bits). Element type and lane count must agree or refused by name; `vadd` on a scalar type is refused by name, parity-pinned by `tests/ir/reject_emit_vadd_scalar.ir` against the reference's identical message class | lowered |
+| 62 | `vsub F.N a b` | as `vadd`, with `-` | lowered |
+| 63 | `vmul F.N a b` | as `vadd`, with `*` | lowered |
+| 64 | `vdiv F.N a b` | as `vadd`, with `/` — IEEE per lane, a zero divisor a per-lane ±inf or NaN, never a trap, exactly as row 27 | lowered |
+
+The vector rows carry their memory with them: a vector `load`/`store`
+(rows 40/41) is `nativus`-only bit baggage of N × element bytes over the
+same byte helpers, through the `__builtin_memcpy` round trip — NaN
+payloads, −0.0 and subnormal lanes survive exactly as the float rows'
+do (pinned per lane by `tests/ir/vec_mem.ir`), and a `maior`/`minor`
+vector access dies in the verifier before either emitter sees it.
 
 Not in the table: `nop` (op 0; verifier rule 9 refuses it, `verify.inc`
 finding 2) and `faddr` (IR 2.3, `[UNIMPLEMENTED]` in `ir.inc`); both are
 refused by the emitter if met, by name.
 
-Count: **46 of the 60 rows are lowered** — 45 by statement, `phi` at the
+Count: **50 of the 64 rows are lowered** — 49 by statement, `phi` at the
 edges — and **14 are refused**, of which 12 because the reference refuses
 them too (`div`, `rem`, `muls`, the three `*ov`, the three reductions,
-`callind`, and now `fma` and `bitcast`, refused in both backends in the
+`callind`, and `fma` and `bitcast`, refused in both backends in the
 same change) and 2 (`retain`, `release`) because library mode has no
 runtime. The float wave of 2026-09-13 moved eleven rows from refused to
-lowered. A row-by-row recount in that change also corrected the figures
+lowered; Stage 5.1 (same day) appended `vadd`/`vsub`/`vmul`/`vdiv` as
+rows 61–64, all lowered in both backends in the one change with the one
+refusal set. A row-by-row recount in that change also corrected the figures
 this paragraph carried before it (37 lowered / 23 refused): counted row
 by row the pre-float table was 35 lowered / 25 refused, both wrong by
 two, and the corrected pre-float figures are 34 by statement + `phi` =

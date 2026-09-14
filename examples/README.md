@@ -41,23 +41,41 @@ Exsecutor source, six programs, all compiled and run by `tests/run.sh`:
   writes a binary P6 on stdout, and `tests/programs/pictura_triangulum/`
   holds it byte-identical against the independent oracle
   `prototypes/pictura_oracle.py` on both backends. Spec §14 entry 26.
+  In the same directory the lane-parallel rebuild, `octonaria.exsc` +
+  `octonarium.exsc`: the same geometry at 960×540 with 2×2 supersampled
+  coverage, the three edge accumulators as `acies<f32, 8>` stepped one
+  packed `vadd` per edge per 8-pixel group, coverage scalar per lane by
+  design (there is no mask shape), every output byte through explicit
+  `scribe_octeto` so the stream is endian-invariant by construction.
+  `tests/programs/pictura_octonaria/` holds its 1,555,215 bytes
+  byte-identical against `prototypes/pictura_octonaria_oracle.py` on both
+  backends, all four C builds, and the big-endian mips64 qemu run. Spec
+  §14 entry 27; the division/packed census is in its TEST header.
 - **`signaculum/`, the logo model** — the 3D model behind this repo's mark
   (1,493 vertices, 2,981 textured faces on the fixed-point stdin stream
-  `prototypes/signaculum_mesh.py` writes) rasterised at 256×256 with a 1/z
-  z-buffer and backface culling, written as a P6. The renderer is split:
+  `prototypes/signaculum_mesh.py` writes) rasterised at 512×512 with a 1/z
+  z-buffer and backface culling, written as a P6 — lane-parallel since
+  Stage 5.4, its four loop-carried `f64` accumulators as `acies<f64, 8>`,
+  one packed `vadd` per accumulator per 8-pixel group, zero divisions in
+  the pixel loop. The renderer is split:
   `forma.exsc`'s pure `signaculum_pingue` is the engine entry point — the
   whole stream in as one buffer, framebuffer and z-buffer out through
-  caller-owned borrows — which Kiln consumes directly, while
+  caller-owned borrows — which Kiln consumes directly (Kiln pins the
+  earlier 256×256 scalar revision of `forma.exsc` for its ROM; the
+  divergence is by design), while
   `signaculum.exsc` is only the stdin pump over it.
   `tests/programs/signaculum/` holds it byte-identical against
-  `prototypes/signaculum_oracle.py` on both backends and all four C builds;
+  `prototypes/signaculum_oracle.py` (itself ported to the lane pipeline)
+  on both backends, all four C builds and the cross run;
   it is the program that closed float `load`/`store` in both emitters.
 
 This file said "nothing here compiles — there is no compiler" until
 2026-09-10, and then, until the hydramodem commit, that nothing here was
 type-checked or compiled to code, which the hello world's test had already
 made false. It then said there were two programs, until the receiver, and
-three, until the StreamDB reader, and four, until the pictures.
+three, until the StreamDB reader, and four, until the pictures. Stage 5
+made the pictures lane-parallel: the counts and resolutions above are the
+measured floor the suite enforces.
 
 ## `saluta.exsc`
 

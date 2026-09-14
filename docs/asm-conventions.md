@@ -203,6 +203,12 @@ but not proof.
   that uses aligned SSE loads/stores (`movaps` and similar) will fault. This
   applies to internal calls exactly as it applies to `externus` calls — one
   convention, not two.
+- **Unaligned packed moves are the vector baseline.** The vector float group
+  (`vadd`/`vsub`/`vmul`/`vdiv` over `vf32.N`/`vf64.N`, `docs/design/ssa-ir.md`
+  2.6) moves vector results through `movups`/`movupd` only: alignment is
+  never load-bearing, so no `movaps`/`movapd` appears in the backends. `ymm`
+  register discipline and `vzeroupper` at ABI boundaries are written here the
+  day an AVX lowering exists (`vaddps ymm`), not before.
 - **Red zone.** The 128 bytes below `rsp` are usable as scratch space by a
   leaf routine (one that makes no further calls before returning) without
   adjusting `rsp` to reserve them. Two independent reasons this is safe here:

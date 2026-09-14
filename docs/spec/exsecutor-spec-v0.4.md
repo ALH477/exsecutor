@@ -842,8 +842,10 @@ one op as a nativus load of each operand's base, the packed opcode, and a store
 (`tests/unit/lwr_aciesops.asm`); on x86-64 the reference backend emits the
 unpacked SSE2 halves (two `addps` per `vf32.8`), and the C backend's portable
 `vector_size` arithmetic reproduces every lane bit-identically on each target it
-builds for — the big-endian mips64 qemu run of `tests/programs/acies_float8/`
-is the measured proof the soft lowering keeps the bytes.
+builds for — the big-endian mips64 qemu runs of `tests/programs/acies_float8/`
+and of `tests/programs/pictura_octonaria/` (a whole 960×540 image over the
+lane step) are the measured proof the soft lowering keeps the bytes, at both
+scales.
 
 ### Integers
 
@@ -1664,7 +1666,7 @@ Precedence climbing over a fixed table, one-token peek per step.
 | 1 postfix | `.f` `(…)` `[…]` `?` `<…>` `{…}` (struct literal, not in `ExprNS`; `tests/unit/cst_structlit.asm`) | left |
 | 2 prefix | `-` `&` `*` | — |
 | 3 cast | `sicut Type` | left |
-| 4 multiplicative | `*` — `/`, remainder, and the `*%` `*\|` overflow forms are `[OPEN]` | left |
+| 4 multiplicative | `*` `/` — the `*%` `*\|` overflow forms and remainder are `[OPEN]` (this row used to include `/` in that marker; float `/` is settled in §8.4 and the clause is amended so the two readings cannot merge — the `[OPEN]` is about integers only) | left |
 | 5 additive | `+` `+%` `+\|` `-` `-%` `-\|` | left |
 | 5a shift | `sursum` `deorsum` — §5.4; `tests/unit/cst_shift_xor.asm` | none |
 | 5b exclusive or | `aut` — §5.4; `tests/unit/cst_shift_xor.asm` | left — `[UNTESTED]`: no fixture chains `a aut b aut c` |
@@ -2030,8 +2032,11 @@ refusing symbolic comparisons — is what makes that last one possible.
 - `[OPEN]` Brand syntax `positio<'t>` (§5.1): `'` is not a §8.4 token.
 - `[OPEN]` Generic implementation heads: `interfacies Legibilis<T> in
   acies<T, N>` leaves `N` unbound.
-- `[OPEN]` Operators: `/`, remainder, logical negation, the `*%` `*|`
-  family, and **bitwise and/or**. The DeModFrame codec
+- `[OPEN]` Operators: remainder, logical negation, the `*%` `*|`
+  family, and **bitwise and/or**. This list used to lead with `/`;
+  float `/` is settled (§8.4, `float_division/` runs it end to end), and
+  the integer quotient and remainder are the part that stays open —
+  which no program has needed. The DeModFrame codec
   (`docs/design/wire-codec.md`) needed none of them — `@transitus` field
   access is the mask and shift machinery, so and/or wait for a program that
   does need them. Shifts and exclusive or are settled above as `sursum`
@@ -2278,7 +2283,12 @@ two of them, so it is split:
   `tests/programs/signaculum/`) cross-run byte-identical under the same
   emulation — the first big-endian `f64` execution this compiler has
   produced, so there is no longer a mips64 float `[UNTESTED]` (its last
-  mention, in §14 entry 26, is amended there).
+  mention, in §14 entry 26, is amended there). Vector float too, since
+  later the same day: the lane programs (`tests/programs/acies_float8/`,
+  `tests/programs/pictura_octonaria/`, and `signaculum/` at 512×512) run
+  big-endian byte-identical through the C backend's soft per-lane
+  `vector_size` lowering, so §5.4's "the lowering changes performance and
+  never changes the value" is measured on a target with no SSE at all.
   Two things are still `[UNTESTED]` and are named
   rather than folded in: the **o64 ABI itself**, since the certificate runs
   the n32 ABI as a proxy — it shares byte order, address width, register
@@ -2595,17 +2605,17 @@ recoverable and over-committing is not. `0204`-`0209`, `0211`-`0219` and
 
 # 14. Conformance suite
 
-Ships with v1. Twenty of the twenty-six entries must **fail to compile**.
-The other six must compile and are judged by what they
-produce: 15 by a runtime abort, 16, 17, 25 and 26 by byte-identical output, and 23 by
+Ships with v1. Twenty of the twenty-seven entries must **fail to compile**.
+The other seven must compile and are judged by what they
+produce: 15 by a runtime abort, 16, 17, 25, 26 and 27 by byte-identical output, and 23 by
 byte-identical agreement with an external certificate. `tests/run.sh`'s five
 fixture shapes — `code`, `nocap`, `abort`, `bytes`, `cert` — are exactly this
 partition. (This sentence previously excepted only 16 and 17, which was false
 for 15 since it was written and for 23 since it was added;
 `docs/design/wire-codec.md`, finding 1. The "twenty-five" count was stale
 from the moment entry 25 appended; entry 26 appended with the float wave's
-RGB triangle, and both counts are settled here at twenty-six with six
-running.)
+RGB triangle, entry 27 with Stage 5's lane rasterizers, and both counts are
+settled here at twenty-seven with seven running.)
 
 1. Turkish dotless-ı case fold in program logic → `plica_sermone` without `sermo`
 2. Index computed on a folded copy, applied to the original → `EXS-E0332`
@@ -2633,6 +2643,7 @@ running.)
 24. Implementation whose mark exceeds the trait's declared ceiling, reached only through a generic → `EXS-E0510`
 25. `exsc aedifica --hospes mips64-none-o64 --emitte c` over the StreamDB reader, cross-compiled and run big-endian with 32-bit addresses → stdout byte-identical to the reference backend's over `vendor/streamdb-v3/`
 26. An RGB triangle over `f64` — float literals, `/`, `fneg`, ordered `fcmp`, `itof`/`ftoi`, incremental edge-function rasterization to a binary P6 image on stdout → byte-identical between the reference and C backends, byte-identical to an independently computed oracle (`prototypes/pictura_oracle.py`, which mirrors the program's f64 operation order, the agreement §9.3's determinism law turns into a byte claim), and — since 2026-09-14 — byte-identical cross-run big-endian on `mips64-none-o64` under emulation, the first big-endian `f64` execution of anything this compiler produces (amended: the sentence used to read "NOT in the cross phase — big-endian f64 execution on mips64 is unmeasured, so `§9.5`'s mips64 float row stays `[UNTESTED]`"; `tests/programs/pictura_triangulum/` and `tests/programs/signaculum/`, the logo renderer, now both carry `cross=yes` and agree byte for byte under qemu-mipsn32). Carried by `tests/programs/pictura_triangulum/` through the run, differential and cross phases
+27. Lane-parallel rasterization over `acies<f32, 8>` — whole-acy arithmetic on two acies of one float element type is the elementwise operation, one IEEE rounding per lane and nothing combined across lanes (§5.4's admission law; every refusal pinned by `tests/unit/chk_ty_aciesops.asm`, the lowering by `tests/unit/lwr_aciesops.asm`), so a pixel loop's edge accumulators step **one packed op per edge per 8-pixel group** — to a binary P6 image on stdout → byte-identical between the reference and C backends, byte-identical to an independently computed oracle that mirrors the written operation order in numpy `float32` elementwise (`prototypes/pictura_octonaria_oracle.py`), and byte-identical cross-run big-endian on `mips64-none-o64` under emulation — the C backend's soft `vector_size` lowering reproducing every lane's bits on a target with no SSE. The census is measured over the emitted fasmg text and recorded in the program's TEST header: exactly four divisions, all in setup (three per-vertex reciprocals and one reciprocal of the determinant), zero in any pixel loop; twelve `addps` and six `mulps` (each packed op emitting its two SSE2 halves), no `subps`, no `divps`. Carried by `tests/programs/pictura_octonaria/` — the entry-26 triangle rebuilt at 960×540 with 2×2 supersampled coverage, eight f32 lanes at a time — through the run, differential and cross phases; its f64-lane companion is `tests/programs/signaculum/`, the logo at 512×512 over `acies<f64, 8>`, whose `addpd`/`mulpd`/`zero-divpd` census its own TEST header records.
 
 Entries 18-20 close a gap: §8.1 defines six source-policy codes and only three
 of them (`E0102`, `E0103`, `E0105`) had an entry, while `E0101`, `E0104` and
