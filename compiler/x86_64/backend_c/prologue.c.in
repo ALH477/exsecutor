@@ -4,6 +4,7 @@
  * reference backend's prelude blob is. */
 #include <stdint.h>
 #include <limits.h>
+#include <float.h>
 
 #if !defined(__GNUC__) && !defined(__clang__)
 # error "exsecutor: the emitted C is C11 plus a GCC/Clang extension set (ADR 0012)"
@@ -16,6 +17,47 @@
 #endif
 #if defined(__FINITE_MATH_ONLY__) && __FINITE_MATH_ONLY__
 # error "exsecutor: -ffinite-math-only is refused (spec 5.4)"
+#endif
+
+/* ---- IEEE binary32/64: the numeric subset's one target (spec 5.4) -------
+ * ADR 0012's rung (b), spelled with <float.h> exactly as ADR 0012 names it
+ * -- freestanding-safe, unlike __STDC_IEC_559__ (which a freestanding
+ * implementation may define without honouring). `float` is binary32 and
+ * `double` binary64, and no operation gains precision: FLT_EVAL_METHOD 0
+ * is what makes `float op float` a FLOAT operation in C rather than a
+ * double one (C's usual arithmetic conversions leave the type alone, but
+ * only an evaluation method of 0 leaves the RESULT alone). Subnormals are
+ * values (subnormales conservata); where C11's <float.h> stays silent
+ * about them (the *_HAS_SUBNORM macros are optional before C23) the
+ * runtime's MXCSR/FPCR image is what enforces it -- FTZ and DAZ clear,
+ * which the reference prelude's 0x1F80 image also carries. */
+_Static_assert(FLT_RADIX == 2, "exsecutor: the numeric subset is IEEE binary32/64 (spec 5.4)");
+_Static_assert(FLT_MANT_DIG == 24 && DBL_MANT_DIG == 53,
+               "exsecutor: float is binary32 and double is binary64");
+_Static_assert(FLT_MAX_EXP == 128 && DBL_MAX_EXP == 1024,
+               "exsecutor: binary32/64 exponent widths");
+#if FLT_EVAL_METHOD != 0
+# error "exsecutor: FLT_EVAL_METHOD must be 0 (spec 5.4: one rounding, in the operands' own width)"
+#endif
+#if defined(FLT_HAS_SUBNORM) && FLT_HAS_SUBNORM != 1
+# error "exsecutor: float subnormals must be preserved (spec 5.4 subnormales conservata)"
+#endif
+#if defined(DBL_HAS_SUBNORM) && DBL_HAS_SUBNORM != 1
+# error "exsecutor: double subnormals must be preserved (spec 5.4 subnormales conservata)"
+#endif
+
+/* Contraction (spec 5.4 contractio explicita; ADR 0012 problem 1). One IR
+ * op is one C statement, so no emitted statement ever holds a
+ * multiply-and-add tree to contract -- `fma` is the only contraction the
+ * language has, it is refused by name in both backends, and this pragma is
+ * the belt to that brace. `#pragma STDC FP_CONTRACT OFF` is NOT emitted:
+ * measured to do nothing in both compilers, and GCC warns about it under
+ * -Wall (c-backend.md D3, finding 12). Clang has nothing that works from
+ * inside the source (`#pragma clang fp contract(off)` does not override a
+ * command-line -ffp-contract=fast), so nothing is said to it and nothing
+ * is lied about. */
+#if defined(__GNUC__) && !defined(__clang__)
+# pragma GCC optimize("fp-contract=off")
 #endif
 
 _Static_assert(CHAR_BIT == 8, "exsecutor: CHAR_BIT must be 8");
@@ -39,6 +81,36 @@ static inline uint64_t exsi_norm_u(uint64_t x, unsigned n)
 { return x & exsi_mask(n); }
 static inline uint64_t exsi_norm_i(uint64_t x, unsigned n)
 { uint64_t s = UINT64_C(1) << (n - 1); return ((x & exsi_mask(n)) ^ s) - s; }
+
+/* Floats from their bits -- `fconst`'s round-trip. `fconst F bits` carries
+ * the RAW bit pattern (ssa-ir.md 2.3: bits, never decimal text) and it must
+ * come back exactly: payload bits included (a NaN's payload survives fneg),
+ * sign included (-0.0 is a different constant from 0.0), subnormal bits
+ * included (subnormales conservata). A C floating literal cannot spell any
+ * of that -- a hex floating literal for an out-of-range pattern loses the
+ * NaN payload and the quiet bit -- so the pattern is written as an integer
+ * constant and re-read through the object representation:
+ * __builtin_memcpy, the GCC-recommended bit-cast, already measured and on
+ * D3's extension list for `copy n` (c-backend.md finding 13). Assumes a
+ * float's byte order is the integer byte order -- true of every target in
+ * scope: x86_64, riscv64 and mips64 are each uniform in their byte order,
+ * which is what the emitted `exsi_ld_n` selection also assumes. */
+static inline float exsi_f32_from_bits(uint32_t b)
+{ float f; __builtin_memcpy(&f, &b, sizeof f); return f; }
+static inline double exsi_f64_from_bits(uint64_t b)
+{ double d; __builtin_memcpy(&d, &b, sizeof d); return d; }
+
+/* itof from a signed integer's canonical bits. The carrier holds an iN
+ * sign-extended (ssa-ir.md 2.2), so the two's-complement value IS the bit
+ * pattern -- but C leaves a uint64_t -> int64_t conversion that does not
+ * fit IMPLEMENTATION-DEFINED, a fact this prologue asserts nowhere and
+ * refuses to rely on, so the bits are re-read as int64_t exactly the way
+ * fconst re-reads a pattern as a float. The signed type appears here and
+ * nowhere else: this is a conversion into a float, not arithmetic, and the
+ * one-op-per-statement rule keeps it out of any expression a compiler
+ * could contract. */
+static inline int64_t exsi_i64_from_bits(uint64_t b)
+{ int64_t s; __builtin_memcpy(&s, &b, sizeof s); return s; }
 
 static inline uint64_t exsi_add_u(uint64_t a, uint64_t b, unsigned n)
 { uint64_t t = a + b;

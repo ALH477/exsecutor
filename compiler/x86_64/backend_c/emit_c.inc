@@ -32,10 +32,16 @@
 ; THE REFERENCE DEFINES THE SEMANTICS (spec section 9.2, ADR 0012). Nothing
 ; here lowers an opcode `backend_fasmg/emit.inc` does not lower: a C
 ; lowering the differential test cannot check is a hypothesis with no test.
-; The reference's `__bfa_emit_inst` lowers 37 of the IR's 60 opcodes; this
-; file lowers exactly those 37 and refuses the other 23 BY NAME through
+; The reference's `__bfa_emit_inst` lowers 46 of the IR's 60 opcodes -- the
+; 35 integer, memory and control ones it always lowered, plus the eleven
+; float ones (fadd fsub fmul fdiv fneg fcmp fext ftrunc itof ftoi fconst);
+; this file lowers exactly those 46 and refuses the other 14 BY NAME through
 ; `__bfc_die` -- "bfc: emitter: ...", exit 4, the same class
-; `__bfa_emit_die` is.
+; `__bfa_emit_die` is. (`nop`, opcode 0 outside the 1..60 numbering, is a
+; 15th refusal; `phi` is lowered by the block walker and never dispatched.)
+; The two emitters' refusal sets are ONE SET (spec 9.2): every message
+; below names its reason the way the reference's refusal of the same opcode
+; does, and a divergence between them is a finding, not a local choice.
 ;
 ; THE CARRIER TYPE (D4). Every integer value of any `uN` or `iN` is held in
 ; a C `uint64_t` in exactly the reference's canonical form (ssa-ir.md 2.2):
@@ -49,6 +55,12 @@
 ; through `uintptr_t` rather than C pointer arithmetic, so an out-of-bounds
 ; index (which the lowering's `chk` precedes) computes the same wild
 ; address the reference computes instead of being C undefined behaviour.
+; A FLOAT value is the C float itself -- `float` for f32, `double` for f64
+; -- and there is deliberately no carrier trick to play: one IR op is one C
+; operator on the operands' own width (the prologue asserts FLT_EVAL_METHOD
+; 0, so `float op float` stays a float operation), and the C compiler emits
+; for `A + B` the same host instruction the reference emits, which is what
+; makes the differential test over floats a comparison of like with like.
 ;
 ; DETERMINISM (spec 9.3, D5). The text is a function of the module (function
 ; order = declaration order, block order = block index, value/slot/temporary
@@ -212,8 +224,11 @@ endp
 
 ; __bfc_ty_class(module, ty) -> eax: 0 an integer (uN/iN), 1 an address
 ; (ptr/ref/refc -- every one of them is `unsigned char *` in C), 2 anything
-; else (a float, a reduction handle, a function type). Class 2 has no C
-; spelling in library mode and every caller refuses it by name.
+; else with no C spelling in library mode (a reduction handle, a function
+; type), 3 a float (f32 -> `float`, f64 -> `double`). Class 2 is refused by
+; name by every caller; class 3 is the float milestone's addition, and the
+; one place it reaches is the float lowerings plus the signature and value
+; declarations -- float-typed memory, `iconst` and integer `cmp` refuse it.
 proc __bfc_ty_class, module, ty
 	locals
 	endl
@@ -231,6 +246,10 @@ proc __bfc_ty_class, module, ty
 	je	.addr
 	cmp	ecx, BFA_TK_REFC
 	je	.addr
+	cmp	ecx, BFA_TK_F32
+	je	.float
+	cmp	ecx, BFA_TK_F64
+	je	.float
 	mov	eax, 2
 	return
   .int:
@@ -238,6 +257,9 @@ proc __bfc_ty_class, module, ty
 	return
   .addr:
 	mov	eax, 1
+	return
+  .float:
+	mov	eax, 3
 	return
 endp
 
@@ -261,8 +283,9 @@ proc __bfc_valty, module, func, valueid
 endp
 
 ; __bfc_emit_ctype(ctx, module, ty) -- the C type of a value of `ty`:
-; `uint64_t` for every integer width, `unsigned char *` for every address.
-; A `ty` of 0 is `void` (a signature's return type; ir.inc uses 0 for it).
+; `uint64_t` for every integer width, `unsigned char *` for every address,
+; `float` for f32 and `double` for f64. A `ty` of 0 is `void` (a
+; signature's return type; ir.inc uses 0 for it).
 proc __bfc_emit_ctype, ctx, module, ty
 	locals
 	endl
@@ -278,14 +301,27 @@ proc __bfc_emit_ctype, ctx, module, ty
 	je	.addr
 	cmp	eax, 2
 	je	.bad
+	cmp	eax, 3
+	je	.float
 	__bfc_emtxt "uint64_t"
 	return
   .addr:
 	__bfc_emtxt "unsigned char *"
 	return
+  .float:
+	mov	rdi, [module]
+	mov	esi, [ty]
+	call	__bfc_ty_info
+	cmp	edx, BFA_TK_F32
+	je	.f32
+	__bfc_emtxt "double"
+	return
+  .f32:
+	__bfc_emtxt "float"
+	return
   .bad:
 	jmp	.after_msg
-  .msg db "unsupported type: library mode holds an integer (uN/iN) or an address (ptr/ref/refc) and nothing else (c-backend.md D4, D8)"
+  .msg db "unsupported type: library mode holds an integer (uN/iN), an address (ptr/ref/refc) or a float (f32/f64) and nothing else (c-backend.md D4, D8)"
   .after_msg:
 	lea	rdi, [.msg]
 	mov	rsi, .after_msg - .msg
@@ -723,7 +759,9 @@ proc __bfc_norm_close, ctx, module, ty
 endp
 
 ; __bfc_int_width(module, ty) -> eax = N, having refused anything that is
-; not a `uN`/`iN`. Every integer lowering below needs exactly this.
+; not a `uN`/`iN`. Every integer lowering below needs exactly this. A float
+; reaching here is a different opcode's operand (`fadd`, not `add`) and an
+; address is not an integer either; the message says whose lowering this is.
 proc __bfc_int_width, module, ty
 	locals
 	endl
@@ -738,7 +776,7 @@ proc __bfc_int_width, module, ty
 	return
   .bad:
 	jmp	.after_msg
-  .msg db "integer (uN/iN) operands only -- floats are not Tier 1 (the reference has no lowering either; ADR 0012's numeric subset is untestable until it does)"
+  .msg db "integer (uN/iN) operands only -- this lowering is the integer one (a float arrives through the float opcodes, and an address is not an integer either)"
   .after_msg:
 	lea	rdi, [.msg]
 	mov	rsi, .after_msg - .msg
@@ -1011,11 +1049,13 @@ proc __bfc_emit_pred, ctx, pred
 	return
 endp
 
-; __bfc_emit_cmp(ctx, module, func, instid) -- `cmp.p T %a %b -> u1`.
+; __bfc_emit_cmp(ctx, module, func, instid) -- `cmp.p T %a %b -> u1` and
+; `fcmp.p T %a %b -> u1` (D4 rows 20 and 30).
 ;
-;   uN    vK = (A OP B);
-;   ptr   vK = ((uintptr_t)A OP (uintptr_t)B);
-;   iN    vK = ((A ^ S64) OP (B ^ S64));   S64 = 1 << 63
+;   cmp     uN    vK = (A OP B);
+;   cmp     ptr   vK = ((uintptr_t)A OP (uintptr_t)B);
+;   cmp     iN    vK = ((A ^ S64) OP (B ^ S64));   S64 = 1 << 63
+;   fcmp    F     vK = (A OP B);                  ne: (A < B) || (A > B)
 ;
 ; The `iN` row is the whole reason no signed C type appears in emitted
 ; arithmetic: flipping the sign bit maps the signed order onto the unsigned
@@ -1026,31 +1066,54 @@ endp
 ; pointers into different objects undefined, while the reference merely
 ; compares two addresses; comparing the integers is what the reference
 ; actually does.
+;
+; THE FCMP ROW IS ORDERED (ssa-ir.md 2.3: "fcmp ordered; unordered forms
+; [OPEN]"): every predicate is FALSE on any NaN operand. Five of the six
+; map onto C's own relational operators directly, because C's `==`, `<`,
+; `<=`, `>`, `>=` are quiet and yield 0 when either operand is NaN -- that
+; is the definition of ordered. The exception is `ne`: C's `!=` is the
+; NEGATION of `==` and yields 1 on NaN -- unordered-NE -- so ordered-ne is
+; spelled `(A < B) || (A > B)`, false on NaN and equal to `!=` on every
+; pair of non-NaN operands. The reference reaches the same truth table its
+; own way (ucomisd/set<cc> ANDed with setnp); this spelling does not lean
+; on the accident that makes a bare `setne` come out ordered too.
+;
+; A `cmp` (the INTEGER compare) whose `ty` is a float is refused by name:
+; the float compare is `fcmp.*`, and an integer predicate on float operands
+; has no meaning in either backend.
 proc __bfc_emit_cmp, ctx, module, func, instid
 	locals
 		slot op,   dd
 		slot tyv,  dd
 		slot pred, dd
 		slot cls,  dd
+		slot auxv, dd
 	endl
 	mov	rdi, [func]
 	mov	esi, [instid]
 	call	bfa_inst_ptr
 	movzx	ecx, word [rax + BfaInst.op]
-	cmp	ecx, BFA_OP_FCMP
-	je	.isfloat
+	mov	[op], ecx
 	mov	ecx, [rax + BfaInst.ty]
 	mov	[tyv], ecx
 	movzx	ecx, word [rax + BfaInst.aux]
+	mov	[auxv], ecx
 	and	ecx, 0xFF		; aux also carries the 0x100/0x200
-	mov	[pred], ecx		; immediate flags
+	mov	[pred], ecx		; immediate flags; low byte = predicate
 
 	mov	rdi, [module]
 	mov	esi, [tyv]
 	call	__bfc_ty_class
 	mov	[cls], eax
+
+	cmp	dword [op], BFA_OP_FCMP
+	je	.floatcmp
+
+	; ---- the integer compare --------------------------------------------
 	cmp	eax, 2
-	je	.isfloat
+	je	.wrongty
+	cmp	eax, 3
+	je	.wrongty
 
 	mov	rdi, [ctx]
 	mov	rsi, [func]
@@ -1127,13 +1190,132 @@ proc __bfc_emit_cmp, ctx, module, func, instid
 	call	__bfc_semi
 	return
 
-  .isfloat:
-	jmp	.after_msg
-  .msg db "fcmp: floats are not Tier 1 (the reference refuses it too, emit.inc's __bfa_emit_cmp; ADR 0012's numeric subset is untestable until one backend lowers a float)"
-  .after_msg:
-	lea	rdi, [.msg]
-	mov	rsi, .after_msg - .msg
+  ; ---- the float compare ------------------------------------------------
+  .floatcmp:
+	; `ty` is the OPERAND type here (ir.inc's bfa_value_type: the produced
+	; value is u1), and it must be a float: a fcmp on integers is as wrong
+	; as a cmp on floats, and the verifier's cmp rule checks only that the
+	; operands are values of `ty`, whichever it is.
+	cmp	dword [cls], 3
+	jne	.wrongty
+	; INLINE IMMEDIATES ARE REFUSED. parse.inc's SH_BIN/SH_FCMP shapes set
+	; the aux immediate flags for float lines too, and the VERIFIER passes
+	; them: `bfa_type_canon` is the identity on a float's bits (ir.inc), so
+	; every 32-bit pattern is "canonical". `fconst` is the leaf -- the raw
+	; bit pattern, never decimal text (ssa-ir.md 2.3) -- and a UINT64_C
+	; literal in a float expression is exactly that decimal text.
+	mov	eax, [auxv]
+	and	eax, 0x300
+	jnz	.flimm
+	; the six ordered predicates; parse.inc cannot produce another, a
+	; hand-built module could, and an out-of-range predicate would fall
+	; off the emitter's operator table into someone else's text.
+	cmp	dword [pred], BFA_PRED_GE
+	ja	.flpred
+
+	mov	rdi, [ctx]
+	mov	rsi, [func]
+	mov	edx, [instid]
+	call	__bfc_emit_result
+	__bfc_emtxt "("
+	cmp	dword [pred], BFA_PRED_NE
+	je	.flne
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfc_emit_opa
+	mov	rdi, [ctx]
+	mov	esi, [pred]
+	call	__bfc_emit_fpred
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfc_emit_opb
+	jmp	.close
+  .flne:
+	__bfc_emtxt "("
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfc_emit_opa
+	__bfc_emtxt " < "
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfc_emit_opb
+	__bfc_emtxt ") || ("
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfc_emit_opa
+	__bfc_emtxt " > "
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfc_emit_opb
+	__bfc_emtxt ")"
+	jmp	.close
+
+  .flimm:
+	jmp	.after_m1
+  .m1 db "fcmp: float operands are values only (`fconst` is the leaf -- the raw bit pattern, never decimal text)"
+  .after_m1:
+	lea	rdi, [.m1]
+	mov	rsi, .after_m1 - .m1
 	call	__bfc_die
+
+  .flpred:
+	jmp	.after_m2
+  .m2 db "fcmp: ordered predicates only (eq ne lt le gt ge; unordered forms are [OPEN], ssa-ir.md 2.3)"
+  .after_m2:
+	lea	rdi, [.m2]
+	mov	rsi, .after_m2 - .m2
+	call	__bfc_die
+
+  .wrongty:
+	jmp	.after_m3
+  .m3 db "cmp/fcmp: the compare and its operands must agree -- `cmp.*` is the integer one, `fcmp.*` the float one (spec 5.4)"
+  .after_m3:
+	lea	rdi, [.m3]
+	mov	rsi, .after_m3 - .m3
+	call	__bfc_die
+endp
+
+; __bfc_emit_fpred(ctx, pred) -- the C relational operator for an ORDERED
+; float predicate. Exactly `__bfc_emit_pred`'s table MINUS `ne`, which has a
+; spelling of its own above (C's `!=` is unordered-NE); keeping the two
+; tables separate is what stops a future edit from reaching for `!=` here.
+proc __bfc_emit_fpred, ctx, pred
+	locals
+	endl
+	cmp	dword [pred], BFA_PRED_LT
+	je	.p_lt
+	cmp	dword [pred], BFA_PRED_LE
+	je	.p_le
+	cmp	dword [pred], BFA_PRED_GT
+	je	.p_gt
+	cmp	dword [pred], BFA_PRED_GE
+	je	.p_ge
+	__bfc_emtxt " == "
+	return
+  .p_lt:
+	__bfc_emtxt " < "
+	return
+  .p_le:
+	__bfc_emtxt " <= "
+	return
+  .p_gt:
+	__bfc_emtxt " > "
+	return
+  .p_ge:
+	__bfc_emtxt " >= "
+	return
 endp
 
 ; ============================================================================
@@ -1228,6 +1410,583 @@ proc __bfc_emit_conv, ctx, module, func, instid
 	mov	rdi, [ctx]
 	call	__bfc_semi
 	return
+endp
+
+; ============================================================================
+; D4 rows 24-34 and 60: the float opcodes
+; ============================================================================
+; fadd fsub fmul fdiv fneg fcmp fext ftrunc itof ftoi fconst -- the eleven
+; float opcodes the reference lowers (emit.inc's float arms), and therefore
+; the eleven this emitter lowers too. `fma` and `bitcast` are the two float
+; rows the reference refuses, and they fall to `__bfc_refuse` here, which
+; names them for the same reasons (spec 9.2: the two emitters' refusal sets
+; are ONE SET -- a divergence is a finding, not a local choice).
+;
+; A FLOAT VALUE IS THE C FLOAT ITSELF. There is deliberately no carrier
+; trick to play here: `float` for f32, `double` for f64, one IR op one C
+; statement, so no emitted statement ever holds an expression a compiler
+; could contract or reassociate, and `float op float` stays a float
+; operation because the prologue pins FLT_EVAL_METHOD 0. The C compiler
+; emits for `A + B` the same host instruction the reference emits
+; (addss/addsd &c); the whole numeric subset (spec 5.4) rides on C doing
+; IEEE 754 here, which the prologue asserts with <float.h> rather than
+; promising on its own.
+;
+; What this section therefore REFUSES is exactly what cannot be one C
+; statement on the operands' own width:
+;   * an inline immediate on a float operand -- `fconst` is the leaf, and
+;     it carries RAW BITS (ssa-ir.md 2.3), never decimal text; the
+;     verifier passes a float-typed immediate (bfa_type_canon is the
+;     identity on a float's bits), so the emitter is the one that stops it.
+;   * `iconst` with a float type, float-typed `load`/`store`, `cmp` with a
+;     float type, `itof` u64 -> f32, and `fconst f32` with bits at or above
+;     2^32 -- each named where its own lowering lives.
+; ----------------------------------------------------------------------------
+
+; __bfc_emit_fbin(ctx, module, func, instid) -- fadd/fsub/fmul/fdiv.
+;
+;   vK = A + B;   (and - * /)
+;
+; The operator is chosen by its own four-way chain, NOT by borrowing
+; `__bfc_emit_binop`: that table is the integer one and has no " / " row,
+; so a future opcode reaching for it would fall through into " + " -- the
+; same reason the dispatcher is a flat compare chain.
+proc __bfc_emit_fbin, ctx, module, func, instid
+	locals
+		slot op,   dd
+		slot tyv,  dd
+		slot auxv, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	movzx	ecx, word [rax + BfaInst.op]
+	mov	[op], ecx
+	mov	ecx, [rax + BfaInst.ty]
+	mov	[tyv], ecx
+	movzx	ecx, word [rax + BfaInst.aux]
+	mov	[auxv], ecx
+
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfc_ty_class
+	cmp	eax, 3
+	jne	.badty
+	mov	eax, [auxv]
+	and	eax, 0x300		; an immediate on either operand
+	jnz	.flimm
+
+	mov	rdi, [ctx]
+	mov	rsi, [func]
+	mov	edx, [instid]
+	call	__bfc_emit_result
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfc_emit_opa
+	cmp	dword [op], BFA_OP_FADD
+	je	.add
+	cmp	dword [op], BFA_OP_FSUB
+	je	.sub
+	cmp	dword [op], BFA_OP_FMUL
+	je	.mul
+	__bfc_emtxt " / "
+	jmp	.ops
+  .add:
+	__bfc_emtxt " + "
+	jmp	.ops
+  .sub:
+	__bfc_emtxt " - "
+	jmp	.ops
+  .mul:
+	__bfc_emtxt " * "
+  .ops:
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfc_emit_opb
+	mov	rdi, [ctx]
+	call	__bfc_semi
+	return
+
+  .badty:
+	jmp	.after_m1
+  .m1 db "fadd/fsub/fmul/fdiv: the operand type must be a float (f32/f64) -- an integer arrives through the integer opcodes"
+  .after_m1:
+	lea	rdi, [.m1]
+	mov	rsi, .after_m1 - .m1
+	call	__bfc_die
+  .flimm:
+	jmp	.after_m2
+  .m2 db "fadd/fsub/fmul/fdiv: float operands are values only (`fconst` is the leaf -- the raw bit pattern, never decimal text)"
+  .after_m2:
+	lea	rdi, [.m2]
+	mov	rsi, .after_m2 - .m2
+	call	__bfc_die
+endp
+
+; __bfc_emit_fneg(ctx, module, func, instid) -- `vK = -A;`
+;
+; C's unary minus on a floating operand is IEC negation: the sign bit flips
+; and NOTHING else -- payload and exponent go through untouched -- which is
+; exactly the reference's xorps row. NaN payloads survive (the ordered
+; fcmp predicates stay false on the result either way, but a payload is
+; observable through `fconst`'s round-trip), and -0.0 <-> +0.0.
+proc __bfc_emit_fneg, ctx, module, func, instid
+	locals
+		slot av,   dd
+		slot tyv,  dd
+		slot auxv, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[av], ecx
+	mov	ecx, [rax + BfaInst.ty]
+	mov	[tyv], ecx
+	movzx	ecx, word [rax + BfaInst.aux]
+	mov	[auxv], ecx
+
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfc_ty_class
+	cmp	eax, 3
+	jne	.badty
+	mov	eax, [auxv]
+	and	eax, 0x100
+	jnz	.flimm
+
+	mov	rdi, [ctx]
+	mov	rsi, [func]
+	mov	edx, [instid]
+	call	__bfc_emit_result
+	__bfc_emtxt "-"
+	mov	rdi, [ctx]
+	mov	esi, [av]
+	call	__bfc_emit_v
+	mov	rdi, [ctx]
+	call	__bfc_semi
+	return
+
+  .badty:
+	jmp	.after_m1
+  .m1 db "fneg: the operand type must be a float (f32/f64)"
+  .after_m1:
+	lea	rdi, [.m1]
+	mov	rsi, .after_m1 - .m1
+	call	__bfc_die
+  .flimm:
+	jmp	.after_m2
+  .m2 db "fneg: the operand is a value only (`fconst` is the leaf -- the raw bit pattern, never decimal text)"
+  .after_m2:
+	lea	rdi, [.m2]
+	mov	rsi, .after_m2 - .m2
+	call	__bfc_die
+endp
+
+; __bfc_emit_fconv(ctx, module, func, instid) -- the four float conversions.
+;
+;   fext    f32 -> f64   vK = (double)A;        exact: widening never rounds
+;   ftrunc  f64 -> f32   vK = (float)A;         round-to-nearest-even
+;   ftrunc  F    -> F    vK = A;                a move (the reference's
+;                                               plain register move too)
+;   itof    uN   -> F    vK = (F)A;             correctly rounded by C
+;   itof    iN   -> F    vK = (F)exsi_i64_from_bits(A);
+;   ftoi    F    -> uN   vK = (uint64_t)A;
+;   ftoi    F    -> iN   vK = (uint64_t)(int64_t)A;
+;
+; `ftrunc` IS THE NARROWING CAST (lowering.md: int<->float is itof/ftoi,
+; f32<->f64 is fext/ftrunc) -- NOT a round-to-integral: roundsd is nobody's
+; row here, and the C `(float)` cast is the whole lowering. The direction
+; constraints are refused by name when violated, because the verifier checks
+; only that the operands are values, not which width went which way.
+;
+; `itof` re-reads a signed source's bits as int64_t (the prologue helper)
+; rather than converting the uint64_t carrier: C leaves uint64_t -> int64_t
+; out-of-range IMPLEMENTATION-DEFINED, and the canonical carrier of an iN
+; IS the two's-complement pattern. u64 -> f32 is refused -- the reference
+; refuses it too (no correctly-rounded one-step sequence at its SSE2
+; baseline; a naive (float)(double) double-rounds).
+;
+; `ftoi`'s C-side twin of the reference's [OPEN] NaN/range behaviour
+; (ssa-ir.md 2.3): C leaves a float -> integer conversion whose value does
+; not fit UNDEFINED, so under the harness's -fsanitize=undefined a
+; NaN-or-out-of-range source ABORTS at the cast instead of returning the
+; reference's whatever-happened bits. The corpus stays in range by
+; construction (a ftoi is written where the value is known to fit, the way
+; `add` is written where the addition is known not to overflow), and the
+; abort is the C-backend's documented answer to the row the reference marks
+; [OPEN]. Truncation is toward zero in both backends -- C's cast and the
+; reference's cvtt* agree on that much.
+proc __bfc_emit_fconv, ctx, module, func, instid
+	locals
+		slot op,   dd
+		slot av,   dd
+		slot tyv,  dd
+		slot sty,  dd
+		slot tyk,  dd
+		slot stk,  dd
+		slot swd,  dd
+		slot auxv, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	movzx	ecx, word [rax + BfaInst.op]
+	mov	[op], ecx
+	mov	ecx, [rax + BfaInst.a]
+	mov	[av], ecx
+	mov	ecx, [rax + BfaInst.ty]
+	mov	[tyv], ecx
+	movzx	ecx, word [rax + BfaInst.aux]
+	mov	[auxv], ecx
+
+	; the source type and its kind/width
+	mov	rdi, [module]
+	mov	rsi, [func]
+	mov	edx, [av]
+	call	__bfc_valty
+	mov	[sty], eax
+	mov	rdi, [module]
+	mov	esi, eax
+	call	__bfc_ty_info
+	mov	[stk], edx
+	mov	[swd], eax
+	; the destination kind
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfc_ty_info
+	mov	[tyk], edx
+
+	cmp	dword [op], BFA_OP_FEXT
+	je	.fext
+	cmp	dword [op], BFA_OP_FTRUNC
+	je	.ftrunc
+	cmp	dword [op], BFA_OP_ITOF
+	je	.itof
+	jmp	.ftoi
+
+  ; ---- fext: f32 -> f64 --------------------------------------------------
+  .fext:
+	mov	eax, [auxv]
+	and	eax, 0x100
+	jnz	.flimm
+	cmp	dword [tyk], BFA_TK_F64
+	jne	.fextbad
+	cmp	dword [stk], BFA_TK_F32
+	jne	.fextbad
+	mov	rdi, [ctx]
+	mov	rsi, [func]
+	mov	edx, [instid]
+	call	__bfc_emit_result
+	__bfc_emtxt "(double)"
+	mov	rdi, [ctx]
+	mov	esi, [av]
+	call	__bfc_emit_v
+	mov	rdi, [ctx]
+	call	__bfc_semi
+	return
+
+  ; ---- ftrunc: f64 -> f32, or equal width ---------------------------------
+  .ftrunc:
+	mov	eax, [auxv]
+	and	eax, 0x100
+	jnz	.flimm
+	cmp	dword [tyk], BFA_TK_F32
+	je	.ft_t32
+	cmp	dword [tyk], BFA_TK_F64
+	jne	.ftruncbad		; widening is fext's row
+	cmp	dword [stk], BFA_TK_F64
+	je	.ft_move
+	cmp	dword [stk], BFA_TK_F32
+	je	.ftruncbad		; f32 -> f64 is fext
+	jmp	.ftruncsrcbad
+  .ft_t32:
+	cmp	dword [stk], BFA_TK_F32
+	je	.ft_move
+	cmp	dword [stk], BFA_TK_F64
+	je	.ft_narrow
+	jmp	.ftruncsrcbad
+  .ft_move:
+	mov	rdi, [ctx]
+	mov	rsi, [func]
+	mov	edx, [instid]
+	call	__bfc_emit_result
+	mov	rdi, [ctx]
+	mov	esi, [av]
+	call	__bfc_emit_v
+	mov	rdi, [ctx]
+	call	__bfc_semi
+	return
+  .ft_narrow:
+	mov	rdi, [ctx]
+	mov	rsi, [func]
+	mov	edx, [instid]
+	call	__bfc_emit_result
+	__bfc_emtxt "(float)"
+	mov	rdi, [ctx]
+	mov	esi, [av]
+	call	__bfc_emit_v
+	mov	rdi, [ctx]
+	call	__bfc_semi
+	return
+
+  ; ---- itof: an integer source, a float destination -----------------------
+  .itof:
+	mov	eax, [auxv]
+	and	eax, 0x100
+	jnz	.flimm
+	cmp	dword [tyk], BFA_TK_F32
+	je	.it_tyok
+	cmp	dword [tyk], BFA_TK_F64
+	jne	.itofbad
+  .it_tyok:
+	cmp	dword [stk], BFA_TK_U
+	je	.it_u
+	cmp	dword [stk], BFA_TK_I
+	jne	.itofsrcbad
+	; signed: the bits re-read as int64_t, then one C conversion
+	mov	rdi, [ctx]
+	mov	rsi, [func]
+	mov	edx, [instid]
+	call	__bfc_emit_result
+	__bfc_emtxt "("
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	edx, [tyv]
+	call	__bfc_emit_ctype
+	__bfc_emtxt ")exsi_i64_from_bits("
+	mov	rdi, [ctx]
+	mov	esi, [av]
+	call	__bfc_emit_v
+	__bfc_emtxt ")"
+	mov	rdi, [ctx]
+	call	__bfc_semi
+	return
+  .it_u:
+	cmp	dword [swd], 64
+	jne	.it_go
+	cmp	dword [tyk], BFA_TK_F32
+	je	.itofu64f32
+  .it_go:
+	mov	rdi, [ctx]
+	mov	rsi, [func]
+	mov	edx, [instid]
+	call	__bfc_emit_result
+	__bfc_emtxt "("
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	edx, [tyv]
+	call	__bfc_emit_ctype
+	__bfc_emtxt ")"
+	mov	rdi, [ctx]
+	mov	esi, [av]
+	call	__bfc_emit_v
+	mov	rdi, [ctx]
+	call	__bfc_semi
+	return
+
+  ; ---- ftoi: a float source, an integer destination -----------------------
+  .ftoi:
+	mov	eax, [auxv]
+	and	eax, 0x100
+	jnz	.flimm
+	cmp	dword [tyk], BFA_TK_U
+	je	.ftoi_tyok
+	cmp	dword [tyk], BFA_TK_I
+	jne	.ftoibad
+  .ftoi_tyok:
+	cmp	dword [stk], BFA_TK_F32
+	je	.ftoi_srcok
+	cmp	dword [stk], BFA_TK_F64
+	jne	.ftoisrcbad
+  .ftoi_srcok:
+	mov	rdi, [ctx]
+	mov	rsi, [func]
+	mov	edx, [instid]
+	call	__bfc_emit_result
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfc_ty_signed
+	test	eax, eax
+	jnz	.ft_s
+	__bfc_emtxt "(uint64_t)"
+	jmp	.ft_op
+  .ft_s:
+	__bfc_emtxt "(uint64_t)(int64_t)"
+  .ft_op:
+	mov	rdi, [ctx]
+	mov	esi, [av]
+	call	__bfc_emit_v
+	mov	rdi, [ctx]
+	call	__bfc_semi
+	return
+
+  ; ---- the refusals, one reason each --------------------------------------
+  .fextbad:
+	jmp	.after_m1
+  .m1 db "fext: f32 -> f64 only (narrowing and equal width are `ftrunc`)"
+  .after_m1:
+	lea	rdi, [.m1]
+	mov	rsi, .after_m1 - .m1
+	call	__bfc_die
+  .ftruncbad:
+	jmp	.after_m2
+  .m2 db "ftrunc: the source must be the same width or wider (f32 -> f64 is `fext`)"
+  .after_m2:
+	lea	rdi, [.m2]
+	mov	rsi, .after_m2 - .m2
+	call	__bfc_die
+  .ftruncsrcbad:
+	jmp	.after_m3
+  .m3 db "ftrunc: the source must be a float (f32/f64)"
+  .after_m3:
+	lea	rdi, [.m3]
+	mov	rsi, .after_m3 - .m3
+	call	__bfc_die
+  .itofbad:
+	jmp	.after_m4
+  .m4 db "itof: the destination must be a float (f32/f64)"
+  .after_m4:
+	lea	rdi, [.m4]
+	mov	rsi, .after_m4 - .m4
+	call	__bfc_die
+  .itofsrcbad:
+	jmp	.after_m5
+  .m5 db "itof: the source must be an integer (uN/iN) -- a float source is `ftoi`'s row"
+  .after_m5:
+	lea	rdi, [.m5]
+	mov	rsi, .after_m5 - .m5
+	call	__bfc_die
+  .itofu64f32:
+	jmp	.after_m6
+  .m6 db "itof: u64 -> f32 is not implemented (the reference refuses it too: no correctly-rounded one-step sequence at its baseline -- a naive (float)(double) double-rounds)"
+  .after_m6:
+	lea	rdi, [.m6]
+	mov	rsi, .after_m6 - .m6
+	call	__bfc_die
+  .ftoibad:
+	jmp	.after_m7
+  .m7 db "ftoi: the destination must be an integer (uN/iN) -- a float destination is `itof`'s row"
+  .after_m7:
+	lea	rdi, [.m7]
+	mov	rsi, .after_m7 - .m7
+	call	__bfc_die
+  .ftoisrcbad:
+	jmp	.after_m8
+  .m8 db "ftoi: the source must be a float (f32/f64)"
+  .after_m8:
+	lea	rdi, [.m8]
+	mov	rsi, .after_m8 - .m8
+	call	__bfc_die
+  .flimm:
+	jmp	.after_m9
+  .m9 db "fext/ftrunc/itof/ftoi: the operand is a value only (`fconst` is the leaf -- the raw bit pattern, never decimal text)"
+  .after_m9:
+	lea	rdi, [.m9]
+	mov	rsi, .after_m9 - .m9
+	call	__bfc_die
+endp
+
+; __bfc_emit_fconst(ctx, module, func, instid) -- `fconst F bits`, the leaf.
+;
+;   vK = exsi_f32_from_bits(UINT64_C(lo));
+;   vK = exsi_f64_from_bits(UINT64_C(lo | hi << 32));
+;
+; The immediate is two 32-bit extra words, lo then hi, read exactly the way
+; `iconst` reads its own. THE PATTERN COMES BACK BIT FOR BIT -- that is the
+; whole job: a NaN's payload must survive to `fneg` and the differential
+; corpus, -0.0 must stay -0.0, and a subnormal must stay itself
+; (subnormales conservata) -- none of which a C floating literal can spell,
+; so the pattern goes in as an integer constant and comes back through the
+; object representation (the prologue's helpers). Decimal here, like every
+; other immediate in the emitter, so no emitted text ever carries a hex
+; float whose spelling rules could differ between C libraries.
+;
+; `f32` with a nonzero hi word is refused by name: the pattern is not a
+; value of the type, the same refusal `iconst` makes of a non-canonical
+; constant, and the reference's row agrees.
+proc __bfc_emit_fconst, ctx, module, func, instid
+	locals
+		slot base, dd
+		slot tyv,  dd
+		slot kind, dd
+		slot cval, dq
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[base], ecx
+	mov	ecx, [rax + BfaInst.ty]
+	mov	[tyv], ecx
+
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfc_ty_class
+	cmp	eax, 3
+	jne	.badty
+
+	mov	rdi, [func]
+	mov	esi, [base]
+	call	bfa_extra_get
+	mov	[cval], rax		; lo (zero-extended by the 32-bit load)
+	mov	rdi, [func]
+	mov	eax, [base]
+	inc	eax
+	mov	esi, eax
+	call	bfa_extra_get
+	shl	rax, 32
+	or	[cval], rax
+
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfc_ty_info
+	mov	[kind], edx
+
+	mov	rdi, [ctx]
+	mov	rsi, [func]
+	mov	edx, [instid]
+	call	__bfc_emit_result
+
+	cmp	dword [kind], BFA_TK_F32
+	je	.f32
+	__bfc_emtxt "exsi_f64_from_bits("
+	mov	rdi, [ctx]
+	mov	rsi, [cval]
+	call	__bfc_emit_u64c
+	jmp	.close
+  .f32:
+	mov	rax, [cval]
+	shr	rax, 32
+	jnz	.f32wide
+	__bfc_emtxt "exsi_f32_from_bits("
+	mov	rdi, [ctx]
+	mov	rsi, [cval]
+	call	__bfc_emit_u64c
+  .close:
+	__bfc_emtxt ")"
+	mov	rdi, [ctx]
+	call	__bfc_semi
+	return
+
+  .badty:
+	jmp	.after_m1
+  .m1 db "fconst: the type must be a float (f32/f64) -- `iconst` is the integer leaf (ssa-ir.md 2.3)"
+  .after_m1:
+	lea	rdi, [.m1]
+	mov	rsi, .after_m1 - .m1
+	call	__bfc_die
+  .f32wide:
+	jmp	.after_m2
+  .m2 db "fconst: the pattern is not a value of f32 (bits at or above 2^32)"
+  .after_m2:
+	lea	rdi, [.m2]
+	mov	rsi, .after_m2 - .m2
+	call	__bfc_die
 endp
 
 ; ============================================================================
@@ -1530,6 +2289,8 @@ proc __bfc_mem_k, module, ty
 	je	.isaddr
 	cmp	eax, 2
 	je	.bad
+	cmp	eax, 3
+	je	.bad
 	mov	rdi, [module]
 	mov	esi, [ty]
 	call	__bfc_ty_info
@@ -1552,7 +2313,7 @@ proc __bfc_mem_k, module, ty
 	call	__bfc_die
   .bad:
 	jmp	.after_m2
-  .m2 db "load/store: floats are not Tier 1 (the reference has no lowering either)"
+  .m2 db "load/store: the accessed type must be an integer (uN/iN) or an address -- a float in memory has no lowering in EITHER backend (the reference's memory lowering refuses it too), which is the gap ssa-ir.md's own @dot example trips on"
   .after_m2:
 	lea	rdi, [.m2]
 	mov	rsi, .after_m2 - .m2
@@ -2046,6 +2807,10 @@ proc __bfc_emit_iconst, ctx, module, func, instid
 	call	__bfc_ty_class
 	cmp	eax, 2
 	je	.isfloat
+	cmp	eax, 3
+	je	.isfloat		; a float iconst would slip the canon check
+					; (bfa_type_canon is the identity on a
+					; float's bits), so it is stopped HERE
 
 	mov	rdi, [module]
 	mov	esi, [tyv]
@@ -2074,7 +2839,7 @@ proc __bfc_emit_iconst, ctx, module, func, instid
 	call	__bfc_die
   .isfloat:
 	jmp	.after_m2
-  .m2 db "iconst: floats are not Tier 1 (the reference has no lowering either)"
+  .m2 db "iconst: a float constant is `fconst`, which takes the RAW bit pattern (ssa-ir.md 2.3) -- an `iconst` with a float type is a leaf spelled with the wrong opcode"
   .after_m2:
 	lea	rdi, [.m2]
 	mov	rsi, .after_m2 - .m2
@@ -2564,18 +3329,23 @@ proc __bfc_emit_trap, ctx, module, func, instid
 endp
 
 ; ============================================================================
-; The dispatcher, and the 23 refusals by name
+; The dispatcher, and the refusals by name
 ; ============================================================================
 
 ; __bfc_refuse(op) -- never returns. One message per REASON, not one per
-; opcode: c-backend.md D4's table gives 23 refused opcodes in seven classes,
-; and a reader who meets one wants to know why the backend has no lowering,
-; which is a property of the class.
+; opcode: c-backend.md D4's table gives 14 refused opcodes in eight classes
+; (nop is the 15th, opcode 0, outside the 1..60 numbering), and a reader who
+; meets one wants to know why the backend has no lowering, which is a
+; property of the class.
 ;
 ;   div rem                  no reference lowering exists (ssa-ir.md 2.3)
 ;   muls addov subov mulov   no reference lowering exists (spec 5.4 has no
 ;                            such operator or predicate)
-;   the twelve float ops, and fconst   floats are not Tier 1
+;   fma                      no lowering in EITHER backend (spec 5.4
+;                            contractio explicita: contraction must be
+;                            asked for, never made)
+;   bitcast                  nothing in-tree produces it; its semantics
+;                            are [OPEN] (ssa-ir.md 2.3)
 ;   redinit contrib redfin   reductions have no reference lowering
 ;   retain release           no object header exists in library mode
 ;   callind                  a function value's closure layout is [OPEN]
@@ -2601,6 +3371,10 @@ proc __bfc_refuse, op
 	je	.nolowering
 	cmp	dword [op], BFA_OP_MULOV
 	je	.nolowering
+	cmp	dword [op], BFA_OP_FMA
+	je	.fma
+	cmp	dword [op], BFA_OP_BITCAST
+	je	.bitcast
 	cmp	dword [op], BFA_OP_REDINIT
 	je	.reduction
 	cmp	dword [op], BFA_OP_CONTRIB
@@ -2615,15 +3389,9 @@ proc __bfc_refuse, op
 	je	.callind
 	cmp	dword [op], BFA_OP_NOP
 	je	.nop
-	cmp	dword [op], BFA_OP_FCONST
-	je	.float
-	cmp	dword [op], BFA_OP_FADD
-	jb	.other
-	cmp	dword [op], BFA_OP_BITCAST
-	jbe	.float
   .other:
 	jmp	.after_m0
-  .m0 db "opcode not implemented in the C emitter (c-backend.md D4 lowers exactly the reference's 37)"
+  .m0 db "opcode not implemented in the C emitter (c-backend.md D4: the reference's refusal set, plus retain/release which library mode has no runtime for)"
   .after_m0:
 	lea	rdi, [.m0]
 	mov	rsi, .after_m0 - .m0
@@ -2645,44 +3413,52 @@ proc __bfc_refuse, op
 	mov	rsi, .after_m2 - .m2
 	call	__bfc_die
 
-  .float:
+  .fma:
 	jmp	.after_m3
-  .m3 db "floats are not Tier 1 (the reference has no lowering either, so ADR 0012's numeric subset is exactly what a differential test cannot yet check, and a C lowering written first would be untested by construction)"
+  .m3 db "fma: no lowering in EITHER backend -- the reference's SSE2 baseline has no FMA instruction, and the one C spelling would be <math.h>'s `fma`, a library the dialect does not promise; contraction is the thing spec 5.4 says must be asked for, never made"
   .after_m3:
 	lea	rdi, [.m3]
 	mov	rsi, .after_m3 - .m3
 	call	__bfc_die
 
-  .reduction:
+  .bitcast:
 	jmp	.after_m4
-  .m4 db "redinit/contrib/redfin: reductions have no reference lowering (ssa-ir.md 2.6: the reference's lowering of arborea is the definition)"
+  .m4 db "bitcast: nothing in-tree produces it and its semantics are [OPEN] (ssa-ir.md 2.3); `fconst`'s bits-to-float path is a prologue helper, not this opcode"
   .after_m4:
 	lea	rdi, [.m4]
 	mov	rsi, .after_m4 - .m4
 	call	__bfc_die
 
-  .arc:
+  .reduction:
 	jmp	.after_m5
-  .m5 db "retain/release: no object header exists in library mode (c-backend.md D1, D8) -- the one class where the reference DOES lower and this backend cannot"
+  .m5 db "redinit/contrib/redfin: reductions have no reference lowering (ssa-ir.md 2.6: the reference's lowering of arborea is the definition)"
   .after_m5:
 	lea	rdi, [.m5]
 	mov	rsi, .after_m5 - .m5
 	call	__bfc_die
 
-  .callind:
+  .arc:
 	jmp	.after_m6
-  .m6 db "callind: no reference lowering exists (ssa-ir.md 2.9: a function value's closure layout is [OPEN])"
+  .m6 db "retain/release: no object header exists in library mode (c-backend.md D1, D8) -- the one class where the reference DOES lower and this backend cannot"
   .after_m6:
 	lea	rdi, [.m6]
 	mov	rsi, .after_m6 - .m6
 	call	__bfc_die
 
-  .nop:
+  .callind:
 	jmp	.after_m7
-  .m7 db "nop: verifier rule 9 refuses it, so it cannot reach a backend from well-formed IR"
+  .m7 db "callind: no reference lowering exists (ssa-ir.md 2.9: a function value's closure layout is [OPEN])"
   .after_m7:
 	lea	rdi, [.m7]
 	mov	rsi, .after_m7 - .m7
+	call	__bfc_die
+
+  .nop:
+	jmp	.after_m8
+  .m8 db "nop: verifier rule 9 refuses it, so it cannot reach a backend from well-formed IR"
+  .after_m8:
+	lea	rdi, [.m8]
+	mov	rsi, .after_m8 - .m8
 	call	__bfc_die
 endp
 
@@ -2779,6 +3555,59 @@ proc __bfc_emit_inst, ctx, module, func, instid
 	call	__bfc_emit_conv
 	return
   .n_conv:
+	; the float opcodes: D4 rows 24-34 and 60. `fma` and `bitcast` reach
+	; neither arm and fall to __bfc_refuse, which names them -- the two
+	; emitters' refusal sets are ONE SET.
+	cmp	dword [op], BFA_OP_FCONST
+	jne	.n_fconst
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfc_emit_fconst
+	return
+  .n_fconst:
+	cmp	dword [op], BFA_OP_FADD
+	je	.dofbin
+	cmp	dword [op], BFA_OP_FSUB
+	je	.dofbin
+	cmp	dword [op], BFA_OP_FMUL
+	je	.dofbin
+	cmp	dword [op], BFA_OP_FDIV
+	jne	.n_fbin
+  .dofbin:
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfc_emit_fbin
+	return
+  .dofneg:
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfc_emit_fneg
+	return
+  .n_fbin:
+	cmp	dword [op], BFA_OP_FNEG
+	je	.dofneg
+	cmp	dword [op], BFA_OP_FEXT
+	je	.dofconv
+	cmp	dword [op], BFA_OP_FTRUNC
+	je	.dofconv
+	cmp	dword [op], BFA_OP_ITOF
+	je	.dofconv
+	cmp	dword [op], BFA_OP_FTOI
+	jne	.n_fconv
+  .dofconv:
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfc_emit_fconv
+	return
+  .n_fconv:
 	cmp	dword [op], BFA_OP_SLOT
 	jne	.n_slot
 	mov	rdi, [ctx]

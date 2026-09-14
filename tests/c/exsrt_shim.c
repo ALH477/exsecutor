@@ -205,7 +205,28 @@ uint64_t exs_initium(unsigned char *p0);
 
 static unsigned char g_mundus[64];
 
+/* MXCSR: the float image the reference's own prelude pins for every program
+ * it emits (program.inc's BFA_MXCSR_AD_PAREM, 0x1F80). C1 measured this
+ * process STARTING at 0x1FA0 (c-backend.md D3) -- the same six masks plus
+ * a stale precision flag -- and that is a different program from the one
+ * the reference runs before its first float instruction: the reference
+ * image has the flags CLEAR, rounding pinned to nearest-even (bits 13-14
+ * zero), and FTZ and DAZ clear, which is what makes a subnormal a value
+ * (spec 5.4 subnormales conservata) and a float op a non-trapping one.
+ * The differential corpus can only differ on rounding, denormals or flag
+ * state if the shim sets the same image, so it does -- x86-64 only, since
+ * this shim is also linked for riscv64 (FPCR there is untouched: the
+ * emitted text asserts nothing about it, and the reference's prelude owns
+ * the same pins on its own targets). Verified-only, like everything here:
+ * a shipped prelude would set this before main, not in it. */
+#if defined(__x86_64__)
+# include <xmmintrin.h>
+#endif
+
 int main(void)
 {
+#if defined(__x86_64__)
+    _mm_setcsr(0x1F80u);
+#endif
     return (int)(exs_initium(g_mundus) & 0xFFu);
 }

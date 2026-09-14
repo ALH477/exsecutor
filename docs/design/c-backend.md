@@ -1,6 +1,7 @@
 # The C backend — design for spec §9.2's reach backend, library mode first
 
-Status: **C1, C2 and C3's host half are implemented and green.**
+Status: **C1, C2 and C3's host half are implemented and green, and the
+float opcodes are lowered (2026-09-13).**
 `compiler/x86_64/backend_c/` exists (`emit_c.inc`, `program_c.inc`,
 `prologue.c.in`); `--emitte c` emits; the incantation table of D3 has been
 run under gcc 15.3.0 and clang 21.1.8 and is filled in below, with three
@@ -25,13 +26,30 @@ cells that did not hold. The differential harness of D6 runs as two
 - **the StreamDB v3 reader is among the 26.** `streamdb_{corpus,onus,caput,
   truncus}` produce byte-identical output through the C backend under all
   four builds; section 6.7 is the result.
+- **the float opcodes are lowered — D4 rows 24–28, 30–34 and 60.** Eleven
+  opcodes (`fadd fsub fmul fdiv fneg fcmp fext ftrunc itof ftoi fconst`),
+  one IR op per C statement, so contraction has nowhere to happen by
+  construction. Measured on scratch fixtures in `/tmp/floatfix_c/`
+  (deliberately not `tests/ir/`, which is the reference backend's tree):
+  a 68-check fixture and a 4-check edges fixture (sign of zero, ±inf, no
+  trap on division by zero), every expectation computed in Python from
+  IEEE 754 — never by running the emitted C as its own reference — green
+  under all four toolchains at `-Wall -Wextra` with zero warnings; 15
+  emitter refusals at exit 4, each with its message; two emissions of the
+  same module byte-identical. The committed differential coverage of
+  floats is the `tests/ir/` float fixtures that land with the reference's
+  own lowering in the same wave.
 
 C2's work largely landed with C1 because the harness was the only way to
 know the lowerings were right; what C2 still owed — the program corpus, and
 `tools/reproduce.sh` over two `--emitte c` units — landed with C3.
 
-What is still `[OPEN]` or `[UNTESTED]` is marked where it stands: floats
-(D8), whole-program mode (D1), the N64 cross-compile (D7's target half), and
+What is still `[OPEN]` or `[UNTESTED]` is marked where it stands: in
+floats, the unordered compare predicates, `fma`, `bitcast`, float
+load/store, and the honouring of a declared `numeri` — both backends emit
+default `ad_parem` code whatever is declared, and `EXS-E0701`'s driver
+wiring still does not exist (finding 23) — whole-program mode (D1), the
+N64 cross-compile (D7's target half), and
 the `mips64-none-o64` row (D2, refused by name — see finding 6, which was
 wrong about why, and finding 18, which measures how much more than two
 constants it is). `spec §N` cites
@@ -86,15 +104,23 @@ The constraints, in the order they bind:
 
 1. **The reference defines the semantics** (spec §9.2, ADR 0012). Nothing
    here may lower an opcode the reference does not lower: a C lowering the
-   differential test cannot check is a hypothesis with no test, and the
-   reference's `__bfa_emit_inst` lowers **37** of the IR's 60 opcodes —
+   differential test cannot check is a hypothesis with no test, and
+   before the float wave the reference's `__bfa_emit_inst` lowered **37**
+   of the IR's 60 opcodes —
    `param iconst add sub addw subw mul mulw cmp jmp br ret slot gaddr load
    store loadbits storebits call retain release trap adds subs and or xor
    shl shr zext sext trunc index chk copy addr`, plus `phi` at the edges.
    (The survey that preceded this file counted 38; it counted `fcmp`, which
-   the dispatcher routes to `__bfa_emit_cmp` and which that routine refuses
-   by name, `emit.inc:987`, "floats are not Tier 1". Finding 3.) The other
-   23 are refused here by name, section 3.
+   the dispatcher routes to `__bfa_emit_cmp` and which that routine refused
+   by name, `emit.inc:987`, "floats are not Tier 1". Finding 3.) The float
+   wave of 2026-09-13 lowers D4 rows 24–28, 30–34 and 60 — the eleven float
+   opcodes — **in both backends in one change**: the reference's half is
+   `backend_fasmg/`'s tree and lands in the same wave, and the two
+   refusal sets were agreed as ONE set before either was written, so a
+   divergence is a finding, not a backend difference (D4). This backend
+   lowers **46** of the 60, not the reference's 48: `retain`/`release`
+   are the reference's but not library mode's (no object header exists,
+   D8), so the C refusals are the reference's twelve plus those two.
 2. **The first consumer has no OS.** Kiln links an object into `libkiln.a`:
    newlib's libc and libm exist but the engine's gates forbid libm and
    `malloc` after init, RAM is 4 MB, the ISA is MIPS III with 64-bit
@@ -219,9 +245,11 @@ lies:
   `numeri`", the `07xx` code spec §13 says was owed *by ADR 0012* and now
   carries. The task that commissioned this design and ADR 0012's own
   Neutral section both say no such code exists; both are stale (finding 1).
-  Nothing is invented. In library mode with floats refused (D8) `numeri` is
-  never consulted, so `EXS-E0701` is not reachable from the C path until a
-  float opcode is lowered; this row says where it goes when one is.
+  Nothing is invented. Even with float opcodes lowered (2026-09-13)
+  `EXS-E0701` is still not reachable from the C path: the driver consults
+  `numeri` nowhere, and both backends emit default `ad_parem` code
+  whatever is declared (finding 23) — this row says where the wiring goes
+  when the driver grows it.
 - an opcode, width or shape the C emitter has no lowering for: an **emitter
   refusal by name** — `bfc: emitter: <reason>` on stderr, exit 4 — exactly
   the class `__bfa_emit_die` already is (`emit.inc:91`) and
@@ -245,11 +273,17 @@ anything outside this list in emitted text is a defect:
 | `__GNUC__` / `__clang__` | the family check | `#error` outside the family — ADR 0012: not a goal |
 
 Everything else is ISO C11: `<stdint.h>` (`uint64_t`, `uintptr_t`,
-`UINT64_C`), `<limits.h>` (`CHAR_BIT`), `_Static_assert`, `_Alignas`,
-`_Noreturn`, `goto`. No `<string.h>`, no `<stdlib.h>`, no `<stdio.h>`, no
-`<float.h>` until a float opcode is lowered — the prologue carries only the
-asserts a lowered opcode relies on, so a unit that uses no floats asserts
-nothing about floats and compiles on a target with none.
+`UINT64_C`), `<limits.h>` (`CHAR_BIT`), `<float.h>` (since the float
+opcodes were lowered, 2026-09-13), `_Static_assert`, `_Alignas`,
+`_Noreturn`, `goto`. No `<string.h>`, no `<stdlib.h>`, no `<stdio.h>`.
+C1's line "no `<float.h>` until a float opcode is lowered" held until
+that date; now every unit asserts the IEEE shape — `FLT_RADIX == 2`,
+`FLT_MANT_DIG == 24 && DBL_MANT_DIG == 53`, `FLT_MAX_EXP == 128 &&
+DBL_MAX_EXP == 1024`, `FLT_EVAL_METHOD == 0` (else `#error`: no x87
+extended evaluation), and `FLT_HAS_SUBNORM`/`DBL_HAS_SUBNORM` where
+defined — compile-time asserts only (rung (b)), so the freestanding header
+a target must provide is `<float.h>` itself, which C11 requires even with
+no floating-point hardware.
 
 **The prologue**, emitted at the top of every unit, a fixed text carried in
 `program_c.inc` the way `program.inc` carries the prelude blobs (a function
@@ -286,9 +320,28 @@ documentation says it is always defined, `0` by default and `1` under
 presence (finding 2); and `(-1 & 3) == 3` is a two's-complement test that
 C23 makes vacuous and C11 leaves meaningful. The pragmas ADR 0012 item 1
 names — `#pragma STDC FP_CONTRACT OFF`, `#pragma GCC optimize("fp-contract=off")`
-— and its item 2's `fesetround` / `_mm_getcsr` / FPCR reads enter the
-prologue with the first float opcode and not before, but **they are measured
-in C1 anyway**, because ADR 0012 made that the backend's first job:
+— and its item 2's `fesetround` / `_mm_getcsr` / FPCR reads were to "enter
+the prologue with the first float opcode and not before". That happened on
+2026-09-13, and what entered is decided by the C1 measurement above:
+
+- **the GCC pragma only**: `#pragma GCC optimize("fp-contract=off")` under
+  `#if defined(__GNUC__) && !defined(__clang__)`. The `#pragma STDC`
+  spelling is *not* emitted even as documentation of intent — finding 12's
+  "may still be emitted" is answered no: a pragma both compilers ignore
+  documents nothing, and one compiler accepts it *silently*, which is worse
+  than a warning. For Clang the honest state is what finding 12 measured —
+  nothing inside the source works — so contraction is prevented by
+  construction instead: one IR op is one complete C statement, never an
+  `a*b+c` expression for a compiler to fuse.
+- **no `fesetround` anywhere**: the emitted code never switches the
+  rounding mode. Default `ad_parem` (nearest-even) is C's default and the
+  reference's hardcoded value; a declared `numeri` is parsed by both
+  backends and honoured by neither (finding 23).
+- **no MXCSR write in the prologue** — the control word belongs to the
+  program's start, and in library mode the program's start is the shim's
+  `main`, not the emitted unit: finding 21. `_mm_setcsr(0x1F80)` sits in
+  `tests/c/exsrt_shim.c`, guarded `#if defined(__x86_64__)` because the
+  shim also links for non-x86-64 rows.
 
 **C1's first task**, before any emitter line is written: a scratch
 translation unit under `prototypes/` (verification-only, never shipped)
@@ -395,12 +448,38 @@ promotions turn `uint16_t * uint16_t` into a signed `int` multiply that
 overflows at 65535 × 65535 — undefined behaviour introduced by the choice of
 storage type, which is ADR 0012 item 4's warning applied to arithmetic.
 
+**Floats are the deliberate exception to the carrier.** A float value is
+the C float itself — `float` for `f32`, `double` for `f64` — never packed
+into the `uint64_t`. The carrier exists so that C's *integer* semantics
+can be made to match the reference's by construction; there is no integer
+spelling of an IEEE multiply, so the honest C statement for `fadd f64` is
+`vk = a + b;` over two `double`s. One IR op is exactly one complete C
+statement, which is also the contraction defence: `fmul` and `fadd` are
+separate statements, so no compiler is ever shown an `a*b+c` expression
+to fuse, whatever its `fp-contract` mode (finding 12). The prologue
+asserts `FLT_EVAL_METHOD == 0` so a `float` is evaluated as a `float`, and
+the float rows assume the MXCSR the shim sets at `main` (finding 21).
+`numeri` is parsed and ignored — default `ad_parem` code is emitted
+whatever is declared, in this backend as in the reference (finding 23);
+spec 5.4's "a C target that cannot honour a declared `numeri` fails the
+build" is not yet wired to `EXS-E0701` in the driver (D2's row, section 4).
+
+**The refusal set is ONE set.** The two emitters' by-name refusals are
+maintained as a single set — `fma` and `bitcast` are refused here and in
+`backend_fasmg/emit.inc` in the same change, and a divergence between the
+two refusal sets is a finding, not a backend difference. The operand-level
+float refusals (inline immediates, float load/store, `iconst` with a
+float type, `cmp`/`fcmp` type disagreement, `fconst` patterns too wide
+for `f32`, `itof u64 → f32`) mirror the reference's row for row.
+
 **The mapping table**, one row per opcode in `ir.inc` order (`BFA_OP_*`,
 1–60). `T` is the instruction's type, `N` its width, `M` the mask
 `exsi_mask(N)` (`UINT64_MAX` at 64, else `(1 << N) - 1`), `S` the sign bit
 `1 << (N-1)`. Value `%k` is `vk`, block `bk` is label `bk`, a `slot`'s
 storage is `sk`, a phi's edge temporary is `tk`; all are internal ids
 (IR 2.1, creation order), declared at the top of the function in id order.
+For the float rows, `F` is the C spelling of the type — `float` for
+`f32`, `double` for `f64` — and `vk` has that type, not `uint64_t`.
 `nu(x,N)` is `exsi_norm_u`, `x & M`; `ni(x,N)` is `exsi_norm_i`,
 `((x & M) ^ S) - S` in unsigned arithmetic, which wraps to the sign-extended
 pattern. "norm" means `nu` for a `uN`, `ni` for an `iN`. Every helper named
@@ -432,18 +511,18 @@ after the table; the C1 status column says what C1 does with the row.
 | 21 | `zext T a` | source `(s, m)`: `vk = normT(nu(a, m), N)` — zero-extend from the *source* width first (IR 2.2), then the destination's form | lowered |
 | 22 | `sext T a` | `vk = normT(ni(a, m), N)` — sign-extend from the source width, then cut to the destination's form; `sext u16` of `i8` −56 is 65480 | lowered |
 | 23 | `trunc T a` | `vk = normT(a, N)` — low bits kept, then normalised | lowered |
-| 24 | `fadd F a b` | refused: `bfc: emitter: fadd: floats are not Tier 1 (the reference has no lowering; ADR 0012's numeric subset is untestable until it does)` | refused |
-| 25 | `fsub` | refused, as `fadd` | refused |
-| 26 | `fmul` | refused, as `fadd` | refused |
-| 27 | `fdiv` | refused, as `fadd` | refused |
-| 28 | `fneg` | refused, as `fadd` | refused |
-| 29 | `fma` | refused, as `fadd` | refused |
-| 30 | `fcmp.p` | refused, as `fadd` — the reference refuses it too, `emit.inc:987` | refused |
-| 31 | `fext` | refused, as `fadd` | refused |
-| 32 | `ftrunc` | refused, as `fadd` | refused |
-| 33 | `itof` | refused, as `fadd` | refused |
-| 34 | `ftoi` | refused, as `fadd` | refused |
-| 35 | `bitcast` | refused, as `fadd` | refused |
+| 24 | `fadd F a b` | `vk = a + b;` — one IR op, one C operator; `a` and `b` must be class-3 (float) and values, or refused by name | lowered |
+| 25 | `fsub F a b` | `vk = a - b;` | lowered |
+| 26 | `fmul F a b` | `vk = a * b;` | lowered |
+| 27 | `fdiv F a b` | `vk = a / b;` — a zero divisor is IEEE ±inf or NaN, never a trap: spec 5.4's "no float op traps" is C's own rule here; measured (finding 22): neither compiler's `-fsanitize=undefined` includes float-divide-by-zero on this host, so the harness flags do not make it one | lowered |
+| 28 | `fneg F a` | `vk = -a;` — the sign bit flipped, exact on every value including NaN and ±0 | lowered |
+| 29 | `fma F a b c` | refused: `bfc: emitter: fma: no lowering in EITHER backend -- the reference's SSE2 baseline has no FMA instruction, and the one C spelling would be <math.h>'s fma, a library the dialect does not promise; contraction is the thing spec 5.4 says must be asked for, never made` | refused |
+| 30 | `fcmp.p F a b → u1` | five predicates are C's own: `vk = (a OP b);` with `== < <= > >=`. `ne` is **not** C's `!=`, which is unordered-NE (true on a NaN) — ordered-NE is `vk = ((a < b) \|\| (a > b));`, so all six are false on a NaN (spec 5.4's ordered meaning). Refused, each by name: an unordered predicate word (`fcmp: ordered predicates only (eq ne lt le gt ge; unordered forms are [OPEN], ssa-ir.md 2.3)`), an inline immediate operand (`fcmp: float operands are values only (fconst is the leaf -- the raw bit pattern, never decimal text)`), and a type disagreement with the opcode (`cmp.*` on floats or `fcmp.*` on integers: `cmp/fcmp: the compare and its operands must agree`) | lowered |
+| 31 | `fext F a` | f32→f64: `vk = (double)a;` — exact. Anything else refused: `bfc: emitter: fext: f32 -> f64 only (narrowing and equal width are ftrunc)` | lowered |
+| 32 | `ftrunc F a` | **the narrowing cast, not a fraction truncation** — the name names the width, not the mantissa (finding 20). f64→f32: `vk = (float)a;` (round to nearest even); equal width: `vk = a;` — a move, not a re-round. f32→f64 refused: `bfc: emitter: ftrunc: the source must be the same width or wider (f32 -> f64 is fext)` | lowered |
+| 33 | `itof F a` | source unsigned: `vk = (T)a;`; source signed: `vk = (T)exsi_i64_from_bits(a);` — the bit-cast helper, because `uint64_t → int64_t` is implementation-defined in C and the reference defines it as the two's-complement reinterpretation. `u64 → f32` refused: `bfc: emitter: itof: u64 -> f32 is not implemented (the reference refuses it too: no correctly-rounded one-step sequence at its baseline -- a naive (float)(double) double-rounds)`; `u64 → f64` is lowered | lowered |
+| 34 | `ftoi T a` | dest `uN`: `vk = (uint64_t)a;`; dest `iN`: `vk = (uint64_t)(int64_t)a;` — C's float→integer conversion truncates toward zero, the reference's `cvttsd2si` rule. NaN and out-of-range are `[OPEN]` in the reference; on the C side UBSan's float-cast-overflow aborts them under the harness flags — the documented C-side twin of the same `[OPEN]`, said so in a comment at the emission site | lowered |
+| 35 | `bitcast T a` | refused: `bfc: emitter: bitcast: nothing in-tree produces it and its semantics are [OPEN] (ssa-ir.md 2.3); fconst's bits-to-float path is a prologue helper, not this opcode` | refused |
 | 36 | `redinit F op shape w` | refused: `bfc: emitter: redinit: reductions have no reference lowering (ssa-ir.md 2.6: the reference's lowering of arborea is the definition)` | refused |
 | 37 | `contrib h v` | refused, as `redinit` | refused |
 | 38 | `redfin F h` | refused, as `redinit` | refused |
@@ -468,16 +547,24 @@ after the table; the C1 status column says what C1 does with the row.
 | 57 | `phi T bP v …` | no statement at the phi. At each incoming edge, a **parallel copy**: `tj = vj` for every phi `j` of the target in phi order, reading the operand for this predecessor, *then* `vj = tj` for every `j` — every read precedes every write, so the swap and the lost-copy case are correct with no cycle analysis (`phi_swap.ir`, `phi_lost_copy.ir`); the temporaries are function-scope `uint64_t` (or `unsigned char *`) declared at the top | lowered |
 | 58 | `param T i` | the function's parameter `pi`, typed `uint64_t` for every integer, `unsigned char *` for `ptr`; `vk = pi;` | lowered |
 | 59 | `iconst T imm` | `vk = UINT64_C(<canonical pattern in decimal>);` — an `iN` constant prints its sign-extended 64-bit pattern as an unsigned decimal (`i8` −56 is `18446744073709551560`); no signed literal, no hex | lowered |
-| 60 | `fconst F bits` | refused, as `fadd` | refused |
+| 60 | `fconst F bits` | `vk = exsi_f32_from_bits(UINT64_C(lo));` / `vk = exsi_f64_from_bits(UINT64_C(pattern));` — the two extra words are the raw bit pattern, exactly `iconst`'s mechanism, and the round-trip is exact by construction: a C float literal cannot spell a NaN payload, −0.0 or a subnormal, so the bits go through a `__builtin_memcpy` bit-cast helper (D3's extension set) rather than through decimal text. A pattern with bits at or above 2^32 on an `f32` is refused: `bfc: emitter: fconst: the pattern is not a value of f32 (bits at or above 2^32)`; an integer type is refused: `fconst: the type must be a float (f32/f64) -- iconst is the integer leaf (ssa-ir.md 2.3)` | lowered |
 
 Not in the table: `nop` (op 0; verifier rule 9 refuses it, `verify.inc`
 finding 2) and `faddr` (IR 2.3, `[UNIMPLEMENTED]` in `ir.inc`); both are
 refused by the emitter if met, by name.
 
-Count: **36 lowered by statement, `phi` lowered at the edges = 37, exactly
-the reference's set; 23 refused**, of which 22 are refused because the
-reference refuses them and 2 (`retain`, `release`) because library mode has
-no runtime — and none of the 23 occurs in any of the 49 `tests/ir/*.ir`
+Count: **46 of the 60 rows are lowered** — 45 by statement, `phi` at the
+edges — and **14 are refused**, of which 12 because the reference refuses
+them too (`div`, `rem`, `muls`, the three `*ov`, the three reductions,
+`callind`, and now `fma` and `bitcast`, refused in both backends in the
+same change) and 2 (`retain`, `release`) because library mode has no
+runtime. The float wave of 2026-09-13 moved eleven rows from refused to
+lowered. A row-by-row recount in that change also corrected the figures
+this paragraph carried before it (37 lowered / 23 refused): counted row
+by row the pre-float table was 35 lowered / 25 refused, both wrong by
+two, and the corrected pre-float figures are 34 by statement + `phi` =
+35 / 25. The recount is recorded, not smoothed over. None of the 14
+refusals occurs in any of the 49 `tests/ir/*.ir`
 fixtures or the (then 22, now 26) non-vector `tests/programs/` directories
 (measured by grep at `dbe1d64`; re-measured in C3 by *running* the
 emitter — `exsc … --emitte c` exits 0 on all 26, so not one of them is
@@ -748,8 +835,18 @@ second copy of that reasoning. The steps:
    `in`/`out`/`err` at 0/4/8, `Scriptor` and `Lector` 16 bytes with the
    descriptor at 8, `textus` `{ptr, len}`) — a second copy of `interface.inc`'s
    layout facts, which is RT H4's hazard and is recorded as such `[OPEN]`;
-   and `int main(void) { return (int)exs_initium(&mundus); }`. The four
-   `exsrt_alloc_*` routines are **not** defined: a fixture that reaches
+   and `int main(void) { return (int)exs_initium(&mundus); }` — plus,
+   since the float opcodes were lowered, one line before the call:
+   `_mm_setcsr(0x1F80u)` under `#if defined(__x86_64__)` (with
+   `<xmmintrin.h>` under the same guard). The reference's `program.inc`
+   writes MXCSR 0x1F80 at program start; a C process on this host
+   *measured* 0x1FA0 at start — the same six masks already set plus a
+   stale precision flag (finding 21) — so the shim makes the two programs
+   start from the same control word or the differential test would compare
+   an `ad_parem` run against an `ad_parem` run with a different PE flag.
+   The guard keeps the shim compiling for non-x86-64 rows, where the
+   write is not this backend's to make.
+   The four `exsrt_alloc_*` routines are **not** defined: a fixture that reaches
    them fails to link, which is the same statement `emit_ir.asm` makes by
    fixing the closure.
 
@@ -864,14 +961,21 @@ yet accept (finding 18).
 
 ### D8 Not in scope for C1–C4
 
-Floats — the reference cannot lower them either, so ADR 0012's numeric
-subset is exactly what a differential test cannot yet check, and a C
-lowering written first would be untested by construction; `div`/`rem`,
-`muls`, the three `*ov` predicates — integer opcodes the reference lacks,
-which enter **both** backends in one later milestone with fixtures for
-each; ARC — no object header exists in library mode; generics and
-dictionaries; `callind`; the three reduction opcodes; whole-program mode
-(D1). Each is a refusal by name in D4's table, never a silent omission.
+Floats were this section's first item until 2026-09-13, when D4 rows
+24–28, 30–34 and 60 landed in both backends together. What remains outside
+the float lowering, each a refusal by name or a recorded `[OPEN]`, never
+a silent omission: the unordered `fcmp` predicates (`ssa-ir.md` 2.3 marks
+them `[OPEN]`; the emitter refuses the predicate word by name); `fma` and
+`bitcast` (D4 rows 29 and 35); a float in memory — `load`/`store` with a
+float type, which the reference's memory lowering refuses too, and which
+is the gap `ssa-ir.md`'s own `@dot` example trips on (finding 24); and
+the honouring of a declared `numeri` (finding 23). Also still here:
+`div`/`rem`, `muls`, the three `*ov` predicates — integer opcodes the
+reference lacks, which enter **both** backends in one later milestone
+with fixtures for each; ARC — no object header exists in library mode;
+generics and dictionaries; `callind`; the three reduction opcodes;
+whole-program mode (D1). Each is a refusal by name in D4's table, never a
+silent omission.
 
 ## 3. Shape of the emitted unit
 
@@ -922,7 +1026,7 @@ No code is added. The three refusal classes of D2 map onto what exists:
 | situation | what happens | code |
 |---|---|---|
 | `--hospes` value unknown, or its row lacks the backend asked for; `--emitte c` without `-o` | usage error, exit 4 / 2, message | none — spec §9.3: a malformed flag is not a diagnostic |
-| a module whose `numeri` the C target cannot honour | diagnostic at the driver | `EXS-E0701` — exists in §13 and `diag/codes.inc:111`; unreachable from the C path until a float opcode is lowered |
+| a module whose `numeri` the C target cannot honour | diagnostic at the driver | `EXS-E0701` — exists in §13 and `diag/codes.inc:111`; still unreachable from the C path even with float opcodes lowered, because the driver wiring does not exist: `run.inc` performs no `numeri` check, and neither backend honours a declared `numeri` — both emit default `ad_parem` code whatever is declared (finding 23). Wiring it is the driver's tree, not this backend's |
 | a module without `initium` under `--emitte c -o` | a library; accepted | `EXS-E0424` does **not** fire (spec §4.7 as amended) |
 | a module without `initium` under `-o` without `--emitte c` | as today | `EXS-E0424` |
 | an opcode, width or shape without a C lowering | `bfc: emitter: …`, exit 4 | none — a compiler limit, the reference's own class |
@@ -1219,13 +1323,15 @@ C1 is done; C2's harness landed with it. What each says now:
 
 | milestone | delivers | retires | its certificate |
 |---|---|---|---|
-| **C1** skeleton and prologue measurements — **DONE** | (1) the measurement table of D3, filled in, **first**; (2) `compiler/x86_64/backend_c/{emit_c,program_c}.inc` — the 37 lowerings, the 23 refusals by name, the prologue, mangling; (3) `--emitte c`, `-o` required, `--hospes` rows, `CHK_F_PROGRAM` not set; (4) `tests/unit/bfc_emit_*.asm` pinning emitted text per opcode family, `bfc_mangle.asm`, `driver_emitte_c*.asm` for D2's three-way split | D2, D3 (as measured), D4 rows (text), D5 mangling, D1 (the unit compiles) | the hello world's IR through `emit_c`, compiled by `gcc -std=c11 -pedantic -Wall -Wextra` with the shim, prints `examples/saluta.expected` and exits 0 — by hand, recorded in the commit |
+| **C1** skeleton and prologue measurements — **DONE** | (1) the measurement table of D3, filled in, **first**; (2) `compiler/x86_64/backend_c/{emit_c,program_c}.inc` — the 37 lowerings, the 23 refusals by name (figures as of C1; the float wave of 2026-09-13 took the table to 46 lowerings / 14 refusals, and D4's count paragraph records the recount), the prologue, mangling; (3) `--emitte c`, `-o` required, `--hospes` rows, `CHK_F_PROGRAM` not set; (4) `tests/unit/bfc_emit_*.asm` pinning emitted text per opcode family, `bfc_mangle.asm`, `driver_emitte_c*.asm` for D2's three-way split | D2, D3 (as measured), D4 rows (text), D5 mangling, D1 (the unit compiles) | the hello world's IR through `emit_c`, compiled by `gcc -std=c11 -pedantic -Wall -Wextra` with the shim, prints `examples/saluta.expected` and exits 0 — by hand, recorded in the commit |
 | **C2** the differential harness — **DONE** (in C1 and C3) | landed in C1: `tests/ir/emit_c.asm`, `tests/c/exsrt_shim.c`, `run_differential_tests` over `tests/ir/`, `c-emit-exit=`/`c-exsc-exit=`, `checks.test` and the devShell gaining `gcc` and `clang`, the eval-time closure assertion. **Landed in C3, closing what was owed:** the program corpus (a second loop in the same phase; `exsc … --emitte c -o out.c` per directory; `c-differentia=` with its closed reason set; `program_sources` shared with `run_program_tests` so the two phases cannot disagree about what the unit is; two floors), and `tools/reproduce.sh` diffing two `--emitte c` units | D6 for both corpora, D5 determinism, D1 (the unit runs) | `tests/ir/`: 39 lowerable × 4 = 156 builds agreeing, plus 11 rejections at matching exit status. `tests/programs/`: 26 eligible directories × 4 = 104 builds, all agreeing; 70 declared ineligible by name; `reproduce.sh` byte-identical on two units across divergent cwd/TZ/locale/epoch/umask/hostname. `nix flake check` green |
 | **C3** the reader — **host half DONE** | `examples/streamdb/` in Exsecutor, `tests/programs/streamdb_*/` driving it from `initium` over `vendor/streamdb-v3/` on stdin, **both backends**; the Python expectation. The reference half landed with section 6; the C half is section 6.7 | D7 (host half), section 6, and what C2 owed | the semantic stream of section 6 — every key byte-exact with CRC verified, the counts, the error outcomes — **identical under both backends** on all four containers under all sixteen C builds, and equal to the expectation; five mutants, three of which the corpus catches and two of which need hand-made input (section 6.4) |
 | **C4** the N64 cross-compile — **DONE** | `--hospes mips64-none-o64` accepted: the row's width to `chk_set_target` (one call site, which had been a literal 64), a `== 4` arm in `program_c.inc`, and a refusal by name in the reference emitter so a narrow address is named rather than mis-described. **Nothing in `lower/` and nothing in `ir.inc`** — ADR 0015 decision 2. The certificate is `tests/run.sh`'s cross phase: six `cross=yes` directories emitted for the row, cross-compiled `-mabi=n32 -march=mips3` and RUN under `qemu-mipsn32`, held to the reference's three observables. Closure cost `lld` + `qemu-user`, both cached; not a cross GCC | D7 (target half), D2's o64 row | **met.** §14 entry 25 `status=run`; six directories agree byte for byte, `forma` among them, so `@transitus` byte order is exercised big-endian. Kiln's own `mips64-elf-gcc` 14.4.0 compiles the o64 reader clean at `-Wall -Wextra -Werror` with its ROM flags **plus `-fno-fast-math`** — 14,616 bytes, `nm -u` = `{exsrt_abortus, memset}` (**`memset`**, not `memcpy`: `-ftrivial-auto-var-init=pattern` produces it), zero FP-register references. **Linked into a Kiln ROM and run**, 2026-09-12. Kiln's `examples/exsec-streamdb-demo/` checks the o64 reader in as generated C, runs it on a 32,768-byte libdragon kthread, and compares every key with Kiln's own `streamdb-embedded` reader on the same container; `./dev shot` in Ares shows open verdict 0, 2 documents (Kiln 2), 29 trie nodes, both present keys found at 56 and 78 bytes, the absent key absent, and BOTH READERS AGREE. It fits because the traversal frame fell from 127,184 to 20,680 bytes (ADR 0016). Not gated: an emulator run on a live display is a recorded measurement, not a check. Two things the first runs found belong to the ROM's side and are recorded in that example: libdragon's `kthread_join` cannot block (a thread must be joined after it has finished), and `n64.mk` compiles an object with the HOST compiler unless it is a prerequisite of the `.z64` |
 
-Later, not scheduled: `div`/`rem`/`muls`/`*ov` in both backends; floats in
-both (and `EXS-E0701` becomes reachable); whole-program mode with a C
+Later, not scheduled: `div`/`rem`/`muls`/`*ov` in both backends; the
+unordered `fcmp` predicates, `fma`, float load/store and `numeri` honouring
+(`EXS-E0701` becomes reachable when the driver wires it) — the float
+opcodes themselves are no longer on this list; whole-program mode with a C
 prelude; the nightly `receptio_vec_*` sweep; a narrower carrier on 32-bit
 ISAs.
 
@@ -1493,15 +1599,86 @@ Numbered; each names the document and the sentence.
     is a decision for whoever adds dataflow to the emitter, and it must be
     made on both backends at once or not at all.
 
+20. **`ftrunc` is the width-narrowing conversion, not round-toward-integer.**
+    The float commissioning brief described `ftrunc` as the
+    round-toward-integer operation (the `roundsd` shape) — a premise the
+    implementation could not honour, because the reference's lowering is
+    the *width* cast: f64→f32 is `cvtsd2ss`, equal width is a move, and
+    f32→f64 is `fext`'s row. The name names the width, exactly as integer
+    `trunc` does; the fraction-truncating operation is `ftoi`. The brief's
+    premise is recorded as wrong here, D4 row 32 is written to the
+    reference, and `ssa-ir.md` 2.3's table (which groups
+    `fext ftrunc itof ftoi` without naming `ftrunc`'s direction) would be
+    the place for the reference's owner to say so explicitly.
+
+21. **MXCSR at process start is 0x1FA0, masks set, and the brief said
+    "masks clear".** Measured 2026-09-13 on this host: both compilers'
+    programs start with MXCSR `0x00001fa0` — the six exception masks of
+    `0x1f80` **already set**, plus a stale precision flag (0x20). The
+    reference's `program.inc` writes `BFA_MXCSR_AD_PAREM` 0x1F80 at program
+    start, so a differential run of float fixtures would otherwise compare
+    two programs whose only difference is a stale PE bit. The C twin is
+    one line in the shim (`_mm_setcsr(0x1F80u)`,
+    `#if defined(__x86_64__)`), not a prologue line: the prologue belongs
+    to every emitted unit, the control word to the one place a program
+    starts, and in library mode that place is the shim's `main`. This is
+    a *differential* fix only; whether the masks-before-start state is
+    itself a spec question is the reference's tree's to ask.
+
+22. **Measured: `-fsanitize=undefined` does not include
+    float-divide-by-zero on this host, under either compiler.** gcc
+    15.3.0 and clang 21.1.8 both compile `1.0f / 0.0f` under the
+    harness's exact flags (`-std=c11 -fsanitize=undefined
+    -fno-sanitize-recover=all`) to code that produces `inf` and exits 0.
+    Consequences, both relied on: the fixture checks that divide by
+    ±0.0 to observe the sign of zero and the infinities are safe under
+    the harness flags, and `fdiv`'s row 27 claim "never a trap" holds
+    under UBSan, not only in plain C. What UBSan *does* include is
+    float-cast-overflow: `ftoi` of a NaN or an out-of-range value aborts,
+    which row 34 documents as the C-side twin of the reference's `[OPEN]`
+    NaN/range behaviour rather than hiding it.
+
+23. **A declared `numeri` is parsed by both backends and honoured by
+    neither, and the failure spec 5.4 promises does not exist.** Spec 5.4:
+    "a C target that cannot honour a declared `numeri` fails the build."
+    Measured: a module whose every function declares
+    `numeri ad_superius vetita explicita conservata` parses, verifies and
+    emits on both backends, and both emit round-to-nearest code — the
+    reference hardcodes `ad_parem` in `program.inc`'s MXCSR constant, the
+    C backend emits bare C operators with no `fesetround`. The `EXS-E0701`
+    diagnostic exists in §13 but nothing fires it: the driver
+    (`run.inc`) performs no `numeri` check, in either backend's path.
+    So ADR 0012's numeric subset is still untestable in the *declared*
+    direction — the differential test passes on a non-default-`numeri`
+    module precisely because both backends ignore the declaration, which
+    is agreement on the wrong thing. Two more things measured while
+    finding this, both for other trees: the verifier's rule 8 requires
+    the four `numeri` word ids to be EQUAL across every direct call, so a
+    module declaring `numeri` on one function and leaving it off another
+    fails verification (exit 5) before any backend sees it; and wiring
+    `EXS-E0701` is a `driver/` change this backend cannot make.
+
+24. **`ssa-ir.md`'s own `@dot` example cannot be lowered by either
+    backend, twice over.** Its body contains `%8 = load f32 %7 0 nativus`
+    — a float in memory, which both backends' memory lowering refuses
+    (the reference's `__bfa_mem_plan` dispatches on integer widths; the
+    C emitter's `__bfc_mem_k` dies on the float class) — and it is built
+    on `redinit`/`contrib`/`redfin`, refused in both backends since D4
+    was first written. A grammar's own illustrative example tripping two
+    refusals is a documentation gap in `ssa-ir.md`'s tree: either the
+    example gets an integer body, or float memory and the reductions
+    get lowerings, and that choice is not this backend's to make. D4's
+    row 40 refusal message names the example.
+
 ## 9. What retires each marker
 
 | decision or claim | milestone | the test as planned |
 |---|---|---|
 | D3's incantation table, every cell | C1, first task | the scratch unit under `gcc`/`clang` × `-O0`/`-O2` × UBSan, results written into section 8 |
-| D4's 37 rows, text | C1 | `tests/unit/bfc_emit_{narrow,bitwise,bytes,phi,call,program}.asm`, exact emitted text, mirroring `bfa_emit_*` |
-| D4's 37 rows, semantics | C2 | **done**: the 50 IR fixtures (39 lowerable) and 26 programs under four builds each, three observables — 156 + 104 builds, all agreeing |
-| D4's 23 refusals | C1 | one `tests/ir/reject_c_*.ir` per refusal class with `emit-exit=4` and, for the two runtime refusals, `c-emit-exit=4` against a reference that lowers them |
-| D2's three-way split | C1 | `tests/unit/driver_emitte_c_{nohospes,badrow,noout}.asm`; the `EXS-E0701` row stays `[UNTESTED]` until a float opcode exists |
+| D4's 46 rows, text | C1 for the 35 pre-float rows; the 11 float rows are scratch-verified only (2026-09-13) | `tests/unit/bfc_emit_{narrow,bitwise,bytes,phi,call,program}.asm`, exact emitted text, mirroring `bfa_emit_*`; a `tests/unit/bfc_emit_float.asm` pinning the float rows is owed to `tests/unit/`'s tree, not this backend's |
+| D4's 46 rows, semantics | C2 for the integer rows; the float rows land with the reference's own `tests/ir/` fixtures in the same wave | **integer rows done**: the 50 IR fixtures (39 lowerable) and 26 programs under four builds each, three observables — 156 + 104 builds, all agreeing. **Float rows**: the scratch fixtures of the status header (68 + 4 checks, four toolchains), Python-computed IEEE expectations |
+| D4's 14 refusals | C1 for 12; `fma` and `bitcast` refused 2026-09-13 in both backends at once | one `tests/ir/reject_c_*.ir` per refusal class with `emit-exit=4` and, for the two runtime refusals, `c-emit-exit=4` against a reference that lowers them; the float refusal classes are scratch-verified (15 fixtures, exit 4, message by name) until the reference's `tests/ir/` rejection fixtures land |
+| D2's three-way split | C1 | `tests/unit/driver_emitte_c_{nohospes,badrow,noout}.asm`; the `EXS-E0701` row stays `[UNTESTED]` even with float opcodes lowered — the driver wiring does not exist (finding 23) |
 | D5 mangling | C1 | `tests/unit/bfc_mangle.asm` |
 | D5 determinism | C3 | **done**: `tools/reproduce.sh` diffs two `--emitte c` units (the hello world, 8,691 bytes; the StreamDB reader, 137,742) across divergent cwd/TZ/locale/`SOURCE_DATE_EPOCH`/umask/hostname — byte-identical, and two mutations show the diff is not vacuous. Plus, inside one process, sixteen program directories that share a `sources=` must emit byte-identical C |
 | D6 | C3 | **done**: `run_differential_tests` green in `nix flake check` over both corpora |
