@@ -1,6 +1,6 @@
 # Exsecutor — Language Specification v0.4
 
-**Status:** design complete, implementation in Stage 2 (§16): Stage 1's front end is built and its kill criterion evaluated and closed (`docs/design/diagnostics-review.md`); the checker is being written; the reference backend, its verifier and the runtime prelude exist ahead of their input, and a program the backend compiled from hand-written IR has run. No `.exsc` source compiles to an artifact yet — the lowering is the gap. Consolidates v0.1, Addenda A–C, Stage 0 measurements, the adversary audit, and the capability-row prototype. Supersedes all prior documents.
+**Status:** design complete, implementation between Stages 2 and 3 (§16): Stage 1's front end is built and its kill criterion evaluated and closed (`docs/design/diagnostics-review.md`); the checker is being written; and the lowering exists — `.exsc` sources compile to artifacts. The program suite in `tests/programs/` compiles, runs, and is syscall-audited by `tests/run.sh`; the §14 conformance suite runs; the reference backend's IR, its verifier and the runtime prelude are built ahead of their remaining input; the C backend exists in library mode, is differentially tested against the reference under gcc and clang at `-O0`/`-O2` with UBSan, and cross-runs on `mips64-none-o64` (§9.5). The publish gate is met (`tools/publish-gate.sh`; README status block). This sentence previously said no `.exsc` source compiled yet — stale since the lowering landed, and amended here because a false "nothing works" banner is the same evidence-class failure as a false "it works". Consolidates v0.1, Addenda A–C, Stage 0 measurements, the adversary audit, and the capability-row prototype. Supersedes all prior documents.
 
 **v0.3 → v0.4.** Two changes, both recorded as ADRs rather than argued here. **§15 #2, §16, §17:** the lexicon derivation test is no longer a kill criterion on §3 — the Latin lexicon is retained regardless of the result, as an identity commitment rather than a hypothesis (ADR 0005). The test survives as calibration; §17's adoption risk is now accepted rather than mitigated, and the English-roots fallback §16 offered is closed by choice, not by evidence. **§18.1:** the build closure is `{fasmg}` *plus a vendored macro package* — corrected against measurement, fasmg being architecture-neutral and shipping no instruction set (ADR 0003). No other design decision changed. v0.3 retired the v0.1–v0.2 placeholder name and recorded the implementation decision in §18.
 
@@ -719,7 +719,12 @@ Minimum ABI coverage for v1: SysV AMD64, AArch64 AAPCS, RISC-V lp64d. Their spel
 
 ## 5.4 Numeric semantics
 
-`[OPEN]` — designed, nothing implemented. Stage 2 for integers, Stage 3 for vectors.
+Integers are implemented and evidenced end-to-end — checked, lowered and run
+(`tests/programs/angusta/`, `tests/programs/redundantia/`,
+`tests/ir/trap_*.ir`); this banner previously said "nothing implemented",
+which the subsections below it already contradicted by citing those fixtures.
+Floating point and the vectors remain `[OPEN]` — designed, nothing
+implemented. Stage 3 at the earliest for vectors.
 
 The floating-point environment is ambient state, and this document exists to
 retire ambient state. `-ffast-math` is `setlocale` for numbers: a global,
@@ -1276,8 +1281,12 @@ the exclusive-or and shift words (`aut sursum deorsum`) are **contextual** —
 operator position is never operand position. Shifts and exclusive or are
 settled as those words (§5.4, §8.6; `docs/design/wire-codec.md` D1;
 `tests/unit/cst_shift_xor.asm`, `tests/programs/redundantia/`), and shifts
-did not become `<<`/`>>` tokens. `/`, remainder, negation,
-the `*%`/`*|` families, and bitwise and/or remain `[OPEN]`. The numeric
+did not become `<<`/`>>` tokens. `/`, remainder,
+the `*%`/`*|` families, and bitwise and/or remain `[OPEN]`. Negation left
+this list when the lowering landed: unary `-` checks and lowers — on an
+integer to a trapping `sub T 0 x`, on a float to `fneg`
+(`compiler/x86_64/lower/expr.inc`) — though no running program exercises it
+yet, so the end-to-end behaviour is `[UNTESTED]`. The numeric
 literal grammar is settled for hexadecimal only (below) and otherwise
 remains `[OPEN]`.
 
@@ -1314,8 +1323,13 @@ invented here. Hexadecimal is settled above; nothing else is.
 
 ## 8.5 Control flow
 
-`[OPEN]` Design only. Nothing here is implemented, and the CST that would parse
-it does not exist. Do not cite it as a property of the language.
+Implemented: the CST parses every construct in this section, and whole
+program directories type-check, lower and run them (`tests/programs/discerne/`,
+`tests/programs/forma/`, `tests/programs/phi_loops/`). This banner previously
+said the section was design only and the CST did not exist — stale since the
+parser landed, and amended here rather than left contradicting the fixture
+record. The section's *internal* open items stand: `quisque`'s cross-iteration
+dependency analysis is still `[OPEN]` below.
 
 ### The claim
 
@@ -2033,7 +2047,14 @@ The lowering of each opcode, and the twenty-three the C backend refuses by
 name because the reference has no lowering to check them against (floats,
 `div`/`rem`, `muls`, the overflow predicates, the reductions, `callind`) or
 because library mode has no runtime (`retain`/`release`), are tabulated in
-`docs/design/c-backend.md`. `[UNTESTED]` — nothing of it is implemented.
+`docs/design/c-backend.md`. Built: library mode exists and is validated
+differentially against the reference backend — stdout bytes, exit status and
+trap kind, across gcc and clang at `-O0` and `-O2`, every one under UBSan
+(`tests/c/`, `tests/run.sh`'s differential phase) — and cross-runs on
+`mips64-none-o64` (§9.5). This sentence previously said "`[UNTESTED]` —
+nothing of it is implemented"; stale since the differential phase landed.
+The two emitters' refusal-by-name sets are one set and must stay one set:
+drift between them is a finding.
 
 Compile speed was measured and is **not** the constraint I previously claimed. `[UNREPRODUCED]` — the measurement harness is absent from the tree; figures carried forward from v0.2. gcc `-O0` on backend-style generated C:
 
@@ -2142,7 +2163,7 @@ by byte, so the text depends on no assumption about it. The rows accepted:
 |---|---|---|
 | `x86_64-linux` | 64 | reference; C |
 | `riscv64-linux` | 64 | C `[UNTESTED]` |
-| `mips64-none-o64` | 32 — a 64-bit ISA under an ABI with 32-bit addresses (the Nintendo 64 under o64) | C `[UNTESTED]` |
+| `mips64-none-o64` | 32 — a 64-bit ISA under an ABI with 32-bit addresses (the Nintendo 64 under o64) | C — tested (below); the o64 ABI itself still `[UNTESTED]` |
 
 `aarch64-linux`, `wasm32-wasi` and `none-eabi` appear in §10.1 and are not
 yet accepted: no row states their width, and `none-eabi` names no
@@ -2163,8 +2184,11 @@ two of them, so it is split:
   `vendor/streamdb-v3/`. Two things are still `[UNTESTED]` and are named
   rather than folded in: the **o64 ABI itself**, since the certificate runs
   the n32 ABI as a proxy — it shares byte order, address width, register
-  width, ISA and the emitted text, and differs in argument passing — and
-  **linkage into an N64 ROM**, which is `[OPEN]`. ADR 0015 decision 5.
+  width, ISA and the emitted text, and differs in argument passing — while
+  **linkage into an N64 ROM** is done, not open: the StreamDB reader is
+  linked into a Kiln ROM and runs in Ares, both readers agreeing
+  (`docs/design/c-backend.md` C4, 2026-09-12; ADR 0016). ADR 0015
+  decision 5.
 - `riscv64-linux` — **stays `[UNTESTED]`.** Nothing runs a riscv64 binary.
   The only evidence is that it emits text byte-identical to
   `x86_64-linux`'s, which holds because both rows are 64-bit and is not a
