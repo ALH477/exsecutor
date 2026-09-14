@@ -38,7 +38,9 @@
 ;   TOK_IDENT    aux = rt/intern.inc id of the identifier's source bytes
 ;   TOK_KEYWORD  aux = KW_* (keywords.inc, generated from §8.4)
 ;   TOK_STRING   aux = 0        -- the value is NOT decoded here; see below
-;   TOK_NUMBER   aux = 0        -- see the [OPEN] note below
+;   TOK_NUMBER   aux = 0        -- an INTEGER literal: digits, or `0x` hex
+;   TOK_NUMBER   aux = 1        -- a FLOAT literal: `1.5`, `1e-3` (this wave's
+;                  grammar, below); same span discipline, text still undecoded
 ;   TOK_ANNOT    aux = intern id of the name AFTER the `@`
 ;   TOK_PUNCT    aux = PUN_*
 ;
@@ -60,15 +62,35 @@
 ; needed to know where the literal ends -- and leaves the value to whatever
 ; pass §8.4 eventually gives an escape grammar to.
 ;
-; `[OPEN]` TOK_NUMBER. §8.4: "Numeric literal grammar -- bases, separators,
-; and float syntax -- is not settled and is deliberately not invented here."
-; This lexer therefore recognises only a maximal run of ASCII `0`-`9`, which
-; every candidate grammar contains, and refuses (`EXS-E0210`) rather than
-; guessing when such a run is immediately followed by an XID_Continue
-; codepoint -- `0x10`, `1_000`, `1e5`, `10u32` all need the grammar that does
-; not exist, and splitting them into two tokens would BE a grammar choice made
-; silently. A following `.` is not an error, because §8.5's `per i in 0..n`
-; requires `0..n` to lex as three tokens.
+; `[OPEN]` TOK_NUMBER, AND THE PART THAT IS NOW SETTLED. §8.4: "Numeric
+; literal grammar -- bases, separators, and float syntax -- is not settled and
+; is deliberately not invented here." Integer bases beyond decimal/hex and
+; separators stay `[OPEN]`; the FLOAT part is this wave's grammar, landing
+; with the runtime it needs (rt/dec754.inc) and the checker that consumes it:
+;
+;   FloatLit ::= DIGITS '.' DIGITS [ 'e' Exp ]     -- fraction form; the
+;                                                    fraction needs at least
+;                                                    one digit after the `.`
+;              | DIGITS 'e' Exp                     -- exponent-only: 1e-3
+;   Exp      ::= ('+'|'-')? DIGITS{1,3}             -- `e` LOWERCASE ONLY
+;
+; The rules the lexer's `.number` path enforces, each with a reason:
+;   * a `.` joins a literal only when ONE MORE byte (§8.6's peek table) is a
+;     digit, so `0..n` is still three tokens, `1.` is `1` then `.` (field
+;     access is `x.y`), and there is no leading-dot form;
+;   * `e` is lowercase only -- the hex prefix's "one spelling" precedent (D6,
+;     docs/design/wire-codec.md): a capital `E` is XID_Continue, so `1E5`
+;     still reports EXS-E0210 through the unchanged digit-run rule;
+;   * a literal that runs into an identifier character (`1.5f32`, `1e5x`) or
+;     an exponent that does not cleanly end (`1e`, `1e+`, more than three
+;     exponent digits) is EXS-E0210 -- consumed whole, reported once, the
+;     same discipline the hex prefix landed with;
+;   * NO SUFFIXES. `1.5` has no type of its own any more than `1` does: the
+;     expectation settles it (checker/types/types.inc, `__chk_ty_fits`), and
+;     a suffix spelling would be a second grammar this file would be
+;     inventing.
+; What is NOT settled stays refused: `_` separators and any base beyond
+; decimal and `0x` still hit the digit-run rule's EXS-E0210.
 ;
 ; Spec: docs/spec/exsecutor-spec-v0.4.md §8.2, §8.3, §8.4.
 ; -----------------------------------------------------------------------------
@@ -117,10 +139,14 @@ TOK_PUNCT   = 6
 ;             has one, tier B is attestation, not enumeration.
 ;
 ; ANYTHING NOT LISTED IS `EXS-E0201` (unexpected token), deliberately. A bare
-; `-` is here (tier B, §10.1's `x86_64-linux`); a bare `/` is not (every `/`
-; in the spec's Exsecutor source is half of a `//` comment); `%` and `|` exist
-; only inside `+%` and `+|`. Guessing at `-%`, `/` or `|` would be inventing
-; operator syntax, which is §8.4's to settle and not this file's.
+; `-` is here (tier B, §10.1's `x86_64-linux`); a bare `/` WAS not (every `/`
+; in the spec's Exsecutor source was half of a `//` comment), and `%` and `|`
+; exist only inside `+%` and `+|`. The float wave changes `/`: it is the
+; float-only quotient operator (§5.4's `/` on floats, grammar in the TOK_NUMBER
+; note above), so `a / b` must reach the parser as a token and it is tier A of
+; this wave's §8.4 amendment, not a guess. `%` and `|` alone stay
+; `EXS-E0201` -- guessing at `-%`-style spellings for a float remainder is
+; still §8.4's to settle, and integer `/` and remainder stay `[OPEN]`.
 ;                                        ; tier  glyph  first shown
 PUN_AMP      = 1                         ; A     &      §8.4, §10.1  (&T)
 PUN_STAR     = 2                         ; A     *      §8.4, §5.3   (*T)
@@ -146,7 +172,8 @@ PUN_EQ       = 21                        ; B     =      examples/imprime.exsc (f
 PUN_MINUS    = 22                        ; A     -      §8.4, §5.4   trapping
 PUN_MINUSPCT = 23                        ; A     -%     §8.4, §5.4   wrapping
 PUN_MINUSBAR = 24                        ; A     -|     §8.4, §5.4   saturating
-PUN_COUNT    = 24
+PUN_SLASH    = 25                        ; A     /      §5.4's float-only quotient
+PUN_COUNT    = 25
 
 ; PUN_MINUS was tier B and justified only by §10.1's `x86_64-linux` hyphen;
 ; -% and -| did not exist here at all. §8.4's operator table lists all three

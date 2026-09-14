@@ -56,9 +56,10 @@
 ; tests/unit/lex_hex_literal.asm is where the hex grammar itself (accepted
 ; and rejected forms) is pinned; this row exists only to confirm the
 ; hex path still defers to the same "runs into an identifier character"
-; rule once past its own digits. The last two rows are the other side of
-; that: a plain digit run is fine, and `0..n` -- §8.5's own iteration syntax
-; -- must lex as three tokens and not as a malformed literal.
+; rule once past its own digits. Three rows are the other side of
+; that: a plain digit run is fine, `0..n` -- §8.5's own iteration syntax
+; -- must lex as three tokens and not as a malformed literal, and a bare
+; `/` lexes clean (see its row -- the float wave attested it).
 ;
 ; Checks 5 and 6 exist because mutation testing said they had to. Making
 ; `Tok.aux` always 0 for identifiers, and zeroing every span's `file_id`, were
@@ -566,7 +567,15 @@ tok_d:
 					; formerly the "0x10" row -- 0x10 is now
 					; a valid TOK_NUMBER, see lex_hex_literal.asm
 	dd	53, 16, 1, 210, 10, 5	; 1_000 needs the grammar §8.4 does not have
-	dd	69, 16, 1, 201, 12, 1	; a bare slash is not attested
+	dd	69, 16, 0, 0, 0, 0	; a bare slash is attested now: the float
+				; wave's `/` operator (spec §5.4 as
+				; amended) gave token.inc PUN_SLASH, so this
+				; sample lexes clean -- pinned token-by-token
+				; by lex_float_literal.asm's `a / b;` row.
+				; Before the wave this was 1 x EXS-E0201;
+				; keeping the sample (as a clean row, not
+				; deleting it) preserves the evidence that
+				; the slash stopped being an error HERE.
 	dd	85, 16, 1, 201, 12, 1	; percent outside +%
 	dd	101, 4, 1, 201, 0, 1	; @ with no name after it
 	dd	105, 1, 1, 201, 0, 1	; @ at end of input

@@ -140,23 +140,26 @@ AST_W_STAR	= 28
 AST_W_AUT	= 29	; spec §8.6 level 5b -- see the assert below
 AST_W_SURSUM	= 30	; level 5a
 AST_W_DEORSUM	= 31	; level 5a
-AST_W_AMP	= 32
-AST_W_COLON	= 33
-AST_W_EQUALS	= 34
-AST_W_ARROW	= 35
-AST_W_ABI	= 36
-AST_W_COUNT	= 36
+AST_W_SLASH	= 32	; `/`, the float-only quotient (this wave)
+AST_W_AMP	= 33
+AST_W_COLON	= 34
+AST_W_EQUALS	= 35
+AST_W_ARROW	= 36
+AST_W_ABI	= 37
+AST_W_COUNT	= 37
 
 ; `__ast_w_op` maps a word to an operator by DISTANCE: the operator words run
-; `AST_W_VEL`..`AST_W_DEORSUM` in exactly the order `AST_OP_VEL`..
-; `AST_OP_DEORSUM` do in ast/kinds.inc, and the n-th word is the n-th op. The
-; three spec §8.6 5a/5b words were appended to BOTH lists after `*` rather
-; than interleaved at their precedence, so the ops already numbered did not
-; move. Two lists kept in step by hand are checked here, not trusted.
+; `AST_W_VEL`..`AST_W_SLASH` in exactly the order `AST_OP_VEL`..
+; `AST_OP_DIV` do in ast/kinds.inc, and the n-th word is the n-th op. The
+; three spec §8.6 5a/5b words, and now `/`, were appended to BOTH lists
+; after `*` rather than interleaved at their precedence, so the ops already
+; numbered did not move. Two lists kept in step by hand are checked here,
+; not trusted.
 assert AST_W_STAR - AST_W_VEL = AST_OP_MUL - AST_OP_VEL
 assert AST_W_AUT - AST_W_VEL = AST_OP_AUT - AST_OP_VEL
 assert AST_W_SURSUM - AST_W_VEL = AST_OP_SURSUM - AST_OP_VEL
 assert AST_W_DEORSUM - AST_W_VEL = AST_OP_DEORSUM - AST_OP_VEL
+assert AST_W_SLASH - AST_W_VEL = AST_OP_DIV - AST_OP_VEL
 
 ast_w_words:
 	db 7,'publica'
@@ -190,6 +193,8 @@ ast_w_words:
 	db 3,'aut'
 	db 6,'sursum'
 	db 7,'deorsum'
+	db 1,'/'			; the float quotient; word pool order MUST
+					; track the AST_W_* list above
 	db 1,'&'
 	db 1,':'
 	db 1,'='
@@ -1150,7 +1155,7 @@ proc __ast_w_op, w, red
 	jnz	.hit
 	inc	r12
 	inc	r13
-	mov	rcx, AST_W_DEORSUM
+	mov	rcx, AST_W_SLASH
 	cmp	r12, rcx
 	jle	.try
 	xor	eax, eax
@@ -1851,6 +1856,71 @@ proc __ast_w_kid_node, w, red, after
 	return
 endp
 
+; eax = AST_LIT_INT or AST_LIT_FLOAT, for the NUMBER leaf at `red`.
+;
+; THE GREEN TREE DOES NOT CARRY THE TOKEN'S `aux` (cst/green.inc has no field
+; for it), so the class is re-derived from the leaf's TEXT -- the same bytes
+; the lexer scanned, under the same grammar (token.inc): a decimal digit run,
+; then a '.' over a peeked digit or a lowercase 'e' exponent is FLOAT;
+; everything else is INT. Every `0x` form reads INT for free: the scan stops
+; at the 'x' before any 'e' among the hex digits (`0x1e5`'s 'e' is a digit),
+; and no '.' can follow a hex run as one token. The lexer already refused
+; every text this scan could misread -- `1.`, `1e`, `1.5f32`, capital `1E5`
+; never became tokens -- so on everything that reaches here the scan is
+; exact, and it is written to mirror the grammar rather than to guess: if
+; token.inc's grammar changes, this scan changes with it or is wrong.
+;
+; An uninterned text (id 0) reads INT, the same bargain the checker's
+; `chk_ty_litval` makes for hand-written `.ast` dumps: such a leaf cannot
+; arise in a real compile.
+proc __ast_w_numclass, w, red
+	uses	rbx, r12, r13, r14
+	locals
+	endl
+	mov	rbx, [w]
+	mov	rdi, rbx
+	mov	rsi, [red]
+	call	__ast_w_text
+	test	eax, eax
+	jz	.int
+	mov	rdi, [rbx + AstWalk.names]
+	mov	rsi, rax
+	call	intern_bytes		; rax = bytes, rdx = length
+	mov	r12, rax
+	mov	r13, rdx
+	xor	r14, r14
+  .digits:
+	cmp	r14, r13
+	jae	.int			; every byte a digit: a plain integer
+	movzx	eax, byte [r12 + r14]
+	cmp	al, '0'
+	jb	.end
+	cmp	al, '9'
+	ja	.end
+	inc	r14
+	jmp	.digits
+  .end:
+	cmp	r14, r13
+	jae	.int			; empty or exhausted: no continuation
+	cmp	al, 'e'
+	je	.float			; `1e-3`: exponent-only form
+	cmp	al, '.'
+	jne	.int
+	lea	rcx, [r14 + 1]		; the lexer's own one-byte-peek rule:
+	cmp	rcx, r13		; a '.' joins only over a digit, so `1.`
+	jae	.int			; is INT then PUN_DOT, and `0..n` splits
+	cmp	byte [r12 + rcx], '0'
+	jb	.int
+	cmp	byte [r12 + rcx], '9'
+	ja	.int
+  .float:
+	mov	eax, AST_LIT_FLOAT
+	return
+  .int:
+	mov	eax, AST_LIT_INT
+	return
+endp
+
 ; ---- literals --------------------------------------------------------------
 ; typed-ast.md section 2.3: a `Lit` keeps TEXT, not value -- spec §8.4's
 ; numeric grammar is `[OPEN]` and a value needs a width the checker supplies,
@@ -1873,7 +1943,14 @@ proc __ast_w_lit, w, red
 	lea	rcx, [wv_sub]
 	call	__ast_w_kidk
 	test	eax, eax
-	jnz	.got
+	jz	.str
+	; INT or FLOAT, decided by the text the lexer actually scanned
+	mov	rdi, rbx
+	lea	rsi, [wv_sub]
+	call	__ast_w_numclass
+	mov	r13, rax
+	jmp	.got
+  .str:
 	mov	r13, AST_LIT_STRING
 	mov	rdi, rbx
 	mov	rsi, r12
@@ -4011,9 +4088,20 @@ proc __ast_w_typearg, w, red
 	call	__ast_w_kidk
 	test	eax, eax
 	jz	.bad
+	; The leaf keeps its HONEST class (`__ast_w_numclass`), INT or FLOAT:
+	; a float in a value argument is not refused here because the fold has
+	; no diagnostic sink -- the checker's `chk_ty_litval` answers "not a
+	; value" for every non-INT literal, and `__chk_ty_genlit` raises the
+	; `EXS-E0304` it already raises for any other non-literal value
+	; argument, at the `GenericArgs` node. Folding it as INT to keep the
+	; old shape would have made `1.5` parse as the integer 1 -- a silent
+	; wrong answer with no diagnostic, strictly worse.
 	mov	rdi, rbx
 	lea	rsi, [wta_sub]
-	mov	rdx, AST_LIT_INT
+	call	__ast_w_numclass
+	mov	rdx, rax
+	mov	rdi, rbx
+	lea	rsi, [wta_sub]
 	call	__ast_w_leaflit
 	return
   .bad:

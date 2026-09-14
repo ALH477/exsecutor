@@ -5,7 +5,7 @@ calls):
 
 1. **`tests/unit/`** — `.asm` fixtures assembled directly with `fasmg`,
    each `include`-ing the compiler modules it exercises (or none: the four
-   harness fixtures below). 170 of them (`UNIT_FIXTURE_FLOOR`), covering
+   harness fixtures below). 176 of them (`UNIT_FIXTURE_FLOOR`), covering
    the macro dialect, every `rt/` module, the Unicode consumers, `diag/`,
    the lexer, the CST, the AST, the checker, the lowering, the backend and
    its verifier, the driver, and the prelude. This item once said the only
@@ -241,8 +241,11 @@ stuck suite: `timeout` exits 124, which matches no fixture's
 `expect-exit=`. It went in with the reader, whose loop ends only when the
 end-of-input sentinel arrives.
 
-Current fixtures: see `UNIT_FIXTURE_FLOOR` in `tests/run.sh` (170 as of
-9ede8bf; 124 at b9c0abc, and this sentence said 46 for a long time),
+Current fixtures: see `UNIT_FIXTURE_FLOOR` in `tests/run.sh` (176 as of the
+float wave, whose four fixtures -- lex_float_literal.asm, lwr_float.asm,
+chk_ty_floatlit.asm and chk_ty_floatops.asm -- took it from dec754_golden.asm's
+172; 170 at 9ede8bf;
+124 at b9c0abc, and this sentence said 46 for a long time),
 covering the macro dialect, every `rt/` module, the Unicode consumers,
 `diag/`, the lexer, the CST, the AST, the driver, the backend and its
 verifier, the prelude, the checker and the lowering. The four below are

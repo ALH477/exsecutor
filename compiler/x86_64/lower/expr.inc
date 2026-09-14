@@ -449,9 +449,19 @@ proc lwr_expr, lwrsp, lwrn
 	return
 endp
 
-; __lwr_lit(st, lwrn) -> eax -- an INTEGER literal. `Lit` keeps TEXT, not a
-; value (AST 2.3: spec section 8.4's numeric grammar is `[OPEN]`), so the
-; VALUE is the checker's `konst` side table, at the literal's own type.
+; __lwr_lit(st, lwrn) -> eax -- a literal. `Lit` keeps TEXT, not a value
+; (AST 2.3), so the VALUE is the checker's `konst` side table, at the
+; literal's own type -- and the class in `aux` says which constant op
+; carries it:
+;   * an INT is `lwr_iconst`, the value verbatim;
+;   * a FLOAT is `lwr_fconst`, the IEEE bits verbatim. `__chk_ty_fits`
+;     overwrote `konst` with the converted bit pattern before the tree
+;     reached the lowering, so what `ast_konst_get` hands back here is
+;     the pattern -- the same 64 bits for either width, f32's high word
+;     zero -- and NO conversion, rounding or arithmetic happens below the
+;     checker. A float that arrives here still holding the checker's
+;     packed decimal PAIR would be a checker bug, not a lowering one; the
+;     class dispatch keeps it from being silently misemitted as either.
 proc __lwr_lit, lwrsp, lwrn
 	uses	rbx, r12
 	locals
@@ -462,6 +472,8 @@ proc __lwr_lit, lwrsp, lwrn
 	mov	esi, [lwrn]
 	call	__lwr_node
 	movzx	ecx, word [rax + AstNode.aux]
+	cmp	ecx, AST_LIT_FLOAT
+	je	.float
 	rassert	ecx eq AST_LIT_INT
 	mov	rdi, [rbx + LwrState.tree]
 	mov	esi, [lwrn]
@@ -480,6 +492,25 @@ proc __lwr_lit, lwrsp, lwrn
 	shr	r12, 32
 	mov	ecx, r12d
 	call	lwr_iconst
+	return
+  .float:
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, [lwrn]
+	call	ast_konst_get
+	mov	r12, rax
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_nty
+	mov	rdi, rbx
+	mov	esi, eax
+	call	lwr_ty_ir
+	mov	[lwrt], eax
+	mov	rdi, rbx
+	mov	esi, [lwrt]
+	mov	edx, r12d
+	shr	r12, 32
+	mov	ecx, r12d
+	call	lwr_fconst
 	return
 endp
 
@@ -701,8 +732,13 @@ endp
 ; __lwr_arith_op(st, lwrao, lwrt) -> eax = the BFA opcode for AST operator
 ; `lwrao` at AST type `lwrt`. Spec section 5.4's three families are three
 ; opcodes, never a flag: `+` traps, `+%` wraps, `+|` saturates. The wrapping
-; and saturating spellings on a FLOAT are the checker's `EXS-E0305`, so a
-; float here can only be the plain form.
+; and saturating spellings on a FLOAT are the checker's `EXS-E0305` -- which
+; WAS A FINDING, not a fact: until the float wave no raise site existed
+; anywhere, and this comment's predecessor asserted a refusal that did not
+; happen, so `a +% b` on floats silently lowered as plain addition. The
+; checker now refuses it (`__chk_ty_binary`'s `.arith` and the pending
+; case's `.bin_wchk`), so a float reaching the wrapped arms below is a
+; checker bug and traps on the `rassert` that an unknown op traps on.
 proc __lwr_arith_op, lwrsp, lwrao, lwrt
 	uses	rbx
 	locals
@@ -725,6 +761,8 @@ proc __lwr_arith_op, lwrsp, lwrao, lwrt
 	je	.sub
 	cmp	eax, AST_OP_MUL
 	je	.mul
+	cmp	eax, AST_OP_DIV
+	je	.div
 	cmp	eax, AST_OP_ADDW
 	je	.addw
 	cmp	eax, AST_OP_SUBW
@@ -757,6 +795,15 @@ proc __lwr_arith_op, lwrsp, lwrao, lwrt
 	cmp	dword [lwrf], 0
 	je	.out
 	mov	eax, BFA_OP_FMUL
+	jmp	.out
+  .div:
+	; `/` -- FLOAT ONLY, by construction rather than by test here: the
+	; checker's `.div` arm (and `.bin_div` for the pending case) refused
+	; every non-float operand type with `EXS-E0305`, so an integer pair
+	; cannot arrive. Spec §5.4's integer division and remainder are
+	; `[OPEN]`; this arm is deliberately one opcode with no integer
+	; twin to grow into.
+	mov	eax, BFA_OP_FDIV
 	jmp	.out
   .addw:
 	mov	eax, BFA_OP_ADDW

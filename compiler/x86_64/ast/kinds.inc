@@ -249,7 +249,10 @@ AST_OP_MUL	= 16	; `*`
 AST_OP_AUT	= 17	; `aut`     -- exclusive or, level 5b (spec §5.4)
 AST_OP_SURSUM	= 18	; `sursum`  -- shift toward more significance, 5a
 AST_OP_DEORSUM	= 19	; `deorsum` -- shift toward less significance, 5a
-AST_OP_MAX	= 19
+AST_OP_DIV	= 20	; `/`       -- float-only quotient, level 4 (this wave);
+			; appended for this list's recorded reason, and the
+			; checker refuses non-float operands with EXS-E0305
+AST_OP_MAX	= 20
 
 AST_U_NEG	= 1	; `-`
 AST_U_ADDR	= 2	; `&`
@@ -258,9 +261,16 @@ AST_U_DEREF	= 3	; `*`
 ; ---- literal classes -------------------------------------------------------
 ; `Lit.aux`. typed-ast.md section 2.3: `Lit` keeps TEXT, not value -- the
 ; numeric grammar is `[OPEN]` (spec §8.4) and a value needs a width the
-; checker supplies. `Lit.a` is therefore an interner id in both classes.
+; checker supplies. `Lit.a` is therefore an interner id in all classes.
+; The FLOAT class is the float wave's: the lexer's TOK_NUMBER aux already
+; separated the two (token.inc), and the fold classifies from the same
+; text with the same grammar (ast/from_cst.inc, `__ast_w_numclass`); the
+; checker packs a float's M|E into `konst` (checker/types/sig.inc,
+; `chk_ty_floatval`) and the expectation settles it (types.inc,
+; `__chk_ty_fits`, which OVERWRITES the konst with the IEEE bits).
 AST_LIT_INT	= 1
 AST_LIT_STRING	= 2
+AST_LIT_FLOAT	= 3
 
 ; ---- type-node kinds -------------------------------------------------------
 ; typed-ast.md section 2.5's table, top to bottom. `AST_TY_ERROR` is id 1 in

@@ -306,6 +306,39 @@ proc lwr_iconst, lwrsp, lwrty, lwrlo, lwrhi
 	return
 endp
 
+; lwr_fconst(st, lwrty, lwrlo, lwrhi) -> eax -- `%v = fconst T bits`, the
+; float literal's twin of `lwr_iconst` above: two `extra` words carrying the
+; IEEE-754 bit pattern (lo then hi -- BFA_SH_FCONST's shape, same as
+; ICONST's), the TYPE carrying the width. THE BITS ARE RAW, and that is the
+; whole point: `__chk_ty_fits` already overwrote the literal's `konst` with
+; the converted pattern (rt/dec754.inc, one correctly rounded step), so this
+; routine performs no conversion, no rounding and no arithmetic -- it moves
+; a u64 the checker settled, and a `1.5` is `0x3FF8000000000000` before the
+; lowering ever sees it. f32 uses the same two words with the high one zero;
+; the backend widens nothing.
+proc lwr_fconst, lwrsp, lwrty, lwrlo, lwrhi
+	uses	rbx
+	locals
+		slot lwrbse, dd
+	endl
+	mov	rbx, [lwrsp]
+	mov	rdi, [rbx + LwrState.func]
+	mov	esi, [lwrlo]
+	call	bfa_extra_push
+	mov	[lwrbse], eax
+	mov	rdi, [rbx + LwrState.func]
+	mov	esi, [lwrhi]
+	call	bfa_extra_push
+	mov	rdi, rbx
+	mov	esi, BFA_OP_FCONST
+	xor	rdx, rdx
+	mov	ecx, [lwrty]
+	mov	r8d, [lwrbse]
+	mov	r9d, 2
+	call	lwr_emit
+	return
+endp
+
 ; ============================================================================
 ; terminators -- the only edge builders
 ; ============================================================================

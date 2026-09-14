@@ -269,9 +269,11 @@ cst_pun_txt:
 	db	'-',0		; PUN_MINUS
 	db	'-%'		; PUN_MINUSPCT
 	db	'-|'		; PUN_MINUSBAR
+	db	'/',0		; PUN_SLASH -- the float quotient (this wave)
 cst_pun_len:
 	db	1,1,1,2,1,1,1,2,1,2,2,1,1,1,1,1,1,1,1,1,1,1
 	db	2,2			; PUN_MINUSPCT `-%`, PUN_MINUSBAR `-|`
+	db	1			; PUN_SLASH `/`
 cst_pun_len_end:
 ; A PUN_* the table does not spell would produce a fix that inserts the wrong
 ; bytes -- silently, since a wrong glyph still assembles. Checked here instead.
@@ -3154,8 +3156,40 @@ proc __cst_cast, p
 	return
 endp
 
-; __cst_mul(p) -- level 4: `Cast ('*' Cast)*`. `/`, remainder and the `*%`/`*|`
-; overflow forms are `[OPEN]` in §8.6 and are not invented here.
+; __cst_is_mulop(p) -> eax = 1 at a multiplicative operator.
+;
+; `*` and, since the float wave, `/` -- §5.4's float-only quotient, the
+; token that used to be unproducible because a bare `/` was EXS-E0201.
+; The CST node (CST_MUL_EXPR) stays flat and operator-agnostic on
+; purpose: which operator each operand pair carries is a property of the
+; TOKENS, preserved losslessly for ast/from_cst.inc to fold into
+; AST_OP_* nodes; the float-only admissibility of `/` is the checker's
+; question (EXS-E0305 there), not the CST's -- the tree is lossless and
+; error-tolerant, so it must not refuse. Remainder and the `*%`/`*|`
+; overflow forms stay `[OPEN]` in §8.6 and are not invented here.
+proc __cst_is_mulop, p
+	uses	rbx
+	locals
+	endl
+	mov	rbx, [p]
+	mov	rdi, rbx
+	mov	esi, PUN_STAR
+	call	__cst_pun
+	test	eax, eax
+	jnz	.yes
+	mov	rdi, rbx
+	mov	esi, PUN_SLASH
+	call	__cst_pun
+	test	eax, eax
+	jnz	.yes
+	xor	eax, eax
+	return
+  .yes:
+	mov	eax, 1
+	return
+endp
+
+; __cst_mul(p) -- level 4: `Cast (MulOp Cast)*`.
 proc __cst_mul, p
 	uses	rbx, r12, r13
 	locals
@@ -3169,8 +3203,7 @@ proc __cst_mul, p
 	call	__cst_cast
   .more:
 	mov	rdi, rbx
-	mov	esi, PUN_STAR
-	call	__cst_pun
+	call	__cst_is_mulop
 	test	eax, eax
 	jz	.done
 	mov	rdi, rbx

@@ -112,6 +112,15 @@
 ; -----------------------------------------------------------------------------
 
 include 'sig.inc'
+; The ONE rt/ file a module above rt/ reaches for, and dec754.inc's own
+; header records why that does not break the D1 invariant (modules above
+; rt/ include no rt/ file, lower/ssa.inc's header): it defines one PROC
+; and includes only the two macro-only files (macros/proc.inc,
+; macros/assert.inc -- the shared/unicode arrangement, safe to reach any
+; number of times), so no struct and no second label can collide with
+; this chain. The float literal's expectation settles through it:
+; `__chk_ty_fits` calls `dec754_bits` below.
+include '../../rt/dec754.inc'
 
 ; =============================================================================
 ; expressions
@@ -202,16 +211,43 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
   ; ---- literals ------------------------------------------------------------
   .lit:
 	cmp	qword [chkt_up], AST_LIT_STRING
-	jne	.lit_int
+	jne	.lit_num
 	mov	rdi, rbx
 	mov	rsi, AST_TY_TEXTUS
 	call	__chk_ty_simple
 	jmp	.out
+  .lit_num:
+	cmp	qword [chkt_up], AST_LIT_FLOAT
+	je	.lit_float
   .lit_int:
 	; the VALUE now, the WIDTH later -- see this file's header
 	mov	rdi, rbx
 	mov	rsi, r12
 	call	chk_ty_litval
+	test	rdx, rdx
+	jz	.lit_bad
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, r12
+	mov	rdx, rax
+	call	ast_konst_set
+	xor	eax, eax		; PENDING
+	return
+  .lit_float:
+	; A FLOAT is pending exactly as an INT is, and the packed pair
+	; standing in for its value is the same bargain with one more step:
+	; `chk_ty_floatval` packs the literal as mantissa M (<= 15 digits, so
+	; < 2^50) in the low fifty bits and decimal exponent E in
+	; [-4096, 4095] in the next thirteen -- a form NO width has been
+	; applied to yet. The expectation's `__chk_ty_fits` is what calls
+	; rt/dec754.inc's `dec754_bits` on it and OVERWRITES `konst` with the
+	; IEEE bits, so the value the lowering sees is width-converted. A
+	; text with more than fifteen significant digits, or an exponent
+	; outside the pack range, fails HERE -- E0308 before dec754 ever
+	; runs, which is what keeps dec754's buffer bounds an argument from
+	; the input contract rather than a runtime check.
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	chk_ty_floatval
 	test	rdx, rdx
 	jz	.lit_bad
 	mov	rdi, [rbx + ChkTyWork.wtre]
@@ -548,22 +584,78 @@ proc __chk_ty_expect, chkt_wX, chkt_nX, chkt_tX
 	mov	r13d, [rax + AstNode.a]
 	mov	ecx, [rax + AstNode.b]
 	mov	[chkt_bX], rcx
-	; A PENDING `aut`/`sursum`/`deorsum` has two pending operands
-	; (`__chk_ty_binary`'s `.bitop`, rule 3), and the expectation arriving
-	; here is the type BOTH will get. So admissibility is judged now, once,
-	; on that type: `firma y: i8 = 1 aut 2;` is `EXS-E0305` -- at the
-	; operator's node, since neither literal is wrong on its own -- and the
-	; operands then carry the error type rather than `i8`.
 	movzx	ecx, word [rax + AstNode.aux]
+	; A PENDING binary takes the expectation as the type BOTH operands
+	; will get, so every admissibility rule `__chk_ty_binary`'s `.settled`
+	; arm applies is judged HERE, once, on that type, at the operator's
+	; node -- never per operand, so a rule that fails does not also blame
+	; the literals inside for taking the type it refused. Three groups:
+	;
+	;   * the wrapped and saturating forms with a FLOAT expectation --
+	;     `.arith`'s rule (spec §5.4 gives a float no overflow
+	;     behaviour), the raise site that was MISSING until this wave
+	;     (lower/expr.inc's comment claimed the checker refused it and
+	;     nothing did; `1.5 +% 2.5` type-checked and lowered as plain
+	;     addition);
+	;   * `aut`/`sursum`/`deorsum` -- the original `.bitop` rule, an
+	;     unsigned type or `EXS-E0305` (`__chk_ty_unsigned`);
+	;   * `/` -- float-only, a float expectation or `EXS-E0305`.
+	;
+	; Each failed group replaces the expectation with the error type
+	; before `.bin_push` hands it down, so nothing inside gets a second
+	; diagnostic; the error expectation itself is always admitted (no
+	; cascade, typed-ast.md section 2.2).
+	cmp	ecx, AST_OP_ADDW
+	je	.bin_wchk
+	cmp	ecx, AST_OP_ADDS
+	je	.bin_wchk
+	cmp	ecx, AST_OP_SUBW
+	je	.bin_wchk
+	cmp	ecx, AST_OP_SUBS
+	je	.bin_wchk
+	jmp	.bin_aut
+  .bin_wchk:
+	mov	rdi, rbx
+	mov	rsi, [chkt_tX]
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_FLOAT
+	jne	.bin_aut
+	mov	rdi, rbx
+	mov	rsi, 305
+	mov	rdx, r12
+	call	__chk_ty_raise
+	mov	rdi, rbx
+	call	__chk_ty_err
+	mov	[chkt_tX], rax
+	jmp	.bin_push
+  .bin_aut:
 	cmp	ecx, AST_OP_AUT
-	jb	.bin_push
+	jb	.bin_div
 	cmp	ecx, AST_OP_DEORSUM
-	ja	.bin_push
+	ja	.bin_div
 	mov	rdi, rbx
 	mov	rsi, [chkt_tX]
 	call	__chk_ty_unsigned
 	test	eax, eax
 	jnz	.bin_push
+	mov	rdi, rbx
+	mov	rsi, 305
+	mov	rdx, r12
+	call	__chk_ty_raise
+	mov	rdi, rbx
+	call	__chk_ty_err
+	mov	[chkt_tX], rax
+	jmp	.bin_push
+  .bin_div:
+	cmp	ecx, AST_OP_DIV
+	jne	.bin_push
+	mov	rdi, rbx
+	mov	rsi, [chkt_tX]
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_FLOAT
+	je	.bin_push
+	cmp	rax, AST_TY_ERROR
+	je	.bin_push			; no cascade
 	mov	rdi, rbx
 	mov	rsi, 305
 	mov	rdx, r12
@@ -611,38 +703,134 @@ endp
 
 ; __chk_ty_fits(w, litnode, t) -> eax = 1 if the literal's value fits type `t`.
 ;
-; The expected type must be an `int` or a `mensura`: a literal is not a
-; `textus` and not a struct, and answering 0 here is what turns
+; The LITERAL'S OWN CLASS decides the arm as much as the type does, and the
+; two never cross: an INT literal takes an `int` or `mensura`, a FLOAT
+; literal takes a float, and `firma x: f32 = 1;` / `firma y: u8 = 1.5;` are
+; both `EXS-E0308` -- spec §8.4 settled no suffixes and no coercion between
+; literal classes, and a silent conversion here would be one. A literal is
+; not a `textus` and not a struct either, and answering 0 here is what turns
 ; `firma s: textus = 3;` into `EXS-E0308` at the literal rather than a silent
-; retype. Floats are admitted and the value is not range-checked against the
-; mantissa -- spec §8.4's literal grammar has no float form yet (`[OPEN]`).
+; retype. The error type fits everything (no cascade, typed-ast.md
+; section 2.2).
+;
+; THE FLOAT ARM IS WHERE A LITERAL BECOMES BITS. `__chk_ty_expr`'s
+; `.lit_float` left the packed decimal pair in `konst` -- mantissa M
+; (fifteen digits or fewer, so < 2^50) in the low fifty bits, decimal
+; exponent E + 4096 above them -- and this arm unpacks it, hands it to
+; rt/dec754.inc's `dec754_bits` (the one correctly-rounded step, integer
+; arithmetic only; the why is that file's header) and OVERWRITES `konst`
+; with the IEEE pattern that comes back. The lowering's `lwr_fconst` then
+; reads raw bits, so the value the IR carries is converted, never packed.
+;
+; Two answers dec754 can give are `EXS-E0308` rather than a value, both
+; spec §8.4's "a literal is finite" reading:
+;   * the Inf pattern -- the literal is above the finite range of the
+;     width (`1e309` as f64). Not caught earlier: the pack range admits
+;     E up to 4095 precisely so THIS check is the one that fires, and
+;     Inf stays reachable only by arithmetic;
+;   * zero from a NONZERO mantissa -- every digit was significant and
+;     the value still vanished (`1e-338` as f64): a precision hole, not
+;     a value. A literal that IS zero (`0.0`, `0e-3`) packs M = 0 and is
+;     legal; a SUBNORMAL is legal too -- it kept a bit (5e-324 -> 1).
 proc __chk_ty_fits, chkt_wG, chkt_nG, chkt_tG
 	uses	rbx, r12, r13, r14
 	locals
 		slot chkt_sG, dq
+		slot chkt_cG, dq		; the literal's class
+		slot chkt_mG, dq		; the float arm's mantissa
+		slot chkt_wdG, dq		; ... and the target's width. NOT
+						; `chkt_wG`: that is this routine's
+						; FIRST PARAMETER, and `slot` binds
+						; its name as a redefinable `=`
+						; constant (macros/proc.inc), so a
+						; slot by the same name silently
+						; rebinds every later `[chkt_wG]`
+						; -- including the one two lines
+						; below that loads the work
+						; pointer -- onto the local
+						; instead, and the checker SEGVs
+						; on the first call. Found by
+						; running, on `redde 1.5;`
 	endl
 	mov	rbx, [chkt_wG]
 	mov	r12, [chkt_nG]
 	mov	r13, [chkt_tG]
+	; the literal's class, read once -- both arms below ask it
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_node
+	movzx	ecx, word [rax + AstNode.aux]
+	mov	[chkt_cG], rcx
 	mov	rdi, rbx
 	mov	rsi, r13
 	call	__chk_ty_kindof
+	cmp	rax, AST_TY_ERROR
+	je	.yes			; no cascade (typed-ast.md section 2.2)
+	cmp	rax, AST_TY_FLOAT
+	je	.floty
 	cmp	rax, AST_TY_INT
 	je	.int
 	cmp	rax, AST_TY_MENSURA
 	je	.mens
-	cmp	rax, AST_TY_FLOAT
-	je	.yes
-	cmp	rax, AST_TY_ERROR
-	je	.yes			; no cascade (typed-ast.md section 2.2)
 	xor	eax, eax
 	return
 
+  .floty:
+	cmp	qword [chkt_cG], AST_LIT_FLOAT
+	jne	.no			; an INT literal is not a float value
+	; unpack the pair `.lit_float` packed: M below bit 50, E above
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, r12
+	call	ast_konst_get
+	mov	rcx, 0x3FFFFFFFFFFFF		; (1 << 50) - 1
+	mov	r14, rax
+	and	r14, rcx			; the mantissa M
+	shr	rax, 50
+	sub	rax, 4096			; the decimal exponent E
+	mov	[chkt_mG], r14
+	mov	[chkt_sG], rax			; borrow the free slot for E
+	mov	rdi, rbx
+	mov	rsi, r13
+	mov	rdx, AstType.width
+	call	__chk_ty_field
+	mov	[chkt_wdG], rax
+	mov	rdi, [chkt_mG]
+	mov	rsi, [chkt_sG]
+	mov	rdx, [chkt_wdG]
+	call	dec754_bits
+	; Inf: dec754's own per-width constants, so this cannot drift from
+	; what that routine answers
+	cmp	qword [chkt_wdG], 64
+	jne	.f32inf
+	mov	rcx, D75_F64_INF
+	jmp	.chkinf
+  .f32inf:
+	mov	rcx, D75_F32_INF
+  .chkinf:
+	cmp	rax, rcx
+	je	.no
+	; zero from a nonzero mantissa: underflow ate every digit
+	test	rax, rax
+	jnz	.flok
+	cmp	qword [chkt_mG], 0
+	jne	.no
+  .flok:
+	; the bits are the value now -- overwrite the packed pair
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, r12
+	mov	rdx, rax
+	call	ast_konst_set
+	jmp	.yes
+
   .mens:
+	cmp	qword [chkt_cG], AST_LIT_INT
+	jne	.no			; a float's packed pair is not a value
 	mov	r14d, [rbx + ChkTyWork.wpb]
 	xor	ecx, ecx		; unsigned
 	jmp	.range
   .int:
+	cmp	qword [chkt_cG], AST_LIT_INT
+	jne	.no
 	mov	rdi, rbx
 	mov	rsi, r13
 	mov	rdx, AstType.width
@@ -1040,12 +1228,13 @@ endp
 ; difference from `acies<T, 17>` as `EXS-E0303` by id inequality, like any
 ; other pair of types.
 ;
-; ADMITTED ELEMENT TYPES are the integer types (`uN`, `iN`, `mensura`) and
-; `@transitus` structs; anything else -- a `textus`, a float, a plain struct,
-; an `acies` (so a nested `[[1, 2], [3, 4]]` is refused today), a reference --
-; is `EXS-E0305` at the literal, once. The restriction is what the lowering
-; can actually store element by element; widening it is a lowering change
-; first and a checker change second.
+; ADMITTED ELEMENT TYPES are the integer types (`uN`, `iN`, `mensura`), the
+; float types (`f32`/`f64`, with the float wave) and `@transitus` structs;
+; anything else -- a `textus`, a plain struct, an `acies` (so a nested
+; `[[1, 2], [3, 4]]` is refused today), a reference -- is `EXS-E0305` at the
+; literal, once. The restriction is what the lowering can actually store
+; element by element; widening it is a lowering change first and a checker
+; change second -- which is the order the float admission went in.
 proc __chk_ty_arraylit, chkt_wAL, chkt_nAL, chkt_qAL
 	uses	rbx, r12, r13, r14
 	locals
@@ -1611,9 +1800,15 @@ proc __chk_ty_arraykind, chkt_wAK, chkt_nAK
 endp
 
 ; __chk_ty_elemadm(w, t) -> eax = 1 if `t` may be an array literal's element
-; type: an integer (`uN`/`iN`), `mensura`, a `@transitus` struct, or the error
-; type (no cascade). See `__chk_ty_arraylit`'s header for why the set is this
-; narrow.
+; type: an integer (`uN`/`iN`), a float (`f32`/`f64`, admitted with the float
+; wave -- `__lwr_lit` now lowers a float element the same way it lowers one
+; anywhere else, so the lowering can store it element by element, which is
+; the restriction's whole reason), `mensura`, a `@transitus` struct, or the
+; error type (no cascade). A `@transitus` struct OF FLOATS is still not
+; expressible -- that is rows/layout.inc's field-kind rule (spec §5.2), a
+; property of the STRUCT and not of the element position, and it fires before
+; this routine is ever asked. See `__chk_ty_arraylit`'s header for why the
+; set is this narrow.
 proc __chk_ty_elemadm, chkt_wEM, chkt_tEM
 	uses	rbx, r12
 	locals
@@ -1626,6 +1821,8 @@ proc __chk_ty_elemadm, chkt_wEM, chkt_tEM
 	mov	rsi, r12
 	call	__chk_ty_kindof
 	cmp	rax, AST_TY_INT
+	je	.yes
+	cmp	rax, AST_TY_FLOAT
 	je	.yes
 	cmp	rax, AST_TY_MENSURA
 	je	.yes
@@ -1840,12 +2037,74 @@ proc __chk_ty_binary, chkt_wB, chkt_nB
 	jbe	.relational
 	cmp	rcx, AST_OP_RANGE
 	je	.range
-	; `.bitop` took 17..19 before anything here ran, so what is left is
-	; exactly the arithmetic block of ast/kinds.inc -- and an op appended
-	; after it traps here instead of being typed as `+`.
+	; `.bitop` took 17..19 before anything here ran, `.div` takes 20
+	; below, so what reaches `.arith` is exactly the integer arithmetic
+	; block of ast/kinds.inc -- and an op appended after DIV traps here
+	; instead of being typed as `+`.
+	cmp	rcx, AST_OP_DIV
+	je	.div
 	rassert	rcx le AST_OP_MUL
   .arith:
-	; `+ +% +| - -% -| *` -- the operand type, unchanged
+	; `+ +% +| - -% -| *` -- the operand type, unchanged -- except that
+	; THE WRAPPED AND SATURATING FORMS ARE NOT DEFINED ON A FLOAT: spec
+	; §5.4 gives a float no overflow behaviour (the quotient in `.div`
+	; is never-traps for the same reason), so `a +% b` on f32/f64 is
+	; EXS-E0305 at the operator, once. RAISE SITE ADDED BY THE FLOAT
+	; WAVE: until it, this arm admitted every type at every spelling --
+	; lower/expr.inc's comment said the checker refused a float here,
+	; and nothing anywhere did, so `x +% y` on floats silently lowered as
+	; plain addition. The operand type is one type here (the pairing
+	; rule above), so one diagnostic at the operator is the whole bill.
+	cmp	rcx, AST_OP_ADDW
+	je	.wchk
+	cmp	rcx, AST_OP_ADDS
+	je	.wchk
+	cmp	rcx, AST_OP_SUBW
+	je	.wchk
+	cmp	rcx, AST_OP_SUBS
+	je	.wchk
+	jmp	.plain
+  .wchk:
+	mov	rdi, rbx
+	mov	rsi, r13
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_FLOAT
+	jne	.plain
+	mov	rdi, rbx
+	mov	rsi, 305
+	mov	rdx, r12
+	call	__chk_ty_raise
+	mov	rdi, rbx
+	call	__chk_ty_err
+	return
+  .plain:
+	mov	rax, r13
+	return
+  .div:
+	; `/` -- the FLOAT-ONLY quotient (§5.4, this wave). Integer division
+	; and remainder are `[OPEN]` and are not invented here. A non-float
+	; operand type is EXS-E0305 AT THE OPERATOR, never at an operand:
+	; the pairing rule above already made the two one type, so neither
+	; is wrong on its own -- `x / 2` with `x: i32` would double-blame --
+	; and `__chk_ty_expect`'s `.bin_div` judged the pending case the same
+	; way before either literal took the type. The error type is
+	; admitted silently (no cascade), and the result of a legal division
+	; is the operand type, like every other arithmetic op.
+	mov	rdi, rbx
+	mov	rsi, r13
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_FLOAT
+	je	.div_ok
+	cmp	rax, AST_TY_ERROR
+	je	.div_ok			; no cascade
+	mov	rdi, rbx
+	mov	rsi, 305
+	mov	rdx, r12
+	call	__chk_ty_raise
+	mov	rdi, rbx
+	call	__chk_ty_err
+	return
+  .div_ok:
 	mov	rax, r13
 	return
   .relational:

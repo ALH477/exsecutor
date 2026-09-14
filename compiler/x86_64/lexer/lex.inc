@@ -255,18 +255,23 @@ proc lex_tokenize, lx
 	add	r14, [nbytes]
 	jmp	.next
 
-	; ---- `//` to end of line (§8.4) ------------------------------------
+	; ---- `//` to end of line (§8.4), or a lone `/` (PUN_SLASH) ---------
 	; §8.1's bidi and invisible-control rule has ALREADY been applied to
 	; these bytes, by lexer/source.inc, over the raw stream -- which is the
 	; whole reason that pass is not token-aware. Nothing is re-scanned
 	; here and nothing needs to be.
+	;
+	; The two-character-first rule still decides what a `/` IS: `//` is a
+	; comment (§8.4) and only a `/` that is not the first half of one is
+	; the float-only quotient operator, PUN_SLASH (token.inc's PUN table
+	; records why `/` is now attested where it used to be EXS-E0201).
   .slash:
 	mov	rax, r14
 	inc	rax
 	cmp	rax, r13
-	jae	.punct			; a lone '/' is not attested
+	jae	.slash_one		; a lone '/' at end of input
 	cmp	byte [r12 + rax], '/'
-	jne	.punct
+	jne	.slash_one
 	add	r14, 2
   .comment:
 	cmp	r14, r13
@@ -275,6 +280,10 @@ proc lex_tokenize, lx
 	je	.next			; leave the LF to the whitespace arm
 	inc	r14
 	jmp	.comment
+  .slash_one:
+	mov	edx, PUN_SLASH
+	mov	ecx, 1
+	jmp	.p_emit
 
 	; ---- `"..."` (§8.4) ------------------------------------------------
 	; RAW NEWLINES ARE PART OF THE VALUE. §8.4: "A string literal may
@@ -348,6 +357,15 @@ proc lex_tokenize, lx
 	; digit after it, are themselves XID_Continue, so `.num_scan`/
 	; `.num_done`/`.num_bad` consume and report them exactly as they did
 	; before this change -- nothing about that path is touched.
+	;
+	; The float wave extends the DECIMAL path only (grammar and every
+	; reason in token.inc's header): a '.' over a one-byte-peeked digit
+	; starts a fraction, a lowercase 'e' starts an exponent, and a literal
+	; that ends as anything but `DIGITS`, `DIGITS '.' DIGITS ['e' Exp]` or
+	; `DIGITS 'e' Exp` is EXS-E0210, consumed whole. HEX LITERALS HAVE NO
+	; FLOAT CONTINUATION -- `.hex_scan` ends at `.num_hexend`, not here,
+	; so `0x1e5` is still the hex integer 0x1e5 (its 'e' is a hex digit)
+	; and `0x1.5` is three tokens, `0x1` `.` `5`, exactly as before.
   .number:
 	mov	[tstart], r14
 	cmp	eax, '0'		; eax/[cpv] still the char AT r14 (unclobbered
@@ -382,31 +400,28 @@ proc lex_tokenize, lx
   .hex_scan:
 	inc	r14
 	cmp	r14, r13
-	jae	.num_done
+	jae	.num_hexend
 	movzx	eax, byte [r12 + r14]
 	cmp	al, '0'
-	jb	.num_done
+	jb	.num_hexend
 	cmp	al, '9'
 	jbe	.hex_scan
 	cmp	al, 'A'
-	jb	.num_done
+	jb	.num_hexend
 	cmp	al, 'F'
 	jbe	.hex_scan
 	cmp	al, 'a'
-	jb	.num_done
+	jb	.num_hexend
 	cmp	al, 'f'
 	jbe	.hex_scan
-	jmp	.num_done
-  .num_scan:
-	inc	r14
-	cmp	r14, r13
-	jae	.num_done
-	movzx	eax, byte [r12 + r14]
-	cmp	al, '0'
-	jb	.num_done
-	cmp	al, '9'
-	jbe	.num_scan
-  .num_done:
+	jmp	.num_hexend
+	; A hex literal ends HERE, before any of the decimal float machinery:
+	; `0x1e5`'s 'e' was a hex digit consumed by the loop above, and `.`/`e`
+	; after a hex run are not float syntax (the grammar is decimal-only),
+	; so the only question left is the one every numeric literal ends
+	; with -- did the run cleanly end, or run into an identifier
+	; character?
+  .num_hexend:
 	cmp	r14, r13
 	jae	.num_emit
 	mov	rdi, r12
@@ -417,9 +432,148 @@ proc lex_tokenize, lx
 	mov	edi, eax
 	call	xid_continue
 	test	eax, eax
-	jz	.num_emit
+	jnz	.num_bad
+	jmp	.num_emit
+  .num_scan:
+	inc	r14
+	cmp	r14, r13
+	jae	.num_done
+	movzx	eax, byte [r12 + r14]
+	cmp	al, '0'
+	jb	.num_done
+	cmp	al, '9'
+	jbe	.num_scan
+  .num_done:
+	; DECIMAL RUNS ONLY (hex ended at .num_hexend). The byte at r14, if
+	; there is one, decides between the three shapes a decimal literal
+	; can take -- integer, fraction, exponent -- and `1.` stays `1` then
+	; `.` because the '.' joins only over a peeked digit.
+	cmp	r14, r13
+	jae	.num_emit		; an integer at end of input
+	movzx	eax, byte [r12 + r14]
+	cmp	al, '.'
+	jne	.num_notdot
+	lea	rcx, [r14 + 1]		; one-byte peek (the loop above proved
+	cmp	rcx, r13		; r14 < r13, so only this side is
+	jae	.num_emit		; guarded): `0..n` is three tokens
+	cmp	byte [r12 + rcx], '0'
+	jb	.num_emit		; `1.` is `1` then `.` -- `.` is not
+	cmp	byte [r12 + rcx], '9'	; XID_Continue so this is the ONLY
+	ja	.num_emit		; place a would-be fraction could rejoin
+	jmp	.num_frac
+  .num_notdot:
+	cmp	al, 'e'
+	je	.num_exp		; `1e-3`: exponent-only form
+	; Neither `.` nor `e`: the run ends here unless it runs into an
+	; identifier character.
+	mov	rdi, r12
+	add	rdi, r14
+	mov	rsi, r13
+	sub	rsi, r14
+	call	__diag_utf8_decode
+	mov	edi, eax
+	call	xid_continue
+	test	eax, eax
+	jnz	.num_bad
+	jmp	.num_emit
+	; ---- the fraction: DIGITS '.' DIGITS ------------------------------
+	; The '.' was consumed by .num_done's peek only when a digit follows,
+	; so .num_frac enters pointing at a confirmed digit.
+  .num_frac:
+	inc	r14			; consume the '.'
+  .num_fscan:
+	cmp	r14, r13
+	jae	.num_flo		; cannot happen (the peek above), but the
+	movzx	eax, byte [r12 + r14]	; loop keeps its own bounds check
+	cmp	al, '0'
+	jb	.num_flo
+	cmp	al, '9'
+	ja	.num_flo
+	inc	r14
+	jmp	.num_fscan
+  .num_flo:
+	cmp	r14, r13
+	jae	.num_emitf		; `1.5` at end of input
+	cmp	al, 'e'
+	je	.num_exp		; `1.5e-3`
+	mov	rdi, r12
+	add	rdi, r14
+	mov	rsi, r13
+	sub	rsi, r14
+	call	__diag_utf8_decode
+	mov	edi, eax
+	call	xid_continue
+	test	eax, eax
+	jnz	.num_bad
+	jmp	.num_emitf
+	; ---- the exponent: 'e' ('+'|'-')? DIGITS{1,3} ---------------------
+	; Arrived at with r14 -> the confirmed lowercase 'e' (from .num_done
+	; or .num_flo) -- capital `E` never reaches here; it is
+	; XID_Continue, so it takes the identifier-character rule to
+	; EXS-E0210, the hex prefix's one-spelling discipline (D6).
+	;
+	; An exponent that does not cleanly end -- `1e`, `1e+`, more than
+	; three digits, or any run into an identifier character -- takes the
+	; WHOLE literal to EXS-E0210 via .num_bad, reported once.
+  .num_exp:
+	inc	r14			; consume the 'e'
+	cmp	r14, r13
+	jae	.num_bad
+	movzx	eax, byte [r12 + r14]
+	cmp	al, '+'
+	je	.num_esign
+	cmp	al, '-'
+	jne	.num_edig
+  .num_esign:
+	inc	r14			; consume the sign
+  .num_edig:
+	xor	ecx, ecx		; exponent digit count; ecx stays live to
+					; .num_echk (no call intervenes)
+  .num_eloop:
+	cmp	r14, r13
+	jae	.num_echk
+	movzx	eax, byte [r12 + r14]
+	cmp	al, '0'
+	jb	.num_echk
+	cmp	al, '9'
+	ja	.num_echk
+	inc	r14
+	inc	rcx
+	jmp	.num_eloop
+  .num_echk:
+	test	rcx, rcx
+	jz	.num_bad		; `1e`, `1e+`, `1ex` -- no exponent digit
+	cmp	rcx, 3
+	ja	.num_bad		; `1e1234` -- more than three digits
+	; The loop only exits on a non-digit or end of input, so the
+	; exponent count is final and the last question is the identifier
+	; run.
+	cmp	r14, r13
+	jae	.num_emitf
+	mov	rdi, r12
+	add	rdi, r14
+	mov	rsi, r13
+	sub	rsi, r14
+	call	__diag_utf8_decode
+	mov	edi, eax
+	call	xid_continue
+	test	eax, eax
+	jnz	.num_bad		; `1e3f32`, `1.5e2x`
+  .num_emitf:
+	; aux = 1: a FLOAT literal. The bytes are the literal's own source
+	; text, undecoded -- token.inc's header records that the checker
+	; (not the lexer) reads them, and the expectation settles the width.
+	mov	rdi, rbx
+	mov	esi, TOK_NUMBER
+	mov	edx, 1
+	mov	rcx, [tstart]
+	mov	r8,  r14
+	sub	r8,  rcx
+	call	__lex_push
+	jmp	.next
 	; The literal runs into an identifier character: `0X10` (capital X),
-	; `0x1G`, `1_000`, `1e5`, `10u32`. Consume the whole run so this is
+	; `0x1G`, `1_000`, `1E5` (capital `E` -- lowercase is the float
+	; exponent now), `10u32`, `1.5f32`. Consume the whole run so this is
 	; reported once, then emit no token -- there is no token shape to
 	; emit it as.
   .num_bad:
@@ -726,10 +880,11 @@ proc lex_tokenize, lx
 
   .unexpected:
 	; EXS-E0201, unexpected token. This is the deliberate landing place for
-	; every codepoint §8.4 does not attest -- a bare `/`, `%`, `|`, `!`,
-	; `~`, a stray C0 control, a lone combining mark at the start of a
-	; token. Inventing a token kind for any of them would be inventing
-	; syntax; §13 registers E0201 for exactly this and the span says which
+	; every codepoint §8.4 does not attest -- a bare `%`, `|`, `!`, `~`, a
+	; stray C0 control, a lone combining mark at the start of a token. (A
+	; bare `/` used to live here; it is PUN_SLASH now -- see .slash.)
+	; Inventing a token kind for any of them would be inventing syntax;
+	; §13 registers E0201 for exactly this and the span says which
 	; codepoint it was.
 	mov	rdi, rbx
 	mov	esi, 201

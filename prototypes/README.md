@@ -44,6 +44,12 @@ the answer it gives" is the bar — not "good enough to maintain."
   (`EXS-E0510`); two are found and reproduced as sound negatives, one
   reproducing the original closure-capture defect's shape one level up
   (a type parameter rather than a value). See `gendict/README.md`.
+- **`dec754/`** — oracle for the float-literal conversion's unit fixture:
+  the expected IEEE-754 bits of every `tests/unit/dec754_golden.asm` row,
+  computed by Python's `float()` (itself correctly rounded, so agreement
+  is evidence). Also the record of the two traps that bit during
+  development -- parse the decimal string, never `m*10.0**e`; struct's
+  f32 overflow refusal IS Inf. See `dec754/README.md`.
 
 Every subdirectory README states plainly what exists, what doesn't, and
 which spec figures depend on the missing part. That is the point of writing

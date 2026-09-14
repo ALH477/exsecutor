@@ -1010,6 +1010,202 @@ proc chk_ty_litval, chkt_wl, chkt_nl
 	return
 endp
 
+; chk_ty_floatval(w, litnode) -> rax = the literal's value packed as the
+; decimal pair dec754 converts, rdx = 1 on success.
+;
+; THE PACKING, and why a pair and not bits: the INT arm above stores a
+; value and lets the width arrive later; a float's "value" is not a number
+; until a WIDTH has been applied to it, so this routine packs what the
+; text itself says -- the mantissa M as an integer, the decimal exponent
+; E -- into `konst` as
+;
+;     M  in the low fifty bits        (fifteen digits max, M < 2^50)
+;     E + 4096  in bits 50..62        (E in [-4096, 4095])
+;
+; and `__chk_ty_fits` is what unpacks it, calls rt/dec754.inc's
+; `dec754_bits` at the settled width, and OVERWRITES `konst` with the IEEE
+; bits. The pair, not the bits, is what a still-pending literal holds --
+; the same "value now, width later" bargain the INT arm makes.
+;
+; WHAT THE TEXT IS ALLOWED TO SAY, the grammar the lexer enforces upstream
+; (token.inc) restated here as parse rules, because this routine also
+; reads hand-written `.ast` dumps the lexer never saw:
+;
+;   DIGITS [ '.' DIGITS ] [ 'e' ('+'|'-')? DIGITS{1,3} ]
+;
+; with the same answers for the same reasons: `_` separators and hex are
+; NOT admitted (the lexer refuses both in a float; admitting them here
+; would be a second grammar), capital `E` is not the exponent, and a
+; malformed exponent -- no digit, or more than three -- fails, which the
+; lexer reports as EXS-E0210 and this routine as the caller's EXS-E0308
+; for a dump the lexer never saw.
+;
+; TWO LIMITS ARE THE PACKING CONTRACT ITSELF, and exceeding either fails
+; HERE (the caller's `EXS-E0308`) rather than being clamped:
+;   * more than FIFTEEN SIGNIFICANT digits -- leading zeros do not count,
+;     `0.000000000000000001` is one digit -- because M must stay under
+;     2^50 for the pair to be lossless;
+;   * E outside [-4096, 4095] -- the range the pair can carry. Everything
+;     inside it, at both widths, dec754's buffers are sized for; nothing
+;     outside it is a value any float width holds anyway.
+;
+; A LITERAL WHOSE TEXT THE INTERNER DOES NOT HAVE READS AS ZERO --
+; `chk_ty_litval`'s bargain, verbatim, for the same hand-written-dump
+; reason, so such a leaf takes its expected type and the fixture testing
+; its own fact still can.
+proc chk_ty_floatval, chkt_wf, chkt_nf
+	uses	rbx, r12, r13, r14
+	locals
+		slot chkt_mF, dq	; the mantissa M
+		slot chkt_eF, dq	; the decimal exponent E (frac digits push down)
+		slot chkt_gF, dq	; significant digits seen
+		slot chkt_dF, dq	; a digit, parked across `mul`'s rdx:rax
+		slot chkt_dotF, dq	; 1 once the '.' has been crossed
+		slot chkt_xF, dq	; the exponent's sign
+		slot chkt_vF, dq	; the exponent's digits' value
+		slot chkt_nF, dq	; the exponent's digit count
+	endl
+	mov	rbx, [chkt_wf]
+	mov	rdi, rbx
+	mov	rsi, [chkt_nf]
+	call	__chk_ty_node
+	movzx	ecx, word [rax + AstNode.aux]
+	cmp	ecx, AST_LIT_FLOAT
+	jne	.no
+	mov	ecx, [rax + AstNode.a]
+	mov	rdi, rbx
+	mov	rsi, rcx
+	call	__chk_ty_bytes
+	mov	r12, rax
+	mov	r13, rdx
+	test	r13, r13
+	jz	.unknown
+	mov	qword [chkt_mF], 0
+	mov	qword [chkt_eF], 0
+	mov	qword [chkt_gF], 0
+	mov	qword [chkt_dotF], 0
+	xor	r14, r14
+
+	; ---- the significand: integer digits, then fraction digits -------
+	; ONE pass over both sides of the '.', because a digit's only
+	; difference is what it does to E: an integer digit is the
+	; mantissa's next place, a fraction digit is that AND one power of
+	; ten further down.
+  .scan:
+	cmp	r14, r13
+	jae	.pack
+	movzx	eax, byte [r12 + r14]
+	cmp	al, '.'
+	jne	.notdot
+	cmp	qword [chkt_dotF], 0
+	jnz	.no			; a second '.' is not this grammar
+	mov	qword [chkt_dotF], 1
+	inc	r14
+	jmp	.scan
+  .notdot:
+	cmp	al, 'e'
+	je	.expo
+	cmp	al, '0'
+	jb	.no			; nothing but the grammar's bytes is
+	cmp	al, '9'			; admitted here
+	ja	.no
+	; EVERY fraction digit carries its own exponent weight, even a
+	; leading zero the mantissa skips: `0.05` is 5e-2, and the skipped
+	; zero still shifts.
+	cmp	qword [chkt_dotF], 0
+	jz	.sigchk
+	dec	qword [chkt_eF]
+  .sigchk:
+	; leading zeros carry no significance: skip until the first nonzero
+	mov	rcx, [chkt_mF]
+	test	rcx, rcx
+	jnz	.count
+	cmp	al, '0'
+	je	.zskip
+  .count:
+	inc	qword [chkt_gF]
+	cmp	qword [chkt_gF], 15
+	ja	.no			; past fifteen significant digits
+	sub	eax, '0'
+	mov	[chkt_dF], rax
+	mov	rax, [chkt_mF]
+	mov	rdx, 10
+	mul	rdx
+	add	rax, [chkt_dF]
+	mov	[chkt_mF], rax
+  .zskip:
+	inc	r14
+	jmp	.scan
+
+	; ---- the exponent: 'e' ('+'|'-')? DIGITS{1,3} ---------------------
+  .expo:
+	inc	r14			; consume the 'e'
+	mov	qword [chkt_xF], 1
+	mov	qword [chkt_vF], 0
+	mov	qword [chkt_nF], 0
+	cmp	r14, r13
+	jae	.no			; `1e` -- the lexer's EXS-E0210
+	movzx	eax, byte [r12 + r14]
+	cmp	al, '+'
+	je	.esign
+	cmp	al, '-'
+	jne	.edig
+	mov	qword [chkt_xF], -1
+  .esign:
+	inc	r14
+  .edig:
+	cmp	r14, r13
+	jae	.echk
+	movzx	eax, byte [r12 + r14]
+	cmp	al, '0'
+	jb	.echk
+	cmp	al, '9'
+	ja	.echk
+	mov	rax, [chkt_vF]
+	mov	rdx, 10
+	mul	rdx
+	movzx	ecx, byte [r12 + r14]
+	sub	ecx, '0'
+	add	rax, rcx
+	mov	[chkt_vF], rax
+	inc	r14
+	inc	qword [chkt_nF]
+	cmp	qword [chkt_nF], 3
+	ja	.no			; a fourth exponent digit
+	jmp	.edig
+  .echk:
+	cmp	qword [chkt_nF], 0
+	je	.no			; `1e`, `1e+`, `1ex`
+	cmp	r14, r13
+	jne	.no			; the exponent ends the literal
+	mov	rax, [chkt_vF]
+	imul	rax, [chkt_xF]
+	add	qword [chkt_eF], rax
+
+	; ---- pack, bounds checked rather than clamped ---------------------
+  .pack:
+	mov	rax, [chkt_eF]
+	cmp	rax, -4096
+	jl	.no
+	cmp	rax, 4095
+	jg	.no
+	add	rax, 4096
+	shl	rax, 50
+	add	rax, [chkt_mF]		; M < 2^50: no carry into E's bits
+	mov	rdx, 1
+	return
+
+  .unknown:
+	mov	rax, 4096		; zero, packed: M = 0, E = 0
+	shl	rax, 50
+	mov	rdx, 1
+	return
+  .no:
+	xor	eax, eax
+	xor	edx, edx
+	return
+endp
+
 ; =============================================================================
 ; declared types
 ; =============================================================================
