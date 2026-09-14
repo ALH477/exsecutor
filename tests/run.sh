@@ -80,8 +80,10 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-176}"
 # end's two programs: float_constants/ and float_division/, the first .exsc
 # sources whose float literals and `/` reach the float IR opcodes both
 # backends lower (check 100 from both, differential phase below).
+# 100 -> 101 is pictura_triangulum/, the RGB triangle: floats rendering an
+# image, held to the Python oracle's bytes.
 IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-50}"
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-100}"
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-101}"
 
 # The differential phase (run_differential_tests, below), which compiles the
 # C backend's emitted units and runs them against the same expectations the
@@ -115,9 +117,10 @@ DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-156}"
 #     28 -> 30 and 112 -> 120 are the float front end's two programs
 #     (float_constants/, float_division/): each eligible, each its own unit,
 #     four builds apiece -- the differential phase's first float-source
-#     byte-identity claim.
-DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-30}"
-DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-120}"
+#     byte-identity claim. 30 -> 31 and 120 -> 124: pictura_triangulum/,
+#     the RGB triangle, the same bargain over a whole image.
+DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-31}"
+DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-124}"
 
 # The cross phase's own floor, deliberately NOT folded into the differential
 # numbers above: a cross-compiled, emulated run of a 32-bit-`mensura` unit is

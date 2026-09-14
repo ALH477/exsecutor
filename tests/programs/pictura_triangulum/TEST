@@ -1,0 +1,21 @@
+# The RGB triangle: the first float program that makes an IMAGE.
+# examples/pictura/ (pictura.exsc + triangulum.exsc, one copy of the
+# program as in saluta/) renders a 96x54 RGB triangle by incremental
+# edge-function rasterization and writes a binary P6 PPM on stdout.
+#
+# The golden is expected.out, produced by the INDEPENDENT Python oracle
+# prototypes/pictura_oracle.py (the not-our-own-bug check, the way
+# entry 23 vendors an external certificate): the oracle mirrors the
+# program's f64 operation order, so under round-to-nearest-even the two
+# either agree byte for byte or one side's order changed. Both backends
+# are held to it: the run phase below, then the differential phase over
+# gcc/clang at -O0/-O2.
+#
+# The module's own claim -- "optimized" as the program, provable from
+# the IR: the emitted fasmg holds exactly 4 divss/divsd (grep -c over
+# the .asm), three per-vertex reciprocals and one 1/det, none inside
+# the pixel loop. One add per pixel per edge.
+#
+# (No stdout= on purpose: expected.out IS the reference; naming both is
+# the run.sh failure for "which of the two governs?".)
+TEST: expect-exit=0 sources=examples/pictura/pictura.exsc,examples/pictura/triangulum.exsc

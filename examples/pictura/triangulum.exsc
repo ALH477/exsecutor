@@ -1,0 +1,25 @@
+// triangulum -- the driver half of the RGB triangle.
+//
+// Like examples/initium.exsc, this is where authority enters: once, as
+// the `Mundus` parameter (§4.1 rule 2), and everything below it derives
+// from that value. pictura.exsc's rasterizer is pure arithmetic; this
+// file hands it the standard-output writer and turns its framebuffer
+// into the P6 stream on stdout. The audit in the suite (per §10.3)
+// reads the capability off the interface: the program's syscall surface
+// is write(1) and exit_group.
+//
+// The image's pixels are decided before a byte is written: the
+// computation is fixed-order f64 arithmetic under nearest-even, so the
+// differential phase over gcc/clang at -O0/-O2 (tests/run.sh) and the
+// Python oracle (prototypes/pictura_oracle.py) both reproduce it.
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma s = Scriptor.ad_exitum(a);
+    firma n = exscribe(s);
+    si n ne 15565 {
+        redde 1;
+    }
+    redde 0;
+}

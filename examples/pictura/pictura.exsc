@@ -1,0 +1,134 @@
+// pictura -- the rasterizer half of the RGB triangle.
+//
+// The algorithm is the classical CPU-rasterizer one, and every design
+// choice below is a claim that can be re-measured rather than a claim
+// about taste:
+//
+//   * the perspective divide is ONE reciprocal per vertex (iw = 1/w),
+//     then two multiplies -- three fdiv, never six;
+//   * det is the sum of the three row-0 edge seeds -- the SAME
+//     expressions the loop consumes, so the barycentric weights come
+//     from one consistent definition and can never disagree with
+//     coverage by a differently-associated 2*area;
+//   * the weights' denominator is its own reciprocal (r = 1/det),
+//     the fourth and last division in the program;
+//   * the pixel loop steps each edge function by ONE add per pixel
+//     and recomputes the row seeds once per row: no divisions, no
+//     coverage multiplies inside the loop;
+//   * "optimized", stated in a form the tree can check: the emitted
+//     fasmg of this module holds exactly 4 divss/divsd instructions
+//     (grep -c 'divss\|divsd' over the emitted .asm), none of them
+//     under a back-edge.
+//
+// Every literal is exact in binary (dyadic), so dec754's single
+// rounding is exact too, and the whole chain is f64 end-to-end under
+// round-to-nearest-even on both backends -- §5.4's defaults, the
+// 0x1F80 the prelude sets. The Python oracle (prototypes/
+// pictura_oracle.py) recomputes the image independently, mirroring
+// this file's operation ORDER operation for operation -- IEEE f64
+// under nearest-even makes identical order identical bits, so any
+// difference in the image means one side changed its order.
+// tests/programs/pictura_triangulum/ compares the bytes with the
+// oracle's.
+//
+// Coverage is the simple `e >= 0` on all three edges. The top-left
+// fill rule governs pixels SHARED by two triangles; this is one
+// triangle, so no pixel is shared and the rule's bias constant never
+// changes a byte here.
+
+functio exscribe(s: Scriptor) -> mensura {
+    // The vertices in clip space, with a positive depth w each.
+    // A: red, bottom-left; B: blue, the apex; C: green, bottom-right.
+    // The order is the one that gives det > 0 under the edge
+    // convention below (screen space is y-DOWN, so "counter-clockwise
+    // on paper" reads clockwise here).
+    firma ia: f64 = 1.0 / 1.0;
+    firma ib: f64 = 1.0 / 1.25;
+    firma ic: f64 = 1.0 / 1.5;
+    firma nax: f64 = (-0.75) * ia;
+    firma nay: f64 = (-0.5) * ia;
+    firma nbx: f64 = 0.0 * ib;
+    firma nby: f64 = 0.75 * ib;
+    firma ncx: f64 = 0.75 * ic;
+    firma ncy: f64 = (-0.5) * ic;
+
+    // NDC to screen space, pixel centers at integer coordinates.
+    firma axf: f64 = (nax + 1.0) * 0.5 * 95.0;
+    firma ayf: f64 = (1.0 - nay) * 0.5 * 53.0;
+    firma bxf: f64 = (nbx + 1.0) * 0.5 * 95.0;
+    firma byf: f64 = (1.0 - nby) * 0.5 * 53.0;
+    firma cxf: f64 = (ncx + 1.0) * 0.5 * 95.0;
+    firma cyf: f64 = (1.0 - ncy) * 0.5 * 53.0;
+
+    // Per-edge stepping deltas: for edge (x1,y1)->(x2,y2),
+    // dE/dx = (y1 - y2) and dE/dy = (x2 - x1). Edge 0 is B->C,
+    // edge 1 is C->A, edge 2 is A->B.
+    firma d0x: f64 = byf - cyf;
+    firma d1x: f64 = cyf - ayf;
+    firma d2x: f64 = ayf - byf;
+
+    // The row seeds at px = 0, from E(px,py) = (x2-x1)*(py-y1) -
+    // (y2-y1)*(px-x1) folded for px = 0 into
+    // (x2-x1)*(py-y1) + (y2-y1)*x1 -- one add, two multiplies, one
+    // subtraction per edge, as written.
+    firma e0s: f64 = (cxf - bxf) * (0.0 - byf) + (cyf - byf) * bxf;
+    firma e1s: f64 = (axf - cxf) * (0.0 - cyf) + (ayf - cyf) * cxf;
+    firma e2s: f64 = (bxf - axf) * (0.0 - ayf) + (byf - ayf) * axf;
+    firma det: f64 = e0s + e1s + e2s;
+    firma r: f64 = 1.0 / det;
+
+    // The framebuffer, zero-filled by the repeat form (§8.6); a local
+    // binding, not a module firma -- module-firma array literals do
+    // not lower (spec §8.6 records the gap).
+    mutabilis fb: acies<u8, 15552> = [0; 15552];
+
+    per yy in 0..54 {
+        firma py: f64 = yy sicut f64;
+        mutabilis e0: f64 = (cxf - bxf) * (py - byf) + (cyf - byf) * bxf;
+        mutabilis e1: f64 = (axf - cxf) * (py - cyf) + (ayf - cyf) * cxf;
+        mutabilis e2: f64 = (bxf - axf) * (py - ayf) + (byf - ayf) * axf;
+        firma base: mensura = yy sicut mensura * 288;
+        per xx in 0..96 {
+            // Coverage: three ordered compares (never a NaN here, but
+            // the ordered forms are what both backends lower for ge).
+            si e0 ge 0.0 {
+                si e1 ge 0.0 {
+                    si e2 ge 0.0 {
+                        // Per channel, ((c0*E0 + c1*E1) + c2*E2) * r,
+                        // left to right -- the order the oracle writes.
+                        mutabilis cr: f64 = (255.0 * e0 + 0.0 * e1 + 0.0 * e2) * r;
+                        si cr lt 0.0 { cr = 0.0; }
+                        si cr gt 255.0 { cr = 255.0; }
+                        mutabilis cg: f64 = (0.0 * e0 + 0.0 * e1 + 255.0 * e2) * r;
+                        si cg lt 0.0 { cg = 0.0; }
+                        si cg gt 255.0 { cg = 255.0; }
+                        mutabilis cb: f64 = (0.0 * e0 + 255.0 * e1 + 0.0 * e2) * r;
+                        si cb lt 0.0 { cb = 0.0; }
+                        si cb gt 255.0 { cb = 255.0; }
+                        firma idx: mensura = base + xx sicut mensura * 3;
+                        // ftoi inside `sicut u8` truncates toward zero;
+                        // the clamps above put the value in range first.
+                        fb[idx] = cr sicut u8;
+                        fb[idx + 1] = cg sicut u8;
+                        fb[idx + 2] = cb sicut u8;
+                    }
+                }
+            }
+            e0 = e0 + d0x;
+            e1 = e1 + d1x;
+            e2 = e2 + d2x;
+        }
+    }
+
+    // P6 header, then the bytes row-major. The header's newlines are
+    // raw: §8.4 admits LF inside a string literal, and the value is
+    // exactly the bytes between the quotes.
+    mutabilis n: mensura = s.scribe("P6
+96 54
+255
+");
+    per i in 0..15552 {
+        n = n + s.scribe_octeto(fb[i]);
+    }
+    redde n;
+}
