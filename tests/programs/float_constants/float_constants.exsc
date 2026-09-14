@@ -1,0 +1,163 @@
+// Float literals from real .exsc source, end to end: the front end's wave
+// of 2026-09-13/14 gave the language its literal grammar (spec §8.4 as
+// amended) and the exact integer-only decimal->binary conversion
+// (rt/dec754.inc), and this program is the first .exsc that reaches the
+// float IR opcodes both backends lower. It is the program twin of
+// tests/unit/dec754_golden.asm and tests/ir/float_arith.ir: the unit
+// fixture pins the conversion on packed constants, the IR fixture pins
+// the emitters on hand-written IR, and this pins the WHOLE chain on
+// source text -- lexer, checker expectation-settle, dec754, lowering,
+// and both backends, under the differential phase.
+//
+// Every constant below is exact in binary (0.5, 1.5, 2.5 are dyadic), or
+// is checked in a way whose answer does not depend on the rounding of
+// the literal (0.1 compared against itself, through IEEE's x/x == 1.0
+// for finite nonzero x). The checks:
+//
+//    1  adde()               1.5 + 2.5 sicut u8          4   f64 fadd
+//    2  multiplica()         1.5 * 2.5 sicut u8          3   f64 fmul
+//    3  adde_f32()           f32 1.5 + 1.5 sicut u8     3   f32 fadd
+//    4  dimidium()           0.5 four times, sicut u8   2   a f64 chain
+//    5  negatum()            -1.5 sicut i8             -1   fneg, ftoi
+//                            truncates toward zero, so -1.5 -> -1
+//    6  decem()              1e1 sicut u8              10  exponent form
+//    7  dimidium_e()         5e-1 + 5e-1 sicut u8        1  exponent-only
+//    8  vicesquina()         2.5e1 sicut u8             25  fraction+exp
+//    9  ex_integro()         j: u8 = 7, j sicut f64,   14  itof -- through a
+//                            twice, -> u8                 VARIABLE: the
+//                            checker leaves a LITERAL cast operand pending
+//                            (types.inc `.cast` skips settling) and lowering
+//                            dies on it (__lwr_nty's rassert; `7 sicut f64`
+//                            SIGILLs both this tree and 82ca9c9) -- a
+//                            pre-existing gap, recorded as an open finding,
+//                            routed around here as the plan's risk register
+//                            routes the other known gaps
+//   10  truncatum()          2.9 sicut u8                2  ftoi toward 0
+//   11  comparatum()         0.5 lt 1.0, and 0.5+0.5 eq 1.0  fcmp ordered
+//   12  decimus()           0.1: (o+o) gt o is true     -- the literal
+//                            needs dec754 to be SOMETHING finite; the
+//                            check is rounding-independent
+//
+// `initium` returns the number of the first check that is wrong, or 100
+// when all are right -- the tests/ir float fixtures' convention.
+
+functio adde() -> u8 {
+    firma a: f64 = 1.5;
+    firma b: f64 = 2.5;
+    redde (a + b) sicut u8;
+}
+
+functio multiplica() -> u8 {
+    firma a: f64 = 1.5;
+    firma b: f64 = 2.5;
+    redde (a * b) sicut u8;
+}
+
+functio adde_f32() -> u8 {
+    firma c: f32 = 1.5;
+    redde (c + c) sicut u8;
+}
+
+functio dimidium() -> u8 {
+    firma d: f64 = 0.5;
+    mutabilis t: f64 = d + d;
+    t = t + d;
+    t = t + d;
+    redde t sicut u8;
+}
+
+functio negatum() -> i8 {
+    firma e: f64 = -1.5;
+    redde e sicut i8;
+}
+
+functio decem() -> u8 {
+    firma g: f64 = 1e1;
+    redde g sicut u8;
+}
+
+functio dimidium_e() -> u8 {
+    firma h: f64 = 5e-1;
+    firma t: f64 = h + h;
+    redde t sicut u8;
+}
+
+functio vicesquina() -> u8 {
+    firma i: f64 = 2.5e1;
+    redde i sicut u8;
+}
+
+functio ex_integro() -> u8 {
+    firma j: u8 = 7;
+    firma t: f64 = j sicut f64;
+    firma s: f64 = t + t;
+    redde s sicut u8;
+}
+
+functio truncatum() -> u8 {
+    firma n: f64 = 2.9;
+    redde n sicut u8;
+}
+
+functio comparatum() -> u1 {
+    firma x: f64 = 0.5;
+    firma y: f64 = 1.0;
+    si x ge y {
+        redde 0;
+    }
+    si (x + x) ne y {
+        redde 0;
+    }
+    redde 1;
+}
+
+functio decimus() -> u1 {
+    firma o: f64 = 0.1;
+    si o ge 0.2 {
+        redde 0;
+    }
+    si (o + o) le o {
+        redde 0;
+    }
+    redde 1;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    si adde() ne 4 {
+        redde 1;
+    }
+    si multiplica() ne 3 {
+        redde 2;
+    }
+    si adde_f32() ne 3 {
+        redde 3;
+    }
+    si dimidium() ne 2 {
+        redde 4;
+    }
+    si negatum() ne -1 {
+        redde 5;
+    }
+    si decem() ne 10 {
+        redde 6;
+    }
+    si dimidium_e() ne 1 {
+        redde 7;
+    }
+    si vicesquina() ne 25 {
+        redde 8;
+    }
+    si ex_integro() ne 14 {
+        redde 9;
+    }
+    si truncatum() ne 2 {
+        redde 10;
+    }
+    si comparatum() ne 1 {
+        redde 11;
+    }
+    si decimus() ne 1 {
+        redde 12;
+    }
+    redde 100;
+}

@@ -1,0 +1,6 @@
+# float_constants.exsc's header lists the twelve checks; 1-12 names the
+# first wrong one, 100 says every check ran right, on both backends
+# (the differential phase runs this same directory through emit_c and
+# gcc/clang at -O0/-O2 -- byte-identical observable means the same
+# exit code here).
+TEST: expect-exit=100

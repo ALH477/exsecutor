@@ -1,0 +1,113 @@
+// The quotient from real .exsc source, end to end: `/` is the wave's only
+// new operator (spec §8.4/§5.4 as amended) -- the IEEE-754 quotient on
+// float operands only, never a trap, the one division the language has.
+// Integer div and rem stay [OPEN]; tests/unit/chk_ty_floatops.asm pins
+// their refusal. This program is the program twin of that fixture and of
+// tests/ir/float_arith.ir's fdiv rows: both widths, the sign, and the
+// two edge behaviours the IR fixtures could not show from source --
+// that division by zero does not trap (masks are set; §5.4's floats have
+// no trap behaviour at all) and that the QUOTIENT is exactly 1.0 for
+// any finite nonzero x divided by itself, which is the one property
+// that makes a literal like 0.1 checkable without caring which way
+// dec754 rounded it.
+//
+// The checks:
+//
+//    1  tripla()          7.5 / 2.5 sicut u8      3   f64 fdiv
+//    2  quarta()          1.0/4.0 four times     1   quarters are exact
+//    3  negativa()        -6.0 / 3.0 sicut i8   -2   sign
+//    4  bis_f32()         f32 5.0 / 2.0 -> u8    2   f32 fdiv, 2.5 -> 2
+//    5  infinitum()       1.0 / 0.0 gt 1e300     --  no trap, +inf compares
+//                            greater than every finite; ordered gt
+//    6  identicum()       0.1 / 0.1 eq 1.0        --  x/x is exactly 1.0
+//    7  nanum()           0.0 / 0.0 eq itself    --  must be FALSE: the
+//                            quotient is NaN and every ordered comparison
+//                            with a NaN operand is false -- the program-
+//                            level proof of the emitters' `setnp`/ordered
+//                            lowering
+//
+// `initium` returns the number of the first check that is wrong, or 100
+// when all are right -- the tests/ir float fixtures' convention.
+
+functio tripla() -> u8 {
+    firma a: f64 = 7.5;
+    firma b: f64 = 2.5;
+    redde (a / b) sicut u8;
+}
+
+functio quarta() -> u8 {
+    firma q: f64 = 1.0 / 4.0;
+    mutabilis t: f64 = q + q;
+    t = t + t;
+    redde t sicut u8;
+}
+
+functio negativa() -> i8 {
+    firma a: f64 = -6.0;
+    firma b: f64 = 3.0;
+    redde (a / b) sicut i8;
+}
+
+functio bis_f32() -> u8 {
+    firma w: f32 = 5.0;
+    firma v: f32 = 2.0;
+    redde (w / v) sicut u8;
+}
+
+functio infinitum() -> u1 {
+    firma p: f64 = 1.0;
+    firma z: f64 = 0.0;
+    firma r: f64 = p / z;
+    firma magnum: f64 = 1e300;
+    si r le magnum {
+        redde 0;
+    }
+    redde 1;
+}
+
+functio identicum() -> u1 {
+    firma o: f64 = 0.1;
+    firma r: f64 = o / o;
+    firma u: f64 = 1.0;
+    si r ne u {
+        redde 0;
+    }
+    redde 1;
+}
+
+functio nanum() -> u1 {
+    firma z: f64 = 0.0;
+    firma nanum_val: f64 = z / z;
+    // Every ordered comparison with a NaN operand is false, including
+    // this one with itself. If it ever reads true, the emitter lowered an
+    // UNORDERED compare -- the exact bug the ordered forms exist to avoid.
+    si nanum_val eq nanum_val {
+        redde 0;
+    }
+    redde 1;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    si tripla() ne 3 {
+        redde 1;
+    }
+    si quarta() ne 1 {
+        redde 2;
+    }
+    si negativa() ne -2 {
+        redde 3;
+    }
+    si bis_f32() ne 2 {
+        redde 4;
+    }
+    si infinitum() ne 1 {
+        redde 5;
+    }
+    si identicum() ne 1 {
+        redde 6;
+    }
+    si nanum() ne 1 {
+        redde 7;
+    }
+    redde 100;
+}

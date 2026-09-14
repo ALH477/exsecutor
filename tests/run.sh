@@ -76,9 +76,12 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-176}"
 # It went from 22 to 92 when the receiver's R3 milestone added one directory
 # per vendored impaired vector (receptio_vec_*, seventy of them): the
 # certificate of ADR 0014 decision 1 is a per-file verdict, and seventy
-# directories is what "per file" means here.
+# directories is what "per file" means here. 98 -> 100 is the float front
+# end's two programs: float_constants/ and float_division/, the first .exsc
+# sources whose float literals and `/` reach the float IR opcodes both
+# backends lower (check 100 from both, differential phase below).
 IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-50}"
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-98}"
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-100}"
 
 # The differential phase (run_differential_tests, below), which compiles the
 # C backend's emitted units and runs them against the same expectations the
@@ -109,8 +112,12 @@ DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-156}"
 #     each one unit over several inputs), so the phase compiles 18 distinct
 #     units and RUNS 104 binaries. The count that matters is the runs: each
 #     is one comparison against the reference over a different input.
-DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-28}"
-DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-112}"
+#     28 -> 30 and 112 -> 120 are the float front end's two programs
+#     (float_constants/, float_division/): each eligible, each its own unit,
+#     four builds apiece -- the differential phase's first float-source
+#     byte-identity claim.
+DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-30}"
+DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-120}"
 
 # The cross phase's own floor, deliberately NOT folded into the differential
 # numbers above: a cross-compiled, emulated run of a 32-bit-`mensura` unit is

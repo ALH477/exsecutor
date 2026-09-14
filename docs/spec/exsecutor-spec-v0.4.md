@@ -726,11 +726,18 @@ which the subsections below it already contradicted by citing those fixtures.
 Floating point at the IR level is implemented the same way since the float
 wave of 2026-09-13: both backends lower the eleven float opcodes and
 `tests/ir/float_*.ir` runs them through the differential phase — 52 checks
-byte-identical across gcc and clang at `-O0`/`-O2`. What remains `[OPEN]` is
-the *surface*: no float literal grammar and no `/` exist yet (§8.4), so no
-`.exsc` source can reach the float opcodes until the front-end wave lands.
-Vectors remain `[OPEN]` — designed, nothing implemented. Stage 3 at the
-earliest for vectors.
+byte-identical across gcc and clang at `-O0`/`-O2`. The surface landed too
+(same wave, the front-end half): the literal grammar and `/` below in §8.4
+are settled, and `.exsc` sources reach the float opcodes end-to-end —
+`tests/programs/float_constants/` (twelve checks: literals both widths,
+`fneg`, `itof`/`ftoi`, ordered `fcmp`) and `tests/programs/float_division/`
+(seven: the quotient both widths, the sign, no-trap division by zero, the
+`x/x eq 1.0` property, the NaN ordered-compare-false proof) each return
+their all-passed sentinel on both backends through the differential phase.
+That also retires this banner's earlier "negation is `[UNTESTED]`
+end-to-end" note (§8.4): `negatum()` and `negativa()` exercise unary `-` on
+a float in a running program. Vectors remain `[OPEN]` — designed, nothing
+implemented. Stage 3 at the earliest for vectors.
 
 The floating-point environment is ambient state, and this document exists to
 retire ambient state. `-ffast-math` is `setlocale` for numbers: a global,
@@ -1287,14 +1294,19 @@ the exclusive-or and shift words (`aut sursum deorsum`) are **contextual** —
 operator position is never operand position. Shifts and exclusive or are
 settled as those words (§5.4, §8.6; `docs/design/wire-codec.md` D1;
 `tests/unit/cst_shift_xor.asm`, `tests/programs/redundantia/`), and shifts
-did not become `<<`/`>>` tokens. `/`, remainder,
+did not become `<<`/`>>` tokens. Remainder,
 the `*%`/`*|` families, and bitwise and/or remain `[OPEN]`. Negation left
 this list when the lowering landed: unary `-` checks and lowers — on an
 integer to a trapping `sub T 0 x`, on a float to `fneg`
-(`compiler/x86_64/lower/expr.inc`) — though no running program exercises it
-yet, so the end-to-end behaviour is `[UNTESTED]`. The numeric
-literal grammar is settled for hexadecimal only (below) and otherwise
-remains `[OPEN]`.
+(`compiler/x86_64/lower/expr.inc`) — and the float wave's programs exercise
+it end-to-end on both backends (`float_constants/`'s `negatum()`,
+`float_division/`'s `negativa()`). `/` left the list with the same wave:
+it is the IEEE-754 quotient on two float operands, the one division the
+language has — on anything else it is `EXS-E0305`
+(`tests/unit/chk_ty_floatops.asm` pins the refusal; integer `/` and
+remainder stay `[OPEN]`). The numeric literal grammar is settled for
+hexadecimal and for floats (below); binary and octal bases and digit
+separators remain `[OPEN]`.
 
 ### Literals, comments, layout
 
@@ -1321,11 +1333,41 @@ remains `[OPEN]`.
   token class is `INT` for both forms; the value is typed by its
   expectation exactly as a decimal literal is, so a literal too wide for
   the type it lands in, or beyond 64 bits, is `EXS-E0308`.
+- **Float literals are `DIGITS.DIGITS`, optionally followed by `e` and a
+  decimal exponent (`2.5e1`), or `DIGITS e Exp` with no dot (`5e-1`, `1e300`)**
+  — lowercase `e` only, the same one-spelling rule the hexadecimal prefix
+  takes above. The exponent is an optional sign and one to three decimal
+  digits; a fraction carries at least one digit after the dot; a leading dot
+  is never a literal (`.` is field access). Every other shape — `1e`, `1e+`,
+  a fourth exponent digit, a suffix like `1.5f32` — is `EXS-E0210`.
+  More than fifteen significant mantissa digits, or a value above the
+  width's finite range (`1e309` as `f64`) or underflowing to zero from
+  nonzero digits (`1e-338` as `f64`), is `EXS-E0308`: the literal did not
+  fit. There are no suffixes — a float literal takes `f32` or `f64` from
+  its expectation exactly as an INT takes an integer type, and the classes
+  never cross (`firma x: f32 = 1;` and `firma y: u8 = 1.5;` are both
+  `EXS-E0308`; the explicit conversion is `sicut f64` on an integer value,
+  never a silent one). A **known defect, open at time of writing**: the
+  checker leaves a *literal* cast operand pending (`__chk_ty_expr`'s `.cast`
+  answers the target and settles nothing) and the lowering dies on the
+  unsettled node (`__lwr_nty`'s rassert) — `7 sicut u8` and `7 sicut f64`
+  SIGILL `exsc` where `firma j: u8 = 7;` then `j sicut u8` run clean. The
+  crash predates the float wave (82ca9c9 reproduces it); the corpus never
+  cast a literal until the float programs did, and they route around it
+  through a variable. The fix belongs to the checker's owner: `.cast`
+  must settle a pending operand. The text becomes IEEE-754 bits exactly once, at checker
+  expectation-settle, by pure integer big-division with a single
+  round-to-nearest-even at the target width
+  (`compiler/x86_64/rt/dec754.inc`, golden-pinned over eighty values by
+  `tests/unit/dec754_golden.asm`; `tests/programs/float_constants/` runs
+  the whole chain from source text on both backends). One conversion, one
+  rounding: the `strtod` double-rounding hazard is structurally absent, and
+  `exsc` stays FPU-free.
 - Layout is not significant. Blocks are `{ }`.
 
-`[OPEN]` The rest of the numeric literal grammar — binary and octal bases,
-digit separators, and float syntax — is not settled and is deliberately not
-invented here. Hexadecimal is settled above; nothing else is.
+`[OPEN]` The rest of the numeric literal grammar — binary and octal bases
+and digit separators — is not settled and is deliberately not invented
+here. Hexadecimal and float syntax are settled above; nothing else is.
 
 ## 8.5 Control flow
 
@@ -1702,9 +1744,12 @@ does not. A list of pending literals alone, with no expected type, is
 `EXS-E0308`, as a lone pending literal is. **`N` is part of the type**, so
 `acies<u8, 17>` initialised by a sixteen-element list is `EXS-E0303`, not
 an arity fault. Element types admitted: the integers (`uN`, `iN`,
-`mensura`) and `@transitus` structs; any other element is `EXS-E0305`
-until a program needs it. `[]` is `EXS-E0201` and `[e; 0]` is
-`EXS-E0308`. Elements are evaluated in source order and stored at
+`mensura`), the floats (`f32`, `f64`, with the float wave —
+`tests/unit/chk_ty_floatops.asm` accepts `acies<f64, 4> = [1.5; 4]`, a
+program now needing it), and `@transitus` structs (integer-element ones
+only — a float field stays `EXS-E0321`, §5.2's wire settlement); any other
+element is `EXS-E0305` until a program needs it. `[]` is `EXS-E0201` and
+`[e; 0]` is `EXS-E0308`. Elements are evaluated in source order and stored at
 ascending indices. The literal is a **value**: binding it copies, as
 binding any aggregate does (§5.2), and `[1, 2][0] = 3` is `EXS-E0306`.
 **A binding declared without a literal is not zero-filled**: `mutabilis
@@ -1831,8 +1876,11 @@ Terminals are §8.4's tokens; `IDENT` `INT` `STRING` are the lexer's classes.
     Primary       ::= Literal | '(' Expr ')' | Lambda | IDENT | ArrayLit
     ArrayLit      ::= '[' Expr (',' Expr)* ']' | '[' Expr ';' INT ']'   (* [UNTESTED]; docs/design/receptor.md D2 *)
     Lambda        ::= 'functio' ParamList ['->' Type] Block
-    Literal       ::= INT | STRING                           (* INT: decimal or 0x hex, §8.4; the rest [OPEN] *)
-    ArithOp       ::= '+' | '+%' | '+|' | '-' | '-%' | '-|' | '*'
+    Literal       ::= INT | STRING | FLOAT                  (* INT: decimal or 0x hex; FLOAT: §8.4's
+                                                      two forms, one spelling of 'e', no suffixes;
+                                                      binary/octal bases [OPEN] *)
+    ArithOp       ::= '+' | '+%' | '+|' | '-' | '-%' | '-|' | '*' | '/'   (* '/': float operands only,
+                                                      §5.4/§8.4; integer quotient and remainder [OPEN] *)
 
     Type          ::= ('&' ['mutabilis'] | '*')* CoreType (':' IDENT | 'apud' IDENT)*
     CoreType      ::= BitType | Path [GenericArgs] | '(' Type ')'

@@ -1,0 +1,5 @@
+# float_division.exsc's header lists the seven checks; 1-7 names the first
+# wrong one, 100 says every check ran right, on both backends (the
+# differential phase runs this same directory through emit_c and
+# gcc/clang at -O0/-O2).
+TEST: expect-exit=100
