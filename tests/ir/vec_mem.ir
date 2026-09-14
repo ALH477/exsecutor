@@ -1,0 +1,156 @@
+; TEST: expect-exit=200
+;
+; `load`/`store` with a VECTOR type, nativus order only (ssa-ir.md 2.7) --
+; float_mem.ir's settlement generalised to a lane group: a vector in
+; memory is its lanes' raw IEEE BIT PATTERNS, back to back (16 bytes for
+; vf32.4, 16 for vf64.2), and the vector store/load is bit baggage --
+; chunked movups/movupd, with no arithmetic anywhere on the path, so a NaN
+; payload, -0.0's sign and a subnormal's bits all survive every copy
+; (subnormales conservatae). vec_arith.ir pins the arithmetic; this
+; fixture pins the memory path under it: the region-3 frame home, the
+; chunked copy in both directions, and the store's exact extent.
+;
+; maior/minor on a vector stay refused by both backends for the float
+; reason (byte order is an integer surface, spec 5.2):
+; reject_verify_vec_load_ord.ir / reject_verify_vec_store_ord.ir pin the
+; refusals. This fixture runs only nativus, which on this little-endian
+; host is the LE image, and checks 2, 3 and 8 lean on it (a big-endian
+; host sees the lane bytes swapped and exits 2 -- recorded, not hidden).
+;
+; The 96-byte slot is pre-filled with 0xAA. The vf32.4 source image is
+; laid lane by lane with SCALAR f32 stores at 8..23 (lanes: quiet-NaN
+; payload 1, -0.0, the smallest positive subnormal bits=1, 1.5f), gathered
+; by `load vf32.4` and put back by `store vf32.4` at 32; the vf64.2 image
+; likewise at 56..71 (NaN payload 1, subnormal bits=1), copied to 72.
+; Every check is a whole-u64 READ-BACK of what memory holds -- never the
+; vector side agreeing with itself -- and the guards at 0/48/88 pin each
+; store's extent. Check 8 is the self round trip: the vf32.4 copy at 32 is
+; loaded and stored BACK over the source at 8, and the subnormal+1.5f u64
+; at 16 must still read bit-exact -- a copy that cleanses on the second
+; pass is caught the same as on the first.
+;
+; CHECK CHAIN, check k returns k on a mismatch; all 8 right: exit 200.
+;
+;    1   guard u64 at 0     = 0xaaaaaaaaaaaaaaaa, untouched
+;    2   u64 at 32          = 0x800000007fc00001 = 9223372038998065153
+;                             (vf32.4 lanes 0-1 through load+store: the NaN
+;                              payload low, -0.0's sign high -- fcmp.eq
+;                              could see neither, so BITS pin both)
+;    3   u64 at 40          = 0x3fc0000000000001 = 4593671619917905921
+;                             (lanes 2-3: the subnormal's bit low, 1.5f high
+;                              -- a flush-to-zero anywhere reads ...0000)
+;    4   guard u64 at 48    = 0xaaaaaaaaaaaaaaaa (the vf32.4 store wrote
+;                             exactly 16 bytes and stopped)
+;    5   u64 at 72          = 0x7ff8000000000001 = 9221120237041090561
+;                             (vf64.2 lane 0's NaN payload, uncleansed)
+;    6   u64 at 80          = 1 (vf64.2 lane 1's subnormal, unflushed)
+;    7   guard u64 at 88    = 0xaaaaaaaaaaaaaaaa (the vf64.2 store wrote
+;                             exactly 16 bytes and stopped)
+;    8   vf32.4 self round trip (load at 32, store BACK at 8): u64 at 16
+;                             = 4593671619917905921 still
+;
+; Mutations (run): the vf32.4 store copying only the first 8 bytes ->
+; exit 3; a NaN payload canonicalised on either copy -> exit 2 or 5; a
+; subnormal flushed at load or store -> exit 3, 6 or 8; each store one
+; byte too wide -> exit 4 or 7; the chunk loop dropping the second half
+; of a 16-byte vector -> exit 3; the return copy skipped -> exit 8.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = slot 96 8
+%2 = iconst u64 12297829382473034410
+store u64 %1 0 nativus %2
+store u64 %1 8 nativus %2
+store u64 %1 16 nativus %2
+store u64 %1 24 nativus %2
+store u64 %1 32 nativus %2
+store u64 %1 40 nativus %2
+store u64 %1 48 nativus %2
+store u64 %1 56 nativus %2
+store u64 %1 64 nativus %2
+store u64 %1 72 nativus %2
+store u64 %1 80 nativus %2
+store u64 %1 88 nativus %2
+%3 = fconst f32 2143289345
+store f32 %1 8 nativus %3
+%4 = fconst f32 2147483648
+store f32 %1 12 nativus %4
+%5 = fconst f32 1
+store f32 %1 16 nativus %5
+%6 = fconst f32 1069547520
+store f32 %1 20 nativus %6
+%7 = load vf32.4 %1 8 nativus
+store vf32.4 %1 32 nativus %7
+%8 = fconst f64 9221120237041090561
+store f64 %1 56 nativus %8
+%9 = fconst f64 1
+store f64 %1 64 nativus %9
+%10 = load vf64.2 %1 56 nativus
+store vf64.2 %1 72 nativus %10
+%11 = load u64 %1 0 nativus
+%12 = cmp.eq u64 %11 %2
+br %12 b2 b1
+b1:
+%13 = iconst u8 1
+ret %13
+b2:
+%14 = load u64 %1 32 nativus
+%15 = iconst u64 9223372038998065153
+%16 = cmp.eq u64 %14 %15
+br %16 b4 b3
+b3:
+%17 = iconst u8 2
+ret %17
+b4:
+%18 = load u64 %1 40 nativus
+%19 = iconst u64 4593671619917905921
+%20 = cmp.eq u64 %18 %19
+br %20 b6 b5
+b5:
+%21 = iconst u8 3
+ret %21
+b6:
+%22 = load u64 %1 48 nativus
+%23 = cmp.eq u64 %22 %2
+br %23 b8 b7
+b7:
+%24 = iconst u8 4
+ret %24
+b8:
+%25 = load u64 %1 72 nativus
+%26 = iconst u64 9221120237041090561
+%27 = cmp.eq u64 %25 %26
+br %27 b10 b9
+b9:
+%28 = iconst u8 5
+ret %28
+b10:
+%29 = load u64 %1 80 nativus
+%30 = iconst u64 1
+%31 = cmp.eq u64 %29 %30
+br %31 b12 b11
+b11:
+%32 = iconst u8 6
+ret %32
+b12:
+%33 = load u64 %1 88 nativus
+%34 = cmp.eq u64 %33 %2
+br %34 b14 b13
+b13:
+%35 = iconst u8 7
+ret %35
+b14:
+%36 = load vf32.4 %1 32 nativus
+store vf32.4 %1 8 nativus %36
+%37 = load u64 %1 16 nativus
+%38 = iconst u64 4593671619917905921
+%39 = cmp.eq u64 %37 %38
+br %39 b16 b15
+b15:
+%40 = iconst u8 8
+ret %40
+b16:
+%41 = iconst u8 200
+ret %41
+}

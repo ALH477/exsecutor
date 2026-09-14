@@ -1143,11 +1143,25 @@ proc __bfa_emit_fwidth, module, ty
 	je	.f32
 	cmp	edx, BFA_TK_F64
 	je	.f64
+	cmp	edx, BFA_TK_VF32
+	je	.vec
+	cmp	edx, BFA_TK_VF64
+	je	.vec
 	jmp	.after_msg
   .msg db "float lowering: the type is not f32/f64"
   .after_msg:
 	lea	rdi, [.msg]
 	mov	rsi, .after_msg - .msg
+	call	__bfa_emit_die
+  .vec:
+	; a vector reaching a SCALAR float lowering (fneg/fcmp/fconv's fwidth
+	; check) must not mis-fire as "not f32/f64": it is one, lane by lane --
+	; say which family it should have taken instead.
+	jmp	.after_vmsg
+  .vmsg db "float lowering: a vector type (`vf32.N`/`vf64.N`) reaches only the vadd/vsub/vmul/vdiv lowerings"
+  .after_vmsg:
+	lea	rdi, [.vmsg]
+	mov	rsi, .after_vmsg - .vmsg
 	call	__bfa_emit_die
   .f32:
 	mov	eax, 4
@@ -1393,6 +1407,476 @@ proc __bfa_emit_farith, ctx, module, func, instid
 	call	__bfa_emit_fstore
 	return
 endp
+
+; ---- the vector float group -----------------------------------------------
+;
+; A vf32.N/vf64.N value lives in the frame's third region (the vector
+; region, after the Tier-1 slots and the `slot`-instruction storage -- the
+; frame layout diagram has the three-region picture), lanes x element bytes
+; 16-aligned, and EVERY vector producer gets one: vadd/vsub/vmul/vdiv and a
+; vector `load` alike. The lowering is the SSE2 baseline and nothing else:
+; movups/movupd in, one packed addps/subps/mulps/divps (VF32) or
+; addpd/subpd/mulpd/divpd (VF64) per 16-byte chunk, movups/movupd out. One
+; IEEE rounding per lane, delivered by the MXCSR image the prelude loaded --
+; a packed add rounds each lane independently in the function's rotundatio,
+; and subnormals are conserved because MXCSR's DAZ/FTZ are off
+; (`subnormales conservatae`). No AVX/ymm anywhere: lane counts above 8 are
+; [OPEN], so the widest chunk this file ever emits is 16 bytes. A vf32.2 (8
+; bytes, half a chunk) uses movq: the register form zero-extends, the
+; arithmetic's upper lanes are computed off zeroes and discarded by the
+; 8-byte store-back. Scalars store lanes, indexing reads them (ssa-ir.md
+; 2.6) -- there is deliberately no splat, extract, or horizontal op, and no
+; immediate operand (a lane group has no scalar literal; the imm-operand
+; guard below mirrors the float group's).
+
+; __bfa_emit_vbase(ctx, module, func, v, reg) -- "lea <reg>, [rbp-N]\n" for
+; the region-3 storage of the vector produced by instruction `v` (reg 0 =
+; rax, 1 = rcx).
+proc __bfa_emit_vbase, ctx, module, func, v, reg
+	locals
+		slot off, dd
+	endl
+	mov	rdi, [module]
+	mov	rsi, [func]
+	mov	edx, [v]
+	call	__bfa_frame_layout
+	mov	[off], eax
+	mov	rdi, [ctx]
+	jmp	.after_lea
+  .lit_lea db "	lea	"
+  .after_lea:
+	lea	rsi, [.lit_lea]
+	mov	rdx, .after_lea - .lit_lea
+	call	__bfa_out_lit
+	mov	rdi, [ctx]
+	mov	esi, [reg]
+	call	__bfa_emit_regname
+	__bfa_emtxt ", [rbp-"
+	mov	rdi, [ctx]
+	mov	esi, [off]
+	call	__bfa_out_u64
+	__bfa_emtxt "]", 10
+	return
+endp
+
+; __bfa_emit_vmov_in(ctx, xreg, elwd, half, basereg, off) -- the chunked
+; load: "movups/movupd xmm<k>, [<basereg>+N]\n" (half = 0), or
+; "movq xmm<k>, qword [<basereg>+N]\n" for a vf32.2's single 8-byte chunk
+; (half = 1). elwd 4 = movups, 8 = movupd; basereg 0 = rax, 1 = rcx. The
+; qword keyword, as in __bfa_emit_fload, is not decoration: fasmg's x86
+; macros take a movq memory operand's width from it.
+proc __bfa_emit_vmov_in, ctx, xreg, elwd, half, basereg, off
+	locals
+	endl
+	cmp	dword [half], 0
+	jne	.movq
+	cmp	dword [elwd], 8
+	je	.pd
+	__bfa_emtxt 9, "movups", 9, "xmm"
+	jmp	.reg
+  .pd:
+	__bfa_emtxt 9, "movupd", 9, "xmm"
+  .reg:
+	mov	rdi, [ctx]
+	mov	esi, [xreg]
+	call	__bfa_out_u64
+	__bfa_emtxt ", ["
+	jmp	.tail
+  .movq:
+	__bfa_emtxt 9, "movq", 9, "xmm"
+	mov	rdi, [ctx]
+	mov	esi, [xreg]
+	call	__bfa_out_u64
+	__bfa_emtxt ", qword ["
+  .tail:
+	mov	rdi, [ctx]
+	mov	esi, [basereg]
+	call	__bfa_emit_regname
+	__bfa_emtxt "+"
+	mov	rdi, [ctx]
+	mov	esi, [off]
+	call	__bfa_out_u64
+	__bfa_emtxt "]", 10
+	return
+endp
+
+; __bfa_emit_vmov_out(ctx, basereg, off, elwd, half, xreg) -- the chunked
+; store, vmov_in's mirror: "movups/movupd [<basereg>+N], xmm<k>\n" or
+; "movq qword [<basereg>+N], xmm<k>\n".
+proc __bfa_emit_vmov_out, ctx, basereg, off, elwd, half, xreg
+	locals
+	endl
+	cmp	dword [half], 0
+	jne	.movq
+	cmp	dword [elwd], 8
+	je	.pd
+	__bfa_emtxt 9, "movups", 9, "["
+	jmp	.tail
+  .pd:
+	__bfa_emtxt 9, "movupd", 9, "["
+	jmp	.tail
+  .movq:
+	__bfa_emtxt 9, "movq", 9, "qword ["
+  .tail:
+	mov	rdi, [ctx]
+	mov	esi, [basereg]
+	call	__bfa_emit_regname
+	__bfa_emtxt "+"
+	mov	rdi, [ctx]
+	mov	esi, [off]
+	call	__bfa_out_u64
+	__bfa_emtxt "], xmm"
+	mov	rdi, [ctx]
+	mov	esi, [xreg]
+	call	__bfa_out_u64
+	__bfa_emtxt 10
+	return
+endp
+
+; __bfa_emit_varith(ctx, module, func, instid) -- vadd/vsub/vmul/vdiv, the
+; vector group's arithmetic. Per 16-byte chunk of the vector's region-3
+; storage: movups/movupd the A chunk into xmm0 and the B chunk into xmm1,
+; one packed op (one IEEE rounding PER LANE -- see the group comment above
+; for why that is exactly the hardware's semantics), movups/movupd the
+; chunk home. `ty` not a vector -- e.g. `vadd f64 %1 %2` -- dies here by
+; name, the way fma dies in the dispatcher: the two emitters' refusal sets
+; are one set, and this refusal's wording is the C backend's too.
+proc __bfa_emit_varith, ctx, module, func, instid
+	locals
+		slot av, dd
+		slot bv, dd
+		slot auxv, dd
+		slot tyv, dd
+		slot op, dd
+		slot vbytes, dd
+		slot velw, dd
+		slot half, dd
+		slot k, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[av], ecx
+	mov	ecx, [rax + BfaInst.b]
+	mov	[bv], ecx
+	movzx	ecx, word [rax + BfaInst.aux]
+	mov	[auxv], ecx
+	mov	ecx, [rax + BfaInst.ty]
+	mov	[tyv], ecx
+	movzx	ecx, word [rax + BfaInst.op]
+	mov	[op], ecx
+
+	test	dword [auxv], 0x300
+	jz	.noimm
+	jmp	.after_fimm
+  .fimm db "vadd/vsub/vmul/vdiv: vector operands are values only (scalars store lanes; indexing reads them)"
+  .after_fimm:
+	lea	rdi, [.fimm]
+	mov	rsi, .after_fimm - .fimm
+	call	__bfa_emit_die
+  .noimm:
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfa_vtype_bytes
+	test	eax, eax
+	jnz	.havevec
+	jmp	.after_notv
+  .notv db "vadd/vsub/vmul/vdiv: the type must be a vector float (`vf32.N`/`vf64.N`, N = 2, 4 or 8)"
+  .after_notv:
+	lea	rdi, [.notv]
+	mov	rsi, .after_notv - .notv
+	call	__bfa_emit_die
+  .havevec:
+	mov	[vbytes], eax
+	mov	[velw], edx
+
+	mov	dword [k], 0
+  .chunk:
+	mov	eax, [k]
+	cmp	eax, [vbytes]
+	jae	.done
+	mov	eax, [vbytes]
+	sub	eax, [k]
+	xor	ecx, ecx
+	cmp	eax, 16
+	setae	cl
+	xor	ecx, 1
+	mov	[half], ecx			; 1 iff this chunk is the 8-byte one
+
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [av]
+	xor	r8d, r8d
+	call	__bfa_emit_vbase
+	mov	rdi, [ctx]
+	xor	esi, esi
+	mov	edx, [velw]
+	mov	ecx, [half]
+	xor	r8d, r8d
+	mov	r9d, [k]
+	call	__bfa_emit_vmov_in
+
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [bv]
+	xor	r8d, r8d
+	call	__bfa_emit_vbase
+	mov	rdi, [ctx]
+	mov	esi, 1
+	mov	edx, [velw]
+	mov	ecx, [half]
+	xor	r8d, r8d
+	mov	r9d, [k]
+	call	__bfa_emit_vmov_in
+
+	cmp	dword [velw], 8
+	je	.pd
+	cmp	dword [op], BFA_OP_VADD
+	jne	.n1
+	__bfa_emtxt 9, "addps", 9, "xmm0, xmm1", 10
+	jmp	.tostore
+  .n1:
+	cmp	dword [op], BFA_OP_VSUB
+	jne	.n2
+	__bfa_emtxt 9, "subps", 9, "xmm0, xmm1", 10
+	jmp	.tostore
+  .n2:
+	cmp	dword [op], BFA_OP_VMUL
+	jne	.n3
+	__bfa_emtxt 9, "mulps", 9, "xmm0, xmm1", 10
+	jmp	.tostore
+  .n3:
+	__bfa_emtxt 9, "divps", 9, "xmm0, xmm1", 10
+	jmp	.tostore
+  .pd:
+	cmp	dword [op], BFA_OP_VADD
+	jne	.m1
+	__bfa_emtxt 9, "addpd", 9, "xmm0, xmm1", 10
+	jmp	.tostore
+  .m1:
+	cmp	dword [op], BFA_OP_VSUB
+	jne	.m2
+	__bfa_emtxt 9, "subpd", 9, "xmm0, xmm1", 10
+	jmp	.tostore
+  .m2:
+	cmp	dword [op], BFA_OP_VMUL
+	jne	.m3
+	__bfa_emtxt 9, "mulpd", 9, "xmm0, xmm1", 10
+	jmp	.tostore
+  .m3:
+	__bfa_emtxt 9, "divpd", 9, "xmm0, xmm1", 10
+  .tostore:
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	xor	r8d, r8d
+	call	__bfa_emit_vbase
+	mov	rdi, [ctx]
+	xor	esi, esi
+	mov	edx, [k]
+	mov	ecx, [velw]
+	mov	r8d, [half]
+	xor	r9d, r9d
+	call	__bfa_emit_vmov_out
+
+	mov	eax, [k]
+	add	eax, 16
+	mov	[k], eax
+	jmp	.chunk
+  .done:
+	return
+endp
+
+; __bfa_emit_vload(ctx, module, func, instid) -- the nativus-only memory
+; arm for `load vf32.N %p off nativus`: lanes x element bytes copied from
+; memory into the result's region-3 storage, chunked movups/movupd (movq
+; for vf32.2). Bit baggage exactly the way float loads are: these bytes are
+; the lanes' raw IEEE images, and no lane is read as a float here at all.
+; The pointer's alignment is the caller's business -- movu is the point.
+proc __bfa_emit_vload, ctx, module, func, instid
+	locals
+		slot eidx, dd
+		slot vp, dd
+		slot off, dd
+		slot vbytes, dd
+		slot velw, dd
+		slot half, dd
+		slot k, dd
+		slot poff, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[eidx], ecx
+	mov	rdi, [func]
+	mov	esi, [eidx]
+	call	bfa_extra_get
+	mov	[vp], eax
+	mov	rdi, [func]
+	mov	eax, [eidx]
+	inc	eax
+	mov	esi, eax
+	call	bfa_extra_get
+	mov	[off], eax
+
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_value_type
+	mov	rdi, [module]
+	mov	esi, eax
+	call	__bfa_vtype_bytes
+	mov	[vbytes], eax
+	mov	[velw], edx
+
+	mov	rdi, [ctx]
+	mov	esi, [vp]
+	call	__bfa_out_movq_rax_slot		; mov rax, [rbp-8p]
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	mov	r8d, 1
+	call	__bfa_emit_vbase			; lea rcx, [rbp-N]
+
+	mov	dword [k], 0
+  .chunk:
+	mov	eax, [k]
+	cmp	eax, [vbytes]
+	jae	.done
+	mov	eax, [vbytes]
+	sub	eax, [k]
+	xor	ecx, ecx
+	cmp	eax, 16
+	setae	cl
+	xor	ecx, 1
+	mov	[half], ecx
+	mov	eax, [off]
+	add	eax, [k]
+	mov	[poff], eax
+
+	mov	rdi, [ctx]
+	xor	esi, esi
+	mov	edx, [velw]
+	mov	ecx, [half]
+	xor	r8d, r8d
+	mov	r9d, [poff]
+	call	__bfa_emit_vmov_in			; movupX xmm0, [rax+off+16k]
+	mov	rdi, [ctx]
+	mov	esi, 1
+	mov	edx, [k]
+	mov	ecx, [velw]
+	mov	r8d, [half]
+	xor	r9d, r9d
+	call	__bfa_emit_vmov_out			; movupX [rcx+16k], xmm0
+
+	mov	eax, [k]
+	add	eax, 16
+	mov	[k], eax
+	jmp	.chunk
+  .done:
+	return
+endp
+
+; __bfa_emit_vstore(ctx, module, func, instid) -- the reverse copy for
+; `store vf32.N %p off nativus %v`: the operand's region-3 storage into
+; memory, same chunking as vload.
+proc __bfa_emit_vstore, ctx, module, func, instid
+	locals
+		slot eidx, dd
+		slot vp, dd
+		slot off, dd
+		slot vv, dd
+		slot vbytes, dd
+		slot velw, dd
+		slot half, dd
+		slot k, dd
+		slot poff, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[eidx], ecx
+	mov	rdi, [func]
+	mov	esi, [eidx]
+	call	bfa_extra_get
+	mov	[vp], eax
+	mov	rdi, [func]
+	mov	eax, [eidx]
+	inc	eax
+	mov	esi, eax
+	call	bfa_extra_get
+	mov	[off], eax
+	mov	rdi, [func]
+	mov	eax, [eidx]
+	add	eax, 3
+	mov	esi, eax
+	call	bfa_extra_get
+	mov	[vv], eax
+
+	mov	rdi, [func]
+	mov	esi, [vv]
+	call	bfa_value_type
+	mov	rdi, [module]
+	mov	esi, eax
+	call	__bfa_vtype_bytes
+	mov	[vbytes], eax
+	mov	[velw], edx
+
+	mov	rdi, [ctx]
+	mov	esi, [vp]
+	call	__bfa_out_movq_rax_slot		; mov rax, [rbp-8p]
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [vv]
+	mov	r8d, 1
+	call	__bfa_emit_vbase			; lea rcx, [rbp-M]
+
+	mov	dword [k], 0
+  .chunk:
+	mov	eax, [k]
+	cmp	eax, [vbytes]
+	jae	.done
+	mov	eax, [vbytes]
+	sub	eax, [k]
+	xor	ecx, ecx
+	cmp	eax, 16
+	setae	cl
+	xor	ecx, 1
+	mov	[half], ecx
+	mov	eax, [off]
+	add	eax, [k]
+	mov	[poff], eax
+
+	mov	rdi, [ctx]
+	xor	esi, esi
+	mov	edx, [velw]
+	mov	ecx, [half]
+	mov	r8d, 1
+	mov	r9d, [k]
+	call	__bfa_emit_vmov_in			; movupX xmm0, [rcx+16k]
+	mov	rdi, [ctx]
+	xor	esi, esi
+	mov	edx, [poff]
+	mov	ecx, [velw]
+	mov	r8d, [half]
+	xor	r9d, r9d
+	call	__bfa_emit_vmov_out			; movupX [rax+off+16k], xmm0
+
+	mov	eax, [k]
+	add	eax, 16
+	mov	[k], eax
+	jmp	.chunk
+  .done:
+	return
+endp
+
 
 ; __bfa_emit_fneg(ctx, module, func, instid) -- the sign bit ALONE, XORed
 ; in: f64 mask 0x8000000000000000, f32 mask 0x80000000, each materialised
@@ -1926,6 +2410,12 @@ proc __bfa_emit_param, ctx, module, func, instid
 	mov	eax, [j]
 	cmp	eax, [iv]
 	je	.mine
+	; a vector param ahead of this one must not bump the integer ordinal:
+	; v1 refuses vector params outright, here and at `.walkdone` alike.
+	cmp	ecx, BFA_TK_VF32
+	je	.vecparam
+	cmp	ecx, BFA_TK_VF64
+	je	.vecparam
 	cmp	ecx, BFA_TK_F32
 	je	.pre_sse
 	cmp	ecx, BFA_TK_F64
@@ -1947,7 +2437,20 @@ proc __bfa_emit_param, ctx, module, func, instid
 	lea	rdi, [.oor]
 	mov	rsi, .after_oor - .oor
 	call	__bfa_emit_die
+  .vecparam:
+	; a vector in a signature has no v1 home in the SysV ordinal walk
+	; (one xmm argument register is ONE scalar's); refused by name.
+	jmp	.after_vp
+  .vp db "param of a vector type: v1 keeps vectors inside a function (scalars store lanes; indexing reads them) [OPEN]"
+  .after_vp:
+	lea	rdi, [.vp]
+	mov	rsi, .after_vp - .vp
+	call	__bfa_emit_die
   .walkdone:
+	cmp	dword [kind], BFA_TK_VF32
+	je	.vecparam
+	cmp	dword [kind], BFA_TK_VF64
+	je	.vecparam
 	cmp	dword [kind], BFA_TK_F32
 	je	.float
 	cmp	dword [kind], BFA_TK_F64
@@ -2219,6 +2722,21 @@ proc __bfa_emit_edge_copies, ctx, func, pblk, tblk, skipn
   .pushloop:
 	cmp	dword [cur], 0
 	je	.pushdone
+	; a phi OVER a vector value has no v1 lowering: the edge copy is one
+	; qword through the stack, and a lane group is not one qword. Refused
+	; by name; scalars store lanes, indexing reads them (ssa-ir.md 2.6).
+	mov	rdi, [func]
+	mov	esi, [cur]
+	call	bfa_inst_ptr
+	mov	esi, [rax + BfaInst.ty]
+	mov	rdi, [ctx]
+	mov	rdi, [rdi + BfaPrintCtx.module]
+	call	bfa_type_ptr
+	movzx	ecx, byte [rax + BfaType.kind]
+	cmp	ecx, BFA_TK_VF32
+	je	.vecparam
+	cmp	ecx, BFA_TK_VF64
+	je	.vecparam
 	mov	rdi, [func]
 	mov	esi, [cur]
 	mov	edx, [pblk]
@@ -2291,6 +2809,13 @@ proc __bfa_emit_edge_copies, ctx, func, pblk, tblk, skipn
 	jmp	.poploop
   .done:
 	return
+  .vecparam:
+	jmp	.after_vp
+  .vp db "phi of a vector value: v1 keeps vectors inside a basic block (scalars store lanes; indexing reads them) [OPEN]"
+  .after_vp:
+	lea	rdi, [.vp]
+	mov	rsi, .after_vp - .vp
+	call	__bfa_emit_die
 endp
 
 ; __bfa_emit_blklabel(ctx, lblptr, lbllen, blkid) -- `<prefix><blkid>`, no
@@ -2586,7 +3111,22 @@ proc __bfa_emit_ret, ctx, module, func, instid
 	je	.f32
 	cmp	ecx, BFA_TK_F64
 	je	.f64
+	cmp	ecx, BFA_TK_VF32
+	je	.vec
+	cmp	ecx, BFA_TK_VF64
+	je	.vec
 	jmp	.int
+  .vec:
+	; a vector cannot leave a function through v1's two-register SysV
+	; return contract; refused BY NAME (a wrong-width rax would be a
+	; miscompile, not a refusal) -- scalars store lanes, indexing reads
+	; them, so a caller that wants the lanes reads them out of memory.
+	jmp	.after_vmsg
+  .vmsg db "ret of a vector value: v1 keeps vectors inside a function (scalars store lanes; indexing reads them) [OPEN]"
+  .after_vmsg:
+	lea	rdi, [.vmsg]
+	mov	rsi, .after_vmsg - .vmsg
+	call	__bfa_emit_die
   .f32:
 	__bfa_emtxt 9, "movss", 9, "xmm0, dword "
 	mov	rdi, [ctx]
@@ -2705,7 +3245,19 @@ endp
 ;       ---- align16(8*(ninsts+1)) ----------------
 ;       ...                    each `slot` instruction's own bytes,
 ;                              in instruction-id order, each aligned
+;       ---- the vector region, only as deep as it is populated --------
+;       ...                    each VECTOR-VALUED instruction's result
+;                              (its value's type is vf32.N / vf64.N):
+;                              lanes x element bytes, 16-aligned, in
+;                              instruction-id order
 ;       ---- align16(total) = the frame size ------
+;
+; The vector region contributes NOTHING to a function with no vector-typed
+; values: its walk adds zero bytes and the frame size is what the two
+; regions alone computed. Every pinned non-vector fixture's frame text is
+; thus unchanged byte for byte -- the same requirement ssa-ir.md 2.4
+; states for a phi-free block ("must produce exactly the text it produced
+; before"), generalised: no vector instruction, no text change.
 ;
 ; `rbp` is 16-byte aligned inside every emitted function (`rsp` is 8 mod 16
 ; at entry, `push rbp` makes it 0 mod 16), so an offset that is a multiple
@@ -2713,11 +3265,12 @@ endp
 ; 16 would need a runtime `and rsp, -A` and are REFUSED rather than
 ; silently mis-aligned.
 ;
-; The offset of a given `slot` is recomputed by walking the instruction Vec
-; from the start each time it is needed -- O(n^2) over a function, which is
-; this backend's standing trade (spec section 9.2: "slow by construction and
-; correct by construction") and avoids threading a per-function side table
-; through a dispatcher that is already at `proc`'s six-argument limit.
+; The offset of a given `slot` or vector result is recomputed by walking
+; the instruction Vec from the start each time it is needed -- O(n^2) over
+; a function, which is this backend's standing trade (spec section 9.2:
+; "slow by construction and correct by construction") and avoids threading
+; a per-function side table through a dispatcher that is already at
+; `proc`'s six-argument limit.
 
 ; __bfa_align_up(v, a) -> rax = v rounded up to a multiple of `a`, which
 ; must be a power of two (checked by the caller, __bfa_emit_slot).
@@ -2733,19 +3286,54 @@ proc __bfa_align_up, v, a
 	return
 endp
 
-; __bfa_frame_layout(func, instid) -> eax.
+; __bfa_vtype_bytes(module, ty) -> eax = the vector storage byte count for a
+; vf32.N/vf64.N type (lanes x element bytes: 8/16/32 for vf32.2/4/8,
+; 16/32/64 for vf64.2/4/8), edx = the element width 4/8; eax = 0 iff `ty`
+; is not a vector kind. The one place a vector's size is computed from its
+; kind and lane count: frame layout sizes by it, the chunked movups/movupd
+; emission loops by it.
+proc __bfa_vtype_bytes, module, ty
+	locals
+	endl
+	mov	rdi, [module]
+	mov	esi, [ty]
+	call	bfa_type_ptr
+	movzx	ecx, byte [rax + BfaType.kind]
+	mov	eax, [rax + BfaType.ref]	; the lane count (ref carries it)
+	mov	edx, 4
+	cmp	ecx, BFA_TK_VF32
+	je	.vec
+	mov	edx, 8
+	cmp	ecx, BFA_TK_VF64
+	je	.vec
+	xor	eax, eax
+	xor	edx, edx
+	return
+  .vec:
+	imul	eax, edx
+	return
+endp
+
+; __bfa_frame_layout(module, func, instid) -> eax.
 ;   instid == 0: the whole frame size, 16-byte aligned.
-;   instid != 0: the byte offset from `rbp` of that `slot` instruction's
-;                storage, i.e. the emitted code says `lea rax, [rbp-eax]`.
-; A non-`slot` instid, or one this walk never reaches, is a caller bug and
-; returns the frame size -- callers only ever pass a `slot`'s own id.
-proc __bfa_frame_layout, func, instid
+;   instid != 0, a `slot` instruction: the byte offset from `rbp` of that
+;                slot's storage, i.e. the emitted code says
+;                `lea rax, [rbp-eax]`.
+;   instid != 0, a vector-valued instruction (the value it produces has a
+;                vf32.N/vf64.N type): the byte offset from `rbp` of its
+;                vector-result storage -- lanes x element bytes, 16-aligned,
+;                after the slot region (the diagram above).
+; A `slot`-or-vector distinction this walk never reaches is a caller bug
+; and returns the frame size -- callers only ever pass a `slot`'s or a
+; vector producer's own id.
+proc __bfa_frame_layout, module, func, instid
 	uses	rbx
 	locals
 		slot ninsts, dd
 		slot v, dd
 		slot cur, dq
 		slot algn, dq
+		slot velw, dd
 	endl
 	mov	rbx, [func]
 	mov	rdi, [rbx + BfaFunc.insts]
@@ -2764,7 +3352,7 @@ proc __bfa_frame_layout, func, instid
   .loop:
 	mov	eax, [v]
 	cmp	eax, [ninsts]
-	jg	.done
+	jg	.vecstart
 	mov	rdi, [func]
 	mov	esi, [v]
 	call	bfa_inst_ptr
@@ -2793,7 +3381,54 @@ proc __bfa_frame_layout, func, instid
 	inc	eax
 	mov	[v], eax
 	jmp	.loop
-  .done:
+
+	; ---- third region: one 16-aligned home per vector-typed value -------
+	; bfa_value_type, not the raw ty field: cmp/fcmp/*ov record their
+	; OPERAND type in ty and produce a u1, and a vector-typed operand of a
+	; compare (refused by name at the float-lowerings' fwidth arm, or the
+	; integer width check) must not grow a vector region it will never
+	; read.
+  .vecstart:
+	mov	dword [v], 1
+  .vloop:
+	mov	eax, [v]
+	cmp	eax, [ninsts]
+	jg	.vdone
+	mov	rdi, [func]
+	mov	esi, [v]
+	call	bfa_value_type		; eax = produced type id, 0 = u1
+	test	eax, eax
+	jz	.vnext
+	mov	rdi, [module]
+	mov	esi, eax
+	call	bfa_type_ptr
+	movzx	ecx, byte [rax + BfaType.kind]
+	mov	edx, [rax + BfaType.ref]	; lanes
+	mov	eax, 4
+	cmp	ecx, BFA_TK_VF32
+	je	.isvec
+	mov	eax, 8
+	cmp	ecx, BFA_TK_VF64
+	jne	.vnext
+  .isvec:
+	mov	[velw], eax
+	imul	eax, edx			; bytes = lanes x element
+	mov	rdi, [cur]
+	add	rdi, rax
+	mov	esi, 16
+	call	__bfa_align_up
+	mov	[cur], rax
+	mov	eax, [v]
+	cmp	eax, [instid]
+	jne	.vnext
+	mov	rax, [cur]
+	return
+  .vnext:
+	mov	eax, [v]
+	inc	eax
+	mov	[v], eax
+	jmp	.vloop
+  .vdone:
 	mov	rax, [cur]
 	add	rax, 15
 	and	rax, -16
@@ -2824,8 +3459,9 @@ proc __bfa_emit_slot_inst, ctx, module, func, instid
 	and	ecx, eax
 	jnz	.badalign
 
-	mov	rdi, [func]
-	mov	esi, [instid]
+	mov	rdi, [module]
+	mov	rsi, [func]
+	mov	edx, [instid]
 	call	__bfa_frame_layout
 	mov	[off], eax
 
@@ -3275,6 +3911,22 @@ proc __bfa_emit_load, ctx, module, func, instid
 	cmp	eax, BFA_ORDER_NATIVUS
 	jne	.bytewise
 
+	; a vector type takes its own nativus arm BEFORE __bfa_mem_access (which
+	; only knows an integer's whole-byte widths): lanes x element bytes,
+	; chunked movups/movupd into the result's region-3 storage.
+	mov	rdi, [module]
+	mov	esi, [ty]
+	call	__bfa_vtype_bytes
+	test	eax, eax
+	jz	.notvec
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfa_emit_vload
+	return
+  .notvec:
+
 	mov	rdi, [module]
 	mov	esi, [ty]
 	call	__bfa_mem_access
@@ -3431,6 +4083,22 @@ proc __bfa_emit_store, ctx, module, func, instid
 	return
 
   .onestore:
+	; a vector type's nativus arm: the operand's region-3 storage into
+	; memory, chunked (see __bfa_emit_load's vector arm for why this runs
+	; before __bfa_mem_access).
+	mov	rdi, [module]
+	mov	esi, [ty]
+	call	__bfa_vtype_bytes
+	test	eax, eax
+	jz	.notvec
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfa_emit_vstore
+	return
+  .notvec:
+
 	mov	rdi, [module]
 	mov	esi, [ty]
 	call	__bfa_mem_access
@@ -3865,6 +4533,10 @@ proc __bfa_emit_call, ctx, module, func, instid
 	je	.argflt
 	cmp	ecx, BFA_TK_F64
 	je	.argflt
+	cmp	ecx, BFA_TK_VF32
+	je	.vecarg
+	cmp	ecx, BFA_TK_VF64
+	je	.vecarg
 	jmp	.argint
   .argflt:
 	cmp	ecx, BFA_TK_F64
@@ -3952,6 +4624,10 @@ proc __bfa_emit_call, ctx, module, func, instid
 	je	.resf32
 	cmp	ecx, BFA_TK_F64
 	je	.resf64
+	cmp	ecx, BFA_TK_VF32
+	je	.vecresult
+	cmp	ecx, BFA_TK_VF64
+	je	.vecresult
 	jmp	.resint
   .resf32:
 	__bfa_emtxt 9, "movd", 9, "eax, xmm0", 10
@@ -3994,6 +4670,24 @@ proc __bfa_emit_call, ctx, module, func, instid
 	call	__bfa_out_movq_slot_rax
   .novalue:
 	return
+  .vecarg:
+	; a vector argument has no v1 home in the SysV class walk -- refused
+	; by name (scalars store lanes; indexing reads them).
+	jmp	.after_vamsg
+  .vamsg db "call with a vector argument: v1 keeps vectors inside a function (scalars store lanes; indexing reads them) [OPEN]"
+  .after_vamsg:
+	lea	rdi, [.vamsg]
+	mov	rsi, .after_vamsg - .vamsg
+	call	__bfa_emit_die
+  .vecresult:
+	; a vector result would arrive in xmm0 16 bytes wide with v1's two-
+	; scalar-register contract nowhere near it -- refused by name.
+	jmp	.after_vrmsg
+  .vrmsg db "call with a vector result type: v1 keeps vectors inside a function (scalars store lanes; indexing reads them) [OPEN]"
+  .after_vrmsg:
+	lea	rdi, [.vrmsg]
+	mov	rsi, .after_vrmsg - .vrmsg
+	call	__bfa_emit_die
 endp
 
 ; __bfa_emit_arc(ctx, module, func, instid) -- `retain %r` / `release %r`.
@@ -5293,6 +5987,24 @@ proc __bfa_emit_inst, ctx, module, func, instid, lblptr, lbllen
 	call	__bfa_emit_farith
 	return
   .notfarith:
+	; the vector float group, beside the float group proper
+	cmp	dword [op], BFA_OP_VADD
+	je	.dovarith
+	cmp	dword [op], BFA_OP_VSUB
+	je	.dovarith
+	cmp	dword [op], BFA_OP_VMUL
+	je	.dovarith
+	cmp	dword [op], BFA_OP_VDIV
+	je	.dovarith
+	jmp	.notvarith
+  .dovarith:
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfa_emit_varith
+	return
+  .notvarith:
 	cmp	dword [op], BFA_OP_FNEG
 	jne	.notfneg
 	mov	rdi, [ctx]
@@ -5448,8 +6160,9 @@ proc __bfa_emit_function, ctx, module, funcptr, arena
 	mov	rdi, [rdi + BfaFunc.insts]
 	mov	rax, [rdi + Vec.len]
 	mov	[ninsts], eax
-	mov	rdi, [func]
-	xor	esi, esi
+	mov	rdi, [module]
+	mov	rsi, [func]
+	xor	edx, edx
 	call	__bfa_frame_layout
 	mov	[framesz], eax
 

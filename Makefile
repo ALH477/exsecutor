@@ -31,8 +31,10 @@ all: $(OUT)
 # the code lives. Without this, editing lexer/lex.inc and running `make`
 # silently reuses a stale binary -- which happened, and cost a wrong
 # conclusion about whether a lexer fix had worked. fasmg has no depfile
-# support, so this is a wildcard rather than generated deps.
-EXSC_SRCS = $(shell find compiler -name '*.inc' -o -name '*.bin' 2>/dev/null)
+# support, so this is a wildcard rather than generated deps. The .in tail is
+# backend_c/prologue.c.in: prologue edits are code edits (Stage 5's vector
+# typedefs proved a stale binary follows without it).
+EXSC_SRCS = $(shell find compiler -name '*.inc' -o -name '*.bin' -o -name '*.in' 2>/dev/null)
 
 $(OUT): $(SRC) $(EXSC_SRCS) | build
 	$(FASMG) $(SRC) $@

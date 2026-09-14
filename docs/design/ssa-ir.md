@@ -67,6 +67,7 @@ those 8 bytes; a type id is a first-use index.
 |---|---|
 | `uN` `iN`, 1 ≤ N ≤ 64 | exact width (spec §5.4); `u1` is the boolean |
 | `f32` `f64` | IEEE binary32/64 |
+| `vf32.N` `vf64.N` | N lanes of IEEE binary32/64, N ∈ {2, 4, 8} (section 2.6); the kind carries the element size, the lane count is in `ref` (the `fn.N`/`red.` precedent), `width` is 0 |
 | `ptr` | host address, width of `mensura` — concrete, spec §9.5 fixes `--hospes` first |
 | `dptr` | device address (spec §5.5); reserved, Stage 3 `[OPEN]` |
 | `ref` `refc` | `refero<T>` / `refero_communis<T>` (spec §6.4): non-atomic / atomic |
@@ -130,6 +131,7 @@ is that type unless shown. Text form: `%n = op T operands`.
 | compare | `cmp.eq .ne .lt .le .gt .ge → u1` | signedness from `T` |
 | convert | `zext sext trunc` | `zext`/`sext` by source sign; `trunc` keeps low bits — which is now what spec §5.4 says a narrowing or equal-width `sicut` means (the marker this row carried, "narrowing `sicut` `[OPEN]`", was stale from the day `__lwr_cast` emitted `trunc`: the emitter implemented truncation and the spec caught up) |
 | float | `fadd fsub fmul fdiv fneg` | one IEEE rounding each, in the function's `rotundatio`, subnormals per `subnormales` |
+| vector float | `vadd vsub vmul vdiv` | one IEEE rounding **per lane** of a `vf32.N`/`vf64.N`, in the function's `rotundatio`, subnormals per `subnormales`; no cross-lane combination anywhere, so spec §5.4's reduction-shape law is not engaged — the lanes are independent scalars that happen to share an instruction (`tests/ir/vec_arith.ir` pins the per-lane rounding, tie cases included) |
 | fused | `fma` | one rounding; the only contraction that can exist (`contractio explicita`) |
 | float misc | `fcmp.* → u1`, `fext ftrunc itof ftoi`, `bitcast` | `fcmp` ordered; unordered forms, `ftoi` on NaN/range `[OPEN]` |
 | reduction | `redinit F op shape w → red.F`, `contrib %h %v`, `redfin F %h → F` | section 2.6 |
@@ -220,9 +222,21 @@ canonicalisation resolves every operand's chain, so no backend sees a `nop`.
   both lower to these three. The reference backend's lowering of `arborea w`
   is the definition (ADR 0012); spec §5.4 leaves `n` not a multiple of `w`
   undefined `[OPEN]`.
-- **Vectors**: `acies<F, N>` is `N` lanes in memory; lane-wise ops are scalar
-  loops here, a vector group is Stage 3 `[OPEN]`. Lane count cannot come from
-  the host because the IR has no host-width type.
+- **Vectors**: `vf32.N` and `vf64.N` are first-class value types (section
+  2.2), and the four lane-wise ops `vadd`/`vsub`/`vmul`/`vdiv` lower in the
+  reference backend to the SSE2 baseline — chunked `movups`/`movupd` around
+  one packed op per 16-byte chunk, no AVX (`tests/ir/vec_arith.ir`,
+  `vec_mem.ir`). Lane count cannot come from the host because the IR has no
+  host-width type; N ∈ {2, 4, 8} is enforced at parse
+  (`tests/ir/reject_parse_vec_lanes.ir`) — an admission boundary, not an
+  emitter limit, the chunked walk being a 16-byte stride for as many chunks
+  as the image has. **Scalars store lanes, indexing reads them** — a vector enters and leaves a function only through memory, so the
+  emitters refuse by name a vector `param`, `ret`, `phi`, or `call`
+  argument/result `[OPEN]`, and there is deliberately no splat, extract, or
+  horizontal op. Still `[OPEN]`: N above 8 (the AVX question), a
+  compare/mask group (`vcmp`/`vselect`), horizontal reductions, splat/extract.
+  Whether a source `acies<F, N>` lowers to this group or to scalar loops is
+  the frontend's choice and has not been made — no lowering exists yet.
 
 ### 2.7 Memory, layout, `@transitus`
 
@@ -255,7 +269,15 @@ so the verifier refuses a float under them
 same text for the path that reaches them without the verifier. The nativus
 case lowers in both backends since 2026-09-14 (the signaculum stage needed
 it; `tests/ir/float_mem.ir` pins the bit-baggage semantics — a NaN payload,
--0.0's sign and a subnormal's bits all survive). `copy n` is bytes only; a
+-0.0's sign and a subnormal's bits all survive). A vector `load`/`store` —
+`load vf64.2 %p 8 nativus` — is the same settlement generalised: lanes ×
+element bytes of the lanes' raw IEEE bit patterns, back to back (8/16/32
+bytes for vf32.2/4/8, 16/32/64 for vf64.2/4/8), `nativus` only, the
+verifier refusing `maior`/`minor` on the same integer-surface rule
+(`tests/ir/reject_verify_vec_load_ord.ir`, `reject_verify_vec_store_ord.ir`)
+and both emitters refusing the same text for the path without the verifier.
+`tests/ir/vec_mem.ir` pins the extent — the store moves exactly lanes ×
+element bytes and stops. `copy n` is bytes only; a
 struct holding references is copied as bytes plus one `retain` per reference
 field known from the layout. Bounds are explicit `chk` instructions, so both
 backends trap at the same point.
@@ -345,7 +367,8 @@ later in the same function.
     Attr     ::= 'numeri' IDENT IDENT IDENT IDENT | 'nucleus' | 'externus' IDENT
     Block    ::= 'b' INT ':' ['quisque'] Line*
     Line     ::= ['%' INT '='] OP Tok*      ; arity by table on OP; phi/call/callind read to end of line
-    Type     ::= [ui]INT | 'f32' | 'f64' | 'ptr' | 'dptr' | 'ref' | 'refc' | 'red.' Type | 'fn.' INT
+    Type     ::= [ui]INT | 'f32' | 'f64' | 'vf32.' INT | 'vf64.' INT   ; vf: the INT is the lane count, 2/4/8 (parse-enforced)
+               | 'ptr' | 'dptr' | 'ref' | 'refc' | 'red.' Type | 'fn.' INT
 
     functio @dot (ptr ptr u64) -> f32 numeri ad_parem vetita explicita conservata {
     b0:
@@ -446,7 +469,12 @@ list and are settled in section 2.3, `tests/ir/trap_shl_u8.ir`;
 readable in its body; `rumpe` in a reduction loop; the `+?` optional's
 representation; object header, weak references, destructor dispatch;
 dictionary layout (spec §15, item 5); which capabilities carry runtime values;
-`dptr` and a vector group; `select`/`switch`; whether a constant-folded
+`dptr`; the vector group's deferred
+surface — N above 8, a compare/mask group, horizontal ops, splat/extract,
+and vectors crossing a function boundary (param/ret/phi/call, all refused
+by name `[OPEN]`, section 2.6) — the group itself landed 2026-09-14
+(`vadd`/`vsub`/`vmul`/`vdiv` over `vf32.N`/`vf64.N`, sections 2.2-2.3);
+`select`/`switch`; whether a constant-folded
 trapping op is a compile-time diagnostic (it would need a spec §13 code; none
 is proposed).
 

@@ -1,0 +1,391 @@
+; TEST: expect-exit=200
+;
+; The vector float group's ARITHMETIC, end to end (ssa-ir.md 2.3's vector
+; row, 2.2's vf32.N/vf64.N row): scalars lay each lane's raw IEEE image in
+; memory (`fconst` bits + a scalar store), `load vf*.N ... nativus` gathers
+; the lanes, one packed vadd/vsub/vmul/vdiv runs one IEEE rounding PER LANE
+; in the function's rotundatio (the prelude's MXCSR image, as float_arith.ir
+; pins for the scalar group), `store` puts the lanes back, and every check
+; reads ONE LANE with a scalar load and compares it against an INDEPENDENTLY
+; spelled fconst image -- the computed bits agree with text the fixture wrote
+; down, never with the vector side agreeing with itself.
+;
+; Part 1, vf32.4 -- A = (1.0+2^-23, 2.5, 2.0, 9.0), B = (2^-24, 1.5, 2.0,
+; 2.0), all four ops (checks 1-16). Lane 0 of vadd is the rounding-tie pin
+; (1.0+2^-23)+2^-24 is EXACTLY between 1.0+2^-23 and 1.0+2^-22: ad_parem
+; rounds up to the even mantissa 1.0+2^-22; a toward-zero or toward +inf
+; image exits 1. Lane 0 of vsub is the mirror tie, below 1.0+2^-23, rounding
+; down to even 1.0. vdiv lane 1 is the inexact one (2.5/1.5 = 5/3).
+; Part 2, vf64.2 -- A = (1.0+2^-52, 9.0), B = (2^-53, 2.0) (checks 17-24);
+; the same tie pins in f64.
+; Part 3, vf32.8 -- A = (1..8), B = (0.5)x8, one vadd (checks 25-32): the
+; 32-byte vector is two 16-byte chunks of movups/addps, so this part is what
+; proves the second chunk moves at all (a single-chunk lowering exits 25).
+;
+; Constants below are the exact values, computed with python (Fraction
+; round-to-nearest-even), never by hand. Operand images live at slot
+; offsets 16..143, result stores at 144..303; everything nativus.
+;
+; Mutations (run): movups swapped for movaps with an unaligned slot -> the
+; emitted program faults, not an exit code (recorded: movu is the contract).
+; addps spelled addpd in part 1 -> exit 1 (the tie lane reads garbage).
+; The vf64.2 chunk using divsd/pd on the WRONG width -> exit 17 or 18.
+; The chunk loop stopping at the first 16 bytes -> part 3 exits 25.
+;
+; Check k returns k on a mismatch; all 32 right: exit 200.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = slot 320 16
+%2 = fconst f32 1065353217
+store f32 %1 16 nativus %2
+%3 = fconst f32 1075838976
+store f32 %1 20 nativus %3
+%4 = fconst f32 1073741824
+store f32 %1 24 nativus %4
+%5 = fconst f32 1091567616
+store f32 %1 28 nativus %5
+%6 = fconst f32 864026624
+store f32 %1 32 nativus %6
+%7 = fconst f32 1069547520
+store f32 %1 36 nativus %7
+%8 = fconst f32 1073741824
+store f32 %1 40 nativus %8
+%9 = fconst f32 1073741824
+store f32 %1 44 nativus %9
+%10 = fconst f64 4607182418800017409
+store f64 %1 48 nativus %10
+%11 = fconst f64 4621256167635550208
+store f64 %1 56 nativus %11
+%12 = fconst f64 4368491638549381120
+store f64 %1 64 nativus %12
+%13 = fconst f64 4611686018427387904
+store f64 %1 72 nativus %13
+%14 = fconst f32 1065353216
+store f32 %1 80 nativus %14
+%15 = fconst f32 1073741824
+store f32 %1 84 nativus %15
+%16 = fconst f32 1077936128
+store f32 %1 88 nativus %16
+%17 = fconst f32 1082130432
+store f32 %1 92 nativus %17
+%18 = fconst f32 1084227584
+store f32 %1 96 nativus %18
+%19 = fconst f32 1086324736
+store f32 %1 100 nativus %19
+%20 = fconst f32 1088421888
+store f32 %1 104 nativus %20
+%21 = fconst f32 1090519040
+store f32 %1 108 nativus %21
+%22 = fconst f32 1056964608
+store f32 %1 112 nativus %22
+%23 = fconst f32 1056964608
+store f32 %1 116 nativus %23
+%24 = fconst f32 1056964608
+store f32 %1 120 nativus %24
+%25 = fconst f32 1056964608
+store f32 %1 124 nativus %25
+%26 = fconst f32 1056964608
+store f32 %1 128 nativus %26
+%27 = fconst f32 1056964608
+store f32 %1 132 nativus %27
+%28 = fconst f32 1056964608
+store f32 %1 136 nativus %28
+%29 = fconst f32 1056964608
+store f32 %1 140 nativus %29
+%30 = load vf32.4 %1 16 nativus
+%31 = load vf32.4 %1 32 nativus
+%32 = vadd vf32.4 %30 %31
+store vf32.4 %1 144 nativus %32
+%33 = load f32 %1 144 nativus
+%34 = fconst f32 1065353218
+%35 = fcmp.eq f32 %33 %34
+br %35 b2 b1
+b1:
+%36 = iconst u8 1
+ret %36
+b2:
+%37 = load f32 %1 148 nativus
+%38 = fconst f32 1082130432
+%39 = fcmp.eq f32 %37 %38
+br %39 b4 b3
+b3:
+%40 = iconst u8 2
+ret %40
+b4:
+%41 = load f32 %1 152 nativus
+%42 = fconst f32 1082130432
+%43 = fcmp.eq f32 %41 %42
+br %43 b6 b5
+b5:
+%44 = iconst u8 3
+ret %44
+b6:
+%45 = load f32 %1 156 nativus
+%46 = fconst f32 1093664768
+%47 = fcmp.eq f32 %45 %46
+br %47 b8 b7
+b7:
+%48 = iconst u8 4
+ret %48
+b8:
+%49 = load vf32.4 %1 16 nativus
+%50 = load vf32.4 %1 32 nativus
+%51 = vsub vf32.4 %49 %50
+store vf32.4 %1 160 nativus %51
+%52 = load f32 %1 160 nativus
+%53 = fconst f32 1065353216
+%54 = fcmp.eq f32 %52 %53
+br %54 b10 b9
+b9:
+%55 = iconst u8 5
+ret %55
+b10:
+%56 = load f32 %1 164 nativus
+%57 = fconst f32 1065353216
+%58 = fcmp.eq f32 %56 %57
+br %58 b12 b11
+b11:
+%59 = iconst u8 6
+ret %59
+b12:
+%60 = load f32 %1 168 nativus
+%61 = fconst f32 0
+%62 = fcmp.eq f32 %60 %61
+br %62 b14 b13
+b13:
+%63 = iconst u8 7
+ret %63
+b14:
+%64 = load f32 %1 172 nativus
+%65 = fconst f32 1088421888
+%66 = fcmp.eq f32 %64 %65
+br %66 b16 b15
+b15:
+%67 = iconst u8 8
+ret %67
+b16:
+%68 = load vf32.4 %1 16 nativus
+%69 = load vf32.4 %1 32 nativus
+%70 = vmul vf32.4 %68 %69
+store vf32.4 %1 176 nativus %70
+%71 = load f32 %1 176 nativus
+%72 = fconst f32 864026625
+%73 = fcmp.eq f32 %71 %72
+br %73 b18 b17
+b17:
+%74 = iconst u8 9
+ret %74
+b18:
+%75 = load f32 %1 180 nativus
+%76 = fconst f32 1081081856
+%77 = fcmp.eq f32 %75 %76
+br %77 b20 b19
+b19:
+%78 = iconst u8 10
+ret %78
+b20:
+%79 = load f32 %1 184 nativus
+%80 = fconst f32 1082130432
+%81 = fcmp.eq f32 %79 %80
+br %81 b22 b21
+b21:
+%82 = iconst u8 11
+ret %82
+b22:
+%83 = load f32 %1 188 nativus
+%84 = fconst f32 1099956224
+%85 = fcmp.eq f32 %83 %84
+br %85 b24 b23
+b23:
+%86 = iconst u8 12
+ret %86
+b24:
+%87 = load vf32.4 %1 16 nativus
+%88 = load vf32.4 %1 32 nativus
+%89 = vdiv vf32.4 %87 %88
+store vf32.4 %1 192 nativus %89
+%90 = load f32 %1 192 nativus
+%91 = fconst f32 1266679809
+%92 = fcmp.eq f32 %90 %91
+br %92 b26 b25
+b25:
+%93 = iconst u8 13
+ret %93
+b26:
+%94 = load f32 %1 196 nativus
+%95 = fconst f32 1070945621
+%96 = fcmp.eq f32 %94 %95
+br %96 b28 b27
+b27:
+%97 = iconst u8 14
+ret %97
+b28:
+%98 = load f32 %1 200 nativus
+%99 = fconst f32 1065353216
+%100 = fcmp.eq f32 %98 %99
+br %100 b30 b29
+b29:
+%101 = iconst u8 15
+ret %101
+b30:
+%102 = load f32 %1 204 nativus
+%103 = fconst f32 1083179008
+%104 = fcmp.eq f32 %102 %103
+br %104 b32 b31
+b31:
+%105 = iconst u8 16
+ret %105
+b32:
+%106 = load vf64.2 %1 48 nativus
+%107 = load vf64.2 %1 64 nativus
+%108 = vadd vf64.2 %106 %107
+store vf64.2 %1 208 nativus %108
+%109 = load f64 %1 208 nativus
+%110 = fconst f64 4607182418800017410
+%111 = fcmp.eq f64 %109 %110
+br %111 b34 b33
+b33:
+%112 = iconst u8 17
+ret %112
+b34:
+%113 = load f64 %1 216 nativus
+%114 = fconst f64 4622382067542392832
+%115 = fcmp.eq f64 %113 %114
+br %115 b36 b35
+b35:
+%116 = iconst u8 18
+ret %116
+b36:
+%117 = load vf64.2 %1 48 nativus
+%118 = load vf64.2 %1 64 nativus
+%119 = vsub vf64.2 %117 %118
+store vf64.2 %1 224 nativus %119
+%120 = load f64 %1 224 nativus
+%121 = fconst f64 4607182418800017408
+%122 = fcmp.eq f64 %120 %121
+br %122 b38 b37
+b37:
+%123 = iconst u8 19
+ret %123
+b38:
+%124 = load f64 %1 232 nativus
+%125 = fconst f64 4619567317775286272
+%126 = fcmp.eq f64 %124 %125
+br %126 b40 b39
+b39:
+%127 = iconst u8 20
+ret %127
+b40:
+%128 = load vf64.2 %1 48 nativus
+%129 = load vf64.2 %1 64 nativus
+%130 = vmul vf64.2 %128 %129
+store vf64.2 %1 240 nativus %130
+%131 = load f64 %1 240 nativus
+%132 = fconst f64 4368491638549381121
+%133 = fcmp.eq f64 %131 %132
+br %133 b42 b41
+b41:
+%134 = iconst u8 21
+ret %134
+b42:
+%135 = load f64 %1 248 nativus
+%136 = fconst f64 4625759767262920704
+%137 = fcmp.eq f64 %135 %136
+br %137 b44 b43
+b43:
+%138 = iconst u8 22
+ret %138
+b44:
+%139 = load vf64.2 %1 48 nativus
+%140 = load vf64.2 %1 64 nativus
+%141 = vdiv vf64.2 %139 %140
+store vf64.2 %1 256 nativus %141
+%142 = load f64 %1 256 nativus
+%143 = fconst f64 4845873199050653697
+%144 = fcmp.eq f64 %142 %143
+br %144 b46 b45
+b45:
+%145 = iconst u8 23
+ret %145
+b46:
+%146 = load f64 %1 264 nativus
+%147 = fconst f64 4616752568008179712
+%148 = fcmp.eq f64 %146 %147
+br %148 b48 b47
+b47:
+%149 = iconst u8 24
+ret %149
+b48:
+%150 = load vf32.8 %1 80 nativus
+%151 = load vf32.8 %1 112 nativus
+%152 = vadd vf32.8 %150 %151
+store vf32.8 %1 272 nativus %152
+%153 = load f32 %1 272 nativus
+%154 = fconst f32 1069547520
+%155 = fcmp.eq f32 %153 %154
+br %155 b50 b49
+b49:
+%156 = iconst u8 25
+ret %156
+b50:
+%157 = load f32 %1 276 nativus
+%158 = fconst f32 1075838976
+%159 = fcmp.eq f32 %157 %158
+br %159 b52 b51
+b51:
+%160 = iconst u8 26
+ret %160
+b52:
+%161 = load f32 %1 280 nativus
+%162 = fconst f32 1080033280
+%163 = fcmp.eq f32 %161 %162
+br %163 b54 b53
+b53:
+%164 = iconst u8 27
+ret %164
+b54:
+%165 = load f32 %1 284 nativus
+%166 = fconst f32 1083179008
+%167 = fcmp.eq f32 %165 %166
+br %167 b56 b55
+b55:
+%168 = iconst u8 28
+ret %168
+b56:
+%169 = load f32 %1 288 nativus
+%170 = fconst f32 1085276160
+%171 = fcmp.eq f32 %169 %170
+br %171 b58 b57
+b57:
+%172 = iconst u8 29
+ret %172
+b58:
+%173 = load f32 %1 292 nativus
+%174 = fconst f32 1087373312
+%175 = fcmp.eq f32 %173 %174
+br %175 b60 b59
+b59:
+%176 = iconst u8 30
+ret %176
+b60:
+%177 = load f32 %1 296 nativus
+%178 = fconst f32 1089470464
+%179 = fcmp.eq f32 %177 %178
+br %179 b62 b61
+b61:
+%180 = iconst u8 31
+ret %180
+b62:
+%181 = load f32 %1 300 nativus
+%182 = fconst f32 1091043328
+%183 = fcmp.eq f32 %181 %182
+br %183 b64 b63
+b63:
+%184 = iconst u8 32
+ret %184
+b64:
+%185 = iconst u8 200
+ret %185
+}

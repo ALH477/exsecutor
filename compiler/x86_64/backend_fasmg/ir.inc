@@ -88,6 +88,14 @@ BFA_TK_REF  = 7
 BFA_TK_REFC = 8
 BFA_TK_RED  = 9		; red.F -- `ref` = the inner type id
 BFA_TK_FN   = 10	; fn.S  -- `ref` = the signature index (not interned/deduped -- see bfa_sig_new)
+BFA_TK_VF32 = 11	; vf32.N -- `ref` = the lane count N (2/4/8); width 0
+BFA_TK_VF64 = 12	; vf64.N -- `ref` = the lane count N (2/4/8); width 0.
+				; Like F32/F64, the kind carries the element size; the
+				; `fn.N`/`red.` precedent puts N in `ref`. Width is 0
+				; CANONICALLY -- parse/lower's float-width discrepancy
+				; (parse.inc's f32 arm at 32 vs lower/ty.inc's at 0) is
+				; not repeated here: one interpretation, kind+ref carry
+				; everything, interning is on all 8 bytes regardless.
 
 ; ---- comparison / float-comparison predicates (Inst.aux for OP_CMP/OP_FCMP)
 BFA_PRED_EQ = 0
@@ -173,6 +181,10 @@ BFA_OP_PHI      = 57
 BFA_OP_PARAM    = 58
 BFA_OP_ICONST   = 59
 BFA_OP_FCONST   = 60
+BFA_OP_VADD     = 61
+BFA_OP_VSUB     = 62
+BFA_OP_VMUL     = 63
+BFA_OP_VDIV     = 64
 
 ; ---- operand shapes (drives parse.inc's tokenizer AND print.inc's
 ; re-emission -- one interpreter for both directions, never two).
@@ -1319,6 +1331,10 @@ __bfa_opd_tab:
 	db	0				; 58 PARAM
 	db	0				; 59 ICONST   extra lo hi
 	db	0				; 60 FCONST   extra lo hi
+	db	BFA_OPD_A or BFA_OPD_B		; 61 VADD
+	db	BFA_OPD_A or BFA_OPD_B		; 62 VSUB
+	db	BFA_OPD_A or BFA_OPD_B		; 63 VMUL
+	db	BFA_OPD_A or BFA_OPD_B		; 64 VDIV
 __bfa_opd_tab_end:
 
 ; __bfa_opd_of(func, valueid) -> eax = the descriptor byte for this

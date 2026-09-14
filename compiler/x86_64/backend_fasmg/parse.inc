@@ -413,12 +413,73 @@ proc __bfa_parse_type, p, ptr, len
 	mov	rcx, .after_f64 - .lit_f64
 	call	__bfa_streq
 	test	eax, eax
-	jz	.chk_dptr
+	jz	.chk_vf32
 	mov	rdi, [rbx + BfaParser.module]
 	mov	esi, BFA_TK_F64
 	xor	edx, edx
 	mov	ecx, 64
 	xor	r8, r8
+	call	bfa_type_intern
+	return
+
+	; vf32.N / vf64.N: prefix (five bytes) + exactly one decimal digit,
+	; N in {2,4,8}. The lane count goes in `ref`; `width` stays 0 -- the
+	; kind already carries the element size, exactly the fn./red. arms'
+	; use of `ref` (ssa-ir.md 2.2's vector row).
+  .chk_vf32:
+	cmp	r13, 5
+	jle	.chk_vf64_short		; shorter than the prefix: cannot match
+	jmp	.after_vf32p
+  .lit_vf32p db "vf32."
+  .after_vf32p:
+	mov	rdi, r12
+	mov	rsi, 5
+	lea	rdx, [.lit_vf32p]
+	mov	rcx, 5
+	call	__bfa_streq
+	test	eax, eax
+	jz	.chk_vf64
+	mov	esi, BFA_TK_VF32
+	jmp	.vf_common
+  .chk_vf64_short:
+	jmp	.chk_dptr
+  .chk_vf64:
+	jmp	.after_vf64p
+  .lit_vf64p db "vf64."
+  .after_vf64p:
+	mov	rdi, r12
+	mov	rsi, 5
+	lea	rdx, [.lit_vf64p]
+	mov	rcx, 5
+	call	__bfa_streq
+	test	eax, eax
+	jz	.chk_dptr
+	mov	esi, BFA_TK_VF64
+  .vf_common:
+	; esi = the kind. One digit, nothing more, and it names 2, 4 or 8.
+	cmp	r13, 6
+	jne	.badvlanes
+	movzx	eax, byte [r12 + 5]
+	sub	eax, '0'
+	cmp	eax, 2
+	je	.vflanes_ok
+	cmp	eax, 4
+	je	.vflanes_ok
+	cmp	eax, 8
+	je	.vflanes_ok
+  .badvlanes:
+	mov	rdi, rbx
+	jmp	.after_vfbadmsg
+  .vfbadmsg db "vector float type: the lane count is 2, 4 or 8 (`vf32.N`/`vf64.N`)"
+  .after_vfbadmsg:
+	lea	rsi, [.vfbadmsg]
+	mov	rdx, .after_vfbadmsg - .vfbadmsg
+	call	__bfa_die
+  .vflanes_ok:
+	mov	r8d, eax			; lanes -> ref
+	mov	rdi, [rbx + BfaParser.module]
+	xor	edx, edx
+	xor	ecx, ecx			; width 0: the kind carries the size
 	call	bfa_type_intern
 	return
 
@@ -928,6 +989,10 @@ proc __bfa_optab_init, p
 	bfa_opdef 'fsub', BFA_OP_FSUB, BFA_SH_BIN
 	bfa_opdef 'fmul', BFA_OP_FMUL, BFA_SH_BIN
 	bfa_opdef 'fdiv', BFA_OP_FDIV, BFA_SH_BIN
+	bfa_opdef 'vadd', BFA_OP_VADD, BFA_SH_BIN
+	bfa_opdef 'vsub', BFA_OP_VSUB, BFA_SH_BIN
+	bfa_opdef 'vmul', BFA_OP_VMUL, BFA_SH_BIN
+	bfa_opdef 'vdiv', BFA_OP_VDIV, BFA_SH_BIN
 
 	bfa_opdefp 'cmp.eq', BFA_OP_CMP, BFA_SH_CMP, BFA_PRED_EQ
 	bfa_opdefp 'cmp.ne', BFA_OP_CMP, BFA_SH_CMP, BFA_PRED_NE

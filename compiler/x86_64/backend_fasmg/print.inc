@@ -114,6 +114,10 @@ __bfa_op_shape_tab:
 	db	BFA_SH_PARAM		; 58 PARAM
 	db	BFA_SH_ICONST		; 59 ICONST
 	db	BFA_SH_FCONST		; 60 FCONST
+	db	BFA_SH_BIN		; 61 VADD
+	db	BFA_SH_BIN		; 62 VSUB
+	db	BFA_SH_BIN		; 63 VMUL
+	db	BFA_SH_BIN		; 64 VDIV
 __bfa_op_shape_tab_end:
 
 ; __bfa_op_shape(op) -> eax = BFA_SH_*.
@@ -367,6 +371,32 @@ proc __bfa_print_type, ctx, type_id
 	call	__bfa_print_type
 	return
   .notRED:
+	cmp	dword [tp], BFA_TK_VF32
+	jne	.notVF32
+	mov	rdi, [ctx]
+	jmp	.after_vf32p
+  .lit_vf32p db "vf32."
+  .after_vf32p:
+	lea	rsi, [.lit_vf32p]
+	mov	rdx, .after_vf32p - .lit_vf32p
+	call	__bfa_out_lit
+	jmp	.vflanes
+  .notVF32:
+	cmp	dword [tp], BFA_TK_VF64
+	jne	.notVF64
+	mov	rdi, [ctx]
+	jmp	.after_vf64p
+  .lit_vf64p db "vf64."
+  .after_vf64p:
+	lea	rsi, [.lit_vf64p]
+	mov	rdx, .after_vf64p - .lit_vf64p
+	call	__bfa_out_lit
+  .vflanes:
+	mov	rdi, [ctx]
+	mov	esi, [tref]			; `ref` = the lane count
+	call	__bfa_out_u64
+	return
+  .notVF64:
 	; BFA_TK_FN
 	mov	rdi, [ctx]
 	jmp	.after_fnp
@@ -469,6 +499,10 @@ proc __bfa_print_opname, ctx, op, aux
 	__bfa_opname_case op, BFA_OP_PARAM, 'param'
 	__bfa_opname_case op, BFA_OP_ICONST, 'iconst'
 	__bfa_opname_case op, BFA_OP_FCONST, 'fconst'
+	__bfa_opname_case op, BFA_OP_VADD, 'vadd'
+	__bfa_opname_case op, BFA_OP_VSUB, 'vsub'
+	__bfa_opname_case op, BFA_OP_VMUL, 'vmul'
+	__bfa_opname_case op, BFA_OP_VDIV, 'vdiv'
 
 	cmp	dword [op], BFA_OP_CMP
 	je	.docmp

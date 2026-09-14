@@ -1,0 +1,19 @@
+; TEST: emit-exit=5
+;
+; `store vf32.4 %p 16 maior %v`: the store twin of
+; reject_verify_vec_load_ord.ir, same verifier rule 1 refusal -- byte
+; order is an integer surface (spec 5.2), and a lane group's image has no
+; ordered reading. The nativus half runs, in vec_mem.ir.
+;
+; Mutation (run): __bfa_verify_memty's uN/iN test for maior/minor
+; dropped -> emit_ir exits 4 (the emitter's refusal), not 5.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = slot 32 16
+%2 = load vf32.4 %1 0 nativus
+store vf32.4 %1 16 maior %2
+%3 = iconst u8 0
+ret %3
+}

@@ -1,0 +1,27 @@
+; TEST: emit-exit=5
+;
+; `load vf32.4 %p 0 maior`: byte order applied to a vector. Verifier rule
+; 1 (verify.inc's `__bfa_verify_memty`): "`maior`/`minor` order an
+; integer's bytes, so they need a uN/iN" -- byte order is an integer
+; surface (spec 5.2), and a vector in memory is its lanes' bit baggage
+; with no numeric reading, so the honest orders are `nativus` and
+; refusal. This is the float refusal of reject_verify_float_load_ord.ir
+; with a wider load: the rule fires on the KIND before any width is ever
+; looked at, so vf32.4 and vf64.2 share it and one fixture pins both.
+; The emitter refuses the same text by name (exit 4) for the `exsc` path
+; that reaches it without the verifier; this fixture's 5 says the
+; verifier got there first, exactly as the float-ord fixture records.
+; The nativus half runs, in vec_mem.ir.
+;
+; Mutation (run): __bfa_verify_memty's uN/iN test for maior/minor
+; dropped -> emit_ir exits 4 (the emitter's refusal), not 5.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = slot 16 16
+%2 = load vf32.4 %1 0 maior
+%3 = vadd vf32.4 %2 %2
+%4 = iconst u8 0
+ret %4
+}

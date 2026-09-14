@@ -32,12 +32,13 @@
 ; THE REFERENCE DEFINES THE SEMANTICS (spec section 9.2, ADR 0012). Nothing
 ; here lowers an opcode `backend_fasmg/emit.inc` does not lower: a C
 ; lowering the differential test cannot check is a hypothesis with no test.
-; The reference's `__bfa_emit_inst` lowers 46 of the IR's 60 opcodes -- the
+; The reference's `__bfa_emit_inst` lowers 50 of the IR's 64 opcodes -- the
 ; 35 integer, memory and control ones it always lowered, plus the eleven
-; float ones (fadd fsub fmul fdiv fneg fcmp fext ftrunc itof ftoi fconst);
-; this file lowers exactly those 46 and refuses the other 14 BY NAME through
+; float ones (fadd fsub fmul fdiv fneg fcmp fext ftrunc itof ftoi fconst)
+; and the vector float group's four (vadd vsub vmul vdiv);
+; this file lowers exactly those 50 and refuses the other 14 BY NAME through
 ; `__bfc_die` -- "bfc: emitter: ...", exit 4, the same class
-; `__bfa_emit_die` is. (`nop`, opcode 0 outside the 1..60 numbering, is a
+; `__bfa_emit_die` is. (`nop`, opcode 0 outside the 1..64 numbering, is a
 ; 15th refusal; `phi` is lowered by the block walker and never dispatched.)
 ; The two emitters' refusal sets are ONE SET (spec 9.2): every message
 ; below names its reason the way the reference's refusal of the same opcode
@@ -225,10 +226,15 @@ endp
 ; __bfc_ty_class(module, ty) -> eax: 0 an integer (uN/iN), 1 an address
 ; (ptr/ref/refc -- every one of them is `unsigned char *` in C), 2 anything
 ; else with no C spelling in library mode (a reduction handle, a function
-; type), 3 a float (f32 -> `float`, f64 -> `double`). Class 2 is refused by
+; type), 3 a float (f32 -> `float`, f64 -> `double`), 4 a vector float
+; (vf32.N -> `exs_vf32_N`, vf64.N -> `exs_vf64_N`). Class 2 is refused by
 ; name by every caller; class 3 is the float milestone's addition, and the
 ; one place it reaches is the float lowerings plus the signature and value
 ; declarations -- float-typed memory, `iconst` and integer `cmp` refuse it.
+; Class 4 is the vector wave's addition: it reaches the vadd/vsub/vmul/vdiv
+; lowerings, NATIVUS load/store (bit baggage), and the value declarations;
+; a scalar float lowering, a boundary (param/phi/ret/call) and `maior`/
+; `minor` order all refuse it by name, with the reference's own words.
 proc __bfc_ty_class, module, ty
 	locals
 	endl
@@ -250,6 +256,10 @@ proc __bfc_ty_class, module, ty
 	je	.float
 	cmp	ecx, BFA_TK_F64
 	je	.float
+	cmp	ecx, BFA_TK_VF32
+	je	.ovec
+	cmp	ecx, BFA_TK_VF64
+	je	.ovec
 	mov	eax, 2
 	return
   .int:
@@ -260,6 +270,9 @@ proc __bfc_ty_class, module, ty
 	return
   .float:
 	mov	eax, 3
+	return
+  .ovec:
+	mov	eax, 4
 	return
 endp
 
@@ -284,10 +297,13 @@ endp
 
 ; __bfc_emit_ctype(ctx, module, ty) -- the C type of a value of `ty`:
 ; `uint64_t` for every integer width, `unsigned char *` for every address,
-; `float` for f32 and `double` for f64. A `ty` of 0 is `void` (a
-; signature's return type; ir.inc uses 0 for it).
+; `float` for f32 and `double` for f64, `exs_vf32_N`/`exs_vf64_N` for a
+; vector float (the prologue's vector_size typedefs; the lane count N is
+; the type's `ref` field, ir.inc's BFA_TK_VF32 comment). A `ty` of 0 is
+; `void` (a signature's return type; ir.inc uses 0 for it).
 proc __bfc_emit_ctype, ctx, module, ty
 	locals
+		slot lanes, dd	; the vector arm's lane count across __bfc_emtxt (its call clobbers rcx)
 	endl
 	cmp	dword [ty], 0
 	jne	.nonvoid
@@ -303,6 +319,8 @@ proc __bfc_emit_ctype, ctx, module, ty
 	je	.bad
 	cmp	eax, 3
 	je	.float
+	cmp	eax, 4
+	je	.vec
 	__bfc_emtxt "uint64_t"
 	return
   .addr:
@@ -319,9 +337,26 @@ proc __bfc_emit_ctype, ctx, module, ty
   .f32:
 	__bfc_emtxt "float"
 	return
+  .vec:
+	mov	rdi, [module]
+	mov	esi, [ty]
+	call	bfa_type_ptr
+	mov	ecx, [rax + BfaType.ref]	; the lane count (2/4/8)
+	mov	[lanes], ecx			; out of rcx before __bfc_emtxt's call
+	cmp	byte [rax + BfaType.kind], BFA_TK_VF32
+	jne	.vf64
+	__bfc_emtxt "exs_vf32_"
+	jmp	.vlanes
+  .vf64:
+	__bfc_emtxt "exs_vf64_"
+  .vlanes:
+	mov	rdi, [ctx]
+	mov	esi, [lanes]
+	call	__bfa_out_u64
+	return
   .bad:
 	jmp	.after_msg
-  .msg db "unsupported type: library mode holds an integer (uN/iN), an address (ptr/ref/refc) or a float (f32/f64) and nothing else (c-backend.md D4, D8)"
+  .msg db "unsupported type: library mode holds an integer (uN/iN), an address (ptr/ref/refc), a float (f32/f64) or a vector float (vf32.N/vf64.N) and nothing else (c-backend.md D4, D8)"
   .after_msg:
 	lea	rdi, [.msg]
 	mov	rsi, .after_msg - .msg
@@ -1197,7 +1232,11 @@ proc __bfc_emit_cmp, ctx, module, func, instid
 	; as a cmp on floats, and the verifier's cmp rule checks only that the
 	; operands are values of `ty`, whichever it is.
 	cmp	dword [cls], 3
-	jne	.wrongty
+	je	.fltyok
+	cmp	dword [cls], 4
+	je	.flvty			; a vector takes the vadd group's lowering, never a compare
+	jmp	.wrongty
+  .fltyok:
 	; INLINE IMMEDIATES ARE REFUSED. parse.inc's SH_BIN/SH_FCMP shapes set
 	; the aux immediate flags for float lines too, and the VERIFIER passes
 	; them: `bfa_type_canon` is the identity on a float's bits (ir.inc), so
@@ -1269,6 +1308,9 @@ proc __bfc_emit_cmp, ctx, module, func, instid
 	lea	rdi, [.m1]
 	mov	rsi, .after_m1 - .m1
 	call	__bfc_die
+
+  .flvty:
+	call	__bfc_die_vecfloat
 
   .flpred:
 	jmp	.after_m2
@@ -1443,6 +1485,23 @@ endp
 ;     2^32 -- each named where its own lowering lives.
 ; ----------------------------------------------------------------------------
 
+; __bfc_die_vecfloat -- never returns. A vector float (vf32.N/vf64.N) that
+; reached a SCALAR float lowering (fadd/fsub/fmul/fdiv, fneg, fcmp, or a
+; float conversion's destination) is named for the family it should have
+; taken instead, in exactly the words of emit.inc's `__bfa_emit_fwidth`
+; `.vec` arm: the two emitters' refusal sets are ONE SET (spec 9.2), and
+; the set's texts are the reference's.
+proc __bfc_die_vecfloat
+	locals
+	endl
+	jmp	.after_m
+  .m db "float lowering: a vector type (`vf32.N`/`vf64.N`) reaches only the vadd/vsub/vmul/vdiv lowerings"
+  .after_m:
+	lea	rdi, [.m]
+	mov	rsi, .after_m - .m
+	call	__bfc_die
+endp
+
 ; __bfc_emit_fbin(ctx, module, func, instid) -- fadd/fsub/fmul/fdiv.
 ;
 ;   vK = A + B;   (and - * /)
@@ -1471,7 +1530,11 @@ proc __bfc_emit_fbin, ctx, module, func, instid
 	mov	esi, [tyv]
 	call	__bfc_ty_class
 	cmp	eax, 3
-	jne	.badty
+	je	.tyok
+	cmp	eax, 4
+	je	.vty			; a vector takes the vadd group's lowering
+	jmp	.badty
+  .tyok:
 	mov	eax, [auxv]
 	and	eax, 0x300		; an immediate on either operand
 	jnz	.flimm
@@ -1518,9 +1581,111 @@ proc __bfc_emit_fbin, ctx, module, func, instid
 	lea	rdi, [.m1]
 	mov	rsi, .after_m1 - .m1
 	call	__bfc_die
+  .vty:
+	call	__bfc_die_vecfloat
   .flimm:
 	jmp	.after_m2
   .m2 db "fadd/fsub/fmul/fdiv: float operands are values only (`fconst` is the leaf -- the raw bit pattern, never decimal text)"
+  .after_m2:
+	lea	rdi, [.m2]
+	mov	rsi, .after_m2 - .m2
+	call	__bfc_die
+endp
+
+; __bfc_emit_varith(ctx, module, func, instid) -- vadd/vsub/vmul/vdiv, the
+; vector float group's arithmetic (spec 5.4; the B5.4 plan, settled):
+;
+;   vK = vA + vB;   (and - * /)
+;
+; One IR op is one C statement on the prologue's vector_size type, exactly
+; __bfc_emit_fbin's shape (the contraction defense -- there is nothing in
+; one statement to contract), and C's elementwise lowering of the operator
+; is the ONE IEEE rounding PER LANE the reference's per-chunk packed
+; addps/subps/mulps/divps (VF32) or addpd &c (VF64) carries --
+; `__bfc_emit_fbin`'s own four-way operator chain, for its own four opcodes:
+; borrowing the float chain's would be wrong the same way borrowing the
+; integer table is, so this chain spells the compare sequence again.
+; A vf32.8 (32 bytes) is two of the reference's 16-byte chunks; C's
+; vector_size arithmetic covers both with the one operator, which the
+; differential run of tests/ir/vec_arith.ir part 3 holds to exit 200.
+;
+; The two refusals are `__bfa_emit_varith`'s own, word for word and in its
+; own order (an inline immediate first, the type second) -- the two
+; emitters' refusal sets are one set, and tests/ir/reject_emit_vadd_scalar.ir
+; (`vadd f64 %1 %2`) is the parity anchor that pins the type refusal here:
+; the verifier PASSES it (two f64 operands with an f64 result agree) and the
+; emitter refuses it by name, because one packed op over one lane is the
+; scalar group misspelt.
+proc __bfc_emit_varith, ctx, module, func, instid
+	locals
+		slot op,   dd
+		slot tyv,  dd
+		slot auxv, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	movzx	ecx, word [rax + BfaInst.op]
+	mov	[op], ecx
+	mov	ecx, [rax + BfaInst.ty]
+	mov	[tyv], ecx
+	movzx	ecx, word [rax + BfaInst.aux]
+	mov	[auxv], ecx
+
+	mov	eax, [auxv]
+	and	eax, 0x300		; an immediate on either operand
+	jnz	.vlimm
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfc_ty_class
+	cmp	eax, 4
+	jne	.notv
+
+	mov	rdi, [ctx]
+	mov	rsi, [func]
+	mov	edx, [instid]
+	call	__bfc_emit_result
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfc_emit_opa
+	cmp	dword [op], BFA_OP_VADD
+	je	.add
+	cmp	dword [op], BFA_OP_VSUB
+	je	.sub
+	cmp	dword [op], BFA_OP_VMUL
+	je	.mul
+	__bfc_emtxt " / "
+	jmp	.ops
+  .add:
+	__bfc_emtxt " + "
+	jmp	.ops
+  .sub:
+	__bfc_emtxt " - "
+	jmp	.ops
+  .mul:
+	__bfc_emtxt " * "
+  .ops:
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfc_emit_opb
+	mov	rdi, [ctx]
+	call	__bfc_semi
+	return
+
+  .vlimm:
+	jmp	.after_m1
+  .m1 db "vadd/vsub/vmul/vdiv: vector operands are values only (scalars store lanes; indexing reads them)"
+  .after_m1:
+	lea	rdi, [.m1]
+	mov	rsi, .after_m1 - .m1
+	call	__bfc_die
+  .notv:
+	jmp	.after_m2
+  .m2 db "vadd/vsub/vmul/vdiv: the type must be a vector float (`vf32.N`/`vf64.N`, N = 2, 4 or 8)"
   .after_m2:
 	lea	rdi, [.m2]
 	mov	rsi, .after_m2 - .m2
@@ -1554,7 +1719,11 @@ proc __bfc_emit_fneg, ctx, module, func, instid
 	mov	esi, [tyv]
 	call	__bfc_ty_class
 	cmp	eax, 3
-	jne	.badty
+	je	.tyok
+	cmp	eax, 4
+	je	.vty			; a vector takes the vadd group's lowering
+	jmp	.badty
+  .tyok:
 	mov	eax, [auxv]
 	and	eax, 0x100
 	jnz	.flimm
@@ -1578,6 +1747,8 @@ proc __bfc_emit_fneg, ctx, module, func, instid
 	lea	rdi, [.m1]
 	mov	rsi, .after_m1 - .m1
 	call	__bfc_die
+  .vty:
+	call	__bfc_die_vecfloat
   .flimm:
 	jmp	.after_m2
   .m2 db "fneg: the operand is a value only (`fconst` is the leaf -- the raw bit pattern, never decimal text)"
@@ -1660,6 +1831,17 @@ proc __bfc_emit_fconv, ctx, module, func, instid
 	mov	esi, [tyv]
 	call	__bfc_ty_info
 	mov	[tyk], edx
+
+	; A VECTOR destination has no scalar conversion lowering: the
+	; reference's `__bfa_emit_fwidth` names the family it should have
+	; taken (emit.inc's `.vec` arm), and so does this. A vector SOURCE is
+	; refused further down by each arm's own source-kind check, the same
+	; split the reference keeps (its per-op "the operand is not a
+	; float/integer" texts fire before fwidth sees the destination).
+	cmp	dword [tyk], BFA_TK_VF32
+	je	.vecdst
+	cmp	dword [tyk], BFA_TK_VF64
+	je	.vecdst
 
 	cmp	dword [op], BFA_OP_FEXT
 	je	.fext
@@ -1889,6 +2071,8 @@ proc __bfc_emit_fconv, ctx, module, func, instid
 	lea	rdi, [.m9]
 	mov	rsi, .after_m9 - .m9
 	call	__bfc_die
+  .vecdst:
+	call	__bfc_die_vecfloat
 endp
 
 ; __bfc_emit_fconst(ctx, module, func, instid) -- `fconst F bits`, the leaf.
@@ -2291,6 +2475,8 @@ proc __bfc_mem_k, module, ty
 	je	.bad
 	cmp	eax, 3
 	je	.isfloat
+	cmp	eax, 4
+	je	.isvec
 	mov	rdi, [module]
 	mov	esi, [ty]
 	call	__bfc_ty_info
@@ -2303,6 +2489,23 @@ proc __bfc_mem_k, module, ty
 	return
   .isaddr:
 	xor	eax, eax
+	return
+  .isvec:
+	; lanes x element bytes, exactly the reference's `__bfa_vtype_bytes`
+	; (8/16/32 for vf32.2/4/8, 16/32/64 for vf64.2/4/8): a vector's width
+	; field is 0 CANONICALLY -- kind+ref carry everything (ir.inc's
+	; BFA_TK_VF32 comment) -- so the N/8 path cannot answer.
+	mov	rdi, [module]
+	mov	esi, [ty]
+	call	bfa_type_ptr
+	mov	ecx, [rax + BfaType.ref]	; the lane count (2/4/8)
+	mov	edx, 4
+	cmp	byte [rax + BfaType.kind], BFA_TK_VF32
+	je	.vmul
+	mov	edx, 8
+  .vmul:
+	mov	eax, ecx
+	imul	eax, edx
 	return
   .isfloat:
 	; a float's width field is 0 (floats are sized by KIND), so the N/8
@@ -2327,7 +2530,7 @@ proc __bfc_mem_k, module, ty
 	call	__bfc_die
   .bad:
 	jmp	.after_m2
-  .m2 db "load/store: the accessed type must be an integer (uN/iN), a float (f32/f64) or an address (floats in memory lower since the float wave's signaculum row -- f64 took the 64-bit form, f32 the u32 one, as bit baggage under the prologue's from_bits helpers)"
+  .m2 db "load/store: the accessed type must be an integer (uN/iN), a float (f32/f64), a vector float (vf32.N/vf64.N) or an address (floats and vectors in memory are bit baggage under the prologue's helpers, nativus only -- byte order is an integer surface, spec 5.2)"
   .after_m2:
 	lea	rdi, [.m2]
 	mov	rsi, .after_m2 - .m2
@@ -2371,6 +2574,7 @@ proc __bfc_emit_load, ctx, module, func, instid
 		slot off,  dd
 		slot ord,  dd
 		slot tyv,  dd
+		slot lanes, dd	; the vector arm's lane count across __bfc_emtxt (its call clobbers rcx)
 	endl
 	mov	rdi, [func]
 	mov	esi, [instid]
@@ -2403,6 +2607,8 @@ proc __bfc_emit_load, ctx, module, func, instid
 	je	.addr
 	cmp	eax, 3
 	je	.float
+	cmp	eax, 4
+	je	.vec
 
 	mov	rdi, [ctx]
 	mov	rsi, [func]
@@ -2498,6 +2704,49 @@ proc __bfc_emit_load, ctx, module, func, instid
 	mov	rdi, [ctx]
 	call	__bfc_semi
 	return
+
+  .vec:
+	; `vK = exsi_ld_vf32_4(P + off);` -- the prologue's memcpy helper, the
+	; scalar float load's bit-baggage pattern generalised past 64 bits:
+	; lanes x element bytes copied as BYTES, no lane read numerically, so
+	; a NaN payload, -0.0's sign and a subnormal's bits survive
+	; (vec_mem.ir pins all three). `maior`/`minor` on a vector dies with
+	; the float arm's own words below (the verifier rules it out first --
+	; reject_verify_vec_load_ord.ir; this is the same refusal by name on
+	; the `exsc` path that reaches the emitter without the verifier).
+	cmp	dword [ord], BFA_ORDER_NATIVUS
+	jne	.ford
+	mov	rdi, [ctx]
+	mov	rsi, [func]
+	mov	edx, [instid]
+	call	__bfc_emit_result
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	bfa_type_ptr
+	mov	ecx, [rax + BfaType.ref]	; the lane count (2/4/8)
+	mov	[lanes], ecx			; out of rcx before __bfc_emtxt's call
+	cmp	byte [rax + BfaType.kind], BFA_TK_VF32
+	jne	.v64ld
+	__bfc_emtxt "exsi_ld_vf32_"
+	jmp	.vlname
+  .v64ld:
+	__bfc_emtxt "exsi_ld_vf64_"
+  .vlname:
+	mov	rdi, [ctx]
+	mov	esi, [lanes]
+	call	__bfa_out_u64
+	__bfc_emtxt "("
+	mov	rdi, [ctx]
+	mov	esi, [pv]
+	call	__bfc_emit_v
+	__bfc_emtxt " + "
+	mov	rdi, [ctx]
+	mov	esi, [off]
+	call	__bfa_out_u64
+	__bfc_emtxt ")"
+	mov	rdi, [ctx]
+	call	__bfc_semi
+	return
   .ford:
 	jmp	.after_fordmsg
   .fordmsg db "load/store: `maior`/`minor` order an integer's bytes; this is not a uN/iN"
@@ -2517,6 +2766,7 @@ proc __bfc_emit_store, ctx, module, func, instid
 		slot ord,  dd
 		slot vv,   dd
 		slot tyv,  dd
+		slot lanes, dd	; the vector arm's lane count across __bfc_emtxt (its call clobbers rcx)
 	endl
 	mov	rdi, [func]
 	mov	esi, [instid]
@@ -2547,6 +2797,12 @@ proc __bfc_emit_store, ctx, module, func, instid
 	mov	esi, eax
 	call	bfa_extra_get
 	mov	[vv], eax
+
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfc_ty_class
+	cmp	eax, 4
+	je	.vstore
 
 	__bfc_emtxt "    "
 	mov	rdi, [ctx]
@@ -2609,6 +2865,46 @@ proc __bfc_emit_store, ctx, module, func, instid
 	lea	rdi, [.sfordmsg]
 	mov	rsi, .after_sfordmsg - .sfordmsg
 	call	__bfc_die
+	return
+
+  .vstore:
+	; `exsi_st_vf32_4(P + off, V);` -- the vector load arm's exact inverse
+	; (the prologue's memcpy helper; bit baggage, no lane read). `maior`/
+	; `minor` on a vector dies above with the load/store order refusal --
+	; byte order is an integer surface (spec 5.2), which is the reference's
+	; own words for the same text (reject_verify_vec_store_ord.ir pins the
+	; verifier's copy of the rule).
+	cmp	dword [ord], BFA_ORDER_NATIVUS
+	jne	.sf_ord
+	__bfc_emtxt "    "
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	bfa_type_ptr
+	mov	ecx, [rax + BfaType.ref]	; the lane count (2/4/8)
+	mov	[lanes], ecx			; out of rcx before __bfc_emtxt's call
+	cmp	byte [rax + BfaType.kind], BFA_TK_VF32
+	jne	.v64st
+	__bfc_emtxt "exsi_st_vf32_"
+	jmp	.vsname
+  .v64st:
+	__bfc_emtxt "exsi_st_vf64_"
+  .vsname:
+	mov	rdi, [ctx]
+	mov	esi, [lanes]
+	call	__bfa_out_u64
+	__bfc_emtxt "("
+	mov	rdi, [ctx]
+	mov	esi, [pv]
+	call	__bfc_emit_v
+	__bfc_emtxt " + "
+	mov	rdi, [ctx]
+	mov	esi, [off]
+	call	__bfa_out_u64
+	__bfc_emtxt ", "
+	mov	rdi, [ctx]
+	mov	esi, [vv]
+	call	__bfc_emit_v
+	__bfc_emtxt ");", 10
 	return
 endp
 
@@ -2849,18 +3145,69 @@ endp
 ; D4 rows 51, 58, 59: call / param / iconst
 ; ============================================================================
 
-; __bfc_emit_param(ctx, func, instid) -- `vK = pI;`. The C parameter itself
-; is in the signature; this is the copy into the value's own name, which is
-; what keeps every later instruction reading only `vN`.
-proc __bfc_emit_param, ctx, func, instid
+; __bfc_emit_param(ctx, module, func, instid) -- `vK = pI;`. The C
+; parameter itself is in the signature; this is the copy into the value's
+; own name, which is what keeps every later instruction reading only `vN`.
+; The parameter itself is never normalised: a caller of an emitted function
+; is emitted code passing canonical slots, or the shim's entry, which
+; passes one pointer -- the reference's own reasoning, verbatim
+; (emit.inc's `__bfa_emit_call` header, the externus paragraph).
+;
+; REFUSED, by name, with the reference's two refusals for this instruction:
+; the index past the signature's parameters, and ANY parameter at or ahead
+; of this one being a vf32.N/vf64.N -- the reference walks the signature
+; from 0 because a vector param ahead would disturb the SysV ordinal walk
+; (`__bfa_emit_param`'s `.vecparam`), and library mode has exactly the same
+; v1 reason: one C parameter is one scalar's home.
+proc __bfc_emit_param, ctx, module, func, instid
+	uses	rbx
 	locals
-		slot idx, dd
+		slot idx,   dd
+		slot sigpf, dd
+		slot sigpc, dd
 	endl
 	mov	rdi, [func]
 	mov	esi, [instid]
 	call	bfa_inst_ptr
 	mov	ecx, [rax + BfaInst.a]
 	mov	[idx], ecx
+
+	; the signature walk: types 0..idx of Module.sig_extra, in order
+	mov	rax, [func]
+	mov	ecx, [rax + BfaFunc.sig]
+	mov	rdi, [module]
+	mov	rdi, [rdi + BfaModule.sigs]
+	mov	esi, ecx			; 0-based, unlike every other id
+	call	vec_get
+	mov	ecx, [rax + BfaSig.p_first]
+	mov	[sigpf], ecx
+	mov	ecx, [rax + BfaSig.p_count]
+	mov	[sigpc], ecx
+	mov	eax, [idx]
+	cmp	eax, [sigpc]
+	jae	.oor
+	xor	ebx, ebx
+  .pwalk:
+	cmp	ebx, [idx]
+	ja	.pwalkdone
+	mov	eax, [sigpf]
+	add	eax, ebx
+	mov	rdi, [module]
+	mov	rdi, [rdi + BfaModule.sig_extra]
+	mov	esi, eax
+	call	vec_get
+	mov	esi, [rax]
+	mov	rdi, [module]
+	call	bfa_type_ptr
+	movzx	ecx, byte [rax + BfaType.kind]
+	cmp	ecx, BFA_TK_VF32
+	je	.vecp
+	cmp	ecx, BFA_TK_VF64
+	je	.vecp
+	inc	ebx
+	jmp	.pwalk
+  .pwalkdone:
+
 	mov	rdi, [ctx]
 	mov	rsi, [func]
 	mov	edx, [instid]
@@ -2872,6 +3219,21 @@ proc __bfc_emit_param, ctx, func, instid
 	mov	rdi, [ctx]
 	call	__bfc_semi
 	return
+
+  .oor:
+	jmp	.after_m1
+  .m1 db "param: the index is past the signature's parameters (the verifier does not check one)"
+  .after_m1:
+	lea	rdi, [.m1]
+	mov	rsi, .after_m1 - .m1
+	call	__bfc_die
+  .vecp:
+	jmp	.after_m2
+  .m2 db "param of a vector type: v1 keeps vectors inside a function (scalars store lanes; indexing reads them) [OPEN]"
+  .after_m2:
+	lea	rdi, [.m2]
+	mov	rsi, .after_m2 - .m2
+	call	__bfc_die
 endp
 
 ; __bfc_emit_iconst(ctx, module, func, instid) -- `vK = UINT64_C(pattern);`
@@ -2996,6 +3358,50 @@ proc __bfc_emit_call, ctx, module, func, instid
 	and	ecx, BFA_FUNC_ATTR_EXTERNUS
 	mov	[ext], ecx
 
+	; VECTOR refusals, with the reference's own words and its own order
+	; (emit.inc's `__bfa_emit_call`: the argument walk first, the result
+	; second): a lane group has no v1 crossing of a call boundary, and a
+	; C prototype spelled with the vector typedef would compile the
+	; miscommunication rather than refuse it -- the refusal is the
+	; emitter's, by name.
+	mov	ebx, 1
+  .vckloop:
+	mov	eax, ebx
+	cmp	eax, [cnt]
+	jae	.vckdone
+	mov	rdi, [func]
+	mov	eax, [base]
+	add	eax, ebx
+	mov	esi, eax
+	call	bfa_extra_get
+	; edx = the argument's value id; classify by its own type
+	mov	rdi, [module]
+	mov	rsi, [func]
+	mov	edx, eax
+	call	__bfc_valty
+	mov	rdi, [module]
+	mov	esi, eax
+	call	bfa_type_ptr
+	movzx	ecx, byte [rax + BfaType.kind]
+	cmp	ecx, BFA_TK_VF32
+	je	.vecarg
+	cmp	ecx, BFA_TK_VF64
+	je	.vecarg
+	inc	ebx
+	jmp	.vckloop
+  .vckdone:
+	cmp	dword [tyv], 0
+	je	.vresdone
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	bfa_type_ptr
+	movzx	ecx, byte [rax + BfaType.kind]
+	cmp	ecx, BFA_TK_VF32
+	je	.vecresult
+	cmp	ecx, BFA_TK_VF64
+	je	.vecresult
+  .vresdone:
+
 	cmp	dword [tyv], 0
 	je	.voidcall
 	mov	rdi, [ctx]
@@ -3066,6 +3472,21 @@ proc __bfc_emit_call, ctx, module, func, instid
 	mov	rdi, [ctx]
 	call	__bfc_semi
 	return
+
+  .vecarg:
+	jmp	.after_mva
+  .mva db "call with a vector argument: v1 keeps vectors inside a function (scalars store lanes; indexing reads them) [OPEN]"
+  .after_mva:
+	lea	rdi, [.mva]
+	mov	rsi, .after_mva - .mva
+	call	__bfc_die
+  .vecresult:
+	jmp	.after_mvr
+  .mvr db "call with a vector result type: v1 keeps vectors inside a function (scalars store lanes; indexing reads them) [OPEN]"
+  .after_mvr:
+	lea	rdi, [.mvr]
+	mov	rsi, .after_mvr - .mvr
+	call	__bfc_die
 endp
 
 ; ============================================================================
@@ -3175,6 +3596,23 @@ proc __bfc_emit_edge_copies, ctx, module, func, pblk, tblk, skipn
   .readloop:
 	cmp	dword [cur], 0
 	je	.readdone
+	; a phi OVER a vector value has no v1 lowering, exactly as the
+	; reference's push/pop arm records (emit.inc's edge-copy loop): the
+	; parallel copy here is one temporary of the value's type, and a lane
+	; group crossing a block boundary is what v1 does not do -- refused by
+	; name; scalars store lanes, indexing reads them (ssa-ir.md 2.6).
+	mov	rdi, [func]
+	mov	esi, [cur]
+	call	bfa_inst_ptr
+	mov	esi, [rax + BfaInst.ty]
+	mov	rdi, [module]
+	call	bfa_type_ptr
+	movzx	ecx, byte [rax + BfaType.kind]
+	cmp	ecx, BFA_TK_VF32
+	je	.vecphi
+	cmp	ecx, BFA_TK_VF64
+	je	.vecphi
+  .vecchecked:
 	mov	rdi, [func]
 	mov	esi, [cur]
 	mov	edx, [pblk]
@@ -3231,6 +3669,13 @@ proc __bfc_emit_edge_copies, ctx, module, func, pblk, tblk, skipn
 	jmp	.writeloop
   .writedone:
 	return
+  .vecphi:
+	jmp	.after_mvp
+  .mvp db "phi of a vector value: v1 keeps vectors inside a basic block (scalars store lanes; indexing reads them) [OPEN]"
+  .after_mvp:
+	lea	rdi, [.mvp]
+	mov	rsi, .after_mvp - .mvp
+	call	__bfc_die
 endp
 
 ; __bfc_emit_indent(ctx, deep) -- four spaces, or eight inside a `br` arm.
@@ -3247,7 +3692,7 @@ proc __bfc_emit_indent, ctx, deep
 endp
 
 ; __bfc_emit_ret(ctx, func, instid) -- `return vK;` or `return;`.
-proc __bfc_emit_ret, ctx, func, instid
+proc __bfc_emit_ret, ctx, module, func, instid
 	locals
 		slot av, dd
 	endl
@@ -3258,6 +3703,25 @@ proc __bfc_emit_ret, ctx, func, instid
 	mov	[av], ecx
 	cmp	ecx, 0
 	je	.bare
+
+	; a VECTOR result has no v1 spelling: nothing here can hand a lane
+	; group across the function boundary (the reference's SysV two-
+	; register contract, library mode's `return vK`), so it is refused by
+	; name, with the reference's own words -- emit.inc's `__bfa_emit_ret`
+	; `.vec` arm. Scalars store lanes; indexing reads them.
+	mov	rdi, [module]
+	mov	rsi, [func]
+	mov	edx, [av]
+	call	__bfc_valty
+	mov	rdi, [module]
+	mov	esi, eax
+	call	bfa_type_ptr
+	movzx	ecx, byte [rax + BfaType.kind]
+	cmp	ecx, BFA_TK_VF32
+	je	.vec
+	cmp	ecx, BFA_TK_VF64
+	je	.vec
+
 	__bfc_emtxt "    return "
 	mov	rdi, [ctx]
 	mov	esi, [av]
@@ -3268,6 +3732,13 @@ proc __bfc_emit_ret, ctx, func, instid
   .bare:
 	__bfc_emtxt "    return;", 10
 	return
+  .vec:
+	jmp	.after_m1
+  .m1 db "ret of a vector value: v1 keeps vectors inside a function (scalars store lanes; indexing reads them) [OPEN]"
+  .after_m1:
+	lea	rdi, [.m1]
+	mov	rsi, .after_m1 - .m1
+	call	__bfc_die
 endp
 
 ; __bfc_emit_jmp(ctx, module, func, instid) -- the edge's parallel copy,
@@ -3581,8 +4052,9 @@ proc __bfc_emit_inst, ctx, module, func, instid
 	cmp	dword [op], BFA_OP_PARAM
 	jne	.n_param
 	mov	rdi, [ctx]
-	mov	rsi, [func]
-	mov	edx, [instid]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
 	call	__bfc_emit_param
 	return
   .n_param:
@@ -3806,11 +4278,33 @@ proc __bfc_emit_inst, ctx, module, func, instid
 	cmp	dword [op], BFA_OP_RET
 	jne	.n_ret
 	mov	rdi, [ctx]
-	mov	rsi, [func]
-	mov	edx, [instid]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
 	call	__bfc_emit_ret
 	return
   .n_ret:
+	cmp	dword [op], BFA_OP_VADD
+	je	.dovar
+	cmp	dword [op], BFA_OP_VSUB
+	je	.dovar
+	cmp	dword [op], BFA_OP_VMUL
+	je	.dovar
+	cmp	dword [op], BFA_OP_VDIV
+	jne	.n_var
+  .dovar:
+	; the vector float group (spec 5.4 the wave D4 called [OPEN]): one IR
+	; op, one C statement on the prologue's vector_size types. `vadd` on a
+	; SCALAR type reaches neither arm -- __bfc_emit_varith refuses it by
+	; name (tests/ir/reject_emit_vadd_scalar.ir pins the wording) --
+	; `fma` and `bitcast` still fall to __bfc_refuse below.
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfc_emit_varith
+	return
+  .n_var:
 	cmp	dword [op], BFA_OP_JMP
 	jne	.n_jmp
 	mov	rdi, [ctx]

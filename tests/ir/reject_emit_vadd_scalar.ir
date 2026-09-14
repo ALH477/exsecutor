@@ -1,0 +1,34 @@
+; TEST: emit-exit=4
+;
+; `vadd f64 %a %b`: the vector group's opcode spelled with a SCALAR type.
+; The verifier passes it -- SH_BIN's rule is operand agreement, and two
+; f64 operands with an f64 result agree, the way fma's d_trivial passes
+; in reject_emit_fma.ir; the EMITTER refuses it by name --
+; "vadd/vsub/vmul/vdiv: the type must be a vector float
+; (`vf32.N`/`vf64.N`, N = 2, 4 or 8)" -- because one packed op over one
+; lane is the scalar group misspelt (fadd is that instruction), and a
+; silent scalar fallback would hide the spelling error. Exit 4 here, not
+; 5, is the evidence the two layers disagree on purpose -- the same
+; split reject_emit_fma.ir records for the missing fused op.
+;
+; This fixture is the refusal-set parity anchor for the C twin: the C
+; emitter MUST refuse this same text with this same wording. That its twin
+; does so is asserted here, not observed -- backend_c is another tree and
+; this wave does not touch it; the differential phase is where parity gets
+; proven, so the claim stands [UNTESTED] until that run.
+;
+; Mutation (run): __bfa_emit_varith's type guard dropped and the f64
+; chunked loop run on a zero byte count -> emit_ir exits 0 having emitted
+; no arithmetic at all -- the vector "result" is whatever garbage the
+; region-3 home happened to hold. This fixture is what keeps that
+; mutation loud.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = fconst f64 4609434218613702656
+%2 = fconst f64 4611686018427387904
+%3 = vadd f64 %1 %2
+%4 = iconst u8 0
+ret %4
+}

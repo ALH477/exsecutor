@@ -82,7 +82,10 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-176}"
 # backends lower (check 100 from both, differential phase below).
 # 100 -> 101 is pictura_triangulum/, the RGB triangle: floats rendering an
 # image, held to the Python oracle's bytes.
-IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-53}"
+# IR fixtures: 53 -> 64 is Stage 5.1's vector float group (sse-ir.md 2.2):
+# vec_arith and vec_mem positive, four rejections (parse lanes, verifier
+# x2 maior/minor, emitter vadd-on-scalar), all with C-backend parity.
+IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-64}"
 PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-102}"
 
 # The differential phase (run_differential_tests, below), which compiles the
@@ -93,8 +96,11 @@ PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-102}"
 # would still read green if three of the four builds silently stopped
 # happening. 39 of the 49 IR fixtures are lowerable (the other 10 are
 # rejections, checked separately and by exit status), times gcc and clang
-# times -O0 and -O2 = 156.
-DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-160}"
+# times -O0 and -O2 = 156. As of Stage 5.1 (2026-09-14) the phase measures
+# 46 lowerable x 4 builds = 184 (the vec_arith/vec_mem pair plus float-wave
+# fixtures the floor had not been re-bumped for); the floor is the measured
+# count now, not the arithmetic above, which stays as the arithmetic.
+DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-184}"
 
 # The same phase over tests/programs/. Two floors, because the claim has two
 # halves and a floor on either alone reads green while the other collapses:

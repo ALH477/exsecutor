@@ -1,0 +1,26 @@
+; TEST: emit-exit=3
+;
+; `vf32.3` -- a lane count the group does not have. ssa-ir.md 2.2's vector
+; row fixes N in {2, 4, 8} (the chunked movups/movupd lowering covers 8,
+; 16 and 32-byte images; anything wider is the [OPEN] AVX question, and a
+; 3-lane vector is no width at all). This is a PARSE refusal: parse.inc's
+; vf32./vf64. arm reads exactly one decimal digit after the prefix and
+; dies -- "vector float type: the lane count is 2, 4 or 8
+; (`vf32.N`/`vf64.N`)" -- fatal inside parse.inc, exit 3, and emit_ir
+; passes that status through rather than print a partial program, as
+; reject_parse_undefined.ir records for the undefined-name arm.
+;
+; `vf32.16` (two digits) and `vf32.` (none) die on the same arm's length
+; check; one fixture pins the family.
+;
+; Mutation (run): the lane test admitting 3 -> parse exits 0, the
+; verifier and emitter then see a 12-byte vector nobody laid a home for.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = slot 16 16
+%2 = load vf32.3 %1 0 nativus
+%3 = iconst u8 0
+ret %3
+}
