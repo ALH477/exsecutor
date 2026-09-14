@@ -58,8 +58,9 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # silently finding nothing. Drift costs precision, not the guarantee.
 # 171 -> 172 was the dec754 wave's dec754_golden.asm; 172 -> 176 is the float
 # wave's four: lex_float_literal.asm, lwr_float.asm, chk_ty_floatlit.asm,
-# chk_ty_floatops.asm.
-UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-176}"
+# chk_ty_floatops.asm. 176 -> 178 is Stage 5.2's pair: chk_ty_aciesops.asm
+# (the whole-acy admission gate) and lwr_aciesops.asm (the lowering it admits).
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-178}"
 
 # The same guarantee for the two run phases below: tests/ir/*.ir fixtures,
 # and tests/programs/*/ directories. Same rule -- `found < floor` fails --
@@ -81,12 +82,14 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-176}"
 # sources whose float literals and `/` reach the float IR opcodes both
 # backends lower (check 100 from both, differential phase below).
 # 100 -> 101 is pictura_triangulum/, the RGB triangle: floats rendering an
-# image, held to the Python oracle's bytes.
+# image, held to the Python oracle's bytes. 102 -> 103 is Stage 5.2's
+# acies_float8/: whole-acy `+ - * /` on acies<f32,8>/acies<f64,8>, held to
+# prototypes/acies_float8_oracle.py's numpy bytes, cross=yes.
 # IR fixtures: 53 -> 64 is Stage 5.1's vector float group (sse-ir.md 2.2):
 # vec_arith and vec_mem positive, four rejections (parse lanes, verifier
 # x2 maior/minor, emitter vadd-on-scalar), all with C-backend parity.
 IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-64}"
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-102}"
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-103}"
 
 # The differential phase (run_differential_tests, below), which compiles the
 # C backend's emitted units and runs them against the same expectations the
@@ -125,14 +128,19 @@ DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-184}"
 #     four builds apiece -- the differential phase's first float-source
 #     byte-identity claim. 30 -> 31 and 120 -> 124: pictura_triangulum/,
 #     the RGB triangle, the same bargain over a whole image.
-DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-32}"
-DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-128}"
+#     32 -> 33 and 128 -> 132: acies_float8/ (Stage 5.2), its own unit --
+#     packed whole-acy arithmetic byte-identical across the four toolchains.
+DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-33}"
+DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-132}"
 
 # The cross phase's own floor, deliberately NOT folded into the differential
 # numbers above: a cross-compiled, emulated run of a 32-bit-`mensura` unit is
 # a different claim from a host build of a 64-bit one, and one number
 # reporting both would name neither. §14 entry 25, ADR 0015.
-CROSS_PROGRAM_FLOOR="${CROSS_PROGRAM_FLOOR:-8}"
+# 8 -> 9 is acies_float8/ (cross=yes, Stage 5.2): gcc's/LLVM's soft lowering
+# of `vector_size` arithmetic reproduces every lane bit-identically on the
+# big-endian mips64 qemu run -- measured, not assumed (risk register 1).
+CROSS_PROGRAM_FLOOR="${CROSS_PROGRAM_FLOOR:-9}"
 
 PASS=0
 FAIL=0

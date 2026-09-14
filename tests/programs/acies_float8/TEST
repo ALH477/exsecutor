@@ -1,0 +1,29 @@
+# Whole-acy arithmetic, run: `+ - * /` on acies<f32, 8> and acies<f64, 8>
+# (spec 5.4's acies row; the stage 5.2 pair to tests/unit/lwr_aciesops.asm,
+# which pins the IR rows this program's expressions lower to). The program's
+# own header lays out the grid (dyadic-exact a/b, integer c so the quotients
+# are INEXACT and rounding shows), the broadcast [s; 8] operand, the nested
+# `(a + b) / c`, and the fixed-point-per-lane byte encoding.
+#
+# The golden is expected.out, produced by the INDEPENDENT oracle
+# prototypes/acies_float8_oracle.py (numpy float32/float64, elementwise, the
+# same association as written -- the not-our-own-bug check, the way entry 23
+# vendors an external certificate). Both backends are held to it: this run
+# phase, then the differential phase over the C backend at gcc/clang
+# -O0/-O2, then the cross phase.
+#
+# cross=yes: the 640 output bytes are computed by shift-and-truncate from
+# u64 lanes and written in an EXPLICIT big-endian order, never from a memory
+# image, so the byte stream is endian-invariant by construction -- and the
+# mips64 big-endian qemu run is then the program-level proof that the C
+# backend's soft-lowered vector arithmetic (plain per-lane C; no SIMD on
+# that target) reproduces every lane bit-identically on a big-endian host.
+# Note the byte order invariance is the ENCODING's, not the machine's: a raw
+# memory dump of the acies would differ across endianness and is exactly
+# what this program does not write.
+#
+# (No stdout= on purpose: expected.out IS the reference; naming both is the
+# run.sh failure for "which of the two governs?". numpy is not in the
+# devShell and need not be: run.sh never runs the oracle; expected.out is
+# checked in.)
+TEST: expect-exit=0 cross=yes

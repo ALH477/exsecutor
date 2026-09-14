@@ -736,8 +736,10 @@ are settled, and `.exsc` sources reach the float opcodes end-to-end —
 their all-passed sentinel on both backends through the differential phase.
 That also retires this banner's earlier "negation is `[UNTESTED]`
 end-to-end" note (§8.4): `negatum()` and `negativa()` exercise unary `-` on
-a float in a running program. Vectors remain `[OPEN]` — designed, nothing
-implemented. Stage 3 at the earliest for vectors.
+a float in a running program. Vectors are no longer merely designed:
+whole-acy arithmetic is implemented in both backends and run end-to-end
+(§Vectors below; `tests/programs/acies_float8/`); compare-and-mask,
+extracts, splats and lane counts above 8 remain `[OPEN]`.
 
 The floating-point environment is ambient state, and this document exists to
 retire ambient state. `-ffast-math` is `setlocale` for numbers: a global,
@@ -825,6 +827,23 @@ inferred from the host: a target-inferred width makes results machine-dependent,
 which is the failure this document is written against. The compiler lowers to
 AVX-512, AVX2, NEON, or a scalar loop as the target allows; the lowering changes
 performance and never changes the value.
+
+Whole-acy arithmetic is implemented (Stage 5): `a OP b` on two
+`acies<T, N>` of one float element type (`f32` or `f64`), one lane count
+`N ∈ {2, 4, 8}`, and `OP ∈ + - * /` is the elementwise operation — one IEEE
+rounding per lane, nothing combined across lanes, the result the same `acies`
+type (`tests/unit/chk_ty_aciesops.asm` pins every admission); anything else —
+a lane count outside {2, 4, 8}, an integer element, a mismatched pair, an acies
+with a scalar (no implicit broadcast: `[s; N]`, §8.6, is the broadcast), any
+other operator, unary `-` — is one `EXS-E0305` at the operator. There is no
+extract, splat, compare or mask: a lane is read and written by ordinary
+indexing, which keeps every coverage tail scalar per lane. The lowering stages
+one op as a nativus load of each operand's base, the packed opcode, and a store
+(`tests/unit/lwr_aciesops.asm`); on x86-64 the reference backend emits the
+unpacked SSE2 halves (two `addps` per `vf32.8`), and the C backend's portable
+`vector_size` arithmetic reproduces every lane bit-identically on each target it
+builds for — the big-endian mips64 qemu run of `tests/programs/acies_float8/`
+is the measured proof the soft lowering keeps the bytes.
 
 ### Integers
 
@@ -1748,7 +1767,11 @@ an arity fault. Element types admitted: the integers (`uN`, `iN`,
 `tests/unit/chk_ty_floatops.asm` accepts `acies<f64, 4> = [1.5; 4]`, a
 program now needing it), and `@transitus` structs (integer-element ones
 only — a float field stays `EXS-E0321`, §5.2's wire settlement); any other
-element is `EXS-E0305` until a program needs it. `[]` is `EXS-E0201` and
+element is `EXS-E0305` until a program needs it. The float elements alone
+carry whole-acy arithmetic: `+ - * /` on two acies of one float element
+type and one lane count `N ∈ {2, 4, 8}`, every other whole-acy shape one
+`EXS-E0305` at the operator (§5.4's Vectors;
+`tests/unit/chk_ty_aciesops.asm`). `[]` is `EXS-E0201` and
 `[e; 0]` is `EXS-E0308`. Elements are evaluated in source order and stored at
 ascending indices. The literal is a **value**: binding it copies, as
 binding any aggregate does (§5.2), and `[1, 2][0] = 3` is `EXS-E0306`.

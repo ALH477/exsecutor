@@ -886,6 +886,13 @@ proc __lwr_binary, lwrsp, lwrn
 		slot lwrt, dd
 		slot lwrir, dd
 		slot lwrpr, dd
+		; the whole-acy arm (`.vec`): the interned vf*.N type, the two
+		; loaded vectors, the result vector and the result temp's slot
+		slot lwrvty, dd
+		slot lwrva, dd
+		slot lwrvb, dd
+		slot lwrvr, dd
+		slot lwrpt, dd
 	endl
 	mov	rbx, [lwrsp]
 	mov	rdi, rbx
@@ -920,6 +927,11 @@ proc __lwr_binary, lwrsp, lwrn
 	mov	[lwrt], eax
 	mov	rdi, rbx
 	mov	esi, eax
+	call	lwr_ty_kind
+	cmp	eax, AST_TY_ACIES
+	je	.vec
+	mov	rdi, rbx
+	mov	esi, [lwrt]
 	call	lwr_ty_ir
 	mov	[lwrir], eax
 	mov	rdi, rbx
@@ -941,6 +953,123 @@ proc __lwr_binary, lwrsp, lwrn
 	mov	r8d, r12d
 	mov	r9d, r13d
 	call	lwr_emit
+	return
+
+  .vec:
+	; ---- whole-acy arithmetic (spec §5.4's acies row, stage 5.2b) --------
+	; The node's type is `acies<f32/f64, N>`, N in {2, 4, 8}, and BOTH
+	; operands are that same acies type: `__chk_ty_aciesbin` (stage 5.2a)
+	; admits exactly `+ - * /` on such a pair and raises EXS-E0305 at the
+	; operator for everything else, so a lane count outside {2, 4, 8}, an
+	; integer element, a mismatched pair or a sixth operator here is a
+	; checker bug and traps on the `rassert` below. Aggregates are
+	; memory-resident, and the acies base IS the vector image (the lanes'
+	; raw IEEE bits back to back, bit baggage -- tests/ir/vec_mem.ir's
+	; settlement), so the lowering is one nativus load per operand, one
+	; packed op, and one nativus store into a fresh temp:
+	;
+	;	%pa = <left's address>    (lwr_expr_agg: existing bytes or a temp)
+	;	%pb = <right's address>
+	;	%va = load vf*.N %pa 0 nativus
+	;	%vb = load vf*.N %pb 0 nativus
+	;	%vr = vadd|vsub|vmul|vdiv vf*.N %va %vb
+	;	%pt = slot N*elem elem		(lwr_ty_size's .acies arm)
+	;	store vf*.N %pt 0 nativus %vr
+	;
+	; and the NODE yields %pt, the temp's ADDRESS -- aggregate residence,
+	; exactly as a call or a literal yields one (lwr_expr_agg's `.fresh`).
+	; The acies type itself stays `ptr` at the language level
+	; (`lwr_ty_ir`); the vector types exist only inside this staging, which
+	; is why a vector value never crosses a function boundary and stage
+	; 5.1's refusal set holds untouched.
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, [lwrt]
+	call	ast_type_at
+	mov	ecx, [rax + AstType.width]	; the lane count N
+	mov	[lwrir], ecx			; reused: the arm does no
+					;   scalar `lwrir` lookup
+	mov	ecx, [rax + AstType.a]		; the element type
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, ecx
+	call	ast_type_at
+	mov	esi, BFA_TK_VF32
+	cmp	dword [rax + AstType.width], 64
+	jne	.vkind
+	mov	esi, BFA_TK_VF64
+  .vkind:
+	; kind + lane count carry everything: width is 0 CANONICALLY
+	; (backend_fasmg/ir.inc's BFA_TK_VF32 comment -- the parse-vs-lower
+	; float-width discrepancy is not repeated here), `ref` = N
+	mov	rdi, [rbx + LwrState.mdl]
+	xor	edx, edx
+	xor	ecx, ecx
+	mov	r8d, [lwrir]
+	call	bfa_type_intern
+	mov	[lwrvty], eax
+	mov	rdi, rbx
+	mov	esi, [lwra]
+	call	lwr_expr_agg
+	mov	r12d, eax			; %pa
+	mov	rdi, rbx
+	mov	esi, [lwrb2]
+	call	lwr_expr_agg
+	mov	r13d, eax			; %pb
+	mov	rdi, rbx
+	mov	esi, [lwrvty]
+	mov	edx, r12d
+	xor	ecx, ecx			; the base: offset 0
+	xor	r8d, r8d			; BFA_ORDER_NATIVUS
+	call	lwr_load
+	mov	[lwrva], eax
+	mov	rdi, rbx
+	mov	esi, [lwrvty]
+	mov	edx, r13d
+	xor	ecx, ecx
+	xor	r8d, r8d
+	call	lwr_load
+	mov	[lwrvb], eax
+	mov	eax, [lwrop]
+	cmp	eax, AST_OP_ADD
+	je	.vadd
+	cmp	eax, AST_OP_SUB
+	je	.vsub
+	cmp	eax, AST_OP_MUL
+	je	.vmul
+	cmp	eax, AST_OP_DIV
+	je	.vdiv
+	rassert	eax eq 0		; __chk_ty_aciesbin admits + - * / only
+  .vadd:
+	mov	eax, BFA_OP_VADD
+	jmp	.vemit
+  .vsub:
+	mov	eax, BFA_OP_VSUB
+	jmp	.vemit
+  .vmul:
+	mov	eax, BFA_OP_VMUL
+	jmp	.vemit
+  .vdiv:
+	mov	eax, BFA_OP_VDIV
+  .vemit:
+	mov	rdi, rbx
+	mov	esi, eax
+	xor	rdx, rdx
+	mov	ecx, [lwrvty]
+	mov	r8d, [lwrva]
+	mov	r9d, [lwrvb]
+	call	lwr_emit
+	mov	[lwrvr], eax
+	mov	rdi, rbx
+	mov	esi, [lwrt]
+	call	lwr_slot			; N*elem bytes (ty.inc's .acies arm)
+	mov	[lwrpt], eax
+	mov	rdi, rbx
+	mov	esi, [lwrvty]
+	mov	edx, [lwrpt]
+	xor	ecx, ecx
+	mov	r8d, [lwrvr]
+	xor	r9d, r9d			; BFA_ORDER_NATIVUS
+	call	lwr_store
+	mov	eax, [lwrpt]
 	return
 
   .compare:
@@ -2017,7 +2146,12 @@ endp
 ; THE FOUR ARMS THAT NAME EXISTING BYTES ARE WHAT STOP A RECURSION: before
 ; them a `Member`, `Index` or `Cast` of aggregate type went to `.fresh`, whose
 ; `lwr_expr_into` sent a non-literal, non-call node straight back here --
-; forever (the wire-codec plan's B5). The `Cast` arm is the pointer
+; forever (the wire-codec plan's B5). The `Binary` arm (stage 5.2b) stops the
+; SAME recursion for `a + b` over an `acies<f32/f64, N>`: a Binary is none of
+; the literal/call shapes `lwr_expr_into` answers, so without this arm a
+; whole-acy operation would orbit the two routines forever; `__lwr_binary`'s
+; `.vec` arm stages its result in a temp and yields the temp's address, which
+; is exactly the contract this routine promises. The `Cast` arm is the pointer
 ; passthrough spec §5.2 permits "exactly where no write can observe the
 ; difference": a read through the cast (an index, a call argument, which IR
 ; 2.9 makes read-only) cannot, and a write THROUGH a cast is `EXS-E0306` in
@@ -2041,7 +2175,17 @@ proc lwr_expr_agg, lwrsp, lwrn
 	je	.cast
 	cmp	eax, AST_UNARY
 	je	.unary
+	cmp	eax, AST_BINARY
+	je	.binary
 	jmp	.fresh
+  .binary:
+	; only `+ - * /` on two `acies<f32/f64, N>` ever reach here as a
+	; Binary of aggregate type (the checker's stage-5.2a gate); the vector
+	; arm of `__lwr_binary` emits the staging and returns the temp
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_binary
+	return
   .path:
 	mov	rdi, rbx
 	mov	esi, [lwrn]

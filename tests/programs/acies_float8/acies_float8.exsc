@@ -1,0 +1,130 @@
+// Whole-acy arithmetic from real .exsc source, end to end (spec 5.4's acies
+// row, stage 5.2): `+ - * /` on two `acies<f32, 8>` or two `acies<f64, 8>`
+// are one packed vadd/vsub/vmul/vdiv per operation, the acies base being the
+// vector image (bit baggage). This program is the program twin of
+// tests/unit/lwr_aciesops.asm (which pins the IR rows) and the language-level
+// proof of tests/ir/vec_arith.ir's arithmetic: every result lane crosses a
+// WHOLE-ACY op, never a scalar loop, and the bytes it writes are checked
+// against an INDEPENDENT oracle.
+//
+// THE GRID. Every literal is an exact binary value (dyadic for a/b, small
+// integers for c), so nothing here depends on dec754's literal rounding --
+// the only roundings under test are the four operations' own, one IEEE
+// rounding per lane per op. The quotient lanes (a / c, (a + b) / c) are
+// INEXACT on purpose (1/3, 2.5/11, ...): an exact grid alone would pass a
+// lowerer that skipped the op entirely. b is the broadcast `[s; 8]` (spec
+// 8.6), which is also what proves the broadcast's value reaches a whole-acy
+// operand correctly. `mix` pins a NESTED whole-acy expression -- `(a + b)`
+// is itself a Binary of acies type, so its temp must survive as an operand
+// of the next op: the aggregate-residence staging, twice removed from any
+// binding.
+//
+// THE ENCODING. Each lane v is written as floor(v * 2^k) in EIGHT EXPLICIT
+// big-endian bytes, computed by shift-and-truncate from a u64 -- k = 20 for
+// the f32 section, 32 for the f64 section (2^20 and 2^32 are exact scalings
+// of a binary float, so the multiply adds no rounding; ftoi truncates
+// toward zero and every lane here is non-negative). 20 fraction bits of a
+// 24-bit f32 mantissa and 32 of 52 in f64 are far more than a lane mixup,
+// a dropped chunk or a wrongly-associated operand could hide behind. The
+// byte ORDER is fixed by construction (deorsum of a u64, never a memory
+// image), which is what makes the mips64 big-endian cross row meaningful:
+// the same 640 bytes must come out of a machine whose lane bytes in memory
+// lie the other way around.
+//
+// THE ORACLE. prototypes/acies_float8_oracle.py computes the same five
+// results per section with numpy float32/float64 ELEMENTWISE -- the same
+// association as written here -- and emits expected.out. Both sides are
+// one IEEE rounding per lane per op, so byte identity is proof, not luck.
+// expected.out is checked in; the oracle regenerates it (system python3;
+// numpy need not be in the devShell because run.sh never runs the oracle).
+//
+// 640 bytes: 2 sections (f32, f64) x 5 results x 8 lanes x 8 bytes.
+// `initium` returns 0 when every scribe_octeto returned its count (1),
+// else 1; the stdout bytes themselves are the test (expected.out).
+
+functio pone_i64(s: Scriptor, w: u64) -> mensura {
+    // Eight explicit big-endian bytes: the order is the shift amounts,
+    // never a host's byte order. No `poscit`: these rows are inferred
+    // (spec 4.1 rule 5) -- declaring `poscit sicut s` on a function that
+    // CALLS another so declared is refused today (EXS-E0421, wire-codec.md
+    // finding 9), the arrangement octeti/ and emitte.exsc both use.
+    mutabilis n: mensura = 0;
+    si s.scribe_octeto((w deorsum 56) sicut u8) eq 1 { n = n + 1; }
+    si s.scribe_octeto((w deorsum 48) sicut u8) eq 1 { n = n + 1; }
+    si s.scribe_octeto((w deorsum 40) sicut u8) eq 1 { n = n + 1; }
+    si s.scribe_octeto((w deorsum 32) sicut u8) eq 1 { n = n + 1; }
+    si s.scribe_octeto((w deorsum 24) sicut u8) eq 1 { n = n + 1; }
+    si s.scribe_octeto((w deorsum 16) sicut u8) eq 1 { n = n + 1; }
+    si s.scribe_octeto((w deorsum 8) sicut u8) eq 1 { n = n + 1; }
+    si s.scribe_octeto(w sicut u8) eq 1 { n = n + 1; }
+    redde n;
+}
+
+functio scribe_acies32(s: Scriptor, v: acies<f32, 8>) -> mensura {
+    mutabilis n: mensura = 0;
+    firma scala: f32 = 1048576.0;
+    firma octo: mensura = 8;
+    per i in 0..octo {
+        firma w: u64 = (v[i] * scala) sicut u64;
+        n = n + pone_i64(s, w);
+    }
+    redde n;
+}
+
+functio scribe_acies64(s: Scriptor, v: acies<f64, 8>) -> mensura {
+    mutabilis n: mensura = 0;
+    firma scala: f64 = 4294967296.0;
+    firma octo: mensura = 8;
+    per i in 0..octo {
+        firma w: u64 = (v[i] * scala) sicut u64;
+        n = n + pone_i64(s, w);
+    }
+    redde n;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma s = Scriptor.ad_exitum(a);
+    mutabilis n: mensura = 0;
+
+    // ---- f32 section ---------------------------------------------------
+    firma va: acies<f32, 8> = [1.0, 2.5, 3.0, 4.75, 6.0, 7.25, 9.5, 12.0];
+    firma vb: acies<f32, 8> = [0.5; 8];
+    firma vc: acies<f32, 8> = [3.0, 11.0, 13.0, 7.0, 5.0, 9.0, 17.0, 23.0];
+
+    firma suma: acies<f32, 8> = va + vb;
+    firma difa: acies<f32, 8> = va - vb;
+    firma prda: acies<f32, 8> = va * vb;
+    firma quoa: acies<f32, 8> = va / vc;
+    firma mixa: acies<f32, 8> = (va + vb) / vc;
+
+    n = n + scribe_acies32(s, suma);
+    n = n + scribe_acies32(s, difa);
+    n = n + scribe_acies32(s, prda);
+    n = n + scribe_acies32(s, quoa);
+    n = n + scribe_acies32(s, mixa);
+
+    // ---- f64 section ----------------------------------------------------
+    firma wa: acies<f64, 8> = [1.0, 2.5, 3.0, 4.75, 6.0, 7.25, 9.5, 12.0];
+    firma wb: acies<f64, 8> = [0.25; 8];
+    firma wc: acies<f64, 8> = [3.0, 7.0, 11.0, 13.0, 17.0, 19.0, 23.0, 29.0];
+
+    firma sumb: acies<f64, 8> = wa + wb;
+    firma difb: acies<f64, 8> = wa - wb;
+    firma prdb: acies<f64, 8> = wa * wb;
+    firma quob: acies<f64, 8> = wa / wc;
+    firma mixb: acies<f64, 8> = (wa + wb) / wc;
+
+    n = n + scribe_acies64(s, sumb);
+    n = n + scribe_acies64(s, difb);
+    n = n + scribe_acies64(s, prdb);
+    n = n + scribe_acies64(s, quob);
+    n = n + scribe_acies64(s, mixb);
+
+    // 640 writes, each answered 1.
+    si n ne 640 {
+        redde 1;
+    }
+    redde 0;
+}

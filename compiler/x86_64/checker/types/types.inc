@@ -300,7 +300,28 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	je	.u_addr
 	cmp	qword [chkt_up], AST_U_DEREF
 	je	.u_deref
-	; `-e` -- the operand's own type, and a pending literal stays pending
+	; `-e` -- the operand's own type, and a pending literal stays pending;
+	; except that a settled `acies` operand is EXS-E0305 AT THE OPERATOR.
+	; The stage 5 settlement is "`+ - * /` whole-acy only, else E0305" and
+	; unary minus is an operator -- and the IR has no vector-negate opcode,
+	; so a typed Unary(acies) would reach the lowerer as a node nothing can
+	; lower (stage 5.2a, closed with `__chk_ty_aciesbin`). The error type is
+	; admitted silently, as everywhere (no cascade).
+	test	r13, r13
+	jz	.un_out				; pending: expectation's to judge
+	mov	rdi, rbx
+	mov	rsi, r13
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_ACIES
+	jne	.un_out
+	mov	rdi, rbx
+	mov	rsi, 305
+	mov	rdx, r12
+	call	__chk_ty_raise
+	mov	rdi, rbx
+	call	__chk_ty_err
+	jmp	.out
+  .un_out:
 	mov	rax, r13
 	jmp	.out
   .u_addr:
@@ -1929,6 +1950,119 @@ proc __chk_ty_bitadm, chkt_wQ2, chkt_tQ2, chkt_nQ2
 	return
 endp
 
+; __chk_ty_aciesbin(w, op, lt, rt, n) -> rax = the type of a binary operator
+; application KNOWN to have an `acies` operand, or the error type after
+; raising `EXS-E0305` AT THE OPERATOR `n`. `.settled` routes here before the
+; pairing check, because nothing in this routine is the pairing rule's: the
+; plan's settlement (stage 5.2a) makes the WHOLE-ACIES arithmetic operators
+; `+ - * /` elementwise on two `acies<T, N>` of the SAME float element type
+; and the SAME lane count N in {2, 4, 8}, result the same acies -- and makes
+; "everything else" one diagnostic at the operator, not `EXS-E0303` at the
+; right operand the way any other mismatched pair reports. In detail:
+;
+;   - a lane-count mismatch (`acies<f32, 4>` with `acies<f32, 8>`), an
+;     element mismatch (`acies<f32, 8>` with `acies<f64, 8>`), a lane count
+;     outside {2, 4, 8} (`acies<f32, 3>`), a NON-FLOAT element (`acies<u8,
+;     4>` `acies<i64, 8>`), a MIXED pair (acies with a scalar -- no implicit
+;     broadcast; `[s; N]`, spec §8.6, is the broadcast story), and ANY OTHER
+;     OPERATOR on any acies (the wrapped and saturating spellings included:
+;     `.wchk` judged a float and an acies of floats slipped through -- the
+;     slip this wave closes) -- all are E0305 at the operator, once.
+;   - the ERROR type on either side is admitted silently (no cascade,
+;     typed-ast.md section 2.2), as in `.wchk` and `.div`.
+;
+; An operator that does not reach `.settled` keeps its own arm's answer:
+; `aut`/`sursum`/`deorsum` already refuse an acies per operand, at the
+; operand, in `.bitop` (`__chk_ty_bitadm` -- anything but an unsigned
+; integer, judged on its own). What reaches here is exactly the ops that
+; survive to the pairing rule.
+proc __chk_ty_aciesbin, chkt_wV, chkt_oV, chkt_bV, chkt_cV, chkt_nV
+	uses	rbx, r12, r13, r14
+	locals
+		slot chkt_xV, dq	; the left's lane count / element id, held
+					; across the right's `__chk_ty_field` call
+					; (rcx does not survive one)
+	endl
+	mov	rbx, [chkt_wV]
+	mov	r13, [chkt_bV]
+	mov	r14, [chkt_cV]
+	mov	r12, [chkt_nV]
+	mov	rdi, rbx
+	mov	rsi, r13
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_ERROR
+	je	.passthrough			; no cascade
+	cmp	rax, AST_TY_ACIES
+	jne	.bad				; one side only: no broadcast
+	mov	rdi, rbx
+	mov	rsi, r14
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_ERROR
+	je	.passthrough			; no cascade
+	cmp	rax, AST_TY_ACIES
+	jne	.bad				; ditto, acies on the left
+	; the operator: exactly `+ - * /` are defined on a whole acy
+	mov	rcx, [chkt_oV]
+	cmp	rcx, AST_OP_ADD
+	je	.shape
+	cmp	rcx, AST_OP_SUB
+	je	.shape
+	cmp	rcx, AST_OP_MUL
+	je	.shape
+	cmp	rcx, AST_OP_DIV
+	je	.shape
+	jmp	.bad
+  .shape:
+	; both `acies` now: the element types and the lane counts must each be
+	; ONE (interning carries both in the id, and the diagnostic the plan
+	; assigns to a mismatch is the operator's, not the pairing rule's)
+	mov	rdi, rbx
+	mov	rsi, r13
+	mov	rdx, AstType.width
+	call	__chk_ty_field
+	cmp	rax, 2
+	je	.nok
+	cmp	rax, 4
+	je	.nok
+	cmp	rax, 8
+	jne	.bad
+  .nok:
+	mov	[chkt_xV], rax
+	mov	rdi, rbx
+	mov	rsi, r14
+	mov	rdx, AstType.width
+	call	__chk_ty_field
+	cmp	rax, [chkt_xV]
+	jne	.bad				; a lane-count mismatch
+	mov	rdi, rbx
+	mov	rsi, r13
+	mov	rdx, AstType.a
+	call	__chk_ty_field
+	mov	[chkt_xV], rax
+	mov	rdi, rbx
+	mov	rsi, r14
+	mov	rdx, AstType.a
+	call	__chk_ty_field
+	cmp	rax, [chkt_xV]
+	jne	.bad				; an element-type mismatch
+	mov	rdi, rbx
+	mov	rsi, [chkt_xV]
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_FLOAT
+	jne	.bad				; elementwise ops are float-only
+  .passthrough:
+	mov	rax, r13
+	return
+  .bad:
+	mov	rdi, rbx
+	mov	rsi, 305
+	mov	rdx, r12
+	call	__chk_ty_raise
+	mov	rdi, rbx
+	call	__chk_ty_err
+	return
+endp
+
 ; __chk_ty_binary(w, n) -> rax = the type of a binary operator application.
 proc __chk_ty_binary, chkt_wB, chkt_nB
 	uses	rbx, r12, r13, r14
@@ -1978,6 +2112,11 @@ proc __chk_ty_binary, chkt_wB, chkt_nB
 	cmp	qword [chkt_rB], 0
 	je	.both_pending
 	mov	rdi, rbx
+	mov	rsi, [chkt_rB]
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_ACIES
+	je	.mixed
+	mov	rdi, rbx
 	mov	rsi, [chkt_aB]
 	mov	rdx, [chkt_rB]
 	call	__chk_ty_expect
@@ -1986,11 +2125,50 @@ proc __chk_ty_binary, chkt_wB, chkt_nB
 	cmp	qword [chkt_rB], 0
 	jne	.settled
 	mov	rdi, rbx
+	mov	rsi, [chkt_lB]
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_ACIES
+	je	.mixed
+	mov	rdi, rbx
 	mov	rsi, [chkt_bB]
 	mov	rdx, [chkt_lB]
 	call	__chk_ty_expect
 	mov	[chkt_rB], rax
 	jmp	.settled
+
+  .mixed:
+	; an `acies` SETTLED on one side of a binary while the other side is
+	; still pending -- `v + 1.5`, `1.5 + v`, `v + 1 + 2` -- is the
+	; settlement's "no implicit broadcast" case (stage 5.2a), the same
+	; shape `.settled`'s `__chk_ty_aciesbin` refuses once BOTH sides are
+	; typed, and getting there through `__chk_ty_expect` would misreport
+	; it as `EXS-E0308` at a literal that was never asked to be an acies.
+	; So: `EXS-E0305` AT THE OPERATOR here, and the pending side is given
+	; the error type rather than the acies (`.bit_bad`'s idiom), so
+	; nothing inside it raises again or is left untyped.
+	mov	rdi, rbx
+	mov	rsi, 305
+	mov	rdx, r12
+	call	__chk_ty_raise
+	mov	rdi, rbx
+	call	__chk_ty_err
+	mov	r13, rax
+	cmp	qword [chkt_lB], 0
+	jne	.mixed_r
+	mov	rdi, rbx
+	mov	rsi, [chkt_aB]
+	mov	rdx, r13
+	call	__chk_ty_expect
+  .mixed_r:
+	cmp	qword [chkt_rB], 0
+	jne	.mixed_out
+	mov	rdi, rbx
+	mov	rsi, [chkt_bB]
+	mov	rdx, r13
+	call	__chk_ty_expect
+  .mixed_out:
+	mov	rax, r13
+	return
 
   .both_pending:
 	; `1 + 2` in a position that supplies no expectation. The result is
@@ -2020,6 +2198,31 @@ proc __chk_ty_binary, chkt_wB, chkt_nB
   .settled:
 	mov	r13, [chkt_lB]
 	mov	r14, [chkt_rB]
+	; an `acies` on either side routes the WHOLE question to its own gate
+	; before the pairing rule runs: a mismatched pair (a lane count or an
+	; element that differs -- two interned ids) would otherwise report
+	; `EXS-E0303` at the right operand, and the whole-acy settlement
+	; (stage 5.2a) makes every acies binary failure `EXS-E0305` at the
+	; operator, `__chk_ty_aciesbin`'s header enumerates them.
+	mov	rdi, rbx
+	mov	rsi, r13
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_ACIES
+	je	.acy_route
+	mov	rdi, rbx
+	mov	rsi, r14
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_ACIES
+	jne	.pair
+  .acy_route:
+	mov	rdi, rbx
+	mov	rsi, [chkt_oB]
+	mov	rdx, r13
+	mov	rcx, r14
+	mov	r8, r12
+	call	__chk_ty_aciesbin
+	return
+  .pair:
 	mov	rdi, rbx
 	mov	rsi, r14
 	mov	rdx, r13
@@ -2045,7 +2248,14 @@ proc __chk_ty_binary, chkt_wB, chkt_nB
 	je	.div
 	rassert	rcx le AST_OP_MUL
   .arith:
-	; `+ +% +| - -% -| *` -- the operand type, unchanged -- except that
+	; `+ +% +| - -% -| *` -- the operand type, unchanged. No `acies`
+	; operand ever reaches this arm: `.settled` routes one to
+	; `__chk_ty_aciesbin` before the pairing rule (the whole-acy
+	; settlement, stage 5.2a -- before it, an acies SLIPPED through here:
+	; `.arith` admitted it as the operand type, `.wchk` judged a bare
+	; float only, and `.div`'s non-float check refused it; the two arith
+	; slips are what the gate closes). What remains is the plain scalar
+	; rule -- except that
 	; THE WRAPPED AND SATURATING FORMS ARE NOT DEFINED ON A FLOAT: spec
 	; §5.4 gives a float no overflow behaviour (the quotient in `.div`
 	; is never-traps for the same reason), so `a +% b` on f32/f64 is
@@ -2082,8 +2292,10 @@ proc __chk_ty_binary, chkt_wB, chkt_nB
 	return
   .div:
 	; `/` -- the FLOAT-ONLY quotient (§5.4, this wave). Integer division
-	; and remainder are `[OPEN]` and are not invented here. A non-float
-	; operand type is EXS-E0305 AT THE OPERATOR, never at an operand:
+	; and remainder are `[OPEN]` and are not invented here. An `acies`
+	; operand is decided upstream (`__chk_ty_aciesbin` -- `acies<f32,
+	; N>`/`acies<f64, N>` with N in {2, 4, 8} are ADMITTED there, elementwise),
+	; so a "non-float operand" here means a non-float SCALAR. One is EXS-E0305 AT THE OPERATOR, never at an operand:
 	; the pairing rule above already made the two one type, so neither
 	; is wrong on its own -- `x / 2` with `x: i32` would double-blame --
 	; and `__chk_ty_expect`'s `.bin_div` judged the pending case the same
