@@ -2250,7 +2250,13 @@ two of them, so it is split:
 - `mips64-none-o64` — **tested.** §14 entry 25: the emitted unit is
   cross-compiled and RUN big-endian with 32-bit addresses, and agrees with
   the reference backend on stdout bytes, exit status and trap-or-not over
-  `vendor/streamdb-v3/`. Two things are still `[UNTESTED]` and are named
+  `vendor/streamdb-v3/`. Floating point too, since 2026-09-14: the two
+  f64 pipeline programs (`tests/programs/pictura_triangulum/`,
+  `tests/programs/signaculum/`) cross-run byte-identical under the same
+  emulation — the first big-endian `f64` execution this compiler has
+  produced, so there is no longer a mips64 float `[UNTESTED]` (its last
+  mention, in §14 entry 26, is amended there).
+  Two things are still `[UNTESTED]` and are named
   rather than folded in: the **o64 ABI itself**, since the certificate runs
   the n32 ABI as a proxy — it shares byte order, address width, register
   width, ISA and the emitted text, and differs in argument passing — while
@@ -2603,7 +2609,7 @@ running.)
 23. `DeModFrame` encode/decode → byte-identical to all 246 vectors of `vendor/hydramesh-wire/golden_vectors.json`
 24. Implementation whose mark exceeds the trait's declared ceiling, reached only through a generic → `EXS-E0510`
 25. `exsc aedifica --hospes mips64-none-o64 --emitte c` over the StreamDB reader, cross-compiled and run big-endian with 32-bit addresses → stdout byte-identical to the reference backend's over `vendor/streamdb-v3/`
-26. An RGB triangle over `f64` — float literals, `/`, `fneg`, ordered `fcmp`, `itof`/`ftoi`, incremental edge-function rasterization to a binary P6 image on stdout → byte-identical between the reference and C backends, and byte-identical to an independently computed oracle (`prototypes/pictura_oracle.py`, which mirrors the program's f64 operation order, the agreement §9.3's determinism law turns into a byte claim). Carried by `tests/programs/pictura_triangulum/` through the run and differential phases; NOT in the cross phase — big-endian f64 execution on mips64 is unmeasured, so `§9.5`'s mips64 float row stays `[UNTESTED]` until an emulated run says otherwise
+26. An RGB triangle over `f64` — float literals, `/`, `fneg`, ordered `fcmp`, `itof`/`ftoi`, incremental edge-function rasterization to a binary P6 image on stdout → byte-identical between the reference and C backends, byte-identical to an independently computed oracle (`prototypes/pictura_oracle.py`, which mirrors the program's f64 operation order, the agreement §9.3's determinism law turns into a byte claim), and — since 2026-09-14 — byte-identical cross-run big-endian on `mips64-none-o64` under emulation, the first big-endian `f64` execution of anything this compiler produces (amended: the sentence used to read "NOT in the cross phase — big-endian f64 execution on mips64 is unmeasured, so `§9.5`'s mips64 float row stays `[UNTESTED]`"; `tests/programs/pictura_triangulum/` and `tests/programs/signaculum/`, the logo renderer, now both carry `cross=yes` and agree byte for byte under qemu-mipsn32). Carried by `tests/programs/pictura_triangulum/` through the run, differential and cross phases
 
 Entries 18-20 close a gap: §8.1 defines six source-policy codes and only three
 of them (`E0102`, `E0103`, `E0105`) had an entry, while `E0101`, `E0104` and

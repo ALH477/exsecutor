@@ -373,8 +373,9 @@ inside the pixel loop) — and writes a binary P6 image on stdout. Its
 15,565 bytes are byte-identical between the reference backend, all four
 differential toolchains, and an independently written Python oracle that
 mirrors the program's f64 operation order (`prototypes/pictura_oracle.py`;
-spec §14 entry 26). Big-endian f64 execution on mips64 is the one
-deliberately open row: unmeasured, and the spec says so.
+spec §14 entry 26) — and byte-identical cross-run big-endian on mips64
+under emulation, the first big-endian `f64` execution this compiler has
+produced (both float picture programs carry `cross=yes`).
 
 ![the RGB triangle, rendered by examples/pictura](docs/images/pictura_triangulum.png)
 
@@ -422,7 +423,7 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   the C backend's output must agree with the reference's on stdout bytes, exit
   status and trap-or-not, across gcc and clang at `-O0` and `-O2`, every one
   under `-fsanitize=undefined -fno-sanitize-recover=all`. They agree
-  everywhere; zero sanitizer reports. And a **cross phase**: six of those
+  everywhere; zero sanitizer reports. And a **cross phase**: eight of those
   directories are also emitted for `--hospes mips64-none-o64`,
   cross-compiled to big-endian MIPS-III with 32-bit addresses, and **run
   under emulation** against the same three observables — the first

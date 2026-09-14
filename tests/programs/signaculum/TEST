@@ -22,4 +22,4 @@
 #
 # (No stdout= on purpose: expected.out IS the reference; naming both is
 # the run.sh failure for "which of the two governs?".)
-TEST: expect-exit=0 sources=examples/signaculum/signaculum.exsc,examples/signaculum/ascensus.exsc stdin=tests/data/signaculum_mesh.bin
+TEST: expect-exit=0 sources=examples/signaculum/signaculum.exsc,examples/signaculum/ascensus.exsc stdin=tests/data/signaculum_mesh.bin cross=yes

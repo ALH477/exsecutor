@@ -126,7 +126,7 @@ DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-128}"
 # numbers above: a cross-compiled, emulated run of a 32-bit-`mensura` unit is
 # a different claim from a host build of a 64-bit one, and one number
 # reporting both would name neither. §14 entry 25, ADR 0015.
-CROSS_PROGRAM_FLOOR="${CROSS_PROGRAM_FLOOR:-6}"
+CROSS_PROGRAM_FLOOR="${CROSS_PROGRAM_FLOOR:-8}"
 
 PASS=0
 FAIL=0
