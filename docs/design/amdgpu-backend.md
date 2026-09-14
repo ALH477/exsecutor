@@ -1,6 +1,10 @@
 # AMD device backend — plan
 
-**Status:** `[OPEN]` — plan only. No code. Stage 3 at the earliest, realistically Stage 5.
+**Status:** `[OPEN]` — phases 2+ (own encoder, shipping kernels) remain plans.
+As of 2026-09-14 the execution proof has a landed first stone: Stage 6 G1
+(`tests/c/exsrt_shim_amdgpu.c`, see §9) compiled the compiler's own emitted C
+to loadable `amdgcn-amdhsa` code objects for both gfx generations on the
+development machine. Nothing has been *dispatched* yet — that is G2.
 **Relates to:** spec §5.4, §5.5, §9.2, §9.5, §10.1, §18.1;
 [ADR 0007](../decisions/0007-numeric-semantics.md),
 [0009](../decisions/0009-heterogeneous-cpu-gpu.md); `norma-algebra.md`
@@ -160,9 +164,11 @@ Nothing here starts before the compiler exists.
 
 ## 8. Honest assessment
 
-- This is **larger than the compiler itself**, and the compiler does not exist.
-  A realistic reading is Stage 5, after self-hosting, or as a separately staffed
-  effort.
+- This is **larger than the compiler itself**. This bullet predates
+  self-hosting ("the compiler does not exist" is stale — the compiler builds
+  itself), and G1 measured the C backend's device route to be far smaller
+  than this document feared, but phases 2–5 of §7 stand in full: the
+  encoder, the occupancy work, and the cross-generation gates are the bulk.
 - The bit-identity gates in §6 are stricter than any shipping GPU library
   enforces. They may prove unachievable on some hardware — particularly where
   matrix units have fixed internal accumulation orders that cannot be made to
@@ -177,4 +183,49 @@ Nothing here starts before the compiler exists.
   *occupancy*, *workgroup* all need to descend the ladder, and several will land
   on rung 5 as marked loans.
 
-`[UNTESTED]` — nothing in this document has been built or measured.
+`[UNTESTED]` — the build path of §9 is measured; dispatch and every
+on-device statement in this document remain unmeasured as of 2026-09-14.
+
+## 9. 2026-09-14 — Stage 6 G1: the device-C build proof, measured
+
+Stage 6's plan (G1) was: compile the C backend's emitted unit with clang for
+`amdgcn-amdhsa`, zero compiler changes, and see what breaks. **Nothing
+broke.** This changes §7: the C-backend device-C route **supersedes phase 1**
+("assemble hand-written ISA text with LLVM, dispatch via HSA") as the
+execution proof — the proof program is the compiler's own output, not a
+hand-written kernel. Path B (own encoder) remains the shipping goal per
+§18.1; Path A (LLVM) is now *already on the verification path* as the
+device-C toolchain, exactly the off-build-path-oracle role §4 assigns it.
+
+**Measured** (nix devShell clang 21.1.8, this machine's two GPUs):
+
+- The shim `tests/c/exsrt_shim_amdgpu.c` — a new shape: **buffer-backed**
+  (a device has no descriptors; `scribe` appends to an output buffer, `lege`
+  consumes an input buffer, addresses passed as kernargs). Header comment
+  lists its five load-bearing decisions: one-workitem kernel; descriptors as
+  buffer selectors; the `abortus N` line into the output buffer then
+  `s_trap`; overflow visible via a result record; **no rounding/subnormal
+  state pinned** (G3 measures the GCN MODE register first — a pin written
+  before the measurement would be aspiration).
+- `examples/saluta.exsc + imprime + initium` → `--emitte c` (17,815 bytes of
+  C) → code objects for **gfx1102 and gfx1103** (this machine's Navi 33 dGPU
+  and Phoenix1 APU, kfd `gfx_target_version` 110002/110003): 10,760-byte ELF
+  each, `Machine: AMD GPU`, AMDHSA metadata note present,
+  `kernarg_segment_size` 296, wavefront 32, **zero undefined symbols** —
+  the freestanding unit plus shim needs no libc, no compiler-rt.
+- `tests/programs/acies_float8` — deliberately chosen to smoke the Stage 5
+  vector prologue — compiles and links identically (29,456-byte code
+  objects, both generations): GCC/Clang `vector_size` arithmetic on the
+  emitted `exs_vf32_8`/`exs_vf64_8` lowers to GCN with no intrinsics and no
+  headers, confirming the plan's no-new-hospes-row argument (GCN flat
+  pointers are 64-bit little-endian; the x86_64 row's `_Static_assert`s
+  hold as compiled for the device).
+- Toolchain lever, same one the mips64 cross phase already uses:
+  `env NIX_HARDENING_ENABLE= clang --target=amdgcn-amdhsa -mcpu=gfxNNNN
+  -ffreestanding -fno-builtin -nostdlib -fuse-ld=lld` (the nix cc-wrapper's
+  hardening default `-fzero-call-used-regs=used-gpr` is unsupported on
+  amdgcn; `tests/run.sh:2041` precedent).
+
+**Not measured, deliberately:** no dispatch has run (G2's kfd runner does
+that); no value has come back from a device. §5.5's CPU≡GPU sentence keeps
+its `[UNTESTED]` until G2/G3 produce the bytes.
