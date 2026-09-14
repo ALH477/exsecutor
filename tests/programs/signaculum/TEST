@@ -1,0 +1,25 @@
+# The Exsecutor logo's 3D model, rendered by the language it compiles.
+#
+# examples/signaculum/ (signaculum.exsc + ascensus.exsc) reads a
+# fixed-point description of logo/Meshy_AI_Crossed_Ascension_0910024256
+# -- 1493 vertices, 2981 faces, baked per-face flat colours -- from
+# stdin (tests/data/signaculum_mesh.bin, written by the producer
+# prototypes/signaculum_mesh.py), rasterises it at 256x256 with a
+# 1/z z-buffer, backface culling and incremental edge functions, and
+# writes a binary P6 PPM on stdout. Every float the program holds is
+# delivered in the stream as an integer on the 2^-23 grid and decoded by
+# division by 8388608.0 -- a power of two, so the f64 quotient is EXACT
+# on both sides and the program and oracle hold identical f64 bits from
+# the first operation on.
+#
+# The golden is expected.out, produced by prototypes/signaculum_oracle.py,
+# the independent second implementation: it MIRRORS the program's f64
+# operation order line for line, so under round-to-nearest-even (the
+# 0x1F80 MXCSR image both backends start with) the two either agree byte
+# for byte or one side's operation order changed. Both backends are held
+# to it: the run phase below, then the differential phase over gcc/clang
+# at -O0/-O2.
+#
+# (No stdout= on purpose: expected.out IS the reference; naming both is
+# the run.sh failure for "which of the two governs?".)
+TEST: expect-exit=0 sources=examples/signaculum/signaculum.exsc,examples/signaculum/ascensus.exsc stdin=tests/data/signaculum_mesh.bin

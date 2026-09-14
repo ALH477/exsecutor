@@ -1,0 +1,22 @@
+// examples/signaculum/ascensus.exsc
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 The Exsecutor authors.
+// ---------------------------------------------------------------------------
+// The entry point, and the only file of the unit that names Mundus. Reads
+// the fixed-point mesh stream on stdin, writes the 256x256 P6 on stdout;
+// the byte count is the self-check (15 header bytes + 196608 pixels, so a
+// parse that fell off the stream and returned 0 is an exit-1, not an
+// image).
+// ---------------------------------------------------------------------------
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma l = Lector.ab_introitu(a);
+    firma s = Scriptor.ad_exitum(a);
+    firma n = signaculum_redde(l, s);
+    si n ne 196623 {
+        redde 1;
+    }
+    redde 0;
+}

@@ -82,8 +82,8 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-176}"
 # backends lower (check 100 from both, differential phase below).
 # 100 -> 101 is pictura_triangulum/, the RGB triangle: floats rendering an
 # image, held to the Python oracle's bytes.
-IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-50}"
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-101}"
+IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-53}"
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-102}"
 
 # The differential phase (run_differential_tests, below), which compiles the
 # C backend's emitted units and runs them against the same expectations the
@@ -94,7 +94,7 @@ PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-101}"
 # happening. 39 of the 49 IR fixtures are lowerable (the other 10 are
 # rejections, checked separately and by exit status), times gcc and clang
 # times -O0 and -O2 = 156.
-DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-156}"
+DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-160}"
 
 # The same phase over tests/programs/. Two floors, because the claim has two
 # halves and a floor on either alone reads green while the other collapses:
@@ -119,8 +119,8 @@ DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-156}"
 #     four builds apiece -- the differential phase's first float-source
 #     byte-identity claim. 30 -> 31 and 120 -> 124: pictura_triangulum/,
 #     the RGB triangle, the same bargain over a whole image.
-DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-31}"
-DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-124}"
+DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-32}"
+DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-128}"
 
 # The cross phase's own floor, deliberately NOT folded into the differential
 # numbers above: a cross-compiled, emulated run of a 32-bit-`mensura` unit is

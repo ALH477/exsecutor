@@ -1,6 +1,6 @@
 # examples/
 
-Exsecutor source, four programs, all compiled and run by `tests/run.sh`:
+Exsecutor source, six programs, all compiled and run by `tests/run.sh`:
 
 - **the hello world** — `saluta.exsc`, `imprime.exsc`, `initium.exsc`,
   below; `tests/programs/saluta/` and `tools/publish-gate.sh` run it;
@@ -35,12 +35,25 @@ Exsecutor source, four programs, all compiled and run by `tests/run.sh`:
   section 6 is its design and its measurements; it is the first program
   written for the C backend to compile, and it runs on the reference backend
   today.
+- **`pictura/`, the RGB triangle** — the float wave's acceptance program:
+  a 96×54 triangle by incremental edge-function rasterization, one `fadd`
+  per edge per pixel, exactly four divisions in the whole program. It
+  writes a binary P6 on stdout, and `tests/programs/pictura_triangulum/`
+  holds it byte-identical against the independent oracle
+  `prototypes/pictura_oracle.py` on both backends. Spec §14 entry 26.
+- **`signaculum/`, the logo model** — the 3D model behind this repo's mark
+  (1,493 vertices, 2,981 textured faces on the fixed-point stdin stream
+  `prototypes/signaculum_mesh.py` writes) rasterised at 256×256 with a 1/z
+  z-buffer and backface culling, written as a P6. `tests/programs/signaculum/`
+  holds it byte-identical against `prototypes/signaculum_oracle.py` on both
+  backends and all four C builds; it is the program that closed float
+  `load`/`store` in both emitters.
 
 This file said "nothing here compiles — there is no compiler" until
 2026-09-10, and then, until the hydramodem commit, that nothing here was
 type-checked or compiled to code, which the hello world's test had already
 made false. It then said there were two programs, until the receiver, and
-three, until the StreamDB reader.
+three, until the StreamDB reader, and four, until the pictures.
 
 ## `saluta.exsc`
 

@@ -240,7 +240,7 @@ are byte-exact exceptions and why).
      Every figure is from running the named command at the named commit.
      Refresh it here and nowhere else. -->
 
-## Status as of `b398906` (2026-09-14)
+## Status as of `2984f78` (2026-09-14)
 
 Every figure here was produced by running the named command at this commit, in
 the `nix develop` shell, on `x86_64-linux`.
@@ -376,6 +376,25 @@ mirrors the program's f64 operation order (`prototypes/pictura_oracle.py`;
 spec §14 entry 26). Big-endian f64 execution on mips64 is the one
 deliberately open row: unmeasured, and the spec says so.
 
+![the RGB triangle, rendered by examples/pictura](docs/images/pictura_triangulum.png)
+
+**The language renders its own logo.** `examples/signaculum/` rasterises
+the 3D model behind this README's mark — 1,493 vertices, 2,981 textured
+faces — at 256×256 with a 1/z z-buffer, backface culling and incremental
+edge functions (one `fadd` per pixel per edge; one division per vertex and
+one per face, none in the pixel loop), and writes a 196,623-byte P6 on
+stdout. Every float the program holds arrives on stdin as an integer on
+the 2⁻²³ grid and is decoded by one exact power-of-two division, so the
+program and the independent oracle (`prototypes/signaculum_oracle.py`)
+run identical f64 bits from the first operation on; the output is
+byte-identical between the reference backend, all four differential
+toolchains, and the oracle (`tests/programs/signaculum/`). Getting here
+closed the last float gap in both emitters — `load`/`store` on float
+types, `nativus` order only, the value as its raw IEEE bit pattern
+(`tests/ir/float_mem.ir`; spec §9.2).
+
+![the Exsecutor logo model, rendered by examples/signaculum](docs/images/signaculum_render.png)
+
 **What runs:**
 
 - `make all` → `build/exsc`, **453,972 bytes**, freestanding, no libc.
@@ -396,10 +415,10 @@ deliberately open row: unmeasured, and the spec says so.
   corpus — `docs/design/diagnostics-review.md`, final section, and
   `tests/diagnostics/`. Stage 2's (`sub` resolution needing a search) does not
   fire, argued first in `docs/design/checker.md` §2.1.
-- `tests/run.sh`: **1477 pass, 0 fail** — 176 unit fixtures; 55 IR
-  fixtures and 101 Exsecutor programs, each compiled, assembled, **run**, and
+- `tests/run.sh`: **1500 pass, 0 fail** — 176 unit fixtures; 58 IR
+  fixtures and 102 Exsecutor programs, each compiled, assembled, **run**, and
   syscall-audited (70 of those programs are the receiver's impaired vectors);
-  a **differential phase**: 172 IR builds and 124 program builds in which
+  a **differential phase**: 176 IR builds and 128 program builds in which
   the C backend's output must agree with the reference's on stdout bytes, exit
   status and trap-or-not, across gcc and clang at `-O0` and `-O2`, every one
   under `-fsanitize=undefined -fno-sanitize-recover=all`. They agree
