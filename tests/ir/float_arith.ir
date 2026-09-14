@@ -1,0 +1,198 @@
+; TEST: expect-exit=100
+;
+; fconst/fadd/fsub/fmul/fdiv/fneg (ssa-ir.md 2.3), f64 in checks 1-4 and
+; 9-12, f32 in 5-8 and 13-14. Every constant enters as a raw bit pattern
+; through `fconst` -- the IR has no decimal float text on purpose -- and
+; every check is the check-chain idiom (conv_roundtrip.ir): the computed
+; value is observed through `ftoi` + a 64-bit `cmp.eq`, or through
+; `fcmp.eq` where the point is bit-level agreement of the float itself.
+;
+; Constants (bits, unsigned as parsed):
+;    f64 1.5      4609434218613702656     f32 1.5      1069547520
+;    f64 2.5      4612811918334230528     f32 2.5      1075838976
+;    f64 2.0      4611686018427387904     f32 2.0      1073741824
+;    f64 9.0      4621256167635550208     f32 9.0      1091567616
+;    f64 1.0      4607182418800017408     f32 1.0      1065353216
+;    f64 1.0+2^-52 4607182418800017409    f32 1.0+2^-23 1065353217
+;    f64 2^-53    4368491638549381120     f32 2^-24     864026624
+;    f64 1.0+2^-51 4607182418800017410    f32 1.0+2^-22 1065353218
+;
+;    1  f64 1.5 + 2.5          = 4.0   (ftoi 4)
+;    2  f64 2.5 - 1.5          = 1.0   operand order: 1.5-2.5 would be -1
+;    3  f64 2.5 * 2.0          = 5.0
+;    4  f64 9.0 / 2.0          = 4.5   ftoi truncates toward zero -> 4;
+;                                      the other order 2.0/9.0 -> 0
+;    5  f32 1.5 + 2.5          = 4.0f
+;    6  f32 2.5 - 1.5          = 1.0f
+;    7  f32 2.5 * 2.0          = 5.0f
+;    8  f32 9.0 / 2.0          = 4.5f
+;    9  fneg 2.5               = -2.5  ftoi i64 -> -2 (toward zero, not floor)
+;   10  fneg 1.0f              = -1.0f ftoi i32 -> -1
+;   11  fneg (fneg 2.5)        = 2.5
+;   12  (1.0+2^-52) + 2^-53    = 1.0+2^-51   a tie ABOVE an odd mantissa
+;                                      rounds UP to even -- ad_parem, the
+;                                      MXCSR image the prelude loaded
+;   13  (1.0f+2^-23) + 2^-24   = 1.0f+2^-22  the same tie in f32
+;   14  1.0 + 2^-53            = 1.0        a tie BELOW an even mantissa
+;                                      rounds DOWN to even
+;
+; Mutation (run): checks 12-14 are the ones a wrong MXCSR image breaks --
+; toward-zero answers 1.0+2^-52 at 12 and 1.0f+2^-23 at 13 (exit 12, 13);
+; upward answers 1.0+2^-51 at 14 (exit 14). Checks 2/4 break on a swapped
+; fsub/fdiv operand order (exit 2, 4). Check 9 breaks if fneg subtracts
+; from zero and traps the payload path (exit 9).
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = fconst f64 4609434218613702656
+%2 = fconst f64 4612811918334230528
+%3 = fadd f64 %1 %2
+%4 = ftoi i64 %3
+%5 = iconst i64 4
+%6 = cmp.eq i64 %4 %5
+br %6 b2 b1
+b1:
+%7 = iconst u8 1
+ret %7
+b2:
+%8 = fconst f64 4612811918334230528
+%9 = fconst f64 4609434218613702656
+%10 = fsub f64 %8 %9
+%11 = ftoi i64 %10
+%12 = iconst i64 1
+%13 = cmp.eq i64 %11 %12
+br %13 b4 b3
+b3:
+%14 = iconst u8 2
+ret %14
+b4:
+%15 = fconst f64 4612811918334230528
+%16 = fconst f64 4611686018427387904
+%17 = fmul f64 %15 %16
+%18 = ftoi i64 %17
+%19 = iconst i64 5
+%20 = cmp.eq i64 %18 %19
+br %20 b6 b5
+b5:
+%21 = iconst u8 3
+ret %21
+b6:
+%22 = fconst f64 4621256167635550208
+%23 = fconst f64 4611686018427387904
+%24 = fdiv f64 %22 %23
+%25 = ftoi i64 %24
+%26 = iconst i64 4
+%27 = cmp.eq i64 %25 %26
+br %27 b8 b7
+b7:
+%28 = iconst u8 4
+ret %28
+b8:
+%29 = fconst f32 1069547520
+%30 = fconst f32 1075838976
+%31 = fadd f32 %29 %30
+%32 = ftoi i64 %31
+%33 = iconst i64 4
+%34 = cmp.eq i64 %32 %33
+br %34 b10 b9
+b9:
+%35 = iconst u8 5
+ret %35
+b10:
+%36 = fconst f32 1075838976
+%37 = fconst f32 1069547520
+%38 = fsub f32 %36 %37
+%39 = ftoi i64 %38
+%40 = iconst i64 1
+%41 = cmp.eq i64 %39 %40
+br %41 b12 b11
+b11:
+%42 = iconst u8 6
+ret %42
+b12:
+%43 = fconst f32 1075838976
+%44 = fconst f32 1073741824
+%45 = fmul f32 %43 %44
+%46 = ftoi i64 %45
+%47 = iconst i64 5
+%48 = cmp.eq i64 %46 %47
+br %48 b14 b13
+b13:
+%49 = iconst u8 7
+ret %49
+b14:
+%50 = fconst f32 1091567616
+%51 = fconst f32 1073741824
+%52 = fdiv f32 %50 %51
+%53 = ftoi i64 %52
+%54 = iconst i64 4
+%55 = cmp.eq i64 %53 %54
+br %55 b16 b15
+b15:
+%56 = iconst u8 8
+ret %56
+b16:
+%57 = fconst f64 4612811918334230528
+%58 = fneg f64 %57
+%59 = ftoi i64 %58
+%60 = iconst i64 -2
+%61 = cmp.eq i64 %59 %60
+br %61 b18 b17
+b17:
+%62 = iconst u8 9
+ret %62
+b18:
+%63 = fconst f32 1065353216
+%64 = fneg f32 %63
+%65 = ftoi i32 %64
+%66 = iconst i32 -1
+%67 = cmp.eq i32 %65 %66
+br %67 b20 b19
+b19:
+%68 = iconst u8 10
+ret %68
+b20:
+%69 = fconst f64 4612811918334230528
+%70 = fneg f64 %69
+%71 = fneg f64 %70
+%72 = ftoi i64 %71
+%73 = iconst i64 2
+%74 = cmp.eq i64 %72 %73
+br %74 b22 b21
+b21:
+%75 = iconst u8 11
+ret %75
+b22:
+%76 = fconst f64 4607182418800017409
+%77 = fconst f64 4368491638549381120
+%78 = fadd f64 %76 %77
+%79 = fconst f64 4607182418800017410
+%80 = fcmp.eq f64 %78 %79
+br %80 b24 b23
+b23:
+%81 = iconst u8 12
+ret %81
+b24:
+%82 = fconst f32 1065353217
+%83 = fconst f32 864026624
+%84 = fadd f32 %82 %83
+%85 = fconst f32 1065353218
+%86 = fcmp.eq f32 %84 %85
+br %86 b26 b25
+b25:
+%87 = iconst u8 13
+ret %87
+b26:
+%88 = fconst f64 4607182418800017408
+%89 = fconst f64 4368491638549381120
+%90 = fadd f64 %88 %89
+%91 = fcmp.eq f64 %90 %88
+br %91 b28 b27
+b27:
+%92 = iconst u8 14
+ret %92
+b28:
+%93 = iconst u8 100
+ret %93
+}

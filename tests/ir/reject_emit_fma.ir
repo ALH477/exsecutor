@@ -1,0 +1,32 @@
+; TEST: emit-exit=4
+;
+; `fma f64 %a %b %c` (ssa-ir.md 2.3): a*b+c fused into ONE rounding. The
+; VERIFIER passes it (fma's rule is d_trivial, like every shape the parser
+; routes through "F %a %b %c"); the EMITTER refuses it by name -- "fma:
+; the SSE2 baseline has no fused multiply-add (FMA3 is a later
+; extension)". Nothing in-tree produces one: `contractio explicita`
+; means the only legal contraction is the one spelled `fma`, and the
+; lowering never spells it. Exit 4 here, not 5, is the evidence the two
+; layers disagree on purpose -- the same split reject_emit_straddle.ir
+; records for a straddling bit field.
+;
+; The C twin refuses it too (a plain `a*b+c` in C is two roundings and
+; stdargs has no fused form), so the differential phase's refusal parity
+; holds: emit_c exits 4 on this same text.
+;
+; Mutation (run): the dispatcher's FMA arm pointed at the fadd lowering
+; instead of the die -> emit_ir exits 0 and the check chain below runs
+; without ever executing a fused anything -- silently answering a
+; question the CPU was never asked. This fixture is what keeps that
+; mutation loud.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = fconst f64 4609434218613702656
+%2 = fconst f64 4611686018427387904
+%3 = fconst f64 4615063718147915776
+%4 = fma f64 %1 %2 %3
+%5 = iconst u8 0
+ret %5
+}

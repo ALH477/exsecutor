@@ -1,0 +1,248 @@
+; TEST: expect-exit=100
+;
+; The six ORDERED fcmp forms (ssa-ir.md 2.3): FALSE whenever either operand
+; is a NaN. The emitter's `ucomisd`/`ucomiss` latch ZF/CF/PF, unordered
+; sets all three, and `setnp` + `and` forces the 0 -- so this file holds
+; the ORDERED contract in the rows a branchy `jp` design would cover, with
+; check 13 the load-bearing one: an UNordered `ne` would answer 1 on a NaN
+; operand and fail it. No IR can write an unordered form (the parser's
+; vocabulary is the six), which is what the emitted `and` enforces.
+;
+; A check whose value SHOULD be 1 branches on it directly; a check whose
+; value should be 0 goes through `zext u64` + a 64-bit compare against 0
+; (conv_roundtrip.ir's idiom), so a non-canonical u1 also fails.
+;
+; Constants: f64 2.5 = 4612811918334230528, f64 1.5 = 4609434218613702656,
+; f64 NaN = 9221120237041090560 (a quiet NaN), f32 2.5f = 1075838976,
+; f32 1.0f = 1065353216, f32 NaNf = 2143289344.
+;
+;    1  eq  2.5 == 2.5     -> 1
+;    2  eq  1.5 == 2.5     -> 0
+;    3  ne  1.5 != 2.5     -> 1
+;    4  ne  2.5 != 2.5     -> 0
+;    5  lt  1.5 <  2.5     -> 1
+;    6  lt  2.5 <  1.5     -> 0   operand order: `ucomisd a, b`, setb
+;    7  lt  2.5 <  2.5     -> 0
+;    8  le  2.5 <= 2.5     -> 1
+;    9  le  2.5 <= 1.5     -> 0
+;   10  gt  2.5 >  1.5     -> 1   seta, not setb of the swapped operands
+;   11  ge  2.5 >= 2.5     -> 1
+;   12  eq  NaN == 2.5     -> 0   unordered eq is 0 even unordered
+;   13  ne  NaN != 2.5     -> 0   THE ordered-ne row
+;   14  lt  NaN <  2.5     -> 0
+;   15  le  NaN <= 2.5     -> 0
+;   16  gt  NaN >  2.5     -> 0
+;   17  ge  NaN >= 2.5     -> 0
+;   18  lt  2.5 <  NaN     -> 0   the NaN on the RIGHT, both directions
+;   19  f32 eq 2.5f == 2.5f -> 1  the ucomiss arm
+;   20  f32 ne NaNf != 1.0f -> 0  ordered, in f32
+;
+; Mutation (run): drop the `and al, cl` -> 12 and 13 both answer 1 (exit
+; 12 or 13); swap gt/ge to the swapped-operand setb/setbe -> 10 and 11
+; answer 0 (exit 10, 11).
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = fconst f64 4612811918334230528
+%2 = fconst f64 4612811918334230528
+%3 = fcmp.eq f64 %1 %2
+br %3 b2 b1
+b1:
+%4 = iconst u8 1
+ret %4
+b2:
+%5 = fconst f64 4609434218613702656
+%6 = fconst f64 4612811918334230528
+%7 = fcmp.eq f64 %5 %6
+%8 = zext u64 %7
+%9 = iconst u64 0
+%10 = cmp.eq u64 %8 %9
+br %10 b4 b3
+b3:
+%11 = iconst u8 2
+ret %11
+b4:
+%12 = fconst f64 4609434218613702656
+%13 = fconst f64 4612811918334230528
+%14 = fcmp.ne f64 %12 %13
+br %14 b6 b5
+b5:
+%15 = iconst u8 3
+ret %15
+b6:
+%16 = fconst f64 4612811918334230528
+%17 = fconst f64 4612811918334230528
+%18 = fcmp.ne f64 %16 %17
+%19 = zext u64 %18
+%20 = iconst u64 0
+%21 = cmp.eq u64 %19 %20
+br %21 b8 b7
+b7:
+%22 = iconst u8 4
+ret %22
+b8:
+%23 = fconst f64 4609434218613702656
+%24 = fconst f64 4612811918334230528
+%25 = fcmp.lt f64 %23 %24
+br %25 b10 b9
+b9:
+%26 = iconst u8 5
+ret %26
+b10:
+%27 = fconst f64 4612811918334230528
+%28 = fconst f64 4609434218613702656
+%29 = fcmp.lt f64 %27 %28
+%30 = zext u64 %29
+%31 = iconst u64 0
+%32 = cmp.eq u64 %30 %31
+br %32 b12 b11
+b11:
+%33 = iconst u8 6
+ret %33
+b12:
+%34 = fconst f64 4612811918334230528
+%35 = fconst f64 4612811918334230528
+%36 = fcmp.lt f64 %34 %35
+%37 = zext u64 %36
+%38 = iconst u64 0
+%39 = cmp.eq u64 %37 %38
+br %39 b14 b13
+b13:
+%40 = iconst u8 7
+ret %40
+b14:
+%41 = fconst f64 4612811918334230528
+%42 = fconst f64 4612811918334230528
+%43 = fcmp.le f64 %41 %42
+br %43 b16 b15
+b15:
+%44 = iconst u8 8
+ret %44
+b16:
+%45 = fconst f64 4612811918334230528
+%46 = fconst f64 4609434218613702656
+%47 = fcmp.le f64 %45 %46
+%48 = zext u64 %47
+%49 = iconst u64 0
+%50 = cmp.eq u64 %48 %49
+br %50 b18 b17
+b17:
+%51 = iconst u8 9
+ret %51
+b18:
+%52 = fconst f64 4612811918334230528
+%53 = fconst f64 4609434218613702656
+%54 = fcmp.gt f64 %52 %53
+br %54 b20 b19
+b19:
+%55 = iconst u8 10
+ret %55
+b20:
+%56 = fconst f64 4612811918334230528
+%57 = fconst f64 4612811918334230528
+%58 = fcmp.ge f64 %56 %57
+br %58 b22 b21
+b21:
+%59 = iconst u8 11
+ret %59
+b22:
+%60 = fconst f64 9221120237041090560
+%61 = fconst f64 4612811918334230528
+%62 = fcmp.eq f64 %60 %61
+%63 = zext u64 %62
+%64 = iconst u64 0
+%65 = cmp.eq u64 %63 %64
+br %65 b24 b23
+b23:
+%66 = iconst u8 12
+ret %66
+b24:
+%67 = fconst f64 9221120237041090560
+%68 = fconst f64 4612811918334230528
+%69 = fcmp.ne f64 %67 %68
+%70 = zext u64 %69
+%71 = iconst u64 0
+%72 = cmp.eq u64 %70 %71
+br %72 b26 b25
+b25:
+%73 = iconst u8 13
+ret %73
+b26:
+%74 = fconst f64 9221120237041090560
+%75 = fconst f64 4612811918334230528
+%76 = fcmp.lt f64 %74 %75
+%77 = zext u64 %76
+%78 = iconst u64 0
+%79 = cmp.eq u64 %77 %78
+br %79 b28 b27
+b27:
+%80 = iconst u8 14
+ret %80
+b28:
+%81 = fconst f64 9221120237041090560
+%82 = fconst f64 4612811918334230528
+%83 = fcmp.le f64 %81 %82
+%84 = zext u64 %83
+%85 = iconst u64 0
+%86 = cmp.eq u64 %84 %85
+br %86 b30 b29
+b29:
+%87 = iconst u8 15
+ret %87
+b30:
+%88 = fconst f64 9221120237041090560
+%89 = fconst f64 4612811918334230528
+%90 = fcmp.gt f64 %88 %89
+%91 = zext u64 %90
+%92 = iconst u64 0
+%93 = cmp.eq u64 %91 %92
+br %93 b32 b31
+b31:
+%94 = iconst u8 16
+ret %94
+b32:
+%95 = fconst f64 9221120237041090560
+%96 = fconst f64 4612811918334230528
+%97 = fcmp.ge f64 %95 %96
+%98 = zext u64 %97
+%99 = iconst u64 0
+%100 = cmp.eq u64 %98 %99
+br %100 b34 b33
+b33:
+%101 = iconst u8 17
+ret %101
+b34:
+%102 = fconst f64 4612811918334230528
+%103 = fconst f64 9221120237041090560
+%104 = fcmp.lt f64 %102 %103
+%105 = zext u64 %104
+%106 = iconst u64 0
+%107 = cmp.eq u64 %105 %106
+br %107 b36 b35
+b35:
+%108 = iconst u8 18
+ret %108
+b36:
+%109 = fconst f32 1075838976
+%110 = fconst f32 1075838976
+%111 = fcmp.eq f32 %109 %110
+br %111 b38 b37
+b37:
+%112 = iconst u8 19
+ret %112
+b38:
+%113 = fconst f32 2143289344
+%114 = fconst f32 1065353216
+%115 = fcmp.ne f32 %113 %114
+%116 = zext u64 %115
+%117 = iconst u64 0
+%118 = cmp.eq u64 %116 %117
+br %118 b40 b39
+b39:
+%119 = iconst u8 20
+ret %119
+b40:
+%120 = iconst u8 100
+ret %120
+}

@@ -1,0 +1,115 @@
+; TEST: expect-exit=100
+;
+; The float argument/return halves of the calling convention
+; (docs/asm-conventions.md 1.1): F32/F64 arguments ride in xmm0..xmm7 and
+; an F32/F64 return comes back in xmm0, while integer arguments keep the
+; rdi..r9 path -- each class counts ITS OWN ordinal, so an integer
+; argument AFTER a float one still takes the next integer register
+; (check 2's @commuta pins exactly that). The leading `ptr` of every
+; signature is an ordinary integer-class argument (the machine context),
+; which is why @adiunge's i64 is the SECOND integer and its f64/f32 the
+; FIRST floats: xmm0 and xmm1.
+;
+;   @adiunge (ptr i64 f64 f32) -> f64  -- mixed args, f64 return: itof the
+;                                       i64, add the f64, widen the f32
+;                                       (checks 1, 4: 10+2.5+0.5 = 13.0,
+;                                       then 100+4.0+4.0 = 108.0)
+;   @commuta  (ptr f64 i64) -> i64     -- an int arg AFTER a float one;
+;                                       returns it (check 2: 77)
+;   @negat    (ptr f32) -> f32         -- an f32 return through fneg
+;                                       (check 3: -1.0f)
+;
+; Check 4 calls @adiunge a SECOND time with different values: the naive
+; backend spills everything, but the f64 RETURN path (movq rax, xmm0 and
+; back into a slot) is still the one being held here.
+;
+; Constants: f64 2.5 = 4612811918334230528, f32 0.5f = 1056964608,
+; f64 13.0 = 4623507967449235456, f64 4.0 = 4616189618054758400,
+; f32 4.0f = 1082130432, f64 108.0 = 4637300241308057600,
+; f32 1.0f = 1065353216, f32 -1.0f = 3212836864.
+;
+; Mutation (run): integer-register ordinals shared with the float class
+; (an emitter that gave the f64 argument rsi and shifted the i64 to rdx)
+; break check 2 and check 4 (exit 2, 4); a return path that reads rax
+; instead of xmm0 breaks checks 1 and 4 (exit 1, 4).
+
+functio @adiunge (ptr i64 f64 f32) -> f64 {
+b0:
+%0 = param ptr 0
+%1 = param i64 1
+%2 = param f64 2
+%3 = param f32 3
+%4 = itof f64 %1
+%5 = fadd f64 %4 %2
+%6 = fext f64 %3
+%7 = fadd f64 %5 %6
+ret %7
+}
+
+functio @commuta (ptr f64 i64) -> i64 {
+b0:
+%0 = param ptr 0
+%1 = param f64 1
+%2 = param i64 2
+ret %2
+}
+
+functio @negat (ptr f32) -> f32 {
+b0:
+%0 = param ptr 0
+%1 = param f32 1
+%2 = fneg f32 %1
+ret %2
+}
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = slot 16 8
+%2 = iconst i64 10
+%3 = fconst f64 4612811918334230528
+%4 = fconst f32 1056964608
+%5 = call f64 @adiunge %1 %2 %3 %4
+%6 = fconst f64 4623507967449235456
+%7 = fcmp.eq f64 %5 %6
+br %7 b2 b1
+b1:
+%8 = iconst u8 1
+ret %8
+b2:
+%9 = slot 16 8
+%10 = fconst f64 4612811918334230528
+%11 = iconst i64 77
+%12 = call i64 @commuta %9 %10 %11
+%13 = iconst i64 77
+%14 = cmp.eq i64 %12 %13
+br %14 b4 b3
+b3:
+%15 = iconst u8 2
+ret %15
+b4:
+%16 = slot 16 8
+%17 = fconst f32 1065353216
+%18 = call f32 @negat %16 %17
+%19 = fconst f32 3212836864
+%20 = fcmp.eq f32 %18 %19
+br %20 b6 b5
+b5:
+%21 = iconst u8 3
+ret %21
+b6:
+%22 = slot 16 8
+%23 = iconst i64 100
+%24 = fconst f64 4616189618054758400
+%25 = fconst f32 1082130432
+%26 = call f64 @adiunge %22 %23 %24 %25
+%27 = fconst f64 4637300241308057600
+%28 = fcmp.eq f64 %26 %27
+br %28 b8 b7
+b7:
+%29 = iconst u8 4
+ret %29
+b8:
+%30 = iconst u8 100
+ret %30
+}

@@ -1,0 +1,176 @@
+; TEST: expect-exit=100
+;
+; itof/ftoi/fext/ftrunc (ssa-ir.md 2.3), in range only: ftoi of a NaN or
+; an out-of-range float is [OPEN] and no row here goes near it.
+;
+; `ftrunc` IS the f32<-f64 narrowing (lower/expr.inc's `__lwr_cast` emits
+; it for every float cast; lowering.md calls the pair "f32<->f64
+; fext/ftrunc") -- not round-to-integral, which nothing in-tree produces.
+; The equal-width `ftrunc` (check 12) is the plain slot copy the lowering
+; emits for an f32->f32 cast, and the widening arm dies by name.
+;
+; itof u64 -> f64 (checks 4, 5) goes through the emitter's exact 32/32
+; split -- hi = a>>32 (exact in f64), hi * 2^32 (exact), + lo (exact), ONE
+; addsd -- so the single rounding is the correctly-rounded result; check 5
+; pins the mid-range arithmetic and check 4 the top (2^64-1 rounds up to
+; 2^64, which the f64 bits 4895412794951729152 are). itof u64 -> f32 is
+; refused by name instead (double rounding) and has no row here.
+;
+; Constants: f64 7.0 = 4619567317775286272, f64 -7.0 = 13842939354630062080,
+; f32 100.0f = 1120403456, f64 0.5 = 4602678819172646912,
+; f32 0.5f = 1056964608, f64 2.5 = 4612811918334230528,
+; f32 2.5f = 1075838976, f32 9.0f = 1091567616.
+;
+;    1  itof f64 (i64 7)          = 7.0
+;    2  itof f64 (i64 -7)         = -7.0   sign reaches the conversion
+;    3  itof f32 (i32 100)        = 100.0f  the cvtsi2ss arm
+;    4  itof f64 (u64 2^64-1)      = 2^64   the split at the top
+;    5  itof f64 (u64 12345678909876543210) = the nearest f64,
+;                                          bits 4892433759227201316
+;    6  itof f64 (u32 4000000000) = 4e9     zero-extension: a SIGN-extended
+;                                          slot would give -294967296.0
+;    7  ftoi i64 (f64 7.0)        = 7
+;    8  ftoi i64 (f64 -2.5)       = -2      toward zero, NOT floor (-3)
+;    9  ftoi i32 (f32 2.5f)       = 2       the cvttss2si arm
+;   10  fext f64 (f32 0.5f)       = 0.5     cvtss2sd
+;   11  ftrunc f32 (f64 2.5)      = 2.5f    cvtsd2ss
+;   12  ftrunc f32 (f32 2.5f)     = 2.5f    equal width: the plain copy
+;   13  ftrunc f32 (fext f64 0.5f)= 0.5f    widen then narrow, round trip
+;   14  ftoi i64 (fext f64 9.0f)  = 9       the widened value through ftoi
+;
+; Mutation (run): check 8 is the one a cvtsd2si (rounding) instead of
+; cvttsd2si (truncating) fails (exit 8); checks 4-5 are the ones a naive
+; single cvtsi2sd of the whole u64 fails (exit 4, 5).
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = iconst i64 7
+%2 = itof f64 %1
+%3 = fconst f64 4619567317775286272
+%4 = fcmp.eq f64 %2 %3
+br %4 b2 b1
+b1:
+%5 = iconst u8 1
+ret %5
+b2:
+%6 = iconst i64 -7
+%7 = itof f64 %6
+%8 = fconst f64 13842939354630062080
+%9 = fcmp.eq f64 %7 %8
+br %9 b4 b3
+b3:
+%10 = iconst u8 2
+ret %10
+b4:
+%11 = iconst i32 100
+%12 = itof f32 %11
+%13 = fconst f32 1120403456
+%14 = fcmp.eq f32 %12 %13
+br %14 b6 b5
+b5:
+%15 = iconst u8 3
+ret %15
+b6:
+%16 = iconst u64 18446744073709551615
+%17 = itof f64 %16
+%18 = fconst f64 4895412794951729152
+%19 = fcmp.eq f64 %17 %18
+br %19 b8 b7
+b7:
+%20 = iconst u8 4
+ret %20
+b8:
+%21 = iconst u64 12345678909876543210
+%22 = itof f64 %21
+%23 = fconst f64 4892433759227201316
+%24 = fcmp.eq f64 %22 %23
+br %24 b10 b9
+b9:
+%25 = iconst u8 5
+ret %25
+b10:
+%26 = iconst u32 4000000000
+%27 = itof f64 %26
+%28 = fconst f64 4750679015621132288
+%29 = fcmp.eq f64 %27 %28
+br %29 b12 b11
+b11:
+%30 = iconst u8 6
+ret %30
+b12:
+%31 = fconst f64 4619567317775286272
+%32 = ftoi i64 %31
+%33 = iconst i64 7
+%34 = cmp.eq i64 %32 %33
+br %34 b14 b13
+b13:
+%35 = iconst u8 7
+ret %35
+b14:
+%36 = fconst f64 13836183955189006336
+%37 = ftoi i64 %36
+%38 = iconst i64 -2
+%39 = cmp.eq i64 %37 %38
+br %39 b16 b15
+b15:
+%40 = iconst u8 8
+ret %40
+b16:
+%41 = fconst f32 1075838976
+%42 = ftoi i32 %41
+%43 = iconst i32 2
+%44 = cmp.eq i32 %42 %43
+br %44 b18 b17
+b17:
+%45 = iconst u8 9
+ret %45
+b18:
+%46 = fconst f32 1056964608
+%47 = fext f64 %46
+%48 = fconst f64 4602678819172646912
+%49 = fcmp.eq f64 %47 %48
+br %49 b20 b19
+b19:
+%50 = iconst u8 10
+ret %50
+b20:
+%51 = fconst f64 4612811918334230528
+%52 = ftrunc f32 %51
+%53 = fconst f32 1075838976
+%54 = fcmp.eq f32 %52 %53
+br %54 b22 b21
+b21:
+%55 = iconst u8 11
+ret %55
+b22:
+%56 = fconst f32 1075838976
+%57 = ftrunc f32 %56
+%58 = fcmp.eq f32 %57 %56
+br %58 b24 b23
+b23:
+%59 = iconst u8 12
+ret %59
+b24:
+%60 = fconst f32 1056964608
+%61 = fext f64 %60
+%62 = ftrunc f32 %61
+%63 = fcmp.eq f32 %62 %60
+br %63 b26 b25
+b25:
+%64 = iconst u8 13
+ret %64
+b26:
+%65 = fconst f32 1091567616
+%66 = fext f64 %65
+%67 = ftoi i64 %66
+%68 = iconst i64 9
+%69 = cmp.eq i64 %67 %68
+br %69 b28 b27
+b27:
+%70 = iconst u8 14
+ret %70
+b28:
+%71 = iconst u8 100
+ret %71
+}

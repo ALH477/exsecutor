@@ -59,10 +59,16 @@
 ; `trap` ops, plus `index`/`chk`/`copy`/`addr`, loads and stores at every
 ; whole-byte width in every byte order (`maior`/`minor` byte by byte), and
 ; `loadbits`/`storebits` within one byte ("Byte order and bit fields",
-; below -- wire-codec.md milestone M4). Every other opcode -- floats,
-; `div`/`rem`, `muls`, the `*ov` predicates, `callind`, the reduction ops --
-; and a bit field that straddles a byte, this file's own `__bfa_emit_die`
-; refuses by name rather than emitting something wrong.
+; below -- wire-codec.md milestone M4), and the FLOAT opcodes through the
+; SSE2 baseline ("Floats -- f32/f64 through the SSE2 baseline", below):
+; `fconst`, `fadd`/`fsub`/`fmul`/`fdiv`, `fneg`, the six ordered `fcmp`
+; forms, `fext`/`ftrunc`, `itof`/`ftoi`, and F32/F64 parameters, arguments
+; and results crossing the SysV registers by class (asm-conventions.md
+; section 1.1: xmm0..xmm7 beside rdi..r9, xmm0 beside rax). Every other
+; opcode -- `fma` and `bitcast` among the float ones, `div`/`rem`, `muls`,
+; the `*ov` predicates, `callind`, the reduction ops -- and a bit field
+; that straddles a byte, this file's own `__bfa_emit_die` refuses by name
+; rather than emitting something wrong.
 ; ADR 0012 already prices "a naive backend still needs an instruction
 ; selector for every IR op" as real, unscheduled engineering; this is a
 ; slice of it, not all of it.
@@ -209,8 +215,10 @@ endp
 ; 2.2's canonical form is what makes a narrow width a 64-bit operation plus
 ; a normalisation); any other 64-bit type -- `ptr`, a `ref` -- as the
 ; Tier-1 check this replaces (`__bfa_check_width64`) always admitted it; a
-; float dies, since `add f64` is not an integer add and floats are not
-; lowered at all yet.
+; float dies, because these are the INTEGER paths and an `add f64` reaching
+; one is a type error the verifier does not cross-check -- the float
+; opcodes have their own lowering ("Floats", below), and quietly running
+; one through the integer sequence would miscompile by construction.
 proc __bfa_int_width, module, ty
 	locals
 	endl
@@ -966,11 +974,11 @@ proc __bfa_emit_setcc, ctx, pred, issigned
 	return
 endp
 
-; __bfa_emit_cmp(ctx, module, func, instid) -- cmp.*/fcmp.* (fcmp dies for
-; now -- floats are not in this pass's Tier 1). Naive on purpose: the
-; result is computed into its own slot as 0/1, independently of whatever
-; `br` later does with it -- no fusing, per this whole backend's "one
-; instruction per IR op" rule (ADR 0012).
+; __bfa_emit_cmp(ctx, module, func, instid) -- cmp.* only; fcmp.* has its
+; own lowering now (__bfa_emit_fcmp, below, dispatched separately). Naive on
+; purpose: the result is computed into its own slot as 0/1, independently
+; of whatever `br` later does with it -- no fusing, per this whole
+; backend's "one instruction per IR op" rule (ADR 0012).
 proc __bfa_emit_cmp, ctx, module, func, instid
 	locals
 		slot av, dd
@@ -987,7 +995,7 @@ proc __bfa_emit_cmp, ctx, module, func, instid
 	cmp	ecx, BFA_OP_FCMP
 	jne	.notf
 	jmp	.after_nf
-  .nfmsg db "fcmp: floats are not Tier 1"
+  .nfmsg db "fcmp: reached the integer comparison lowering (a dispatcher bug)"
   .after_nf:
 	lea	rdi, [.nfmsg]
 	mov	rsi, .after_nf - .nfmsg
@@ -1082,13 +1090,805 @@ proc __bfa_emit_cmp, ctx, module, func, instid
 	return
 endp
 
-; __bfa_emit_param(ctx, func, instid) -- moves the i'th SysV argument
-; register into this value's own slot. Up to 6 (this file's own Tier 1
-; scope, matching macros/proc.inc's own limit and every other convention
-; in this tree -- see the report).
-proc __bfa_emit_param, ctx, func, instid
+; ============================================================================
+; Floats -- f32/f64 through the SSE2 baseline (ssa-ir.md 2.3; spec 5.4)
+; ============================================================================
+;
+; A float lives in its 8-byte slot as its raw IEEE BIT PATTERN -- an f32
+; ZERO-EXTENDED, the same canonical-slot discipline a u8 keeps (ssa-ir.md
+; 2.2) -- and every operation loads into xmm0/xmm1, computes, and stores
+; back before the next instruction boundary (the header's rule). The
+; mnemonics are the SSE2 ones the vendored assembler already carries
+; (vendor/fasmg-x86/ext/sse2.inc, on format.inc's include chain); nothing
+; here is a later extension -- no FMA3 (fma is refused by name, in the
+; dispatcher), no SSE4.1 roundsd (and no need for one: `ftrunc` is the
+; float NARROWING opcode, not round-to-integral -- see __bfa_emit_fconv).
+;
+; NO MXCSR CODE, on purpose. The prelude (exsrt_start, prelude/prelude.asm)
+; executes `ldmxcsr` of EXS_MXCSR = 0x1F80 before `call bfausr_initium` --
+; `ad_parem` (round to nearest-even), every exception masked, no FTZ/DAZ,
+; `subnormales conservata` -- and program.inc writes that image into every
+; compiled program, so an `addsd` here already rounds nearest-even and
+; NEVER TRAPS (spec 5.4). The `numeri` words parse.inc records on a
+; BfaFunc are not re-honoured per function: the image is the program's
+; one, and the emitter adds nothing to it.
+;
+; WHAT THIS SECTION REFUSES, by name:
+;   float immediates  `fadd f64 %x 3` PARSES (__bfa_ps_bin takes an
+;                    immediate for a float type too) and the verifier
+;                    PASSES it (bfa_type_canon is the identity on a
+;                    float's bits, so nothing is out of range) -- the
+;                    refusal is the emitter's, because `fconst` is the
+;                    leaf: "raw bit pattern, never decimal text"
+;                    (ssa-ir.md 2.3)
+;   fconst f32 >= 2^32   not a canonical f32 slot value
+;   itof u64 -> f32      no correctly-rounded SSE2 sequence exists: going
+;                    through f64 rounds twice
+; An UNORDERED fcmp cannot reach this file at all -- parse.inc's opdef
+; table has no spelling for one -- so there is no unordered arm to refuse
+; and none to write; the ordered six are everything that exists.
+
+; __bfa_emit_fwidth(module, ty) -> eax = 8 for f64, 4 for f32; anything
+; else dies. The float lowerings below are two-instruction families (sd/
+; ss) and this is how they pick their half; a non-float reaching one is
+; a type error the verifier does not cross-check, and it dies here rather
+; than emitting a wrong-width load.
+proc __bfa_emit_fwidth, module, ty
+	locals
+	endl
+	mov	rdi, [module]
+	mov	esi, [ty]
+	call	__bfa_ty_info
+	cmp	edx, BFA_TK_F32
+	je	.f32
+	cmp	edx, BFA_TK_F64
+	je	.f64
+	jmp	.after_msg
+  .msg db "float lowering: the type is not f32/f64"
+  .after_msg:
+	lea	rdi, [.msg]
+	mov	rsi, .after_msg - .msg
+	call	__bfa_emit_die
+  .f32:
+	mov	eax, 4
+	return
+  .f64:
+	mov	eax, 8
+	return
+endp
+
+; __bfa_emit_fload(ctx, xreg, width, valueid) -- "movsd/movss xmm<k>, [slot]"
+; for value `valueid` into xmm register `xreg` (0 or 1). The `qword`/
+; `dword` keyword is not decoration: fasmg's SSE macros take the memory
+; operand's width from it (vendor ext/sse2.inc), and without one an f32
+; load would be assembled as 8 bytes.
+proc __bfa_emit_fload, ctx, xreg, width, valueid
+	locals
+	endl
+	cmp	dword [width], 8
+	je	.sd
+	__bfa_emtxt 9, "movss", 9, "xmm"
+	mov	rdi, [ctx]
+	mov	esi, [xreg]
+	call	__bfa_out_u64
+	__bfa_emtxt ", dword "
+	jmp	.slot
+  .sd:
+	__bfa_emtxt 9, "movsd", 9, "xmm"
+	mov	rdi, [ctx]
+	mov	esi, [xreg]
+	call	__bfa_out_u64
+	__bfa_emtxt ", qword "
+  .slot:
+	mov	rdi, [ctx]
+	mov	esi, [valueid]
+	call	__bfa_slot
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	return
+endp
+
+; __bfa_emit_fstore(ctx, width, valueid) -- xmm0's low value into the
+; result slot, THROUGH rax. Not the table's one-line `movsd [slot], xmm0`
+; on purpose: an f32 store through memory writes 4 bytes and leaves the
+; slot's other four whatever they were, and the canonical f32 slot is
+; zero-extended -- `movd eax, xmm0` zero-extends into all of rax, so the
+; 8-byte store puts the canonical form in the slot exactly the way every
+; narrow integer result does. f64 goes through `movq rax, xmm0` for the
+; uniform shape (one helper, two arms).
+proc __bfa_emit_fstore, ctx, width, valueid
+	locals
+	endl
+	cmp	dword [width], 8
+	je	.sd
+	__bfa_emtxt 9, "movd", 9, "eax, xmm0", 10
+	jmp	.tostore
+  .sd:
+	__bfa_emtxt 9, "movq", 9, "rax, xmm0", 10
+  .tostore:
+	mov	rdi, [ctx]
+	mov	esi, [valueid]
+	call	__bfa_out_movq_slot_rax
+	return
+endp
+
+; __bfa_emit_fconst(ctx, module, func, instid) -- `%v = fconst T bits`, the
+; one way a float constant enters (ssa-ir.md 2.3: "raw bit pattern, never
+; decimal text"). Materialised exactly the way a wide `iconst` is --
+; `mov rax, <bits>`, then the store -- with the bits printed UNSIGNED:
+; every negative f64 has bit 63 set, and a signed print of the same bits
+; is a different number. ALWAYS the two-line form: `mov qword [slot], imm`
+; takes a SIGN-EXTENDED 32-bit immediate (x86.simm32, the same reason
+; __bfa_emit_iconst keeps a wide path), and an f32's canonical slot is
+; zero-extended -- 0xBF800000 (-1.0f) through a simm32 would store
+; 0xFFFFFFFFBF800000. An f32 pattern at or above 2^32 is refused: the
+; verifier's fconst rule checks nothing (d_trivial), so this is the only
+; place the canonical slot form is enforced.
+proc __bfa_emit_fconst, ctx, module, func, instid
+	locals
+		slot av, dd
+		slot lo, dd
+		slot hi, dd
+		slot tyv, dd
+		slot bits, dq
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[av], ecx
+	mov	ecx, [rax + BfaInst.ty]
+	mov	[tyv], ecx
+
+	mov	rdi, [func]
+	mov	esi, [av]
+	call	bfa_extra_get
+	mov	[lo], eax
+	mov	rdi, [func]
+	mov	eax, [av]
+	inc	eax
+	mov	esi, eax
+	call	bfa_extra_get
+	mov	[hi], eax
+	mov	eax, [hi]
+	shl	rax, 32
+	mov	ecx, [lo]
+	or	rax, rcx
+	mov	[bits], rax
+
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfa_ty_info
+	cmp	edx, BFA_TK_F32
+	je	.f32ty
+	cmp	edx, BFA_TK_F64
+	je	.checkdone
+	jmp	.after_notfty
+  .notfty db "fconst: the type is not f32/f64"
+  .after_notfty:
+	lea	rdi, [.notfty]
+	mov	rsi, .after_notfty - .notfty
+	call	__bfa_emit_die
+  .f32ty:
+	mov	rax, [bits]
+	mov	rcx, 0x100000000
+	cmp	rax, rcx
+	jb	.checkdone
+	jmp	.after_wide32
+  .wide32 db "fconst f32: the bit pattern is wider than 32 bits (the canonical f32 slot is zero-extended)"
+  .after_wide32:
+	lea	rdi, [.wide32]
+	mov	rsi, .after_wide32 - .wide32
+	call	__bfa_emit_die
+  .checkdone:
+	__bfa_emtxt 9, "mov", 9, "rax, "
+	mov	rdi, [ctx]
+	mov	rsi, [bits]
+	call	__bfa_out_u64
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	mov	rdi, [ctx]
+	mov	esi, [instid]
+	call	__bfa_out_movq_slot_rax
+	return
+endp
+
+; __bfa_emit_farith(ctx, module, func, instid) -- fadd/fsub/fmul/fdiv. One
+; IEEE rounding each (ssa-ir.md 2.3), delivered by the MXCSR image the
+; prelude already loaded -- `reassociatio vetita` is why there is no
+; re-forming of a sum here, and `contractio explicita` is why there is no
+; fused op either (fma's refusal is the dispatcher's, by name). NaN
+; PROPAGATES the way the hardware propagates it, payload and all; there
+; is deliberately no canonical-NaN step. Div by zero never traps (masked)
+; and produces the IEEE infinity, which is what spec 5.4 asks the default
+; `numeri` to do.
+proc __bfa_emit_farith, ctx, module, func, instid
+	locals
+		slot av, dd
+		slot bv, dd
+		slot auxv, dd
+		slot tyv, dd
+		slot op, dd
+		slot width, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[av], ecx
+	mov	ecx, [rax + BfaInst.b]
+	mov	[bv], ecx
+	movzx	ecx, word [rax + BfaInst.aux]
+	mov	[auxv], ecx
+	mov	ecx, [rax + BfaInst.ty]
+	mov	[tyv], ecx
+	movzx	ecx, word [rax + BfaInst.op]
+	mov	[op], ecx
+
+	test	dword [auxv], 0x300
+	jz	.noimm
+	jmp	.after_fimm
+  .fimm db "fadd/fsub/fmul/fdiv: float operands are values only (`fconst` is the leaf -- bits, never decimal)"
+  .after_fimm:
+	lea	rdi, [.fimm]
+	mov	rsi, .after_fimm - .fimm
+	call	__bfa_emit_die
+  .noimm:
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfa_emit_fwidth
+	mov	[width], eax
+
+	mov	rdi, [ctx]
+	xor	esi, esi
+	mov	edx, [width]
+	mov	ecx, [av]
+	call	__bfa_emit_fload
+	mov	rdi, [ctx]
+	mov	esi, 1
+	mov	edx, [width]
+	mov	ecx, [bv]
+	call	__bfa_emit_fload
+
+	cmp	dword [width], 8
+	jne	.ss
+	cmp	dword [op], BFA_OP_FADD
+	jne	.n1
+	__bfa_emtxt 9, "addsd", 9, "xmm0, xmm1", 10
+	jmp	.tostore
+  .n1:
+	cmp	dword [op], BFA_OP_FSUB
+	jne	.n2
+	__bfa_emtxt 9, "subsd", 9, "xmm0, xmm1", 10
+	jmp	.tostore
+  .n2:
+	cmp	dword [op], BFA_OP_FMUL
+	jne	.n3
+	__bfa_emtxt 9, "mulsd", 9, "xmm0, xmm1", 10
+	jmp	.tostore
+  .n3:
+	__bfa_emtxt 9, "divsd", 9, "xmm0, xmm1", 10
+	jmp	.tostore
+  .ss:
+	cmp	dword [op], BFA_OP_FADD
+	jne	.m1
+	__bfa_emtxt 9, "addss", 9, "xmm0, xmm1", 10
+	jmp	.tostore
+  .m1:
+	cmp	dword [op], BFA_OP_FSUB
+	jne	.m2
+	__bfa_emtxt 9, "subss", 9, "xmm0, xmm1", 10
+	jmp	.tostore
+  .m2:
+	cmp	dword [op], BFA_OP_FMUL
+	jne	.m3
+	__bfa_emtxt 9, "mulss", 9, "xmm0, xmm1", 10
+	jmp	.tostore
+  .m3:
+	__bfa_emtxt 9, "divss", 9, "xmm0, xmm1", 10
+  .tostore:
+	mov	rdi, [ctx]
+	mov	esi, [width]
+	mov	edx, [instid]
+	call	__bfa_emit_fstore
+	return
+endp
+
+; __bfa_emit_fneg(ctx, module, func, instid) -- the sign bit ALONE, XORed
+; in: f64 mask 0x8000000000000000, f32 mask 0x80000000, each materialised
+; the way an `iconst` is. The mask form is not just the table's preference:
+; XOR touches only bit 63/31, so a NaN operand keeps its PAYLOAD (ssa-ir.md
+; 2.3 wants exactly that), where `0 - x` is an arithmetic op that would
+; run the (masked, hence silent) invalid path on a signaling NaN.
+proc __bfa_emit_fneg, ctx, module, func, instid
+	locals
+		slot av, dd
+		slot tyv, dd
+		slot width, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[av], ecx
+	mov	ecx, [rax + BfaInst.ty]
+	mov	[tyv], ecx
+
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfa_emit_fwidth
+	mov	[width], eax
+
+	mov	rdi, [ctx]
+	xor	esi, esi
+	mov	edx, [width]
+	mov	ecx, [av]
+	call	__bfa_emit_fload
+
+	cmp	dword [width], 8
+	jne	.ss
+	__bfa_emtxt 9, "mov", 9, "rax, 9223372036854775808", 10
+	__bfa_emtxt 9, "movq", 9, "xmm1, rax", 10
+	__bfa_emtxt 9, "xorpd", 9, "xmm0, xmm1", 10
+	jmp	.tostore
+  .ss:
+	__bfa_emtxt 9, "mov", 9, "ecx, 2147483648", 10
+	__bfa_emtxt 9, "movd", 9, "xmm1, ecx", 10
+	__bfa_emtxt 9, "xorps", 9, "xmm0, xmm1", 10
+  .tostore:
+	mov	rdi, [ctx]
+	mov	esi, [width]
+	mov	edx, [instid]
+	call	__bfa_emit_fstore
+	return
+endp
+
+; __bfa_emit_fcmp(ctx, module, func, instid) -- fcmp.eq/ne/lt/le/gt/ge, the
+; ORDERED forms: FALSE on any NaN operand (ssa-ir.md 2.3). `ucomisd`
+; latches ZF/CF/PF; unordered (a NaN on either side) raises all three, and
+; the emitted pair
+;
+;	setnp	cl		; 1 iff ORDERED -- PF clear
+;	set<cc>	al		; the predicate, the same unsigned SETcc arm an
+;				; integer `cmp.*` uses (__bfa_emit_setcc)
+;	and	al, cl		; a NaN operand forces the 0
+;
+; is the short-circuit the design table drew as `jp .false`, drawn WITHOUT
+; the branch: a jump needs a label, a block holding two `fcmp`s would
+; define `.false` twice, and a per-instruction label is a namespace this
+; file spends only where there is no branch-free form (the copy loop's
+; `<prefix>c<id>`). Same truth table, no label. For `eq` the `and` is the
+; whole point -- unordered latches ZF=1, so a bare `sete` would answer 1;
+; for `ne` it is belt to braces (unordered already clears setne); uniform
+; across the six is the readable choice. a rides in xmm0 and b in xmm1,
+; `ucomisd xmm0, xmm1` compares a AGAINST b, so the conditions are the
+; unsigned arm exactly: lt -> setb, le -> setbe, gt -> seta, ge -> setae.
+proc __bfa_emit_fcmp, ctx, module, func, instid
+	locals
+		slot av, dd
+		slot bv, dd
+		slot auxv, dd
+		slot tyv, dd
+		slot pred, dd
+		slot width, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[av], ecx
+	mov	ecx, [rax + BfaInst.b]
+	mov	[bv], ecx
+	movzx	ecx, word [rax + BfaInst.aux]
+	mov	[auxv], ecx
+	mov	ecx, [rax + BfaInst.ty]
+	mov	[tyv], ecx
+	mov	eax, [auxv]
+	and	eax, 7
+	mov	[pred], eax
+
+	test	dword [auxv], 0x300
+	jz	.noimm
+	jmp	.after_fimm
+  .fimm db "fcmp: float operands are values only (`fconst` is the leaf -- bits, never decimal)"
+  .after_fimm:
+	lea	rdi, [.fimm]
+	mov	rsi, .after_fimm - .fimm
+	call	__bfa_emit_die
+  .noimm:
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfa_emit_fwidth
+	mov	[width], eax
+
+	mov	rdi, [ctx]
+	xor	esi, esi
+	mov	edx, [width]
+	mov	ecx, [av]
+	call	__bfa_emit_fload
+	mov	rdi, [ctx]
+	mov	esi, 1
+	mov	edx, [width]
+	mov	ecx, [bv]
+	call	__bfa_emit_fload
+
+	cmp	dword [width], 8
+	jne	.ss
+	__bfa_emtxt 9, "ucomisd", 9, "xmm0, xmm1", 10
+	jmp	.tocc
+  .ss:
+	__bfa_emtxt 9, "ucomiss", 9, "xmm0, xmm1", 10
+  .tocc:
+	__bfa_emtxt 9, "setnp", 9, "cl", 10
+	__bfa_emtxt 9
+	mov	rdi, [ctx]
+	mov	esi, [pred]
+	xor	edx, edx
+	call	__bfa_emit_setcc
+	__bfa_emtxt 9, "al", 10
+	__bfa_emtxt 9, "and", 9, "al, cl", 10
+	__bfa_emtxt 9, "movzx", 9, "rax, al", 10
+	mov	rdi, [ctx]
+	mov	esi, [instid]
+	call	__bfa_out_movq_slot_rax
+	return
+endp
+
+; __bfa_emit_fconv(ctx, module, func, instid) -- fext/ftrunc/itof/ftoi. `T`
+; is the DESTINATION and the source is the operand's own type, exactly as
+; zext/sext/trunc (verify.inc's finding 3); one proc because the four
+; share the source-type dispatch:
+;
+;   fext   f32 -> f64    cvtss2sd, EXACT -- a widening never rounds
+;   ftrunc f64 -> f32    cvtsd2ss, the ONE rounding (ad_parem); a value
+;                        outside f32's range gives the IEEE infinity,
+;                        which is the only honest narrowing there is
+;   ftrunc f32 -> f32, f64 -> f64   a plain slot copy: lower/expr.inc's
+;                        `__lwr_cast` emits `ftrunc` for an equal-width
+;                        float cast too, and the bits already are the
+;                        value (lowering.md 535: "f32 <-> f64 fext/ftrunc")
+;   itof   iN/uN -> f64  cvtsi2sd on the canonical 64-bit slot: every
+;                        canonical uN below 64 is nonnegative, so the
+;                        SIGNED convert is the unsigned one too, and an
+;                        iN is sign-extended, which is what it wants
+;   itof   u64 -> f64    the exact 32/32 split, below
+;   itof   iN/uN -> f32  cvtsi2ss, same reasoning
+;   ftoi   -> iN/uN      cvttsd2si/cvttss2si: truncate toward zero, never
+;                        trapping (masked), then the integer canonical
+;                        normalisation
+;
+; `ftrunc` is NOT round-to-integral, so no roundsd and no SSE4.1 anywhere.
+; `ftoi` on NaN or out of range leaves the hardware's integer-indefinite
+; value; ssa-ir.md 2.3 marks that [OPEN] and no fixture pins it.
+;
+; THE u64 -> f64 SPLIT. `cvtsi2sd` converts SIGNED, so a u64 with bit 63
+; set would come back negative. For ANY u64:
+;
+;	hi = a >> 32		at most 32 significand bits -- an EXACT f64
+;	hi * 2^32		an exponent shift, still EXACT
+;	lo = a & 0xffffffff	EXACT
+;	addsd			the ONE rounding, ad_parem, of the true sum
+;
+; Both addends being exact is what makes the single rounding the
+; CORRECTLY rounded result: the sum is rounded once, on its true value --
+; never twice, which is the double-rounding hazard the u64 -> f32 refusal
+; is about.
+proc __bfa_emit_fconv, ctx, module, func, instid
+	locals
+		slot av, dd
+		slot tyv, dd
+		slot op, dd
+		slot skind, dd
+		slot swidth, dd
+		slot dwidth, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[av], ecx
+	mov	ecx, [rax + BfaInst.ty]
+	mov	[tyv], ecx
+	movzx	ecx, word [rax + BfaInst.op]
+	mov	[op], ecx
+
+	mov	rdi, [func]
+	mov	esi, [av]
+	call	bfa_value_type
+	cmp	eax, BFA_VALUE_TYPE_IS_U1
+	jne	.havesty
+	mov	dword [skind], BFA_TK_U	; a u1 is an integer like any other
+	mov	dword [swidth], 1
+	jmp	.stydone
+  .havesty:
+	mov	rdi, [module]
+	mov	esi, eax
+	call	__bfa_ty_info
+	mov	[skind], edx
+	; BfaType.width is the float's BIT count (32/64), but every helper in
+	; this file speaks the SLOT width (4/8): __bfa_emit_fload's mnemonic,
+	; ftrunc's narrow-or-copy test against __bfa_emit_fwidth's eax, ftoi's
+	; cvttsd2si/cvttss2si pick. Map the two floats down here and keep the
+	; bit width for the integer kinds -- itof's u64 test below compares
+	; against 64, the BIT width.
+	cmp	edx, BFA_TK_F32
+	jne	.notf32w
+	mov	dword [swidth], 4
+	jmp	.stydone
+  .notf32w:
+	cmp	edx, BFA_TK_F64
+	jne	.notf64w
+	mov	dword [swidth], 8
+	jmp	.stydone
+  .notf64w:
+	mov	[swidth], eax
+  .stydone:
+
+	cmp	dword [op], BFA_OP_FEXT
+	jne	.notfext
+	cmp	dword [skind], BFA_TK_F32
+	je	.fextf32
+	cmp	dword [skind], BFA_TK_F64
+	je	.fextbad
+	jmp	.after_fextnf
+  .fextnf db "fext: the operand is not a float"
+  .after_fextnf:
+	lea	rdi, [.fextnf]
+	mov	rsi, .after_fextnf - .fextnf
+	call	__bfa_emit_die
+  .fextbad:
+	jmp	.after_fextbad
+  .fextbadmsg db "fext: not a widening f32 -> f64"
+  .after_fextbad:
+	lea	rdi, [.fextbadmsg]
+	mov	rsi, .after_fextbad - .fextbadmsg
+	call	__bfa_emit_die
+  .fextf32:
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfa_emit_fwidth
+	cmp	eax, 8
+	jne	.fextbad
+	mov	[dwidth], eax
+	mov	rdi, [ctx]
+	xor	esi, esi
+	mov	edx, 4
+	mov	ecx, [av]
+	call	__bfa_emit_fload
+	__bfa_emtxt 9, "cvtss2sd", 9, "xmm0, xmm0", 10
+	mov	rdi, [ctx]
+	mov	esi, [dwidth]
+	mov	edx, [instid]
+	call	__bfa_emit_fstore
+	return
+  .notfext:
+	cmp	dword [op], BFA_OP_FTRUNC
+	jne	.notftrunc
+	cmp	dword [skind], BFA_TK_F32
+	je	.ftruncok
+	cmp	dword [skind], BFA_TK_F64
+	je	.ftruncok
+	jmp	.after_ftnf
+  .ftnf db "ftrunc: the operand is not a float"
+  .after_ftnf:
+	lea	rdi, [.ftnf]
+	mov	rsi, .after_ftnf - .ftnf
+	call	__bfa_emit_die
+  .ftruncok:
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfa_emit_fwidth
+	mov	[dwidth], eax
+	cmp	eax, [swidth]
+	je	.ftrunccopy
+	jg	.ftruncbad
+	mov	rdi, [ctx]
+	xor	esi, esi
+	mov	edx, [swidth]
+	mov	ecx, [av]
+	call	__bfa_emit_fload
+	__bfa_emtxt 9, "cvtsd2ss", 9, "xmm0, xmm0", 10
+	mov	rdi, [ctx]
+	mov	esi, [dwidth]
+	mov	edx, [instid]
+	call	__bfa_emit_fstore
+	return
+  .ftrunccopy:
+	mov	rdi, [ctx]
+	mov	esi, [av]
+	call	__bfa_out_movq_rax_slot
+	mov	rdi, [ctx]
+	mov	esi, [instid]
+	call	__bfa_out_movq_slot_rax
+	return
+  .ftruncbad:
+	jmp	.after_ftbad
+  .ftbad db "ftrunc: not a narrowing (a widening float cast is `fext`)"
+  .after_ftbad:
+	lea	rdi, [.ftbad]
+	mov	rsi, .after_ftbad - .ftbad
+	call	__bfa_emit_die
+  .notftrunc:
+	cmp	dword [op], BFA_OP_ITOF
+	jne	.notitof
+	cmp	dword [skind], BFA_TK_U
+	je	.itofok
+	cmp	dword [skind], BFA_TK_I
+	je	.itofok
+	jmp	.after_itint
+  .itint db "itof: the operand is not an integer (uN/iN)"
+  .after_itint:
+	lea	rdi, [.itint]
+	mov	rsi, .after_itint - .itint
+	call	__bfa_emit_die
+  .itofok:
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfa_emit_fwidth
+	mov	[dwidth], eax
+	cmp	dword [skind], BFA_TK_U
+	jne	.itofsimple
+	cmp	dword [swidth], 64
+	jne	.itofsimple
+	cmp	dword [dwidth], 4
+	je	.itofu32bad
+	; u64 -> f64: the exact 32/32 split (the header above proves it)
+	mov	rdi, [ctx]
+	mov	esi, [av]
+	call	__bfa_out_movq_rax_slot
+	__bfa_emtxt 9, "mov", 9, "rcx, rax", 10
+	__bfa_emtxt 9, "shr", 9, "rax, 32", 10
+	__bfa_emtxt 9, "cvtsi2sd", 9, "xmm0, rax", 10
+	__bfa_emtxt 9, "mov", 9, "rax, 4751297606875873280", 10
+	__bfa_emtxt 9, "movq", 9, "xmm1, rax", 10
+	__bfa_emtxt 9, "mulsd", 9, "xmm0, xmm1", 10
+	__bfa_emtxt 9, "mov", 9, "eax, ecx", 10
+	__bfa_emtxt 9, "cvtsi2sd", 9, "xmm1, rax", 10
+	__bfa_emtxt 9, "addsd", 9, "xmm0, xmm1", 10
+	mov	rdi, [ctx]
+	mov	esi, 8
+	mov	edx, [instid]
+	call	__bfa_emit_fstore
+	return
+  .itofu32bad:
+	jmp	.after_itu32
+  .itu32 db "itof: u64 -> f32 has no correctly-rounded SSE2 sequence (through f64 it would round twice)"
+  .after_itu32:
+	lea	rdi, [.itu32]
+	mov	rsi, .after_itu32 - .itu32
+	call	__bfa_emit_die
+  .itofsimple:
+	mov	rdi, [ctx]
+	mov	esi, [av]
+	call	__bfa_out_movq_rax_slot
+	cmp	dword [dwidth], 8
+	jne	.itofss
+	__bfa_emtxt 9, "cvtsi2sd", 9, "xmm0, rax", 10
+	jmp	.itofstore
+  .itofss:
+	__bfa_emtxt 9, "cvtsi2ss", 9, "xmm0, rax", 10
+  .itofstore:
+	mov	rdi, [ctx]
+	mov	esi, [dwidth]
+	mov	edx, [instid]
+	call	__bfa_emit_fstore
+	return
+  .notitof:
+	cmp	dword [op], BFA_OP_FTOI
+	jne	.notftoi
+	cmp	dword [skind], BFA_TK_F32
+	je	.ftoiok
+	cmp	dword [skind], BFA_TK_F64
+	je	.ftoiok
+	jmp	.after_ftonf
+  .ftonf db "ftoi: the operand is not a float"
+  .after_ftonf:
+	lea	rdi, [.ftonf]
+	mov	rsi, .after_ftonf - .ftonf
+	call	__bfa_emit_die
+  .ftoiok:
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfa_ty_info
+	cmp	edx, BFA_TK_U
+	je	.ftoidst
+	cmp	edx, BFA_TK_I
+	je	.ftoidst
+	jmp	.after_ftond
+  .ftond db "ftoi: the destination is not an integer (uN/iN)"
+  .after_ftond:
+	lea	rdi, [.ftond]
+	mov	rsi, .after_ftond - .ftond
+	call	__bfa_emit_die
+  .ftoidst:
+	mov	rdi, [ctx]
+	xor	esi, esi
+	mov	edx, [swidth]
+	mov	ecx, [av]
+	call	__bfa_emit_fload
+	cmp	dword [swidth], 8
+	jne	.ftoiss
+	__bfa_emtxt 9, "cvttsd2si", 9, "rax, xmm0", 10
+	jmp	.ftoinorm
+  .ftoiss:
+	__bfa_emtxt 9, "cvttss2si", 9, "rax, xmm0", 10
+  .ftoinorm:
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	edx, [tyv]
+	xor	ecx, ecx
+	call	__bfa_emit_norm
+	mov	rdi, [ctx]
+	mov	esi, [instid]
+	call	__bfa_out_movq_slot_rax
+	return
+  .notftoi:
+	jmp	.after_fcunr
+  .fcunr db "fconv: an opcode the dispatcher does not route here"
+  .after_fcunr:
+	lea	rdi, [.fcunr]
+	mov	rsi, .after_fcunr - .fcunr
+	call	__bfa_emit_die
+endp
+
+; __bfa_emit_argxmm(ctx, i) -- the SysV FLOAT argument register name for
+; float-argument ordinal `i` (0..7), the xmm twin of __bfa_emit_argreg
+; below (asm-conventions.md 1.1's table: "vector / float arguments
+; xmm0-xmm7"). Eight is the limit: a ninth float argument is refused here
+; exactly the way a seventh integer argument is refused there -- by name,
+; because silently dropping it is the miscompile this file exists never
+; to make.
+proc __bfa_emit_argxmm, ctx, i
+	locals
+	endl
+	jmp	.after_tab
+  .tab db "xmm0", 0, 0, 0, 0, "xmm1", 0, 0, 0, 0, "xmm2", 0, 0, 0, 0, "xmm3", 0, 0, 0, 0
+	db "xmm4", 0, 0, 0, 0, "xmm5", 0, 0, 0, 0, "xmm6", 0, 0, 0, 0, "xmm7", 0, 0, 0, 0
+  .after_tab:
+	mov	rax, [i]
+	cmp	rax, 8
+	jge	.toomany
+	shl	rax, 3
+	lea	rsi, [.tab]
+	add	rsi, rax
+	mov	rdx, 4
+	mov	rdi, [ctx]
+	call	__bfa_out_lit
+	return
+  .toomany:
+	jmp	.after_msg
+  .msg db "call: a ninth float argument is [OPEN] (eight XMM argument registers, asm-conventions.md 1.1)"
+  .after_msg:
+	lea	rdi, [.msg]
+	mov	rsi, .after_msg - .msg
+	call	__bfa_emit_die
+endp
+
+; __bfa_emit_param(ctx, module, func, instid) -- moves the i'th argument
+; register into this value's own slot, the register chosen by CLASS
+; (asm-conventions.md 1.1): an F32/F64 parameter rides in xmm0..xmm7,
+; every other type in rdi..r9, each class with its own ORDINAL counted
+; through the signature's parameter list (BfaFunc.sig -> BfaSig ->
+; Module.sig_extra, in order -- the SysV rule the table records). A
+; function of six integers and eight floats -- fourteen parameters, both
+; ordinals ending on their class's last register -- is the most this
+; will place. A seventh integer or a ninth float is refused by name, and
+; an index past the signature's parameters is refused too: the verifier
+; checks nothing about a `param` (d_trivial), so this walk is the only
+; place a phantom parameter is caught. Integer parameters emit exactly
+; the text they always did -- same register for the same ordinal -- so
+; no existing function's text moves. The bits land in the slot through
+; rax the way every float result does, which is also what keeps an f32
+; parameter's slot canonical (movd's zero-extend).
+proc __bfa_emit_param, ctx, module, func, instid
 	locals
 		slot iv, dd
+		slot j, dd
+		slot pfirst, dd
+		slot pcount, dd
+		slot kind, dd
+		slot iord, dd
+		slot xord, dd
 	endl
 	mov	rdi, [func]
 	mov	esi, [instid]
@@ -1096,137 +1896,111 @@ proc __bfa_emit_param, ctx, func, instid
 	mov	ecx, [rax + BfaInst.a]
 	mov	[iv], ecx
 
-	cmp	dword [iv], 0
-	jne	.not0
-	jmp	.after0
-  .lit0 db "	mov	qword "
-  .after0:
-	lea	rsi, [.lit0]
-	mov	rdx, .after0 - .lit0
-	mov	rdi, [ctx]
-	call	__bfa_out_lit
-	mov	rdi, [ctx]
-	mov	esi, [instid]
-	call	__bfa_slot
-	jmp	.after0b
-  .lit0b db ", rdi", 10
-  .after0b:
-	mov	rdi, [ctx]
-	lea	rsi, [.lit0b]
-	mov	rdx, .after0b - .lit0b
-	call	__bfa_out_lit
-	return
-  .not0:
-	cmp	dword [iv], 1
-	jne	.not1
-	jmp	.after1
-  .lit1 db "	mov	qword "
-  .after1:
-	lea	rsi, [.lit1]
-	mov	rdx, .after1 - .lit1
-	mov	rdi, [ctx]
-	call	__bfa_out_lit
-	mov	rdi, [ctx]
-	mov	esi, [instid]
-	call	__bfa_slot
-	jmp	.after1b
-  .lit1b db ", rsi", 10
-  .after1b:
-	mov	rdi, [ctx]
-	lea	rsi, [.lit1b]
-	mov	rdx, .after1b - .lit1b
-	call	__bfa_out_lit
-	return
-  .not1:
-	cmp	dword [iv], 2
-	jne	.not2
-	jmp	.after2
-  .lit2 db "	mov	qword "
-  .after2:
-	lea	rsi, [.lit2]
-	mov	rdx, .after2 - .lit2
-	mov	rdi, [ctx]
-	call	__bfa_out_lit
-	mov	rdi, [ctx]
-	mov	esi, [instid]
-	call	__bfa_slot
-	jmp	.after2b
-  .lit2b db ", rdx", 10
-  .after2b:
-	mov	rdi, [ctx]
-	lea	rsi, [.lit2b]
-	mov	rdx, .after2b - .lit2b
-	call	__bfa_out_lit
-	return
-  .not2:
-	cmp	dword [iv], 3
-	jne	.not3
-	jmp	.after3
-  .lit3 db "	mov	qword "
-  .after3:
-	lea	rsi, [.lit3]
-	mov	rdx, .after3 - .lit3
-	mov	rdi, [ctx]
-	call	__bfa_out_lit
+	mov	rax, [func]
+	mov	esi, [rax + BfaFunc.sig]
+	mov	rdi, [module]
+	mov	rdi, [rdi + BfaModule.sigs]
+	call	vec_get
+	mov	ecx, [rax + BfaSig.p_first]
+	mov	[pfirst], ecx
+	mov	ecx, [rax + BfaSig.p_count]
+	mov	[pcount], ecx
+
+	mov	dword [iord], 0
+	mov	dword [xord], 0
+	mov	dword [j], 0
+  .walk:
+	mov	eax, [j]
+	cmp	eax, [pcount]
+	jge	.outofrange
+	mov	eax, [pfirst]
+	add	eax, [j]
+	mov	rdi, [module]
+	mov	rdi, [rdi + BfaModule.sig_extra]
+	mov	esi, eax
+	call	vec_get
+	mov	esi, [rax]
+	mov	rdi, [module]
+	call	bfa_type_ptr
+	movzx	ecx, byte [rax + BfaType.kind]
+	mov	eax, [j]
+	cmp	eax, [iv]
+	je	.mine
+	cmp	ecx, BFA_TK_F32
+	je	.pre_sse
+	cmp	ecx, BFA_TK_F64
+	je	.pre_sse
+	inc	dword [iord]
+	jmp	.next
+  .pre_sse:
+	inc	dword [xord]
+  .next:
+	inc	dword [j]
+	jmp	.walk
+  .mine:
+	mov	[kind], ecx
+	jmp	.walkdone
+  .outofrange:
+	jmp	.after_oor
+  .oor db "param: the index is past the signature's parameters (the verifier does not check one)"
+  .after_oor:
+	lea	rdi, [.oor]
+	mov	rsi, .after_oor - .oor
+	call	__bfa_emit_die
+  .walkdone:
+	cmp	dword [kind], BFA_TK_F32
+	je	.float
+	cmp	dword [kind], BFA_TK_F64
+	je	.float
+
+	; integer / pointer: rdi..r9 by the integer ordinal
+	cmp	dword [iord], 5
+	jg	.toomanyint
+	__bfa_emtxt 9, "mov", 9, "qword "
 	mov	rdi, [ctx]
 	mov	esi, [instid]
 	call	__bfa_slot
-	jmp	.after3b
-  .lit3b db ", rcx", 10
-  .after3b:
+	__bfa_emtxt ", "
 	mov	rdi, [ctx]
-	lea	rsi, [.lit3b]
-	mov	rdx, .after3b - .lit3b
-	call	__bfa_out_lit
+	mov	esi, [iord]
+	call	__bfa_emit_argreg
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
 	return
-  .not3:
-	cmp	dword [iv], 4
-	jne	.not4
-	jmp	.after4
-  .lit4 db "	mov	qword "
-  .after4:
-	lea	rsi, [.lit4]
-	mov	rdx, .after4 - .lit4
+  .toomanyint:
+	jmp	.after_tmi
+  .tmi db "param index > 5 (Tier 1's 6-argument limit)"
+  .after_tmi:
+	lea	rdi, [.tmi]
+	mov	rsi, .after_tmi - .tmi
+	call	__bfa_emit_die
+
+	; F32/F64: xmm0..xmm7 by the SSE ordinal, into the slot through rax
+  .float:
+	cmp	dword [xord], 7
+	jg	.toomanyflt
+	cmp	dword [kind], BFA_TK_F64
+	jne	.f32in
+	__bfa_emtxt 9, "movq", 9, "rax, "
+	jmp	.reg
+  .f32in:
+	__bfa_emtxt 9, "movd", 9, "eax, "
+  .reg:
 	mov	rdi, [ctx]
-	call	__bfa_out_lit
+	mov	esi, [xord]
+	call	__bfa_emit_argxmm
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
 	mov	rdi, [ctx]
 	mov	esi, [instid]
-	call	__bfa_slot
-	jmp	.after4b
-  .lit4b db ", r8", 10
-  .after4b:
-	mov	rdi, [ctx]
-	lea	rsi, [.lit4b]
-	mov	rdx, .after4b - .lit4b
-	call	__bfa_out_lit
+	call	__bfa_out_movq_slot_rax
 	return
-  .not4:
-	cmp	dword [iv], 5
-	jne	.not5
-	jmp	.after5
-  .lit5 db "	mov	qword "
-  .after5:
-	lea	rsi, [.lit5]
-	mov	rdx, .after5 - .lit5
-	mov	rdi, [ctx]
-	call	__bfa_out_lit
-	mov	rdi, [ctx]
-	mov	esi, [instid]
-	call	__bfa_slot
-	jmp	.after5b
-  .lit5b db ", r9", 10
-  .after5b:
-	mov	rdi, [ctx]
-	lea	rsi, [.lit5b]
-	mov	rdx, .after5b - .lit5b
-	call	__bfa_out_lit
-	return
-  .not5:
-	jmp	.after_msg
-  .msg db "param index > 5 (Tier 1's 6-argument limit)"
-  .after_msg:
-	lea	rdi, [.msg]
-	mov	rsi, .after_msg - .msg
+  .toomanyflt:
+	jmp	.after_tmf
+  .tmf db "param: a ninth float parameter is [OPEN] (eight XMM argument registers, asm-conventions.md 1.1)"
+  .after_tmf:
+	lea	rdi, [.tmf]
+	mov	rsi, .after_tmf - .tmf
 	call	__bfa_emit_die
 endp
 
@@ -1779,10 +2553,15 @@ proc __bfa_emit_br, ctx, func, instid, lblptr, lbllen
 	return
 endp
 
-; __bfa_emit_ret(ctx, func, instid) -- the ONLY epilogue this file emits;
-; there is exactly one per `ret`, inline, rather than a shared tail -- the
-; naive choice (spec section 9.2: "do not write an optimizing backend").
-proc __bfa_emit_ret, ctx, func, instid
+; __bfa_emit_ret(ctx, module, func, instid) -- the ONLY epilogue this file
+; emits; there is exactly one per `ret`, inline, rather than a shared tail
+; -- the naive choice (spec section 9.2: "do not write an optimizing
+; backend"). A float-typed result rides in xmm0 (asm-conventions.md 1.1),
+; loaded straight from the slot; the epilogue is the same three lines
+; either way. The class is read off the OPERAND's own type -- the
+; verifier's `ret` rule has already required it to equal the signature's
+; return type, so the signature is not re-read here.
+proc __bfa_emit_ret, ctx, module, func, instid
 	locals
 		slot av, dd
 	endl
@@ -1794,11 +2573,43 @@ proc __bfa_emit_ret, ctx, func, instid
 
 	cmp	dword [av], 0
 	je	.novalue
+	mov	rdi, [func]
+	mov	esi, [av]
+	call	bfa_value_type
+	cmp	eax, BFA_VALUE_TYPE_IS_U1
+	je	.int
+	mov	rdi, [module]
+	mov	esi, eax
+	call	bfa_type_ptr
+	movzx	ecx, byte [rax + BfaType.kind]
+	cmp	ecx, BFA_TK_F32
+	je	.f32
+	cmp	ecx, BFA_TK_F64
+	je	.f64
+	jmp	.int
+  .f32:
+	__bfa_emtxt 9, "movss", 9, "xmm0, dword "
+	mov	rdi, [ctx]
+	mov	esi, [av]
+	call	__bfa_slot
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	jmp	.epilogue
+  .f64:
+	__bfa_emtxt 9, "movsd", 9, "xmm0, qword "
+	mov	rdi, [ctx]
+	mov	esi, [av]
+	call	__bfa_slot
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	jmp	.epilogue
+  .int:
 	mov	rdi, [ctx]
 	mov	esi, [av]
 	xor	edx, edx
 	call	__bfa_emit_load_rax
   .novalue:
+  .epilogue:
 	jmp	.after_epi
   .lit_epi db "	mov	rsp, rbp", 10, "	pop	rbp", 10, "	ret", 10
   .after_epi:
@@ -2968,9 +3779,16 @@ endp
 ; __bfa_emit_call(ctx, module, func, instid) -- `[%v =] call T @f args...`.
 ; extra[base] is the 1-based callee index, extra[base+1..] the arguments.
 ; Every argument is loaded from its own stack slot into its SysV register
-; immediately before the call, in ascending argument order, and the result
-; (if the call is not `void`) is stored straight back into the result's
-; slot: no register allocation, exactly the Tier-1 contract.
+; immediately before the call -- the register chosen by CLASS, exactly as
+; `__bfa_emit_param` chooses on the callee side: an F32/F64 argument goes
+; to xmm0..xmm7 by its own SSE ordinal, every other type to rdi..r9 by its
+; integer ordinal (asm-conventions.md 1.1). The result (if the call is
+; not `void`) is stored straight back into the result's slot: no register
+; allocation, exactly the Tier-1 contract. For a well-formed module the
+; argument's own type and the callee's signature parameter agree, which
+; is why the two walks are two views of one rule; the verifier does not
+; cross-check them, so a mismatched call is caught here only by the
+; register budget -- the IR text is the contract.
 ;
 ; STACK ALIGNMENT: the prologue's `sub rsp, framesz` uses a 16-byte
 ; multiple and nothing between the prologue and here moves `rsp`, so
@@ -2984,6 +3802,8 @@ proc __bfa_emit_call, ctx, module, func, instid
 		slot tyv, dd
 		slot i, dd
 		slot av, dd
+		slot iord, dd
+		slot xord, dd
 	endl
 	mov	rdi, [func]
 	mov	esi, [instid]
@@ -2996,6 +3816,8 @@ proc __bfa_emit_call, ctx, module, func, instid
 	mov	[tyv], ecx
 
 	mov	dword [i], 0
+	mov	dword [iord], 0
+	mov	dword [xord], 0
   .argloop:
 	mov	eax, [i]
 	inc	eax
@@ -3009,29 +3831,61 @@ proc __bfa_emit_call, ctx, module, func, instid
 	call	bfa_extra_get
 	mov	[av], eax
 
+	; classify the argument by its own value type
+	mov	rdi, [func]
+	mov	esi, [av]
+	call	bfa_value_type
+	cmp	eax, BFA_VALUE_TYPE_IS_U1
+	je	.argint
+	mov	rdi, [module]
+	mov	esi, eax
+	call	bfa_type_ptr
+	movzx	ecx, byte [rax + BfaType.kind]
+	cmp	ecx, BFA_TK_F32
+	je	.argflt
+	cmp	ecx, BFA_TK_F64
+	je	.argflt
+	jmp	.argint
+  .argflt:
+	cmp	ecx, BFA_TK_F64
+	jne	.argf32
+	__bfa_emtxt 9, "movsd", 9
 	mov	rdi, [ctx]
-	jmp	.after_mov
-  .lit_mov db "	mov	"
-  .after_mov:
-	lea	rsi, [.lit_mov]
-	mov	rdx, .after_mov - .lit_mov
-	call	__bfa_out_lit
+	mov	esi, [xord]
+	call	__bfa_emit_argxmm
+	__bfa_emtxt ", qword "
+	jmp	.argslot
+  .argf32:
+	__bfa_emtxt 9, "movss", 9
 	mov	rdi, [ctx]
-	mov	esi, [i]
-	call	__bfa_emit_argreg
-	mov	rdi, [ctx]
-	jmp	.after_comma
-  .lit_comma db ", "
-  .after_comma:
-	lea	rsi, [.lit_comma]
-	mov	rdx, .after_comma - .lit_comma
-	call	__bfa_out_lit
+	mov	esi, [xord]
+	call	__bfa_emit_argxmm
+	__bfa_emtxt ", dword "
+  .argslot:
 	mov	rdi, [ctx]
 	mov	esi, [av]
 	call	__bfa_slot
 	mov	rdi, [ctx]
 	call	__bfa_emit_nl
-
+	mov	eax, [xord]
+	inc	eax
+	mov	[xord], eax
+	jmp	.nextarg
+  .argint:
+	__bfa_emtxt 9, "mov", 9
+	mov	rdi, [ctx]
+	mov	esi, [iord]
+	call	__bfa_emit_argreg
+	__bfa_emtxt ", "
+	mov	rdi, [ctx]
+	mov	esi, [av]
+	call	__bfa_slot
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	mov	eax, [iord]
+	inc	eax
+	mov	[iord], eax
+  .nextarg:
 	mov	eax, [i]
 	inc	eax
 	mov	[i], eax
@@ -3064,6 +3918,28 @@ proc __bfa_emit_call, ctx, module, func, instid
 	cmp	dword [tyv], 0			; `void` -- no result slot
 	je	.novalue
 
+	; A FLOAT RESULT rides in xmm0 (asm-conventions.md 1.1), moved through
+	; rax and the same canonicalising store every float result takes:
+	; `movq`/`movd` yield exactly the value's bits, so unlike a narrow
+	; INTEGER result from a foreign object there is nothing above the
+	; value's width left unspecified, and the externus normalisation is
+	; integer-only.
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	bfa_type_ptr
+	movzx	ecx, byte [rax + BfaType.kind]
+	cmp	ecx, BFA_TK_F32
+	je	.resf32
+	cmp	ecx, BFA_TK_F64
+	je	.resf64
+	jmp	.resint
+  .resf32:
+	__bfa_emtxt 9, "movd", 9, "eax, xmm0", 10
+	jmp	.tostore
+  .resf64:
+	__bfa_emtxt 9, "movq", 9, "rax, xmm0", 10
+	jmp	.tostore
+  .resint:
 	; A NARROW RESULT FROM ANOTHER OBJECT is normalised before it is
 	; stored: SysV AMD64 leaves the bits of `rax` above a `u8`/`u16`/`u32`
 	; return value unspecified (C compilers extend to 32 bits by habit,
@@ -4137,8 +5013,9 @@ proc __bfa_emit_inst, ctx, module, func, instid, lblptr, lbllen
 	cmp	dword [op], BFA_OP_PARAM
 	jne	.notparam
 	mov	rdi, [ctx]
-	mov	rsi, [func]
-	mov	edx, [instid]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
 	call	__bfa_emit_param
 	return
   .notparam:
@@ -4183,8 +5060,6 @@ proc __bfa_emit_inst, ctx, module, func, instid, lblptr, lbllen
   .notmul:
 	cmp	dword [op], BFA_OP_CMP
 	je	.docmp
-	cmp	dword [op], BFA_OP_FCMP
-	je	.docmp
 	jmp	.notcmp
   .docmp:
 	mov	rdi, [ctx]
@@ -4194,6 +5069,15 @@ proc __bfa_emit_inst, ctx, module, func, instid, lblptr, lbllen
 	call	__bfa_emit_cmp
 	return
   .notcmp:
+	cmp	dword [op], BFA_OP_FCMP
+	jne	.notfcmp
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfa_emit_fcmp
+	return
+  .notfcmp:
 	cmp	dword [op], BFA_OP_JMP
 	jne	.notjmp
 	mov	rdi, [ctx]
@@ -4217,8 +5101,9 @@ proc __bfa_emit_inst, ctx, module, func, instid, lblptr, lbllen
 	cmp	dword [op], BFA_OP_RET
 	jne	.notret
 	mov	rdi, [ctx]
-	mov	rsi, [func]
-	mov	edx, [instid]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
 	call	__bfa_emit_ret
 	return
   .notret:
@@ -4362,6 +5247,85 @@ proc __bfa_emit_inst, ctx, module, func, instid, lblptr, lbllen
 	call	__bfa_emit_conv
 	return
   .notconv:
+	cmp	dword [op], BFA_OP_FCONST
+	jne	.notfconst
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfa_emit_fconst
+	return
+  .notfconst:
+	cmp	dword [op], BFA_OP_FADD
+	je	.dofarith
+	cmp	dword [op], BFA_OP_FSUB
+	je	.dofarith
+	cmp	dword [op], BFA_OP_FMUL
+	je	.dofarith
+	cmp	dword [op], BFA_OP_FDIV
+	je	.dofarith
+	jmp	.notfarith
+  .dofarith:
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfa_emit_farith
+	return
+  .notfarith:
+	cmp	dword [op], BFA_OP_FNEG
+	jne	.notfneg
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfa_emit_fneg
+	return
+  .notfneg:
+	cmp	dword [op], BFA_OP_FEXT
+	je	.dofconv
+	cmp	dword [op], BFA_OP_FTRUNC
+	je	.dofconv
+	cmp	dword [op], BFA_OP_ITOF
+	je	.dofconv
+	cmp	dword [op], BFA_OP_FTOI
+	je	.dofconv
+	jmp	.notfconv
+  .dofconv:
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfa_emit_fconv
+	return
+  .notfconv:
+	; fma and bitcast are the two float opcodes with no lowering, and each
+	; dies BY NAME here rather than through the generic arm at the bottom:
+	; fma because the SSE2 baseline simply has no fused multiply-add
+	; (FMA3 is a later extension -- ssa-ir.md 2.3 calls fma "the only
+	; contraction that can exist", so the opcode is right and the silicon
+	; is what is missing), bitcast because nothing in-tree produces it and
+	; its exact semantics are unrecorded ([OPEN], ssa-ir.md 2.3) -- in the
+	; slot model a pure copy would be a plausible guess, and a guess is
+	; what this file must never emit.
+	cmp	dword [op], BFA_OP_FMA
+	jne	.notfma
+	jmp	.after_fmamsg
+  .fmamsg db "fma: the SSE2 baseline has no fused multiply-add (FMA3 is a later extension)"
+  .after_fmamsg:
+	lea	rdi, [.fmamsg]
+	mov	rsi, .after_fmamsg - .fmamsg
+	call	__bfa_emit_die
+  .notfma:
+	cmp	dword [op], BFA_OP_BITCAST
+	jne	.notbitcast
+	jmp	.after_bcmsg
+  .bcmsg db "bitcast: nothing in-tree produces it, and its semantics are [OPEN] (ssa-ir.md 2.3)"
+  .after_bcmsg:
+	lea	rdi, [.bcmsg]
+	mov	rsi, .after_bcmsg - .bcmsg
+	call	__bfa_emit_die
+  .notbitcast:
 	cmp	dword [op], BFA_OP_INDEX
 	jne	.notindex
 	mov	rdi, [ctx]
