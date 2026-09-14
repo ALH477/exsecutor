@@ -44,10 +44,14 @@ Exsecutor source, six programs, all compiled and run by `tests/run.sh`:
 - **`signaculum/`, the logo model** — the 3D model behind this repo's mark
   (1,493 vertices, 2,981 textured faces on the fixed-point stdin stream
   `prototypes/signaculum_mesh.py` writes) rasterised at 256×256 with a 1/z
-  z-buffer and backface culling, written as a P6. `tests/programs/signaculum/`
-  holds it byte-identical against `prototypes/signaculum_oracle.py` on both
-  backends and all four C builds; it is the program that closed float
-  `load`/`store` in both emitters.
+  z-buffer and backface culling, written as a P6. The renderer is split:
+  `forma.exsc`'s pure `signaculum_pingue` is the engine entry point — the
+  whole stream in as one buffer, framebuffer and z-buffer out through
+  caller-owned borrows — which Kiln consumes directly, while
+  `signaculum.exsc` is only the stdin pump over it.
+  `tests/programs/signaculum/` holds it byte-identical against
+  `prototypes/signaculum_oracle.py` on both backends and all four C builds;
+  it is the program that closed float `load`/`store` in both emitters.
 
 This file said "nothing here compiles — there is no compiler" until
 2026-09-10, and then, until the hydramodem commit, that nothing here was

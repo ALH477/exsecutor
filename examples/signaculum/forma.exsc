@@ -1,0 +1,307 @@
+// examples/signaculum/forma.exsc
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 The Exsecutor authors.
+// ---------------------------------------------------------------------------
+// The signaculum renderer's PURE CORE -- no poscit, no Mundus, no initium,
+// no Lector/Scriptor. Everything the stream program used to do between
+// "bytes arrived" and "framebuffer ready" lives here as a library function
+// an embedding engine can call with its own storage:
+//
+//   publica functio signaculum_pingue(exsg: acies<u8, 44801>,
+//                                     fb: &mutabilis acies<u8, 196608>,
+//                                     zb: &mutabilis acies<f64, 65536>) -> u8
+//
+// takes the whole "EXSG" fixed-point stream AS ONE BUFFER (Kiln's N64 build
+// holds it in a ROM, not on a stdin), rasterises into the caller's
+// framebuffer and 1/z z-buffer, and returns a status:
+//
+//   0  rendered
+//   1  bad magic (not "EXSG")
+//   2  bad counts (nv/nf not the 1493/2981 this model bakes)
+//   3  short stream (a decode read ran past the buffer's 44801 bytes)
+//   4  trailing bytes (the decode did not end at exactly 44801)
+//
+// The stream program is now a pump, not a parser: signaculum.exsc copies
+// stdin into the buffer and hands over; its output bytes are UNCHANGED, by
+// measurement, recorded per the repo's evidence discipline.
+//
+// THE ORDER IS THE CONTRACT: every f64 operation below was moved VERBATIM
+// from signaculum.exsc, in exactly the association and order the oracle
+// prototypes/signaculum_oracle.py mirrors line for line. The decode is the
+// same DIVISION of each 2^-23-grid integer by 8388608.0 -- a power of two,
+// exact, so both sides hold identical bits -- and the bounds checks are
+// integer work that never touches an f64. Change the association and the
+// bytes part ways, by design.
+//
+// The borrow is also the stack story: fb and zb are the caller's storage
+// (ADR 0016), so this frame keeps only sx/sy/qq (3 x 1493 x 8 bytes), the
+// 262 KB the stream skin's own locals carry, not the engine's.
+// ---------------------------------------------------------------------------
+
+// The buffer-side cursor the decode helpers share: where the next byte is,
+// and the first failure seen (0 = none yet). A helper that would read past
+// the buffer sets status = 3 and returns 0; the callers re-check at each
+// phase boundary, so no half-decoded value is ever rasterised. (With the
+// counts pinned to 1493/2981 the reads sum to exactly 44801 and 3 is
+// unreachable in practice; the check is the library's contract, kept.)
+structura Cursor {
+    pos: mensura
+    status: u8
+}
+
+functio lege_octeto(b: acies<u8, 44801>, c: &mutabilis Cursor) -> u16 {
+    si (*c).pos + 1 gt 44801 {
+        (*c).status = 3;
+        redde 0;
+    }
+    firma v: u16 = b[(*c).pos] sicut u16;
+    (*c).pos = (*c).pos + 1;
+    redde v;
+}
+
+functio lege_i32(b: acies<u8, 44801>, c: &mutabilis Cursor) -> i64 {
+    si (*c).pos + 4 gt 44801 {
+        (*c).status = 3;
+        redde 0;
+    }
+    firma p: mensura = (*c).pos;
+    firma b0: u16 = b[p] sicut u16;
+    firma b1: u16 = b[p + 1] sicut u16;
+    firma b2: u16 = b[p + 2] sicut u16;
+    firma b3: u16 = b[p + 3] sicut u16;
+    mutabilis v: i64 = b0 sicut i64 + b1 sicut i64 * 256 + b2 sicut i64 * 65536 + b3 sicut i64 * 16777216;
+    si v ge 2147483648 {
+        v = v - 4294967296;
+    }
+    (*c).pos = p + 4;
+    redde v;
+}
+
+functio lege_u16(b: acies<u8, 44801>, c: &mutabilis Cursor) -> mensura {
+    si (*c).pos + 2 gt 44801 {
+        (*c).status = 3;
+        redde 0;
+    }
+    firma p: mensura = (*c).pos;
+    firma lo: u16 = b[p] sicut u16;
+    firma hi: u16 = b[p + 1] sicut u16;
+    (*c).pos = p + 2;
+    redde lo sicut mensura + hi sicut mensura * 256;
+}
+
+functio in_f64(v: i64) -> f64 {
+    // q / 2^23: exact. The oracle's decode is the same division.
+    redde v sicut f64 / 8388608.0;
+}
+
+publica functio signaculum_pingue(exsg: acies<u8, 44801>, fb: &mutabilis acies<u8, 196608>, zb: &mutabilis acies<f64, 65536>) -> u8 {
+    mutabilis cur = Cursor { pos: 0, status: 0 };
+
+    // ---- EXSG header ------------------------------------------------------
+    firma e0: u16 = lege_octeto(exsg, cur);
+    firma e1: u16 = lege_octeto(exsg, cur);
+    firma e2: u16 = lege_octeto(exsg, cur);
+    firma e3: u16 = lege_octeto(exsg, cur);
+    si cur.status ne 0 {
+        redde cur.status;
+    }
+    si e0 ne 69 {
+        redde 1;
+    }
+    si e1 ne 88 {
+        redde 1;
+    }
+    si e2 ne 83 {
+        redde 1;
+    }
+    si e3 ne 71 {
+        redde 1;
+    }
+    firma nv: i64 = lege_i32(exsg, cur);
+    firma nf: i64 = lege_i32(exsg, cur);
+    si cur.status ne 0 {
+        redde cur.status;
+    }
+    si nv ne 1493 {
+        redde 2;
+    }
+    si nf ne 2981 {
+        redde 2;
+    }
+    firma cam_d: f64 = in_f64(lege_i32(exsg, cur));
+    firma cam_f: f64 = in_f64(lege_i32(exsg, cur));
+    firma r00: f64 = in_f64(lege_i32(exsg, cur));
+    firma r01: f64 = in_f64(lege_i32(exsg, cur));
+    firma r02: f64 = in_f64(lege_i32(exsg, cur));
+    firma r10: f64 = in_f64(lege_i32(exsg, cur));
+    firma r11: f64 = in_f64(lege_i32(exsg, cur));
+    firma r12: f64 = in_f64(lege_i32(exsg, cur));
+    firma r20: f64 = in_f64(lege_i32(exsg, cur));
+    firma r21: f64 = in_f64(lege_i32(exsg, cur));
+    firma r22: f64 = in_f64(lege_i32(exsg, cur));
+    si cur.status ne 0 {
+        redde cur.status;
+    }
+
+    // ---- per-vertex: decode, rotate, project; keep screen x, y and 1/z ---
+    mutabilis sx: acies<f64, 1493> = [0.0; 1493];
+    mutabilis sy: acies<f64, 1493> = [0.0; 1493];
+    mutabilis qq: acies<f64, 1493> = [0.0; 1493];
+    per i in 0..1493 {
+        firma fx: f64 = in_f64(lege_i32(exsg, cur));
+        firma fy: f64 = in_f64(lege_i32(exsg, cur));
+        firma fz: f64 = in_f64(lege_i32(exsg, cur));
+        firma t0: f64 = r00 * fx + r01 * fy;
+        firma px: f64 = t0 + r02 * fz;
+        firma t1: f64 = r10 * fx + r11 * fy;
+        firma py: f64 = t1 + r12 * fz;
+        firma t2: f64 = r20 * fx + r21 * fy;
+        firma pz: f64 = t2 + r22 * fz;
+        firma zv: f64 = pz + cam_d;
+        firma iz: f64 = 1.0 / zv;
+        firma xw: f64 = (px * cam_f) * iz;
+        sx[i] = (xw * 0.5 + 0.5) * 255.0;
+        firma yw: f64 = (py * cam_f) * iz;
+        sy[i] = (0.5 - yw * 0.5) * 255.0;
+        qq[i] = iz;
+    }
+    si cur.status ne 0 {
+        redde cur.status;
+    }
+
+    // ---- framebuffer ground: 0x0f1216, as logo/exsecutor-logo.png --------
+    // Both buffers are the caller's storage; a library that did not fill
+    // them itself would be trusting the engine to.
+    per k in 0..65536 {
+        firma g: mensura = k sicut mensura * 3;
+        (*fb)[g] = 15;
+        (*fb)[g + 1] = 18;
+        (*fb)[g + 2] = 22;
+    }
+    per k in 0..65536 {
+        (*zb)[k] = 0.0;
+    }
+
+    // ---- per face: read, cull, rasterise ---------------------------------
+    // A covered pixel of a covered face wins iff its 1/z is the larger.
+    per f in 0..2981 {
+        firma i0: mensura = lege_u16(exsg, cur);
+        firma i1: mensura = lege_u16(exsg, cur);
+        firma i2: mensura = lege_u16(exsg, cur);
+        firma cr: u8 = lege_octeto(exsg, cur) sicut u8;
+        firma cg: u8 = lege_octeto(exsg, cur) sicut u8;
+        firma cb: u8 = lege_octeto(exsg, cur) sicut u8;
+        firma x0: f64 = sx[i0];
+        firma y0: f64 = sy[i0];
+        firma q0: f64 = qq[i0];
+        firma x1: f64 = sx[i1];
+        firma y1: f64 = sy[i1];
+        firma q1: f64 = qq[i1];
+        firma x2: f64 = sx[i2];
+        firma y2: f64 = sy[i2];
+        firma q2: f64 = qq[i2];
+        // signed double-area; y-down screen, so FRONT faces are negative.
+        // One predicate culls backfaces and the near-degenerate alike.
+        firma area: f64 = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
+        si area lt -1e-12 {
+            // bbox by truncation toward zero (cvttsd2si's rule) + clamp.
+            mutabilis m: f64 = x0;
+            si x1 lt m {
+                m = x1;
+            }
+            si x2 lt m {
+                m = x2;
+            }
+            mutabilis bx0: i64 = m sicut i64;
+            si bx0 lt 0 {
+                bx0 = 0;
+            }
+            m = x0;
+            si x1 gt m {
+                m = x1;
+            }
+            si x2 gt m {
+                m = x2;
+            }
+            mutabilis bx1: i64 = m sicut i64 + 1;
+            si bx1 gt 255 {
+                bx1 = 255;
+            }
+            m = y0;
+            si y1 lt m {
+                m = y1;
+            }
+            si y2 lt m {
+                m = y2;
+            }
+            mutabilis by0: i64 = m sicut i64;
+            si by0 lt 0 {
+                by0 = 0;
+            }
+            m = y0;
+            si y1 gt m {
+                m = y1;
+            }
+            si y2 gt m {
+                m = y2;
+            }
+            mutabilis by1: i64 = m sicut i64 + 1;
+            si by1 gt 255 {
+                by1 = 255;
+            }
+            si bx0 le bx1 {
+                si by0 le by1 {
+                    // 1/z is linear in screen space: the depth steps one
+                    // fadd per pixel, off ONE division for the face.
+                    firma ra: f64 = 1.0 / area;
+                    firma a: f64 = ((q1 - q0) * (y2 - y0) - (q2 - q0) * (y1 - y0)) * ra;
+                    firma b: f64 = ((q2 - q0) * (x1 - x0) - (q1 - q0) * (x2 - x0)) * ra;
+                    firma dw0: f64 = y1 - y2;
+                    firma dw1: f64 = y2 - y0;
+                    firma dw2: f64 = y0 - y1;
+                    firma byp1: i64 = by1 + 1;
+                    firma bxp1: i64 = bx1 + 1;
+                    per yy in by0..byp1 {
+                        firma pyf: f64 = yy sicut f64 + 0.5;
+                        firma pxf: f64 = bx0 sicut f64 + 0.5;
+                        mutabilis w0: f64 = (x1 - pxf) * (y2 - pyf) - (x2 - pxf) * (y1 - pyf);
+                        mutabilis w1: f64 = (x2 - pxf) * (y0 - pyf) - (x0 - pxf) * (y2 - pyf);
+                        mutabilis w2: f64 = (x0 - pxf) * (y1 - pyf) - (x1 - pxf) * (y0 - pyf);
+                        firma tq: f64 = q0 + a * (pxf - x0);
+                        mutabilis qd: f64 = tq + b * (pyf - y0);
+                        firma row: mensura = yy sicut mensura * 256;
+                        per xx in bx0..bxp1 {
+                            si w0 le 0.0 {
+                                si w1 le 0.0 {
+                                    si w2 le 0.0 {
+                                        firma idx: mensura = row + xx sicut mensura;
+                                        si qd gt (*zb)[idx] {
+                                            (*zb)[idx] = qd;
+                                            firma o: mensura = idx * 3;
+                                            (*fb)[o] = cr;
+                                            (*fb)[o + 1] = cg;
+                                            (*fb)[o + 2] = cb;
+                                        }
+                                    }
+                                }
+                            }
+                            w0 = w0 + dw0;
+                            w1 = w1 + dw1;
+                            w2 = w2 + dw2;
+                            qd = qd + a;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    si cur.status ne 0 {
+        redde cur.status;
+    }
+
+    // ---- the buffer must end exactly here ---------------------------------
+    si cur.pos ne 44801 {
+        redde 4;
+    }
+    redde 0;
+}

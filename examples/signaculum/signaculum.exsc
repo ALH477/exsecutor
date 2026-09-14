@@ -2,246 +2,71 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 The Exsecutor authors.
 // ---------------------------------------------------------------------------
-// The float wave's whole-model program: the Exsecutor logo ("Crossed
-// Ascension", logo/Meshy_AI_Crossed_Ascension_0910024256_texture.obj --
-// 1,493 vertices, 2,981 faces) read as a fixed-point stream on stdin,
-// rasterised at 256x256 with a 1/z z-buffer and backface culling, written
-// as a binary P6 on stdout. Held byte-identical to
-// prototypes/signaculum_oracle.py, an independent implementation that
-// mirrors this file's f64 operation ORDER line for line (the agreement
-// spec 9.3 turns into a byte claim). THE ORDER IS THE CONTRACT: change
-// either side's association and the bytes part ways, by design.
+// The float wave's whole-model program, now THE STREAM SKIN of it: the
+// Exsecutor logo ("Crossed Ascension",
+// logo/Meshy_AI_Crossed_Ascension_0910024256_texture.obj -- 1,493 vertices,
+// 2,981 faces) read as a fixed-point stream on stdin, rasterised at 256x256
+// with a 1/z z-buffer and backface culling, written as a binary P6 on
+// stdout. Held byte-identical to prototypes/signaculum_oracle.py, the
+// independent implementation that mirrors the renderer's f64 operation
+// ORDER line for line (the agreement spec 9.3 turns into a byte claim).
+// THE ORDER IS THE CONTRACT: change either side's association and the
+// bytes part ways, by design.
 //
-// Nothing transcendental or texture-shaped is computed here: the rotation
-// matrix, the camera constants and the baked per-face colours arrive as
-// data in the stream (prototypes/signaculum_mesh.py). Face normals would
-// need a square root, which the language pointedly lacks (ssa-ir.md); the
-// bake is where the shading lives.
+// THE SPLIT, and why: the decode, projection and rasteriser moved VERBATIM
+// into forma.exsc as the pure library `signaculum_pingue(exsg, fb, zb)` --
+// buffer in, caller-owned buffers out, no Lector/Scriptor -- because an
+// embedding engine (Kiln's N64 build) holds the model in a ROM and the
+// framebuffer in its own storage, and has no stdin to stream from. What is
+// left here is a pump, not a parser: copy stdin into one acies, hand over,
+// write the P6 out of the framebuffer the callee filled. The bytes on
+// stdout are UNCHANGED, measured against tests/programs/signaculum/
+// expected.out on both backends and the four C builds -- recorded per the
+// repo's evidence discipline, not assumed.
+//
+// Nothing transcendental or texture-shaped is computed in either file: the
+// rotation matrix, the camera constants and the baked per-face colours
+// arrive as data (prototypes/signaculum_mesh.py). Face normals would need
+// a square root, which the language pointedly lacks (ssa-ir.md); the bake
+// is where the shading lives.
 //
 // "Optimized" is, as in examples/pictura/, a property of the PROGRAM,
 // provable from the IR: per vertex ONE division (iz = 1/z, reused for both
 // screen axes and the depth), per face ONE division (1/area), and in the
 // pixel loop none -- each edge function and the depth step one fadd per
 // pixel. The flat per-face colour means a covered pixel is three byte
-// stores.
+// stores. All of that now lives in forma.exsc.
 //
 // The stream ("EXSG", prototypes/signaculum_mesh.py writes it): every
 // float arrives as an integer on the 2^-23 grid, decoded by DIVISION by
 // 8388608.0 -- a power of two, so the division is exact and both sides
-// hold identical bits.
+// hold identical bits. The whole stream is exactly 44,801 bytes, and the
+// 256-EOF sentinel of the streaming reader becomes here what it is in
+// forma.exsc: the buffer is full at 44801 and one more lege_octeto must
+// still say 256.
 // ---------------------------------------------------------------------------
 
-functio lege_i32(l: Lector) -> i64 {
-    firma b0: u16 = l.lege_octeto();
-    firma b1: u16 = l.lege_octeto();
-    firma b2: u16 = l.lege_octeto();
-    firma b3: u16 = l.lege_octeto();
-    mutabilis v: i64 = b0 sicut i64 + b1 sicut i64 * 256 + b2 sicut i64 * 65536 + b3 sicut i64 * 16777216;
-    si v ge 2147483648 {
-        v = v - 4294967296;
-    }
-    redde v;
-}
-
-functio lege_u16(l: Lector) -> mensura {
-    firma lo: u16 = l.lege_octeto();
-    firma hi: u16 = l.lege_octeto();
-    redde lo sicut mensura + hi sicut mensura * 256;
-}
-
-functio in_f64(v: i64) -> f64 {
-    // q / 2^23: exact. The oracle's decode is the same division.
-    redde v sicut f64 / 8388608.0;
-}
-
 functio signaculum_redde(l: Lector, s: Scriptor) -> mensura {
-    // ---- EXSG header ------------------------------------------------------
-    firma e0: u16 = l.lege_octeto();
-    firma e1: u16 = l.lege_octeto();
-    firma e2: u16 = l.lege_octeto();
-    firma e3: u16 = l.lege_octeto();
-    si e0 ne 69 {
-        redde 0;
-    }
-    si e1 ne 88 {
-        redde 0;
-    }
-    si e2 ne 83 {
-        redde 0;
-    }
-    si e3 ne 71 {
-        redde 0;
-    }
-    firma nv: i64 = lege_i32(l);
-    firma nf: i64 = lege_i32(l);
-    si nv ne 1493 {
-        redde 0;
-    }
-    si nf ne 2981 {
-        redde 0;
-    }
-    firma cam_d: f64 = in_f64(lege_i32(l));
-    firma cam_f: f64 = in_f64(lege_i32(l));
-    firma r00: f64 = in_f64(lege_i32(l));
-    firma r01: f64 = in_f64(lege_i32(l));
-    firma r02: f64 = in_f64(lege_i32(l));
-    firma r10: f64 = in_f64(lege_i32(l));
-    firma r11: f64 = in_f64(lege_i32(l));
-    firma r12: f64 = in_f64(lege_i32(l));
-    firma r20: f64 = in_f64(lege_i32(l));
-    firma r21: f64 = in_f64(lege_i32(l));
-    firma r22: f64 = in_f64(lege_i32(l));
-
-    // ---- per-vertex: decode, rotate, project; keep screen x, y and 1/z ---
-    mutabilis sx: acies<f64, 1493> = [0.0; 1493];
-    mutabilis sy: acies<f64, 1493> = [0.0; 1493];
-    mutabilis qq: acies<f64, 1493> = [0.0; 1493];
-    per i in 0..1493 {
-        firma fx: f64 = in_f64(lege_i32(l));
-        firma fy: f64 = in_f64(lege_i32(l));
-        firma fz: f64 = in_f64(lege_i32(l));
-        firma t0: f64 = r00 * fx + r01 * fy;
-        firma px: f64 = t0 + r02 * fz;
-        firma t1: f64 = r10 * fx + r11 * fy;
-        firma py: f64 = t1 + r12 * fz;
-        firma t2: f64 = r20 * fx + r21 * fy;
-        firma pz: f64 = t2 + r22 * fz;
-        firma zv: f64 = pz + cam_d;
-        firma iz: f64 = 1.0 / zv;
-        firma xw: f64 = (px * cam_f) * iz;
-        sx[i] = (xw * 0.5 + 0.5) * 255.0;
-        firma yw: f64 = (py * cam_f) * iz;
-        sy[i] = (0.5 - yw * 0.5) * 255.0;
-        qq[i] = iz;
-    }
-
-    // ---- framebuffer ground: 0x0f1216, as logo/exsecutor-logo.png --------
-    mutabilis fb: acies<u8, 196608> = [0; 196608];
-    per k in 0..65536 {
-        firma g: mensura = k sicut mensura * 3;
-        fb[g] = 15;
-        fb[g + 1] = 18;
-        fb[g + 2] = 22;
-    }
-    mutabilis zb: acies<f64, 65536> = [0.0; 65536];
-
-    // ---- per face: read, cull, rasterise ---------------------------------
-    // A covered pixel of a covered face wins iff its 1/z is the larger.
-    per f in 0..2981 {
-        firma i0: mensura = lege_u16(l);
-        firma i1: mensura = lege_u16(l);
-        firma i2: mensura = lege_u16(l);
-        firma cr: u8 = l.lege_octeto() sicut u8;
-        firma cg: u8 = l.lege_octeto() sicut u8;
-        firma cb: u8 = l.lege_octeto() sicut u8;
-        firma x0: f64 = sx[i0];
-        firma y0: f64 = sy[i0];
-        firma q0: f64 = qq[i0];
-        firma x1: f64 = sx[i1];
-        firma y1: f64 = sy[i1];
-        firma q1: f64 = qq[i1];
-        firma x2: f64 = sx[i2];
-        firma y2: f64 = sy[i2];
-        firma q2: f64 = qq[i2];
-        // signed double-area; y-down screen, so FRONT faces are negative.
-        // One predicate culls backfaces and the near-degenerate alike.
-        firma area: f64 = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
-        si area lt -1e-12 {
-            // bbox by truncation toward zero (cvttsd2si's rule) + clamp.
-            mutabilis m: f64 = x0;
-            si x1 lt m {
-                m = x1;
-            }
-            si x2 lt m {
-                m = x2;
-            }
-            mutabilis bx0: i64 = m sicut i64;
-            si bx0 lt 0 {
-                bx0 = 0;
-            }
-            m = x0;
-            si x1 gt m {
-                m = x1;
-            }
-            si x2 gt m {
-                m = x2;
-            }
-            mutabilis bx1: i64 = m sicut i64 + 1;
-            si bx1 gt 255 {
-                bx1 = 255;
-            }
-            m = y0;
-            si y1 lt m {
-                m = y1;
-            }
-            si y2 lt m {
-                m = y2;
-            }
-            mutabilis by0: i64 = m sicut i64;
-            si by0 lt 0 {
-                by0 = 0;
-            }
-            m = y0;
-            si y1 gt m {
-                m = y1;
-            }
-            si y2 gt m {
-                m = y2;
-            }
-            mutabilis by1: i64 = m sicut i64 + 1;
-            si by1 gt 255 {
-                by1 = 255;
-            }
-            si bx0 le bx1 {
-                si by0 le by1 {
-                    // 1/z is linear in screen space: the depth steps one
-                    // fadd per pixel, off ONE division for the face.
-                    firma ra: f64 = 1.0 / area;
-                    firma a: f64 = ((q1 - q0) * (y2 - y0) - (q2 - q0) * (y1 - y0)) * ra;
-                    firma b: f64 = ((q2 - q0) * (x1 - x0) - (q1 - q0) * (x2 - x0)) * ra;
-                    firma dw0: f64 = y1 - y2;
-                    firma dw1: f64 = y2 - y0;
-                    firma dw2: f64 = y0 - y1;
-                    firma byp1: i64 = by1 + 1;
-                    firma bxp1: i64 = bx1 + 1;
-                    per yy in by0..byp1 {
-                        firma pyf: f64 = yy sicut f64 + 0.5;
-                        firma pxf: f64 = bx0 sicut f64 + 0.5;
-                        mutabilis w0: f64 = (x1 - pxf) * (y2 - pyf) - (x2 - pxf) * (y1 - pyf);
-                        mutabilis w1: f64 = (x2 - pxf) * (y0 - pyf) - (x0 - pxf) * (y2 - pyf);
-                        mutabilis w2: f64 = (x0 - pxf) * (y1 - pyf) - (x1 - pxf) * (y0 - pyf);
-                        firma tq: f64 = q0 + a * (pxf - x0);
-                        mutabilis qd: f64 = tq + b * (pyf - y0);
-                        firma row: mensura = yy sicut mensura * 256;
-                        per xx in bx0..bxp1 {
-                            si w0 le 0.0 {
-                                si w1 le 0.0 {
-                                    si w2 le 0.0 {
-                                        firma idx: mensura = row + xx sicut mensura;
-                                        si qd gt zb[idx] {
-                                            zb[idx] = qd;
-                                            firma o: mensura = idx * 3;
-                                            fb[o] = cr;
-                                            fb[o + 1] = cg;
-                                            fb[o + 2] = cb;
-                                        }
-                                    }
-                                }
-                            }
-                            w0 = w0 + dw0;
-                            w1 = w1 + dw1;
-                            w2 = w2 + dw2;
-                            qd = qd + a;
-                        }
-                    }
-                }
-            }
+    // ---- pump: stdin into the buffer, end-checked ------------------------
+    // lege_octeto's 256 is end of stream; before 44801 it means SHORT, and
+    // a stream longer than the buffer is refused on the one read after it.
+    mutabilis exsg: acies<u8, 44801> = [0; 44801];
+    per i in 0..44801 {
+        firma b: u16 = l.lege_octeto();
+        si b ge 256 {
+            redde 0;
         }
+        exsg[i] = b sicut u8;
     }
-
-    // ---- the stream must end exactly here ---------------------------------
     firma finis: u16 = l.lege_octeto();
     si finis ne 256 {
+        redde 0;
+    }
+
+    // ---- render into storage this frame owns ------------------------------
+    mutabilis fb: acies<u8, 196608> = [0; 196608];
+    mutabilis zb: acies<f64, 65536> = [0.0; 65536];
+    si signaculum_pingue(exsg, fb, zb) ne 0 {
         redde 0;
     }
 
