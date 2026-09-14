@@ -723,8 +723,14 @@ Integers are implemented and evidenced end-to-end — checked, lowered and run
 (`tests/programs/angusta/`, `tests/programs/redundantia/`,
 `tests/ir/trap_*.ir`); this banner previously said "nothing implemented",
 which the subsections below it already contradicted by citing those fixtures.
-Floating point and the vectors remain `[OPEN]` — designed, nothing
-implemented. Stage 3 at the earliest for vectors.
+Floating point at the IR level is implemented the same way since the float
+wave of 2026-09-13: both backends lower the eleven float opcodes and
+`tests/ir/float_*.ir` runs them through the differential phase — 52 checks
+byte-identical across gcc and clang at `-O0`/`-O2`. What remains `[OPEN]` is
+the *surface*: no float literal grammar and no `/` exist yet (§8.4), so no
+`.exsc` source can reach the float opcodes until the front-end wave lands.
+Vectors remain `[OPEN]` — designed, nothing implemented. Stage 3 at the
+earliest for vectors.
 
 The floating-point environment is ambient state, and this document exists to
 retire ambient state. `-ffast-math` is `setlocale` for numbers: a global,
@@ -2043,18 +2049,26 @@ symbol, `exsrt_abortus(kind)`, which whoever links it supplies; a module
 without `initium` is a library there (§4.7). Whole-program mode — an
 `initium` driven from a C `main`, a C prelude, syscalls, `#if`-gated
 capabilities so §10.3's audit holds of the binary — is a later milestone.
-The lowering of each opcode, and the twenty-three the C backend refuses by
-name because the reference has no lowering to check them against (floats,
-`div`/`rem`, `muls`, the overflow predicates, the reductions, `callind`) or
-because library mode has no runtime (`retain`/`release`), are tabulated in
-`docs/design/c-backend.md`. Built: library mode exists and is validated
+The lowering of each opcode is tabulated row by row in
+`docs/design/c-backend.md` (D4), and the two backends' refusal-by-name sets
+are maintained as ONE set — drift between them is a finding. The float wave
+of 2026-09-13 lowered the eleven float opcodes in both backends (the
+reference now lowers 48 of 60 rows, the C backend 46 — `retain`/`release`
+are the reference's alone, library mode having no object header), so the
+refusals that remain are: `div`/`rem`/`muls` and the overflow predicates
+(§5.4 leaves them `[OPEN]`), `fma` (the SSE2 baseline has no fused op, and
+contraction is what §5.4 says must be asked for, never made), `bitcast`
+(`[OPEN]`), the reductions (no consumer yet), `callind`, and — the C
+backend only — `retain`/`release`. This sentence previously said "the
+twenty-three the C backend refuses by name"; the count was wrong by two
+before the float wave and is not repeated as a number here on purpose —
+D4's row-by-row table is the count. Built: library mode exists and is
+validated
 differentially against the reference backend — stdout bytes, exit status and
 trap kind, across gcc and clang at `-O0` and `-O2`, every one under UBSan
 (`tests/c/`, `tests/run.sh`'s differential phase) — and cross-runs on
-`mips64-none-o64` (§9.5). This sentence previously said "`[UNTESTED]` —
-nothing of it is implemented"; stale since the differential phase landed.
-The two emitters' refusal-by-name sets are one set and must stay one set:
-drift between them is a finding.
+`mips64-none-o64` (§9.5). The differential phase also covers the float
+opcodes since that wave (`tests/ir/float_*.ir`, 52 checks).
 
 Compile speed was measured and is **not** the constraint I previously claimed. `[UNREPRODUCED]` — the measurement harness is absent from the tree; figures carried forward from v0.2. gcc `-O0` on backend-style generated C:
 
