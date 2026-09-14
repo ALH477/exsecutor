@@ -85,11 +85,15 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-178}"
 # image, held to the Python oracle's bytes. 102 -> 103 is Stage 5.2's
 # acies_float8/: whole-acy `+ - * /` on acies<f32,8>/acies<f64,8>, held to
 # prototypes/acies_float8_oracle.py's numpy bytes, cross=yes.
+# 103 -> 104 is Stage 5.3's pictura_octonaria/: the lane-parallel RGB
+# triangle, 960x540 with 2x2 SSAA, eight f32 lanes -- the first program
+# whose picture comes from whole-acy arithmetic, held to
+# prototypes/pictura_octonaria_oracle.py's numpy f32 bytes, cross=yes.
 # IR fixtures: 53 -> 64 is Stage 5.1's vector float group (sse-ir.md 2.2):
 # vec_arith and vec_mem positive, four rejections (parse lanes, verifier
 # x2 maior/minor, emitter vadd-on-scalar), all with C-backend parity.
 IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-64}"
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-103}"
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-104}"
 
 # The differential phase (run_differential_tests, below), which compiles the
 # C backend's emitted units and runs them against the same expectations the
@@ -130,8 +134,11 @@ DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-184}"
 #     the RGB triangle, the same bargain over a whole image.
 #     32 -> 33 and 128 -> 132: acies_float8/ (Stage 5.2), its own unit --
 #     packed whole-acy arithmetic byte-identical across the four toolchains.
-DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-33}"
-DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-132}"
+#     33 -> 34 and 132 -> 136: pictura_octonaria/ (Stage 5.3), its own unit --
+#     the lane rasterizer's 1.5 MB image byte-identical across the four
+#     toolchains.
+DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-34}"
+DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-136}"
 
 # The cross phase's own floor, deliberately NOT folded into the differential
 # numbers above: a cross-compiled, emulated run of a 32-bit-`mensura` unit is
@@ -140,7 +147,10 @@ DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-132}"
 # 8 -> 9 is acies_float8/ (cross=yes, Stage 5.2): gcc's/LLVM's soft lowering
 # of `vector_size` arithmetic reproduces every lane bit-identically on the
 # big-endian mips64 qemu run -- measured, not assumed (risk register 1).
-CROSS_PROGRAM_FLOOR="${CROSS_PROGRAM_FLOOR:-9}"
+# 9 -> 10 is pictura_octonaria/ (cross=yes, Stage 5.3): the same soft
+# lowering reproduces a whole 960x540 SSAA image on the big-endian run,
+# ~1.9 s measured against the 120 s budget.
+CROSS_PROGRAM_FLOOR="${CROSS_PROGRAM_FLOOR:-10}"
 
 PASS=0
 FAIL=0

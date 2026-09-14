@@ -1,0 +1,52 @@
+# The lane-parallel RGB triangle: Stage 5.3's showcase -- the first
+# program whose PICTURE comes from whole-acy arithmetic. examples/pictura/
+# octonaria.exsc + octonarium.exsc renders the pictura triangle at
+# 960x540 with 2x2 supersampled coverage, eight f32 lanes at a time,
+# and streams a binary P6 PPM (1555215 bytes) on stdout.
+#
+# THE SETTLEMENTS, each a claim the tree can check:
+#
+#   * lanes: the three edge accumulators are acies<f32, 8>: initialized
+#     per row per sub-sample pass as [es; 8] + lanes * [dx; 8] (one
+#     packed vmul, one packed vadd per edge; lanes[l] = ox + l, dyadic-
+#     exact), stepped ONCE per 8-pixel group per edge as e + [dx*8; 8]:
+#     ONE vadd vf32.8 per edge per group.
+#   * no mask primitive, by design: coverage is scalar per lane --
+#     e0[l] ge 0.0 chains over the three edges with byte stores into one
+#     row buffer per sub-sample, the shape pictura.exsc's inner loop has.
+#   * the coverage weight is (s0 + s1 + s2 + s3) * 0.25 in exactly that
+#     written association (0.25 exact); the color is pictura's own
+#     barycentric at the INTEGER pixel center, clamped then scaled.
+#   * DIVISION CENSUS (measured over the emitted fasmg .asm, the
+#     practice conformance entry 26 started): grep -cE 'divss|divsd' = 4
+#     -- the three per-vertex reciprocals ia ib ic and the weights'
+#     r = 1/det, all in setup, none under a back-edge. The pixel loops
+#     contain ZERO divisions. Packed census over the same .asm:
+#     grep -c addps = 12 (scopa: 3 edges x (1 init vadd + 1 step vadd),
+#     each packed op emitting its two SSE2 halves), grep -c mulps = 6
+#     (3 edges x 1 init vmul x 2 halves), grep -c subps = 0 (every edge
+#     subtraction stays scalar, subss).
+#
+# The golden is expected.out, produced by the INDEPENDENT numpy oracle
+# prototypes/pictura_octonaria_oracle.py (numpy 2.3.4, float32
+# elementwise, the same association as written, including the fixed SSAA
+# sum): both sides are one IEEE f32 rounding per operation under
+# nearest-even, so byte identity is proof, not luck. The reference
+# backend's binary run is byte-identical (measured 2026-09-14;
+# sha256 1d2a452598bf721e145191814b385d5589d7ea947567c034e9880d62fb80a7a5),
+# and so are all four differential builds (gcc/clang at -O0/-O2 under
+# -fsanitize=undefined, exits 0).
+#
+# cross=yes: measured, not assumed. The whole byte stream leaves through
+# explicit scribe_octeto calls, never a memory image, so it is endian-
+# invariant by construction; the mips64-none-o64 emission, cross-built
+# with the harness's n32 recipe and run under qemu-mipsn32, byte-matches
+# the golden (exit 0, ~1.9 s measured, well inside the 120 s budget).
+# The lane arithmetic on that target is the C backend's soft per-lane
+# lowering of vector_size arithmetic -- Stage 5.2's claim, now over a
+# whole image.
+#
+# (No stdout= on purpose: expected.out IS the reference; naming both is
+# the run.sh failure for "which of the two governs?". run.sh never runs
+# the oracle; expected.out is checked in.)
+TEST: expect-exit=0 sources=examples/pictura/octonaria.exsc,examples/pictura/octonarium.exsc cross=yes

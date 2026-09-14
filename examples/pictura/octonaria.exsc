@@ -1,0 +1,205 @@
+// octonaria -- the lane-parallel pictura: the RGB triangle at 960x540,
+// coverage supersampled 2x2, eight f32 lanes at a time (Stage 5.3).
+//
+// The algorithm is pictura.exsc's classical edge-function rasterizer with
+// the per-pixel edge step replaced by a per-GROUP packed add, and every
+// design choice below is a claim that can be re-measured rather than a
+// claim about taste:
+//
+//   * the perspective divide is ONE reciprocal per vertex (iw = 1/w), then
+//     two multiplies; the weights' denominator r = 1/det is the fourth and
+//     last division in the program -- 4 divss in setup, ZERO in every
+//     pixel loop (the TEST header records the census: grep -c 'divss\|
+//     divsd' over the emitted .asm, and the addps/mulps census the packed
+//     lowering should produce);
+//   * det is the sum of the three row-0 seeds at the CENTER lattice -- the
+//     same seed expressions the loops consume, so the weights come from
+//     one consistent definition and can never disagree with coverage by a
+//     differently-associated 2*area;
+//   * coverage is 2x2 supersampled: four sub-sample passes per row at
+//     (ox, oy) in {0.25, 0.75} x {0.25, 0.75} -- every offset dyadic-exact
+//     -- each pass independent, covering one sub-row per pixel row.
+//     The pixel's weight is (s0 + s1 + s2 + s3) * 0.25, in EXACTLY that
+//     written association (0.25 is an exact power of two).
+//   * THE LANES. Per pass, per row, the three edge accumulators are
+//     acies<f32, 8> -- eight pixels, one sub-row: initialized from the
+//     scalar row seed as [es; 8] + lanes * [dx; 8] (one packed vmul, one
+//     packed vadd per edge; lanes[l] = ox + l exact -- 0.25 + 7 needs six
+//     fraction bits), stepped ONCE per 8-pixel group per edge as
+//     e = e + [dx * 8; 8]: ONE vadd vf32.8 per edge per group, the whole
+//     point of the stage. dx * 8.0 is an exact power-of-two scaling.
+//   * there is NO mask primitive -- a deliberate settlement: coverage in
+//     the group is SCALAR PER LANE, e0[l] ge 0.0 chains over the three
+//     edges with one byte store per covered lane, exactly the shape
+//     pictura.exsc's inner loop has.
+//   * the color pass is pictura.exsc's own, at the INTEGER pixel center:
+//     per channel ((c0*E0 + c1*E1) + c2*E2) * r left to right, clamped to
+//     [0, 255] FIRST, then scaled by the coverage weight (al le 1.0 keeps
+//     the range), then truncated toward zero by ftoi. One scalar fadd per
+//     pixel per edge from a per-row seed; no division, ever, in a loop.
+//
+// Everything is f32 end-to-end -- §5.4's defaults, round-to-nearest-even
+// on both backends. The oracle (prototypes/pictura_octonaria_oracle.py)
+// recomputes the image independently in numpy float32 ELEMENTWISE,
+// mirroring this module's operation ORDER operation for operation --
+// identical order under IEEE means identical bits, so a differing byte
+// means one side changed its order. tests/programs/pictura_octonaria/
+// compares the bytes; the endian-invariant stream rule holds by
+// construction: every output byte goes through scribe_octeto explicitly,
+// never a memory image.
+//
+// Output: P6\n960 540\n255\n then 960*540*3 bytes row-major -- 1555215
+// bytes in all, the count the driver checks.
+
+functio scopa(cov: &mutabilis acies<u8, 960>, yy: mensura, ox: f32, oy: f32,
+              lanes: acies<f32, 8>, axf: f32, ayf: f32, bxf: f32, byf: f32,
+              cxf: f32, cyf: f32) -> u1 {
+    // One sub-row sweep of row yy at sub-sample offset (ox, oy): the
+    // three edge accumulators step one packed vadd per 8-pixel group;
+    // coverage is scalar per lane with byte stores into cov.
+    // `yy sicut i64 sicut f32`: u64 -> f32 has no correctly-rounded SSE2
+    // sequence (the emitter says so itself); yy < 2**10 makes the i64
+    // hop exact, and i64 -> f32 is cvtsi2ss, correctly rounded.
+    firma py: f32 = yy sicut i64 sicut f32 + oy;
+    firma d0x: f32 = byf - cyf;
+    firma d1x: f32 = cyf - ayf;
+    firma d2x: f32 = ayf - byf;
+    firma e0s: f32 = (cxf - bxf) * (py - byf) + (cyf - byf) * bxf;
+    firma e1s: f32 = (axf - cxf) * (py - cyf) + (ayf - cyf) * cxf;
+    firma e2s: f32 = (bxf - axf) * (py - ayf) + (byf - ayf) * axf;
+
+    // Init: per lane l, es + (ox + l) * dx -- one packed vmul then one
+    // packed vadd per edge.
+    mutabilis e0: acies<f32, 8> = [e0s; 8] + lanes * [d0x; 8];
+    mutabilis e1: acies<f32, 8> = [e1s; 8] + lanes * [d1x; 8];
+    mutabilis e2: acies<f32, 8> = [e2s; 8] + lanes * [d2x; 8];
+
+    // The group step: dx * 8.0 exactly, broadcast -- ONE vadd per edge
+    // per group below.
+    firma stp0: acies<f32, 8> = [d0x * 8.0; 8];
+    firma stp1: acies<f32, 8> = [d1x * 8.0; 8];
+    firma stp2: acies<f32, 8> = [d2x * 8.0; 8];
+
+    firma gruppa: mensura = 120;
+    firma octo: mensura = 8;
+    per g in 0..gruppa {
+        firma base: mensura = g * 8;
+        per l in 0..octo {
+            si e0[l] ge 0.0 {
+                si e1[l] ge 0.0 {
+                    si e2[l] ge 0.0 {
+                        (*cov)[base + l] = 1;
+                    }
+                }
+            }
+        }
+        e0 = e0 + stp0;
+        e1 = e1 + stp1;
+        e2 = e2 + stp2;
+    }
+    redde 1;
+}
+
+publica functio scribe_octonaria(s: Scriptor) -> mensura {
+    // The vertices in clip space, with a positive depth w each -- the
+    // pictura order: A red bottom-left, B blue the apex, C green
+    // bottom-right. THREE fdiv here, all of them the program's.
+    firma ia: f32 = 1.0 / 1.0;
+    firma ib: f32 = 1.0 / 1.25;
+    firma ic: f32 = 1.0 / 1.5;
+    firma nax: f32 = (-0.75) * ia;
+    firma nay: f32 = (-0.5) * ia;
+    firma nbx: f32 = 0.0 * ib;
+    firma nby: f32 = 0.75 * ib;
+    firma ncx: f32 = 0.75 * ic;
+    firma ncy: f32 = (-0.5) * ic;
+
+    // NDC to screen space, pixel centers at integer coordinates, W-1 and
+    // H-1 as f32: 959.0 and 539.0.
+    firma axf: f32 = (nax + 1.0) * 0.5 * 959.0;
+    firma ayf: f32 = (1.0 - nay) * 0.5 * 539.0;
+    firma bxf: f32 = (nbx + 1.0) * 0.5 * 959.0;
+    firma byf: f32 = (1.0 - nby) * 0.5 * 539.0;
+    firma cxf: f32 = (ncx + 1.0) * 0.5 * 959.0;
+    firma cyf: f32 = (1.0 - ncy) * 0.5 * 539.0;
+
+    // det from the row-0 seeds at the CENTER lattice: the SAME seed
+    // expressions the loops consume. r is the fourth and last fdiv.
+    firma e0s: f32 = (cxf - bxf) * (0.0 - byf) + (cyf - byf) * bxf;
+    firma e1s: f32 = (axf - cxf) * (0.0 - cyf) + (ayf - cyf) * cxf;
+    firma e2s: f32 = (bxf - axf) * (0.0 - ayf) + (byf - ayf) * axf;
+    firma det: f32 = e0s + e1s + e2s;
+    firma r: f32 = 1.0 / det;
+
+    // The color pass's scalar per-pixel step.
+    firma d0x: f32 = byf - cyf;
+    firma d1x: f32 = cyf - ayf;
+    firma d2x: f32 = ayf - byf;
+
+    // The lane-offset grids, exact: ox + l for l in 0..8.
+    firma lanq: acies<f32, 8> = [0.25, 1.25, 2.25, 3.25, 4.25, 5.25, 6.25, 7.25];
+    firma lant: acies<f32, 8> = [0.75, 1.75, 2.75, 3.75, 4.75, 5.75, 6.75, 7.75];
+
+    mutabilis n: mensura = s.scribe("P6
+960 540
+255
+");
+
+    firma alta: mensura = 540;
+    firma lata: mensura = 960;
+    per yy in 0..alta {
+        // Four sub-row coverage passes over this pixel row, one byte
+        // buffer per pass, then the color pass over the row's pixels.
+        mutabilis c0: acies<u8, 960> = [0; 960];
+        mutabilis c1: acies<u8, 960> = [0; 960];
+        mutabilis c2: acies<u8, 960> = [0; 960];
+        mutabilis c3: acies<u8, 960> = [0; 960];
+        firma m: mensura = yy sicut mensura;
+        firma t0: u1 = scopa(c0, m, 0.25, 0.25, lanq, axf, ayf, bxf, byf, cxf, cyf);
+        firma t1: u1 = scopa(c1, m, 0.75, 0.25, lant, axf, ayf, bxf, byf, cxf, cyf);
+        firma t2: u1 = scopa(c2, m, 0.25, 0.75, lanq, axf, ayf, bxf, byf, cxf, cyf);
+        firma t3: u1 = scopa(c3, m, 0.75, 0.75, lant, axf, ayf, bxf, byf, cxf, cyf);
+
+        // The center seeds, once per row -- pictura's own expressions.
+        firma pyc: f32 = yy sicut i64 sicut f32;
+        mutabilis e0c: f32 = (cxf - bxf) * (pyc - byf) + (cyf - byf) * bxf;
+        mutabilis e1c: f32 = (axf - cxf) * (pyc - cyf) + (ayf - cyf) * cxf;
+        mutabilis e2c: f32 = (bxf - axf) * (pyc - ayf) + (byf - ayf) * axf;
+
+        per xx in 0..lata {
+            firma i: mensura = xx sicut mensura;
+            firma s0: f32 = c0[i] sicut f32;
+            firma s1: f32 = c1[i] sicut f32;
+            firma s2: f32 = c2[i] sicut f32;
+            firma s3: f32 = c3[i] sicut f32;
+            // The 4-sample average, EXACTLY this written association.
+            firma al: f32 = (s0 + s1 + s2 + s3) * 0.25;
+            mutabilis cr: f32 = 0.0;
+            mutabilis cg: f32 = 0.0;
+            mutabilis cb: f32 = 0.0;
+            si al gt 0.0 {
+                cr = (255.0 * e0c + 0.0 * e1c + 0.0 * e2c) * r;
+                si cr lt 0.0 { cr = 0.0; }
+                si cr gt 255.0 { cr = 255.0; }
+                cr = cr * al;
+                cg = (0.0 * e0c + 0.0 * e1c + 255.0 * e2c) * r;
+                si cg lt 0.0 { cg = 0.0; }
+                si cg gt 255.0 { cg = 255.0; }
+                cg = cg * al;
+                cb = (0.0 * e0c + 255.0 * e1c + 0.0 * e2c) * r;
+                si cb lt 0.0 { cb = 0.0; }
+                si cb gt 255.0 { cb = 255.0; }
+                cb = cb * al;
+            }
+            // ftoi inside `sicut u8` truncates toward zero; the values
+            // are in [0, 255] by the clamps and al le 1.0.
+            n = n + s.scribe_octeto(cr sicut u8);
+            n = n + s.scribe_octeto(cg sicut u8);
+            n = n + s.scribe_octeto(cb sicut u8);
+            e0c = e0c + d0x;
+            e1c = e1c + d1x;
+            e2c = e2c + d2x;
+        }
+    }
+    redde n;
+}

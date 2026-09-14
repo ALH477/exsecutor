@@ -1,0 +1,25 @@
+// octonarium -- the driver half of the lane-parallel triangle.
+//
+// The pictura/triangulum arrangement: octonaria.exsc's rasterizer is
+// pure arithmetic; this file is where authority enters, once, as the
+// `Mundus` parameter (§4.1 rule 2), handing the renderer the
+// standard-output writer and checking its byte count. The program's
+// syscall surface is write(1) and exit_group.
+//
+// The image's 1555215 bytes are decided before any of them is written:
+// the computation is fixed-order f32 arithmetic under nearest-even, so
+// the differential phase over gcc/clang at -O0/-O2, the big-endian
+// mips64 cross run (the lane bytes are written through explicit
+// scribe_octeto calls, never a memory image), and the numpy oracle
+// (prototypes/pictura_octonaria_oracle.py) all reproduce it.
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma s = Scriptor.ad_exitum(a);
+    firma n = scribe_octonaria(s);
+    si n ne 1555215 {
+        redde 1;
+    }
+    redde 0;
+}
