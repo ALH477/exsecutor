@@ -8,12 +8,12 @@
 // an embedding engine can call with its own storage:
 //
 //   publica functio signaculum_pingue(exsg: acies<u8, 44801>,
-//                                     fb: &mutabilis acies<u8, 196608>,
-//                                     zb: &mutabilis acies<f64, 65536>) -> u8
+//                                     fb: &mutabilis acies<u8, 786432>,
+//                                     zb: &mutabilis acies<f64, 262144>) -> u8
 //
 // takes the whole "EXSG" fixed-point stream AS ONE BUFFER (Kiln's N64 build
-// holds it in a ROM, not on a stdin), rasterises into the caller's
-// framebuffer and 1/z z-buffer, and returns a status:
+// holds it in a ROM, not on a stdin), rasterises at 512x512 into the
+// caller's framebuffer and 1/z z-buffer, and returns a status:
 //
 //   0  rendered
 //   1  bad magic (not "EXSG")
@@ -22,20 +22,60 @@
 //   4  trailing bytes (the decode did not end at exactly 44801)
 //
 // The stream program is now a pump, not a parser: signaculum.exsc copies
-// stdin into the buffer and hands over; its output bytes are UNCHANGED, by
-// measurement, recorded per the repo's evidence discipline.
+// stdin into the buffer and hands over.
 //
-// THE ORDER IS THE CONTRACT: every f64 operation below was moved VERBATIM
-// from signaculum.exsc, in exactly the association and order the oracle
-// prototypes/signaculum_oracle.py mirrors line for line. The decode is the
+// STAGE 5.4 -- THE PIXEL LOOP IS LANE-PARALLEL (spec 5.4's acies row, the
+// stage-5.2 whole-acy arithmetic committed at c2eb8e8). The four
+// loop-carried f64 accumulators of the pixel loop -- the three edge
+// functions w0/w1/w2 and the depth qd -- are `acies<f64, 8>`: each
+// 8-pixel-group step is ONE packed vadd vf64.8 per accumulator (four per
+// group step), and each row's lane seeds are one broadcast add per
+// accumulator against per-face lane offsets (lad * step, hoisted to face
+// setup). What stays SCALAR PER LANE, by deliberate v1 settlement: the
+// coverage test and the z-test-with-conditional-store. There is NO
+// extract/splat/mask primitive in the language -- a lane is read or written
+// by ordinary indexing `v[l]`, and a conditional store has no mask shape.
+// That is why the per-lane tests index the acies instead of blending.
+//
+// THE ASSOCIATION CHANGED, ON PURPOSE, AND THE GOLDEN WAS RE-PROVEN.
+// The 256x256 scalar chain seeded w0 at the row's left edge and reached
+// pixel x by x-bx0 successive fadds; the lane chain seeds EIGHT lanes at
+// once as broadcast(seed) + [0..7]*step (one fmul + one fadd per lane
+// offset) and then advances in steps of 8*step. Same function, different
+// association, different last-bits -- so tests/programs/signaculum/
+// expected.out is a NEW golden, produced from the reference backend's own
+// run and re-proven byte-for-byte through the whole chain (reference; C
+// backend gcc AND clang at -O0 AND -O2, each with -ffp-contract=off
+// -fno-fast-math -fsanitize=undefined; big-endian mips64-none-o64 under
+// qemu-mipsn32) exactly as K1 proved the first one. The Cursor decode and
+// the bounds-checked signature semantics are UNCHANGED: the decode is the
 // same DIVISION of each 2^-23-grid integer by 8388608.0 -- a power of two,
 // exact, so both sides hold identical bits -- and the bounds checks are
-// integer work that never touches an f64. Change the association and the
-// bytes part ways, by design.
+// integer work that never touches an f64.
 //
-// The borrow is also the stack story: fb and zb are the caller's storage
-// (ADR 0016), so this frame keeps only sx/sy/qq (3 x 1493 x 8 bytes), the
-// 262 KB the stream skin's own locals carry, not the engine's.
+// THE RESOLUTION IS 512x512, A MEASURED CHOICE. The 256x256 scalar
+// program's reference-backend run measured 0.202 s wall on the development
+// host. At 512x512 with lanes the reference run measures 0.364 s (3-run
+// mean) and the big-endian mips64 qemu cross run measures 0.965 s (3-run
+// mean) against the cross phase's 120 s budget -- 124x headroom, so the
+// budget was not the binding constraint for 1024x1024. The STACK was: at
+// 1024x1024 the pump's caller-owned buffers alone are 3,145,728 B
+// framebuffer + 8,388,608 B z-buffer + 44,801 B stream = 11,579,137 B in
+// one frame, over the 8,388,608 B (8 MiB) default process stack this
+// prelude runs on (and qemu-user's), so 1024x1024 would need a storage
+// change outside this stage's scope. Rejected on that measurement, not on
+// a guess. Framebuffer here is 512*512*3 = 786,432 B, the f64 z-buffer is
+// 512*512 = 262,144 lanes (2,097,152 B); both caller-owned (ADR 0016), so
+// this frame keeps only sx/sy/qq (3 x 1493 x 8 bytes) and the lane
+// machinery (~300 B), not the engine's.
+//
+// "Optimized" is a property of the PROGRAM, provable from the emitted text:
+// per vertex ONE division (iz = 1/z, reused for both screen axes and the
+// depth), per face ONE division (1/area), and in the pixel loop NONE --
+// census is a grep over this file and the emitted .asm, recorded in
+// tests/programs/signaculum/TEST. The pixel loop's float work is exactly
+// four packed vadd vf64.8 per 8-pixel group plus the scalar per-lane
+// compares and stores.
 // ---------------------------------------------------------------------------
 
 // The buffer-side cursor the decode helpers share: where the next byte is,
@@ -90,11 +130,12 @@ functio lege_u16(b: acies<u8, 44801>, c: &mutabilis Cursor) -> mensura {
 }
 
 functio in_f64(v: i64) -> f64 {
-    // q / 2^23: exact. The oracle's decode is the same division.
+    // q / 2^23: exact. Any consumer of the stream divides by the same power
+    // of two, so every side holds identical bits.
     redde v sicut f64 / 8388608.0;
 }
 
-publica functio signaculum_pingue(exsg: acies<u8, 44801>, fb: &mutabilis acies<u8, 196608>, zb: &mutabilis acies<f64, 65536>) -> u8 {
+publica functio signaculum_pingue(exsg: acies<u8, 44801>, fb: &mutabilis acies<u8, 786432>, zb: &mutabilis acies<f64, 262144>) -> u8 {
     mutabilis cur = Cursor { pos: 0, status: 0 };
 
     // ---- EXSG header ------------------------------------------------------
@@ -144,6 +185,7 @@ publica functio signaculum_pingue(exsg: acies<u8, 44801>, fb: &mutabilis acies<u
     }
 
     // ---- per-vertex: decode, rotate, project; keep screen x, y and 1/z ---
+    // The 511.0 scale maps NDC [-1,1] onto the 512-wide pixel grid.
     mutabilis sx: acies<f64, 1493> = [0.0; 1493];
     mutabilis sy: acies<f64, 1493> = [0.0; 1493];
     mutabilis qq: acies<f64, 1493> = [0.0; 1493];
@@ -160,9 +202,9 @@ publica functio signaculum_pingue(exsg: acies<u8, 44801>, fb: &mutabilis acies<u
         firma zv: f64 = pz + cam_d;
         firma iz: f64 = 1.0 / zv;
         firma xw: f64 = (px * cam_f) * iz;
-        sx[i] = (xw * 0.5 + 0.5) * 255.0;
+        sx[i] = (xw * 0.5 + 0.5) * 511.0;
         firma yw: f64 = (py * cam_f) * iz;
-        sy[i] = (0.5 - yw * 0.5) * 255.0;
+        sy[i] = (0.5 - yw * 0.5) * 511.0;
         qq[i] = iz;
     }
     si cur.status ne 0 {
@@ -172,15 +214,23 @@ publica functio signaculum_pingue(exsg: acies<u8, 44801>, fb: &mutabilis acies<u
     // ---- framebuffer ground: 0x0f1216, as logo/exsecutor-logo.png --------
     // Both buffers are the caller's storage; a library that did not fill
     // them itself would be trusting the engine to.
-    per k in 0..65536 {
+    per k in 0..262144 {
         firma g: mensura = k sicut mensura * 3;
         (*fb)[g] = 15;
         (*fb)[g + 1] = 18;
         (*fb)[g + 2] = 22;
     }
-    per k in 0..65536 {
+    per k in 0..262144 {
         (*zb)[k] = 0.0;
     }
+
+    // ---- the lane constants -----------------------------------------------
+    // lad is the lane index as f64: lane l of every seed acies holds the
+    // value for pixel (base + l). off* = lad * step is the per-face lane
+    // offset vector; the group step vectors (8*step broadcast) advance a
+    // whole group with one vadd each. ONE vmul per accumulator per face for
+    // the offsets; everything else in the pixel loop is a packed add.
+    firma lad: acies<f64, 8> = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
 
     // ---- per face: read, cull, rasterise ---------------------------------
     // A covered pixel of a covered face wins iff its 1/z is the larger.
@@ -224,8 +274,8 @@ publica functio signaculum_pingue(exsg: acies<u8, 44801>, fb: &mutabilis acies<u
                 m = x2;
             }
             mutabilis bx1: i64 = m sicut i64 + 1;
-            si bx1 gt 255 {
-                bx1 = 255;
+            si bx1 gt 511 {
+                bx1 = 511;
             }
             m = y0;
             si y1 lt m {
@@ -246,49 +296,97 @@ publica functio signaculum_pingue(exsg: acies<u8, 44801>, fb: &mutabilis acies<u
                 m = y2;
             }
             mutabilis by1: i64 = m sicut i64 + 1;
-            si by1 gt 255 {
-                by1 = 255;
+            si by1 gt 511 {
+                by1 = 511;
             }
             si bx0 le bx1 {
                 si by0 le by1 {
                     // 1/z is linear in screen space: the depth steps one
-                    // fadd per pixel, off ONE division for the face.
+                    // lane-add per group, off ONE division for the face.
                     firma ra: f64 = 1.0 / area;
                     firma a: f64 = ((q1 - q0) * (y2 - y0) - (q2 - q0) * (y1 - y0)) * ra;
                     firma b: f64 = ((q2 - q0) * (x1 - x0) - (q1 - q0) * (x2 - x0)) * ra;
                     firma dw0: f64 = y1 - y2;
                     firma dw1: f64 = y2 - y0;
                     firma dw2: f64 = y0 - y1;
+                    // ---- lane vectors for this face -------------------------
+                    // off*: lane l starts step*l ahead of the row seed --
+                    // ONE vmul each. g*: a group of 8 advances by step*8 --
+                    // broadcast once, then ONE vadd per accumulator per
+                    // group in the pixel loop.
+                    firma dw0v: acies<f64, 8> = [dw0; 8];
+                    firma dw1v: acies<f64, 8> = [dw1; 8];
+                    firma dw2v: acies<f64, 8> = [dw2; 8];
+                    firma av: acies<f64, 8> = [a; 8];
+                    firma off0: acies<f64, 8> = lad * dw0v;
+                    firma off1: acies<f64, 8> = lad * dw1v;
+                    firma off2: acies<f64, 8> = lad * dw2v;
+                    firma offq: acies<f64, 8> = lad * av;
+                    firma dw0g: acies<f64, 8> = [dw0 * 8.0; 8];
+                    firma dw1g: acies<f64, 8> = [dw1 * 8.0; 8];
+                    firma dw2g: acies<f64, 8> = [dw2 * 8.0; 8];
+                    firma ag: acies<f64, 8> = [a * 8.0; 8];
                     firma byp1: i64 = by1 + 1;
                     firma bxp1: i64 = bx1 + 1;
                     per yy in by0..byp1 {
                         firma pyf: f64 = yy sicut f64 + 0.5;
                         firma pxf: f64 = bx0 sicut f64 + 0.5;
-                        mutabilis w0: f64 = (x1 - pxf) * (y2 - pyf) - (x2 - pxf) * (y1 - pyf);
-                        mutabilis w1: f64 = (x2 - pxf) * (y0 - pyf) - (x0 - pxf) * (y2 - pyf);
-                        mutabilis w2: f64 = (x0 - pxf) * (y1 - pyf) - (x1 - pxf) * (y0 - pyf);
+                        // the row seeds, scalar, exactly as the 256x256 chain
+                        // computed them -- the association change the new
+                        // golden records begins at the lane broadcast below.
+                        firma w0s: f64 = (x1 - pxf) * (y2 - pyf) - (x2 - pxf) * (y1 - pyf);
+                        firma w1s: f64 = (x2 - pxf) * (y0 - pyf) - (x0 - pxf) * (y2 - pyf);
+                        firma w2s: f64 = (x0 - pxf) * (y1 - pyf) - (x1 - pxf) * (y0 - pyf);
                         firma tq: f64 = q0 + a * (pxf - x0);
-                        mutabilis qd: f64 = tq + b * (pyf - y0);
-                        firma row: mensura = yy sicut mensura * 256;
-                        per xx in bx0..bxp1 {
-                            si w0 le 0.0 {
-                                si w1 le 0.0 {
-                                    si w2 le 0.0 {
-                                        firma idx: mensura = row + xx sicut mensura;
-                                        si qd gt (*zb)[idx] {
-                                            (*zb)[idx] = qd;
-                                            firma o: mensura = idx * 3;
-                                            (*fb)[o] = cr;
-                                            (*fb)[o + 1] = cg;
-                                            (*fb)[o + 2] = cb;
+                        firma qds: f64 = tq + b * (pyf - y0);
+                        // lane seeds: broadcast(seed) + lad*step. ONE vadd
+                        // each (the vmul is the hoisted off*); lane l of the
+                        // acies is pixel bx0 + l of this row.
+                        mutabilis w0v: acies<f64, 8> = [w0s; 8];
+                        w0v = w0v + off0;
+                        mutabilis w1v: acies<f64, 8> = [w1s; 8];
+                        w1v = w1v + off1;
+                        mutabilis w2v: acies<f64, 8> = [w2s; 8];
+                        w2v = w2v + off2;
+                        mutabilis qdv: acies<f64, 8> = [qds; 8];
+                        qdv = qdv + offq;
+                        firma row: mensura = yy sicut mensura * 512;
+                        // ---- the pixel loop: 8 pixels per group ------------
+                        // THE v1 SETTLEMENT, restated at the point of use:
+                        // coverage and the z-test/store stay SCALAR PER LANE
+                        // -- a lane is read by ordinary indexing and the
+                        // conditional store has no mask shape in the
+                        // language. The only packed float ops in this loop
+                        // are the four vadd vf64.8 at the bottom. terminus 64
+                        // is exact: a 512-wide row is at most 64 groups.
+                        mutabilis base: i64 = bx0;
+                        dum base le bx1 terminus 64 {
+                            per l in 0..8 {
+                                firma xxl: i64 = base + l sicut i64;
+                                si xxl le bx1 {
+                                    si w0v[l] le 0.0 {
+                                        si w1v[l] le 0.0 {
+                                            si w2v[l] le 0.0 {
+                                                firma idx: mensura = row + xxl sicut mensura;
+                                                si qdv[l] gt (*zb)[idx] {
+                                                    (*zb)[idx] = qdv[l];
+                                                    firma o: mensura = idx * 3;
+                                                    (*fb)[o] = cr;
+                                                    (*fb)[o + 1] = cg;
+                                                    (*fb)[o + 2] = cb;
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
-                            w0 = w0 + dw0;
-                            w1 = w1 + dw1;
-                            w2 = w2 + dw2;
-                            qd = qd + a;
+                            // FOUR PACKED VADD vf64.8 -- the whole of the
+                            // group's float arithmetic.
+                            w0v = w0v + dw0g;
+                            w1v = w1v + dw1g;
+                            w2v = w2v + dw2g;
+                            qdv = qdv + ag;
+                            base = base + 8;
                         }
                     }
                 }

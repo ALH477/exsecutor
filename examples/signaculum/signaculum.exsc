@@ -5,24 +5,20 @@
 // The float wave's whole-model program, now THE STREAM SKIN of it: the
 // Exsecutor logo ("Crossed Ascension",
 // logo/Meshy_AI_Crossed_Ascension_0910024256_texture.obj -- 1,493 vertices,
-// 2,981 faces) read as a fixed-point stream on stdin, rasterised at 256x256
+// 2,981 faces) read as a fixed-point stream on stdin, rasterised at 512x512
 // with a 1/z z-buffer and backface culling, written as a binary P6 on
-// stdout. Held byte-identical to prototypes/signaculum_oracle.py, the
-// independent implementation that mirrors the renderer's f64 operation
-// ORDER line for line (the agreement spec 9.3 turns into a byte claim).
-// THE ORDER IS THE CONTRACT: change either side's association and the
-// bytes part ways, by design.
+// stdout. Stage 5.4 moved the pixel loop to acies<f64, 8> lanes (see
+// forma.exsc's header); the pump does no arithmetic, so the stream skin's
+// only share of the upgrade is the three buffer-size constants and the P6
+// header below.
 //
-// THE SPLIT, and why: the decode, projection and rasteriser moved VERBATIM
-// into forma.exsc as the pure library `signaculum_pingue(exsg, fb, zb)` --
+// THE SPLIT, and why: the decode, projection and rasteriser moved into
+// forma.exsc as the pure library `signaculum_pingue(exsg, fb, zb)` --
 // buffer in, caller-owned buffers out, no Lector/Scriptor -- because an
 // embedding engine (Kiln's N64 build) holds the model in a ROM and the
 // framebuffer in its own storage, and has no stdin to stream from. What is
 // left here is a pump, not a parser: copy stdin into one acies, hand over,
-// write the P6 out of the framebuffer the callee filled. The bytes on
-// stdout are UNCHANGED, measured against tests/programs/signaculum/
-// expected.out on both backends and the four C builds -- recorded per the
-// repo's evidence discipline, not assumed.
+// write the P6 out of the framebuffer the callee filled.
 //
 // Nothing transcendental or texture-shaped is computed in either file: the
 // rotation matrix, the camera constants and the baked per-face colours
@@ -33,9 +29,9 @@
 // "Optimized" is, as in examples/pictura/, a property of the PROGRAM,
 // provable from the IR: per vertex ONE division (iz = 1/z, reused for both
 // screen axes and the depth), per face ONE division (1/area), and in the
-// pixel loop none -- each edge function and the depth step one fadd per
-// pixel. The flat per-face colour means a covered pixel is three byte
-// stores. All of that now lives in forma.exsc.
+// pixel loop none -- each 8-pixel group steps each edge function and the
+// depth with ONE packed vadd vf64.8. The flat per-face colour means a
+// covered pixel is three byte stores. All of that lives in forma.exsc.
 //
 // The stream ("EXSG", prototypes/signaculum_mesh.py writes it): every
 // float arrives as an integer on the 2^-23 grid, decoded by DIVISION by
@@ -64,18 +60,18 @@ functio signaculum_redde(l: Lector, s: Scriptor) -> mensura {
     }
 
     // ---- render into storage this frame owns ------------------------------
-    mutabilis fb: acies<u8, 196608> = [0; 196608];
-    mutabilis zb: acies<f64, 65536> = [0.0; 65536];
+    mutabilis fb: acies<u8, 786432> = [0; 786432];
+    mutabilis zb: acies<f64, 262144> = [0.0; 262144];
     si signaculum_pingue(exsg, fb, zb) ne 0 {
         redde 0;
     }
 
     // ---- P6 on stdout ------------------------------------------------------
     mutabilis n: mensura = s.scribe("P6
-256 256
+512 512
 255
 ");
-    per i in 0..196608 {
+    per i in 0..786432 {
         n = n + s.scribe_octeto(fb[i]);
     }
     redde n;

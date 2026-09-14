@@ -1,30 +1,80 @@
-# The Exsecutor logo's 3D model, rendered by the language it compiles.
+# The Exsecutor logo's 3D model, rendered by the language it compiles --
+# at 512x512, lane-parallel (Stage 5.4).
 #
-# examples/signaculum/ is now three files in two layers. forma.exsc is the
-# PURE core: signaculum_pingue(exsg, fb, zb) takes the whole fixed-point
+# examples/signaculum/ is three files in two layers. forma.exsc is the PURE
+# core: signaculum_pingue(exsg, fb, zb) takes the whole fixed-point
 # description of logo/Meshy_AI_Crossed_Ascension_0910024256 -- 1493
 # vertices, 2981 faces, baked per-face flat colours -- as ONE 44,801-byte
 # buffer (tests/data/signaculum_mesh.bin, written by the producer
-# prototypes/signaculum_mesh.py), rasterises it at 256x256 with a 1/z
+# prototypes/signaculum_mesh.py), and rasterises it at 512x512 with a 1/z
 # z-buffer, backface culling and incremental edge functions into
-# CALLER-OWNED framebuffer and z-buffer borrows, and returns a status
-# (0 rendered; 1 bad magic; 2 bad counts; 3 short stream; 4 trailing
-# bytes) -- the engine entry point Kiln consumes with a ROM, no stream.
-# signaculum.exsc is the stream skin: a pump that copies stdin into the
-# buffer, hands over, and writes the binary P6 PPM out of the framebuffer.
-# ascensus.exsc is the unchanged initium driver. Every float the program
-# holds is delivered as an integer on the 2^-23 grid and decoded by
-# division by 8388608.0 -- a power of two, so the f64 quotient is EXACT
-# on both sides and the program and oracle hold identical f64 bits from
-# the first operation on.
+# CALLER-OWNED framebuffer (786,432 B) and z-buffer (262,144 f64 lanes)
+# borrows, returning a status (0 rendered; 1 bad magic; 2 bad counts;
+# 3 short stream; 4 trailing bytes) -- the engine entry point Kiln consumes
+# with a ROM, no stream. signaculum.exsc is the stream skin: a pump that
+# copies stdin into the buffer, hands over, and writes the binary P6 PPM
+# out of the framebuffer. ascensus.exsc is the initium driver. Every float
+# the program holds is delivered as an integer on the 2^-23 grid and
+# decoded by division by 8388608.0 -- a power of two, so the f64 quotient
+# is EXACT on both sides and program and consumer hold identical f64 bits
+# from the first operation on.
 #
-# The golden is expected.out, produced by prototypes/signaculum_oracle.py,
-# the independent second implementation: it MIRRORS the program's f64
-# operation order line for line, so under round-to-nearest-even (the
-# 0x1F80 MXCSR image both backends start with) the two either agree byte
-# for byte or one side's operation order changed. Both backends are held
-# to it: the run phase below, then the differential phase over gcc/clang
-# at -O0/-O2.
+# THE LANE SHAPE (Stage 5.4). The pixel loop's four loop-carried f64
+# accumulators (edge functions w0/w1/w2 and depth qd) are acies<f64, 8>:
+# each 8-pixel-group step is ONE packed vadd vf64.8 per accumulator; each
+# row's lane seeds are one broadcast add per accumulator against the
+# per-face offsets lad * step. Coverage and the z-test/store stay SCALAR
+# PER LANE -- v[l] indexing -- because the language has no mask shape for a
+# conditional store (the deliberate v1 settlement, recorded in forma.exsc's
+# header). THE ASSOCIATION CHANGED against the old 256x256 scalar
+# per-pixel chain: lane l's value at group g is broadcast(seed) + l*step
+# accumulated in steps of 8*step, not the scalar chain's successive single
+# fadds -- different last bits, ON PURPOSE, so the golden below is NEW and
+# was re-proven whole.
+#
+# THE RE-PROOF. expected.out (786,447 bytes: the 15-byte P6 header +
+# 786,432 pixel bytes; "P6\n512 512\n255\n") was produced from the
+# REFERENCE backend's own run and then re-proven byte-for-byte exactly as
+# K1 proved the first golden:
+#   reference backend (fasmg): byte-identical by construction (the golden
+#     IS its output; the cmp is run anyway and matches);
+#   the INDEPENDENT certificate, kept (driver decision): prototypes/
+#     signaculum_oracle.py was PORTED to the same lane pipeline -- numpy
+#     float64 elementwise mirroring the written op order (one IEEE
+#     rounding per lane per op), 512x512, same decode, same predicate --
+#     and its output byte-diffs 0 against expected.out (system python3,
+#     numpy 2.3.4; run.sh never runs the oracle -- expected.out is checked
+#     in);
+#   C backend, FOUR builds -- gcc -O0, gcc -O2, clang -O0, clang -O2, each
+#     `-O$opt -ffp-contract=off -fno-fast-math -fsanitize=undefined -w
+#     unit.c tests/c/exsrt_shim.c` -- every run byte-identical to the
+#     golden, every stderr empty (no UBSan report);
+#   cross: `--hospes mips64-none-o64 --emitte c` + the harness recipe
+#     (clang --target=mips64-unknown-linux-musl -mabi=n32 -march=mips3
+#     -ffreestanding -fno-builtin -nostdlib -static -O2 -std=c11 -G0
+#     -mno-abicalls -fno-pic -fuse-ld=lld -Wl,-e,_start
+#     -Wl,--build-id=none unit.c tests/c/exsrt_shim_mips.c), run under
+#     qemu-mipsn32: byte-identical, big-endian host proof at lane scale.
+# Measured times on the development host: reference-backend run 0.364 s
+# (3-run mean); qemu-mipsn32 cross run 0.965 s (3-run mean) against the
+# 120 s cross-phase timeout -- 124x headroom. 1024x1024 was rejected not
+# on time but on the 8 MiB default process stack: 1024^2 caller-owned
+# buffers total 11,579,137 B in one frame. Numbers and the decision are
+# recorded in forma.exsc's header.
+#
+# CENSUS (also in forma.exsc's header): the pixel loop contains ZERO
+# divisions -- the only division sites in the unit are in_f64 (the EXSG
+# decode, exact by a power of two), iz = 1.0/zv (ONE per vertex), and
+# ra = 1.0/area (ONE per face): `grep -c divsd` over the emitted fasmg is
+# 3, `grep -c divpd` is 0. `grep -c addpd` is 32: 8 whole-acy vadd vf64.8
+# sites (4 row-seed + 4 group-step), each lowered to 4 addpd over xmm
+# pairs. mulpd is 16: the 4 per-face lad*step offset vmuls, same fan-out.
+#
+# NOTE FOR THE DRIVER -- exit status: ascensus.exsc's self-check constant
+# is still the 256x256 byte count (196623); at 512x512 the pump returns
+# 786,447, so this row reports "got 'exit 1', expected 'exit 0'" until the
+# driver's one-constant ascensus.exsc update (196623 -> 786447) lands.
+# stdout byte-identity, stderr emptiness, and the audit all pass today.
 #
 # (No stdout= on purpose: expected.out IS the reference; naming both is
 # the run.sh failure for "which of the two governs?".)

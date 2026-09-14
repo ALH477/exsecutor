@@ -3,10 +3,11 @@
 // Copyright (C) 2026 The Exsecutor authors.
 // ---------------------------------------------------------------------------
 // The entry point, and the only file of the unit that names Mundus. Reads
-// the fixed-point mesh stream on stdin, writes the 256x256 P6 on stdout;
-// the byte count is the self-check (15 header bytes + 196608 pixels, so a
+// the fixed-point mesh stream on stdin, writes the 512x512 P6 on stdout;
+// the byte count is the self-check (15 header bytes + 786432 pixels, so a
 // parse that fell off the stream and returned 0 is an exit-1, not an
-// image).
+// image). The 512x512 frame is the Stage 5.4 lane-parallel upgrade
+// (forma.exsc's header); the constant changed with it, not the check.
 // ---------------------------------------------------------------------------
 
 publica functio initium(m: Mundus) -> u8 {
@@ -15,7 +16,7 @@ publica functio initium(m: Mundus) -> u8 {
     firma l = Lector.ab_introitu(a);
     firma s = Scriptor.ad_exitum(a);
     firma n = signaculum_redde(l, s);
-    si n ne 196623 {
+    si n ne 786447 {
         redde 1;
     }
     redde 0;
