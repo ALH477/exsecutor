@@ -3027,12 +3027,12 @@ proc __bfa_mem_plan, module, ty, ord
 endp
 
 ; __bfa_mem_access(module, ty) -> eax = 0 for the 64-bit access Tier 2
-; always had (any 64-bit type), else 8/16/32 for a `uN`/`iN` of that width,
-; with edx = 1 iff it is an `iN`. Only the one-instruction form reaches it
-; (__bfa_mem_plan sends u24/u40/u48/u56 and every ordered access to the
-; byte-by-byte form), so what dies here is a width that is not a whole
-; number of bytes -- a bit field, which is `loadbits`/`storebits` -- or a
-; float narrower than 64 bits.
+; always had (any 64-bit type -- floats included, as bit baggage), else
+; 8/16/32 for a `uN`/`iN`/`f32` of that width, with edx = 1 iff it is an
+; `iN`. Only the one-instruction form reaches it (__bfa_mem_plan sends
+; u24/u40/u48/u56 and every ordered access to the byte-by-byte form), so
+; what dies here is a width that is not a whole number of bytes -- a bit
+; field, which is `loadbits`/`storebits`.
 proc __bfa_mem_access, module, ty
 	locals
 		slot kind, dd
@@ -3057,6 +3057,10 @@ proc __bfa_mem_access, module, ty
 	; possible (docs/design/c-backend.md finding 18, third bullet, which
 	; called this a silent miscompile -- it is not silent, it just said
 	; the wrong thing).
+	cmp	edx, BFA_TK_F64
+	je	.f64
+	cmp	edx, BFA_TK_F32
+	je	.f32
 	cmp	edx, BFA_TK_PTR
 	je	.addr
 	cmp	edx, BFA_TK_REF
@@ -3074,6 +3078,22 @@ proc __bfa_mem_access, module, ty
 	je	.ok
 	cmp	eax, 32
 	je	.ok
+  .f64:
+	; A float in memory is BAGGAGE to this path: bits, not arithmetic.
+	; f64 takes the 64-bit form and f32 the u32 one; the integer movs the
+	; callers emit keep NaN payloads, -0.0 and subnormals exactly (no FP
+	; unit is involved, so no exception is even possible), and the slot
+	; layout floats already have -- fconst's zero-extended f32, the
+	; qword f64 -- is the one this loads and stores. `maior`/`minor` on
+	; a float still dies in __bfa_mem_plan: byte order is an integer
+	; surface (spec 5.2), and a float has no byte-order spelling.
+	xor	eax, eax
+	xor	edx, edx
+	return
+  .f32:
+	mov	eax, 32
+	xor	edx, edx
+	return
   .bad:
 	jmp	.after_msg
   .msg db "load/store: a width that is not a whole number of bytes (a bit field is `loadbits`/`storebits`)"

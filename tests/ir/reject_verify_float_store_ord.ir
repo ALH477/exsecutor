@@ -1,0 +1,16 @@
+; TEST: emit-exit=5
+;
+; `store f64 %p 0 maior %v`: the store twin of
+; reject_verify_float_load_ord.ir, same verifier rule 1 refusal.
+; The f32 form shares the path and needs no second fixture: the
+; refusal is on the ORDER word before the width is ever looked at.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = slot 8 8
+%2 = fconst f64 4607182418800017408
+store f64 %1 0 maior %2
+%3 = iconst u8 0
+ret %3
+}

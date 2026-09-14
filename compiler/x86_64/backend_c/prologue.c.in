@@ -100,6 +100,16 @@ static inline float exsi_f32_from_bits(uint32_t b)
 static inline double exsi_f64_from_bits(uint64_t b)
 { double d; __builtin_memcpy(&d, &b, sizeof d); return d; }
 
+/* The way back, for `store F`: the float's bit pattern as the integer the
+ * byte-store helpers carry. Same bit-cast, same assumption a few lines
+ * above (a float's byte order is the integer byte order) -- the round trip
+ * store-then-load is the identity on every --hospes row, which is all
+ * memory consistency asks of a bit pattern with no numeric reading. */
+static inline uint32_t exsi_bits_from_f32(float f)
+{ uint32_t b; __builtin_memcpy(&b, &f, sizeof b); return b; }
+static inline uint64_t exsi_bits_from_f64(double d)
+{ uint64_t b; __builtin_memcpy(&b, &d, sizeof b); return b; }
+
 /* itof from a signed integer's canonical bits. The carrier holds an iN
  * sign-extended (ssa-ir.md 2.2), so the two's-complement value IS the bit
  * pattern -- but C leaves a uint64_t -> int64_t conversion that does not

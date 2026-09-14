@@ -2116,7 +2116,14 @@ differentially against the reference backend — stdout bytes, exit status and
 trap kind, across gcc and clang at `-O0` and `-O2`, every one under UBSan
 (`tests/c/`, `tests/run.sh`'s differential phase) — and cross-runs on
 `mips64-none-o64` (§9.5). The differential phase also covers the float
-opcodes since that wave (`tests/ir/float_*.ir`, 52 checks).
+opcodes since that wave (`tests/ir/float_*.ir`). A follow-on wave of
+2026-09-14 extended the `load`/`store` rows to the float types —
+`nativus` only, the value as its raw IEEE bit pattern on the byte
+helpers — in both backends in one change, closing the last
+float-specific refusal inside a lowered row (pinned by
+`tests/ir/float_mem.ir`); `maior`/`minor` on a float stay refused, by
+the verifier first and by both emitters by name, because §5.2's byte
+order is an integer surface (`tests/ir/reject_verify_float_load_ord.ir`).
 
 Compile speed was measured and is **not** the constraint I previously claimed. `[UNREPRODUCED]` — the measurement harness is absent from the tree; figures carried forward from v0.2. gcc `-O0` on backend-style generated C:
 

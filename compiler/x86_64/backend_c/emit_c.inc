@@ -2290,7 +2290,7 @@ proc __bfc_mem_k, module, ty
 	cmp	eax, 2
 	je	.bad
 	cmp	eax, 3
-	je	.bad
+	je	.isfloat
 	mov	rdi, [module]
 	mov	esi, [ty]
 	call	__bfc_ty_info
@@ -2304,6 +2304,20 @@ proc __bfc_mem_k, module, ty
   .isaddr:
 	xor	eax, eax
 	return
+  .isfloat:
+	; a float's width field is 0 (floats are sized by KIND), so the N/8
+	; path cannot answer: f64 is 8 bytes, f32 4. The load/store floats are
+	; bit baggage to the byte helpers either way.
+	mov	rdi, [module]
+	mov	esi, [ty]
+	call	bfa_type_ptr
+	cmp	byte [rax + BfaType.kind], BFA_TK_F64
+	je	.isf64
+	mov	eax, 4
+	return
+  .isf64:
+	mov	eax, 8
+	return
   .notbytes:
 	jmp	.after_m1
   .m1 db "load/store: a width that is not a whole number of bytes is not implemented (the reference refuses it too)"
@@ -2313,7 +2327,7 @@ proc __bfc_mem_k, module, ty
 	call	__bfc_die
   .bad:
 	jmp	.after_m2
-  .m2 db "load/store: the accessed type must be an integer (uN/iN) or an address -- a float in memory has no lowering in EITHER backend (the reference's memory lowering refuses it too), which is the gap ssa-ir.md's own @dot example trips on"
+  .m2 db "load/store: the accessed type must be an integer (uN/iN), a float (f32/f64) or an address (floats in memory lower since the float wave's signaculum row -- f64 took the 64-bit form, f32 the u32 one, as bit baggage under the prologue's from_bits helpers)"
   .after_m2:
 	lea	rdi, [.m2]
 	mov	rsi, .after_m2 - .m2
@@ -2387,6 +2401,8 @@ proc __bfc_emit_load, ctx, module, func, instid
 	call	__bfc_ty_class
 	cmp	eax, 1
 	je	.addr
+	cmp	eax, 3
+	je	.float
 
 	mov	rdi, [ctx]
 	mov	rsi, [func]
@@ -2436,6 +2452,59 @@ proc __bfc_emit_load, ctx, module, func, instid
   .done:
 	mov	rdi, [ctx]
 	call	__bfc_semi
+	return
+
+  .float:
+	; `vK = exsi_f64_from_bits(exsi_ld_n(P + off, 8));` -- the byte helper
+	; reads the pattern as on every other host's terms, the bit-cast reads
+	; it as the double those bits ARE (the prologue's own byte-order
+	; assumption). No FP operation runs: the one-op-per-statement rule has
+	; nothing to protect here, and NaN payloads, -0.0 and subnormals come
+	; through untouched. `maior`/`minor` on a float dies below with the
+	; reference's own words -- byte order is an integer surface (spec 5.2).
+	cmp	dword [ord], BFA_ORDER_NATIVUS
+	jne	.ford
+	mov	rdi, [ctx]
+	mov	rsi, [func]
+	mov	edx, [instid]
+	call	__bfc_emit_result
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	bfa_type_ptr
+	cmp	byte [rax + BfaType.kind], BFA_TK_F64
+	je	.f64ld
+	__bfc_emtxt "exsi_f32_from_bits((uint32_t)"
+	jmp	.facc
+  .f64ld:
+	__bfc_emtxt "exsi_f64_from_bits("
+  .facc:
+	mov	rdi, [ctx]
+	mov	esi, [ord]
+	call	__bfc_emit_ldname
+	__bfc_emtxt "("
+	mov	rdi, [ctx]
+	mov	esi, [pv]
+	call	__bfc_emit_v
+	__bfc_emtxt " + "
+	mov	rdi, [ctx]
+	mov	esi, [off]
+	call	__bfa_out_u64
+	__bfc_emtxt ", "
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	edx, [tyv]
+	call	__bfc_emit_memk
+	__bfc_emtxt "))"
+	mov	rdi, [ctx]
+	call	__bfc_semi
+	return
+  .ford:
+	jmp	.after_fordmsg
+  .fordmsg db "load/store: `maior`/`minor` order an integer's bytes; this is not a uN/iN"
+  .after_fordmsg:
+	lea	rdi, [.fordmsg]
+	mov	rsi, .after_fordmsg - .fordmsg
+	call	__bfc_die
 	return
 endp
 
@@ -2503,11 +2572,43 @@ proc __bfc_emit_store, ctx, module, func, instid
 	cmp	eax, 1
 	jne	.plainval
 	__bfc_emtxt "(uint64_t)(uintptr_t)"
+	jmp	.value
   .plainval:
+	cmp	eax, 3
+	jne	.value
+	; `exsi_st_n(P + off, 8, exsi_bits_from_f64(V));` -- bits to bytes, the
+	; exact inverse of the load arm; `maior`/`minor` on a float dies with
+	; the same words the reference uses.
+	cmp	dword [ord], BFA_ORDER_NATIVUS
+	jne	.sf_ord
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	bfa_type_ptr
+	cmp	byte [rax + BfaType.kind], BFA_TK_F64
+	je	.f64st
+	__bfc_emtxt "exsi_bits_from_f32("
+	jmp	.fval
+  .f64st:
+	__bfc_emtxt "exsi_bits_from_f64("
+  .fval:
+	mov	rdi, [ctx]
+	mov	esi, [vv]
+	call	__bfc_emit_v
+	__bfc_emtxt "));", 10
+	return
+  .value:
 	mov	rdi, [ctx]
 	mov	esi, [vv]
 	call	__bfc_emit_v
 	__bfc_emtxt ");", 10
+	return
+  .sf_ord:
+	jmp	.after_sfordmsg
+  .sfordmsg db "load/store: `maior`/`minor` order an integer's bytes; this is not a uN/iN"
+  .after_sfordmsg:
+	lea	rdi, [.sfordmsg]
+	mov	rsi, .after_sfordmsg - .sfordmsg
+	call	__bfc_die
 	return
 endp
 

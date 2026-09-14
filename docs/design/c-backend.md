@@ -1,29 +1,29 @@
 # The C backend — design for spec §9.2's reach backend, library mode first
 
 Status: **C1, C2 and C3's host half are implemented and green, and the
-float opcodes are lowered (2026-09-13).**
+float opcodes are lowered (2026-09-13), and float `load`/`store` with them (2026-09-14).**
 `compiler/x86_64/backend_c/` exists (`emit_c.inc`, `program_c.inc`,
 `prologue.c.in`); `--emitte c` emits; the incantation table of D3 has been
 run under gcc 15.3.0 and clang 21.1.8 and is filled in below, with three
 cells that did not hold. The differential harness of D6 runs as two
 `tests/run.sh` phases:
 
-- **over `tests/ir/`: 39 of the 49 IR fixtures are lowerable and all 39
+- **over `tests/ir/`: 44 of the 58 IR fixtures are lowerable and all 44
   agree with the reference under four toolchains — gcc and clang, `-O0` and
-  `-O2`, `-fsanitize=undefined -fno-sanitize-recover=all` — for 156 checked
-  builds; the other 10 are rejection fixtures and the C emitter's exit
+  `-O2`, `-fsanitize=undefined -fno-sanitize-recover=all` — for 176 checked
+  builds; the other 14 are rejection fixtures and the C emitter's exit
   status matches the reference's on every one.**
-- **over `tests/programs/`: 26 of the 96 directories are eligible and all 26
+- **over `tests/programs/`: 32 of the 102 directories are eligible and all 32
   agree with the reference on stdout bytes, exit status and trap-or-not with
-  the abort kind, under the same four toolchains, for 104 checked builds
-  (18 distinct units — sixteen directories share a unit with another and
+  the abort kind, under the same four toolchains, for 128 checked builds
+  (some directories share a unit with another and
   emit byte-identical C, which is itself checked). The other 70 are the
   `receptio_vec_*` sweep, each declaring `c-differentia=nightly-sweep` in
   its own `TEST` directive: named, never skipped silently.** Nothing in the
   tree is ineligible for the other two reasons the key admits — no unit
   reaches past the shim's six routines, and the C emitter refuses no
   directory.
-- **the StreamDB v3 reader is among the 26.** `streamdb_{corpus,onus,caput,
+- **the StreamDB v3 reader is among the 32** (as is the logo renderer, `tests/programs/signaculum/`). `streamdb_{corpus,onus,caput,
   truncus}` produce byte-identical output through the C backend under all
   four builds; section 6.7 is the result.
 - **the float opcodes are lowered — D4 rows 24–28, 30–34 and 60.** Eleven
@@ -45,8 +45,8 @@ know the lowerings were right; what C2 still owed — the program corpus, and
 `tools/reproduce.sh` over two `--emitte c` units — landed with C3.
 
 What is still `[OPEN]` or `[UNTESTED]` is marked where it stands: in
-floats, the unordered compare predicates, `fma`, `bitcast`, float
-load/store, and the honouring of a declared `numeri` — both backends emit
+floats, the unordered compare predicates, `fma`, `bitcast`, and the
+honouring of a declared `numeri` — both backends emit
 default `ad_parem` code whatever is declared, and `EXS-E0701`'s driver
 wiring still does not exist (finding 23) — whole-program mode (D1), the
 N64 cross-compile (D7's target half), and
@@ -527,8 +527,8 @@ after the table; the C1 status column says what C1 does with the row.
 | 37 | `contrib h v` | refused, as `redinit` | refused |
 | 38 | `redfin F h` | refused, as `redinit` | refused |
 | 39 | `slot n align → ptr` | at function top: `_Alignas(align) unsigned char sk[n];`; at the instruction: `vk = sk;`. Alignment a power of two 1..16, as the reference requires | lowered |
-| 40 | `load T p off o` | integer `T`, whole bytes `k = N/8`: `nativus` → `vk = normT(exsi_ld_n(p + off, k), N)`; `maior` → `exsi_ld_be`; `minor` → `exsi_ld_le`; `k == 1` all three are one byte. `T = ptr`: `vk = (unsigned char *)(uintptr_t)exsi_ld_n(p + off, sizeof(void *))`. Not whole bytes: refused, as the reference does | lowered |
-| 41 | `store T p off o v` | `exsi_st_n(p + off, k, v)` / `exsi_st_be` / `exsi_st_le`; `ptr`: `exsi_st_n(p + off, sizeof(void *), (uintptr_t)v)` | lowered |
+| 40 | `load T p off o` | integer `T`, whole bytes `k = N/8`: `nativus` → `vk = normT(exsi_ld_n(p + off, k), N)`; `maior` → `exsi_ld_be`; `minor` → `exsi_ld_le`; `k == 1` all three are one byte. `T = ptr`: `vk = (unsigned char *)(uintptr_t)exsi_ld_n(p + off, sizeof(void *))`. Not whole bytes: refused, as the reference does. `T = f64/f32`, `nativus` only (the verifier refuses an order before either backend): `vk = exsi_f64_from_bits(exsi_ld_n(p + off, 8))` / `exsi_f32_from_bits((uint32_t)exsi_ld_n(p + off, 4))` — the bits through the integer byte helper and back through the `__builtin_memcpy` bit-cast, both halves byte-order-explicit; a float's IR width field is 0, so the byte count comes from the kind | lowered |
+| 41 | `store T p off o v` | `exsi_st_n(p + off, k, v)` / `exsi_st_be` / `exsi_st_le`; `ptr`: `exsi_st_n(p + off, sizeof(void *), (uintptr_t)v)`; `T = f64/f32`, `nativus` only: `exsi_st_n(p + off, 8, exsi_bits_from_f64(v))` / `…, 4, exsi_bits_from_f32(v))` — bit baggage exactly as the reference's `mov` (no arithmetic, so NaN payloads, −0.0 and subnormals survive; pinned by `tests/ir/float_mem.ir` on four toolchains) | lowered |
 | 42 | `loadbits T p byte bit` | `vk = ((unsigned)p[byte] >> (8 - bit - N)) & ((1u << N) - 1)` — the byte cast to `unsigned` *before* the shift (never promoted into `int`), shifts of at most 7, MSB-first (spec §5.2 rule 1). `bit + N > 8` refused: `bfc: emitter: loadbits/storebits: a field that straddles a byte boundary is not implemented (DeModFrame never straddles)` — parity with `reject_emit_straddle.ir`; an `iN` field refused as the reference refuses it | lowered |
 | 43 | `storebits T p byte bit v` | `p[byte] = (unsigned char)(((unsigned)p[byte] & ~(m << s)) \| (((unsigned)v & m) << s))`, `m = (1u << N) - 1`, `s = 8 - bit - N`; a read-modify-write of one byte, the neighbours untouched | lowered |
 | 44 | `copy n d s` | `__builtin_memcpy(d, s, n);` — non-overlapping is the lowering's guarantee (distinct slots; borrowed sources, IR 2.9); overlap is undefined by both backends and the differential test cannot compare it `[OPEN]` | lowered |
@@ -808,7 +808,7 @@ routine the shim does not define, so it would not link), `emitter-refusal`
 (`exsc --emitte c` refuses the module by name) — and an unrecognised value
 fails the fixture rather than silently becoming a new reason. The last two
 are unused today: every eligible unit's imports are within the shim's six,
-and the emitter refuses none of the 26.
+and the emitter refuses none of the 32.
 
 **How it runs**, as a fifth phase `run_differential_tests` of
 `tests/run.sh` after `run_program_tests` — one phase with two loops and two
@@ -962,18 +962,22 @@ yet accept (finding 18).
 ### D8 Not in scope for C1–C4
 
 Floats were this section's first item until 2026-09-13, when D4 rows
-24–28, 30–34 and 60 landed in both backends together. What remains outside
+24–28, 30–34 and 60 landed in both backends together; float `load`/`store`
+(`nativus`, the value as its raw bit pattern) followed on 2026-09-14 with
+the signaculum stage, closing the last float gap `ssa-ir.md`'s `@dot`
+example tripped on (finding 24). What remains outside
 the float lowering, each a refusal by name or a recorded `[OPEN]`, never
 a silent omission: the unordered `fcmp` predicates (`ssa-ir.md` 2.3 marks
 them `[OPEN]`; the emitter refuses the predicate word by name); `fma` and
-`bitcast` (D4 rows 29 and 35); a float in memory — `load`/`store` with a
-float type, which the reference's memory lowering refuses too, and which
-is the gap `ssa-ir.md`'s own `@dot` example trips on (finding 24); and
-the honouring of a declared `numeri` (finding 23). Also still here:
-`div`/`rem`, `muls`, the three `*ov` predicates — integer opcodes the
+`bitcast` (D4 rows 29 and 35); a float `load`/`store` under `maior` or
+`minor` — byte order is an integer surface (spec 5.2), refused by the
+verifier and by both emitters (`tests/ir/reject_verify_float_load_ord.ir`);
+the honouring of a declared `numeri` (finding 23); the three reduction
+opcodes — what `@dot` still trips; `div`/`rem`, `muls`,
+the three `*ov` predicates — integer opcodes the
 reference lacks, which enter **both** backends in one later milestone
 with fixtures for each; ARC — no object header exists in library mode;
-generics and dictionaries; `callind`; the three reduction opcodes;
+generics and dictionaries; `callind`;
 whole-program mode (D1). Each is a refusal by name in D4's table, never a
 silent omission.
 
@@ -1659,16 +1663,22 @@ Numbered; each names the document and the sentence.
     `EXS-E0701` is a `driver/` change this backend cannot make.
 
 24. **`ssa-ir.md`'s own `@dot` example cannot be lowered by either
-    backend, twice over.** Its body contains `%8 = load f32 %7 0 nativus`
-    — a float in memory, which both backends' memory lowering refuses
-    (the reference's `__bfa_mem_plan` dispatches on integer widths; the
-    C emitter's `__bfc_mem_k` dies on the float class) — and it is built
-    on `redinit`/`contrib`/`redfin`, refused in both backends since D4
-    was first written. A grammar's own illustrative example tripping two
-    refusals is a documentation gap in `ssa-ir.md`'s tree: either the
-    example gets an integer body, or float memory and the reductions
-    get lowerings, and that choice is not this backend's to make. D4's
-    row 40 refusal message names the example.
+    backend — reductions only, since 2026-09-14.** Its body contains
+    `%8 = load f32 %7 0 nativus` — a float in memory, which both
+    backends' memory lowering used to refuse (the reference's
+    `__bfa_mem_plan` dispatched on integer widths; the C emitter's
+    `__bfc_mem_k` died on the float class) — and it is built on
+    `redinit`/`contrib`/`redfin`, refused in both backends since D4
+    was first written. The float half closed on 2026-09-14: the
+    signaculum stage needed `acies<f64, N>` element loads and stores,
+    so float `load`/`store` in `nativus` order now lowers in both
+    backends (the value as its raw IEEE bit pattern, 8 or 4 bytes — no
+    arithmetic on the path), with `maior`/`minor` still refused by the
+    verifier and both emitters (`tests/ir/float_mem.ir`,
+    `tests/ir/reject_verify_float_load_ord.ir`, D4 rows 40–41). What
+    `@dot` still trips is the reductions half, and that choice —
+    example gets an integer body, or the reductions get lowerings —
+    is not this backend's to make.
 
 ## 9. What retires each marker
 

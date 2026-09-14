@@ -247,9 +247,18 @@ does not parse, so there is no such case. The verifier refuses a `load` or
 `tests/ir/reject_verify_load_width.ir` — and admits a straddling
 `loadbits`, which the emitter then refuses, the two layers disagreeing on
 purpose: `tests/ir/reject_emit_straddle.ir`. `DeModFrame` never
-straddles.) `copy n` is bytes only; a struct holding references is copied as
-bytes plus one `retain` per reference field known from the layout. Bounds are
-explicit `chk` instructions, so both backends trap at the same point.
+straddles.) A float `load`/`store` — `load f64 %p 8 nativus` — carries the
+value as its raw IEEE bit pattern, 8 bytes for `f64` and 4 for `f32`,
+`nativus` order only: `maior`/`minor` order an integer's bytes (spec §5.2),
+so the verifier refuses a float under them
+(`tests/ir/reject_verify_float_load_ord.ir`), and both emitters refuse the
+same text for the path that reaches them without the verifier. The nativus
+case lowers in both backends since 2026-09-14 (the signaculum stage needed
+it; `tests/ir/float_mem.ir` pins the bit-baggage semantics — a NaN payload,
+-0.0's sign and a subnormal's bits all survive). `copy n` is bytes only; a
+struct holding references is copied as bytes plus one `retain` per reference
+field known from the layout. Bounds are explicit `chk` instructions, so both
+backends trap at the same point.
 
 The reference emitter gives `copy n` two forms, chosen by
 `BFA_COPY_UNROLL_MAX = 128` in `backend_fasmg/emit.inc` (`9ede8bf`): at or
