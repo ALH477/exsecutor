@@ -1,0 +1,62 @@
+// TEST: entry=26 shape=bytes status=run
+
+// §14 entry 26 -- an RGB triangle over f64 (float literals, `/`, `fneg`,
+// ordered `fcmp`, `itof`/`ftoi`), incrementally rasterized to a binary P6
+// image on stdout by edge functions stepped one add per pixel, judged
+// byte-identical between the reference and C backends AND byte-identical
+// to an independently computed oracle.
+//
+// SHAPES: `bytes`, like entries 16, 17, 25. The claim's four legs, and
+// where each is actually carried, because like entry 25's fixture this
+// file is deliberately an ordinary, already-valid float module and the
+// certificate proper lives elsewhere:
+//
+//   1. reference backend vs the oracle -- tests/run.sh's program run
+//      phase: tests/programs/pictura_triangulum/ renders
+//      examples/pictura/ and `cmp`s stdout with expected.out, which
+//      prototypes/pictura_oracle.py wrote. The oracle is the "not our
+//      own bug" half (the way entry 23 vendors an external certificate):
+//      independently written, and mirroring the program's f64 operation
+//      ORDER, which §9.3's determinism law turns into a byte claim.
+//   2. C backend vs the same oracle -- the differential phase: four
+//      toolchains (gcc/clang at -O0 and -O2), each run compared with the
+//      reference's bytes. One IR op per C statement (c-backend.md D3)
+//      is what makes fp-contraction absent by construction.
+//   3. ambient-condition determinism -- THIS SHAPE: tools/reproduce.sh,
+//      run by this fixture's shape=bytes branch exactly as for 16/17/25.
+//   4. the census: the program's emitted fasmg holds exactly 4
+//      divss/divsd instructions, three per-vertex reciprocals and one
+//      1/det, none inside the pixel loop -- re-measured by hand at Stage
+//      3 (grep -c 'divss\|divsd' over the emitted .asm), stated in
+//      examples/pictura/pictura.exsc's header. "Optimized" here is a
+//      property of the PROGRAM, provable from the IR; §9.2 forbids an
+//      optimizing backend.
+//
+// The one deliberately open row: this entry is not in tests/run.sh's
+// cross phase (no cross=yes). Big-endian f64 EXECUTION on mips64 is
+// unmeasured -- the literal bits are host-independent (dec754 converts
+// at check time) but the runtime arithmetic is not measured there, so
+// the entry claims exactly what the evidence shows and no more: §9.5's
+// mips64 float row stays [UNTESTED] until an emulated run says
+// otherwise.
+//
+// This file, as the fixture, exercises the float surface once more in
+// isolation: a barycentric mix at a fixed weight, f64 throughout.
+
+publica functio mixta() -> u8 {
+    firma w0: f64 = 0.25;
+    firma w1: f64 = 0.25;
+    firma w2: f64 = 0.5;
+    firma r: f64 = ((255.0 * w0 + 0.0 * w1) + 0.0 * w2);
+    firma g: f64 = ((0.0 * w0 + 0.0 * w1) + 255.0 * w2);
+    firma b: f64 = ((0.0 * w0 + 255.0 * w1) + 0.0 * w2);
+    // 63.75 truncates to 63; 191.25 to 191; 63.75 to 63 -- the two ways
+    // 0.25/0.5 weights quarter a channel, and ftoi's toward-zero step.
+    firma tr: i64 = r sicut i64;
+    firma tg: i64 = g sicut i64;
+    firma tb: i64 = b sicut i64;
+    si (tr + tg + tb) ne 317 {
+        redde 1;
+    }
+    redde 0;
+}

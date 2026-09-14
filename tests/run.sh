@@ -243,9 +243,10 @@ run_unit_tests() {
 
 run_conformance_tests() {
   # ---------------------------------------------------------------------
-  # spec §14, 24 entries, FIVE rule shapes (tests/README.md, "24 entries,
-  # five rule shapes" -- a runner that assumes one shape quietly mishandles
-  # four):
+  # spec §14, 26 entries (was 24 when this header was written; 25 appended
+  # with the mips64 cross row, 26 with the float wave's RGB triangle), FIVE
+  # rule shapes (tests/README.md, "entries, five rule shapes" -- a runner
+  # that assumes one shape quietly mishandles four):
   #
   #   code   -- "exsc rejects this source with exactly code EXS-Exxxx"
   #             (entries 2-14, 18-22)
@@ -386,8 +387,8 @@ run_conformance_tests() {
   #                    floor, something silently stopped working.
   echo "== conformance suite (tests/conformance/, spec §14) =="
   local dir="$REPO_ROOT/tests/conformance"
-  local fixture_floor=25
-  local run_floor=11
+  local fixture_floor=26
+  local run_floor=12
 
   if [[ ! -d "$dir" ]]; then
     bad "tests/conformance/ does not exist"
@@ -469,8 +470,8 @@ run_conformance_tests() {
       bad "$name: directive missing entry=/shape=/status= (got: '$directive')"
       continue
     fi
-    if [[ ! "$entry" =~ ^[0-9]+$ || "$entry" -lt 1 || "$entry" -gt 25 ]]; then
-      bad "$name: entry='$entry' is not a §14 entry number (1-25)"
+    if [[ ! "$entry" =~ ^[0-9]+$ || "$entry" -lt 1 || "$entry" -gt 26 ]]; then
+      bad "$name: entry='$entry' is not a §14 entry number (1-26)"
       continue
     fi
     seen_entries[$entry]=$(( ${seen_entries[$entry]:-0} + 1 ))
@@ -574,7 +575,7 @@ run_conformance_tests() {
 
   local missing=() dup=()
   local i
-  for ((i = 1; i <= 24; i++)); do
+  for ((i = 1; i <= 26; i++)); do
     case "${seen_entries[$i]:-0}" in
       0) missing+=("$i") ;;
       1) ;;
@@ -582,7 +583,7 @@ run_conformance_tests() {
     esac
   done
   if [[ ${#missing[@]} -gt 0 ]]; then
-    bad "no fixture claims entry=${missing[*]} -- §14 has 24 entries, all must be represented"
+    bad "no fixture claims entry=${missing[*]} -- §14 has 26 entries, all must be represented"
   fi
   if [[ ${#dup[@]} -gt 0 ]]; then
     bad "more than one fixture claims entry=${dup[*]} -- each §14 entry should have exactly one"

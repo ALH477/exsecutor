@@ -2559,14 +2559,17 @@ recoverable and over-committing is not. `0204`-`0209`, `0211`-`0219` and
 
 # 14. Conformance suite
 
-Ships with v1. Twenty of the twenty-five entries must **fail to compile**.
-The other five must compile and are judged by what they
-produce: 15 by a runtime abort, 16, 17 and 25 by byte-identical output, and 23 by
+Ships with v1. Twenty of the twenty-six entries must **fail to compile**.
+The other six must compile and are judged by what they
+produce: 15 by a runtime abort, 16, 17, 25 and 26 by byte-identical output, and 23 by
 byte-identical agreement with an external certificate. `tests/run.sh`'s five
 fixture shapes — `code`, `nocap`, `abort`, `bytes`, `cert` — are exactly this
 partition. (This sentence previously excepted only 16 and 17, which was false
 for 15 since it was written and for 23 since it was added;
-`docs/design/wire-codec.md`, finding 1.)
+`docs/design/wire-codec.md`, finding 1. The "twenty-five" count was stale
+from the moment entry 25 appended; entry 26 appended with the float wave's
+RGB triangle, and both counts are settled here at twenty-six with six
+running.)
 
 1. Turkish dotless-ı case fold in program logic → `plica_sermone` without `sermo`
 2. Index computed on a folded copy, applied to the original → `EXS-E0332`
@@ -2593,6 +2596,7 @@ for 15 since it was written and for 23 since it was added;
 23. `DeModFrame` encode/decode → byte-identical to all 246 vectors of `vendor/hydramesh-wire/golden_vectors.json`
 24. Implementation whose mark exceeds the trait's declared ceiling, reached only through a generic → `EXS-E0510`
 25. `exsc aedifica --hospes mips64-none-o64 --emitte c` over the StreamDB reader, cross-compiled and run big-endian with 32-bit addresses → stdout byte-identical to the reference backend's over `vendor/streamdb-v3/`
+26. An RGB triangle over `f64` — float literals, `/`, `fneg`, ordered `fcmp`, `itof`/`ftoi`, incremental edge-function rasterization to a binary P6 image on stdout → byte-identical between the reference and C backends, and byte-identical to an independently computed oracle (`prototypes/pictura_oracle.py`, which mirrors the program's f64 operation order, the agreement §9.3's determinism law turns into a byte claim). Carried by `tests/programs/pictura_triangulum/` through the run and differential phases; NOT in the cross phase — big-endian f64 execution on mips64 is unmeasured, so `§9.5`'s mips64 float row stays `[UNTESTED]` until an emulated run says otherwise
 
 Entries 18-20 close a gap: §8.1 defines six source-policy codes and only three
 of them (`E0102`, `E0103`, `E0105`) had an entry, while `E0101`, `E0104` and

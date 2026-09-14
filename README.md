@@ -240,7 +240,7 @@ are byte-exact exceptions and why).
      Every figure is from running the named command at the named commit.
      Refresh it here and nowhere else. -->
 
-## Status as of `0640e78` (2026-09-12)
+## Status as of `b398906` (2026-09-14)
 
 Every figure here was produced by running the named command at this commit, in
 the `nix develop` shell, on `x86_64-linux`.
@@ -360,6 +360,22 @@ format into the open that no survey of it had listed, and declaring the
 integer comparison — the binary search has no byte loop. There is no shift and
 no mask anywhere in the header, index or record parsing.
 
+**Floating point, and an image.** §5.4's float surface runs end to end on
+both backends: literals (exact decimal→IEEE conversion in pure integer code
+at check time — `exsc` itself never touches the FPU), `+ - * /`, `fneg`,
+ordered comparisons, and `sicut` between the integers and `f32`/`f64`, all
+under nearest-even with subnormals conserved (MXCSR `0x1F80`, set by the
+prelude). The acceptance program is a picture: `examples/pictura/` renders
+a 96×54 RGB triangle by incremental edge-function rasterization — one
+`fadd` per edge per pixel, exactly four divisions in the whole program
+(three per-vertex reciprocals and one reciprocal of the determinant, none
+inside the pixel loop) — and writes a binary P6 image on stdout. Its
+15,565 bytes are byte-identical between the reference backend, all four
+differential toolchains, and an independently written Python oracle that
+mirrors the program's f64 operation order (`prototypes/pictura_oracle.py`;
+spec §14 entry 26). Big-endian f64 execution on mips64 is the one
+deliberately open row: unmeasured, and the spec says so.
+
 **What runs:**
 
 - `make all` → `build/exsc`, **453,972 bytes**, freestanding, no libc.
@@ -369,7 +385,8 @@ no mask anywhere in the header, index or record parsing.
   enabled**, because §3.3's root table is illustrative and rejects the
   language's own canonical names, which its fixture asserts. Stage 3: the
   lowering to SSA IR, the verifier, and the fasmg reference backend — phi,
-  narrow integers at any width with trapping and wrapping arithmetic, byte
+  narrow integers at any width with trapping and wrapping arithmetic,
+  `f32`/`f64` arithmetic, comparisons and casts on SSE2, byte
   order and sub-byte bit fields, arrays with bounds checks, array literals, a
   `copy` that is a loop above 128 bytes (`9ede8bf`, so a struct literal with a
   144,000-byte array field compiles in constant text) — with its runtime
@@ -379,10 +396,10 @@ no mask anywhere in the header, index or record parsing.
   corpus — `docs/design/diagnostics-review.md`, final section, and
   `tests/diagnostics/`. Stage 2's (`sub` resolution needing a search) does not
   fire, argued first in `docs/design/checker.md` §2.1.
-- `tests/run.sh`: **1378 pass, 0 fail** — 170 unit fixtures; 50 IR
-  fixtures and 96 Exsecutor programs, each compiled, assembled, **run**, and
+- `tests/run.sh`: **1477 pass, 0 fail** — 176 unit fixtures; 55 IR
+  fixtures and 101 Exsecutor programs, each compiled, assembled, **run**, and
   syscall-audited (70 of those programs are the receiver's impaired vectors);
-  a **differential phase**: 156 IR builds and 104 program builds in which
+  a **differential phase**: 172 IR builds and 124 program builds in which
   the C backend's output must agree with the reference's on stdout bytes, exit
   status and trap-or-not, across gcc and clang at `-O0` and `-O2`, every one
   under `-fsanitize=undefined -fno-sanitize-recover=all`. They agree
@@ -392,7 +409,7 @@ no mask anywhere in the header, index or record parsing.
   under emulation** against the same three observables — the first
   big-endian execution of anything this compiler produces, and the thing
   that finally tests §9.5's standing claim that the emitted text assumes
-  nothing about byte order. 11 of 25 conformance entries run, each required
+  nothing about byte order. 12 of 26 conformance entries run, each required
   to emit exactly its expected code and nothing else (the other 14 report
   `DEFERRED` and are never counted as passing); 0 program directories
   deferred.
@@ -407,9 +424,11 @@ no mask anywhere in the header, index or record parsing.
 
 **What does not run yet.** Most of the language beyond what these programs use
 is `rassert`-refused rather than lowered: `contrahe` and its reduction triple,
-lambdas, `eventus`, generics, floating point, and every `numeri` but the
-default. Bitwise and/or, division, remainder and signed shifts are unspecified
-(`[OPEN]`); narrowing and equal-width `sicut` are truncation (spec §5.4), with
+lambdas, `eventus`, generics, vector floats (`acies<f32, 8>` — the scalar
+float surface runs; SIMD is its own stage), and every `numeri` but the
+default. Bitwise and/or, integer division and remainder, and signed shifts
+are unspecified (`[OPEN]`); narrowing and equal-width `sicut` are truncation
+(spec §5.4), with
 narrowing from a signed source still unwritten by any program. An array
 literal at module scope (`publica firma t: acies<u16, 4> = [1, 2, 3, 4];`)
 type-checks and traps in the lowering under `-o` — the transmitter's table is
@@ -423,10 +442,13 @@ that commit's mutation run recorded. The checker
 refuses a correct program where a `poscit sicut s` function calls another
 with the same `s` (`EXS-E0421`; the spec is right, `docs/design/wire-codec.md`
 finding 9). The C backend exists in **library mode only** — a translation
-unit of pure functions, no entry point, no runtime, no ARC — and refuses 23
-of the 60 IR opcodes by name, every one of them an opcode the reference
-backend does not lower either (floats, `div`/`rem`, the overflow predicates,
-`callind`, the reductions). The N64 row, `--hospes mips64-none-o64`, **is**
+unit of pure functions, no entry point, no runtime, no ARC — and what both
+backends still refuse by name is one maintained set: `div`/`rem`/`muls` and
+the overflow predicates (§5.4 leaves them `[OPEN]`), `fma`, `bitcast`, the
+unordered `fcmp` forms, the reductions, and `callind`, plus the C
+backend's own `retain`/`release` (library mode has no object header). The
+reference lowers 48 of the 60 IR opcodes, the C backend 46; the row-by-row
+table in `docs/design/c-backend.md` (D4) is the count. The N64 row, `--hospes mips64-none-o64`, **is**
 there and runs — it is the only row whose `mensura` is 32, so `+` traps at
 2^32 on it, and its emitted unit is cross-compiled and executed big-endian
 with 32-bit addresses against the reference backend on every run of the
