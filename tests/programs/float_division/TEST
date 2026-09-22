@@ -2,4 +2,4 @@
 # wrong one, 100 says every check ran right, on both backends (the
 # differential phase runs this same directory through emit_c and
 # gcc/clang at -O0/-O2).
-TEST: expect-exit=100
+TEST: expect-exit=100 device=amdgcn

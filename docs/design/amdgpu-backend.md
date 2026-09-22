@@ -1,10 +1,12 @@
 # AMD device backend — plan
 
-**Status:** `[OPEN]` — phases 2+ (own encoder, shipping kernels) remain plans.
-As of 2026-09-14 the execution proof has a landed first stone: Stage 6 G1
-(`tests/c/exsrt_shim_amdgpu.c`, see §9) compiled the compiler's own emitted C
-to loadable `amdgcn-amdhsa` code objects for both gfx generations on the
-development machine. Nothing has been *dispatched* yet — that is G2.
+**Status:** `[OPEN]` — phases 2+ of §7 (own encoder, shipping kernels) remain
+plans. The execution proof is measured: Stage 6 G1 (2026-09-14, §9) compiled
+the compiler's own emitted C to `amdgcn-amdhsa` code objects, and G2
+(2026-09-21, §10) dispatched them on both of the development machine's GPUs
+— saluta, acies_float8, both pictures byte-identical to the CPU goldens,
+`tests/run.sh --device=amdgcn` holds the floor. On-device numerics (G3),
+parallel kernels (G4) and language-level dispatch (G5) are not started.
 **Relates to:** spec §5.4, §5.5, §9.2, §9.5, §10.1, §18.1;
 [ADR 0007](../decisions/0007-numeric-semantics.md),
 [0009](../decisions/0009-heterogeneous-cpu-gpu.md); `norma-algebra.md`
@@ -220,12 +222,76 @@ device-C toolchain, exactly the off-build-path-oracle role §4 assigns it.
   headers, confirming the plan's no-new-hospes-row argument (GCN flat
   pointers are 64-bit little-endian; the x86_64 row's `_Static_assert`s
   hold as compiled for the device).
+- **Amended 2026-09-21 (G2):** the compile above linked the unit and the
+  shim as two objects. That links, but it does not run correctly — the
+  kernel descriptor's register budget is computed per translation unit and
+  a kernel linked against separately compiled callees corrupts live values
+  across the calls (§10). The device build is ONE unit: `cat unit.c
+  tests/c/exsrt_shim_amdgpu.c`. "Zero undefined symbols" was true and
+  insufficient.
 - Toolchain lever, same one the mips64 cross phase already uses:
   `env NIX_HARDENING_ENABLE= clang --target=amdgcn-amdhsa -mcpu=gfxNNNN
   -ffreestanding -fno-builtin -nostdlib -fuse-ld=lld` (the nix cc-wrapper's
   hardening default `-fzero-call-used-regs=used-gpr` is unsupported on
   amdgcn; `tests/run.sh:2041` precedent).
 
-**Not measured, deliberately:** no dispatch has run (G2's kfd runner does
-that); no value has come back from a device. §5.5's CPU≡GPU sentence keeps
-its `[UNTESTED]` until G2/G3 produce the bytes.
+**Not measured at G1:** no dispatch had run. §10 is where the values came
+back.
+
+## 10. 2026-09-21 — Stage 6 G2: dispatched, and byte-identical on two GPUs
+
+`tools/amd-dispatch/` (its README carries the run recipe and every number
+below) dispatches a code object built as in §9 — as one translation unit —
+through the ROCm HSA runtime: one AQL packet, grid (1,1,1), buffers in
+fine-grained system memory, a 32-byte result record. Measured on this
+machine's gfx1102 (Navi 33, RX 7600) and gfx1103 (Phoenix APU), ROCm
+6.4.3 runtime, nix clang 21.1.8:
+
+| program | bytes | gfx1102 | gfx1103 | CPU golden |
+|---|---|---|---|---|
+| saluta (§14 entry 15) | 101 | identical | identical | `examples/saluta.expected` |
+| acies_float8 (Stage 5.2, `vf32.8`/`vf64.8` arithmetic) | 640 | identical | identical | numpy oracle bytes |
+| pictura_triangulum (entry 26) | 15,565 | identical | identical | oracle P6 |
+| pictura_octonaria (entry 27, lanes + SSAA) | 1,555,215 | identical, 0.95–1.71 s | identical, 0.92–0.94 s | oracle P6 |
+| float_constants, float_division | exit 100 | 100 | 100 | exit 100 |
+| `tests/ir/trap_add_carry.ir` | abort | `abortus 1`, exit 111 | — | `abortus 1`, SIGILL |
+
+Every byte the CPU backends produce for these programs, the GPU produces
+— on both generations, which is §6's cross-generation gate holding for the
+programs that ran. The spec's §5.5 same-bits sentence is measured for
+exactly this set and no other; G3 (rounding-mode/subnormal state, the
+division fixup, FMA contraction) is what would extend it to the float
+corner corpus, and nothing in this set forced the MODE register question.
+
+**What it took, so nobody re-learns it:**
+
+1. The kernel symbol is `NAME.kd` (the descriptor), not `NAME`.
+2. The emitted C keeps real calls, so the kernel declares
+   `.uses_dynamic_stack` with fixed private size 0; the dispatcher must
+   supply the stack in the packet (`--scratch`, 64 KiB). With 0, the first
+   stack access faults; with a NULL queue error callback, that fault takes
+   the host down at `0x4` inside the runtime.
+3. **One translation unit.** Two objects link with zero undefined symbols
+   and run with a 48-VGPR budget sized for the shim while the program's
+   functions use 100: acies_float8 wrote all 640 correct bytes, then an
+   overflow check fired on a garbage operand; a 30-line standalone
+   call-chain kernel faulted in the private aperture. Concatenated, both
+   are byte-identical. The compiler cannot warn about this shape.
+4. `__builtin_trap` → `s_trap 2; s_sethalt`: the wave halts and the
+   completion signal never fires; the runtime's queue error
+   (`HSA_STATUS_ERROR_EXCEPTION`) is the abort's completion event, and the
+   shim writes its result record from `exsrt_abortus` before trapping so
+   the host can read the kind.
+5. **The per-workitem stack is 256 KiB** (clang: `stack frame size
+   exceeds limit (262136)`; the packet: ≥256 KiB faults). `signaculum` at
+   512² keeps 2.9 MB of framebuffer + z-buffer as caller-owned borrows on
+   `initium`'s frame and therefore does not build for the device. That is
+   not a numerics limit; it is G4's `apud machina` problem stated by a real
+   program: those buffers must live in global memory, declared as such.
+   `[OPEN]` until then, and recorded as the reason G4 exists.
+
+What the suite does with this: `tests/run.sh --device=amdgcn` runs every
+`device=amdgcn` program on every GPU agent found and byte-diffs against the
+program's golden — a suite-level opt-in because a GPU is hardware, not a
+flake input, and `nix flake check` must stay hermetic; with the flag given,
+a missing runtime or agent is a failure, never a skip.

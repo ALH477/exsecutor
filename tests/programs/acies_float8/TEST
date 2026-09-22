@@ -26,4 +26,4 @@
 # run.sh failure for "which of the two governs?". numpy is not in the
 # devShell and need not be: run.sh never runs the oracle; expected.out is
 # checked in.)
-TEST: expect-exit=0 cross=yes
+TEST: expect-exit=0 cross=yes device=amdgcn

@@ -166,6 +166,17 @@ _Noreturn void exsrt_abortus(unsigned kind)
         }
         g_abort = kind;
     }
+    /* The result record is written HERE, not only at the entry's end: an
+     * aborting kernel never returns to the entry, and a record the host
+     * cannot read is a silent abort (measured: the first vector program
+     * hung on device and the host had 32 zero bytes to reason from). rc is
+     * 0xFF -- no initium returned it, and no exit status is claimed. */
+    if (g_result) {
+        g_result[0] = 0xFFu;
+        g_result[1] = g_out_pos;
+        g_result[2] = g_dropped;
+        g_result[3] = kind;
+    }
     __builtin_trap();       /* s_trap on amdgcn: the runner's fault signal */
     for (;;) { }
 }

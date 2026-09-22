@@ -146,10 +146,11 @@ calls):
    64-bit registers), linked with `ld.lld` against
    `tests/c/exsrt_shim_mips.c`, and RUN under `qemu-mipsn32` — held to the
    reference backend's stdout bytes, exit status and trap-or-not by the same
-   `check_run`. Six directories (`CROSS_PROGRAM_FLOOR`): the four StreamDB
-   containers, `saluta`, and `forma`, which is the one that exercises
-   `@transitus` byte order on a host whose order is the opposite of the
-   reference's.
+   `check_run`. Ten directories (`CROSS_PROGRAM_FLOOR`, whose header in
+   `tests/run.sh` names each step of the count): the StreamDB containers,
+   `saluta`, `forma` — the one that exercises `@transitus` byte order on a
+   host whose order is the opposite of the reference's — the float
+   programs, and both lane rasterizers.
 
    Opt-IN, not opt-out, and that asymmetry is deliberate: a host build is
    cheap, an emulated one is 10–50×. The phase's floors are its own and are
@@ -162,7 +163,26 @@ calls):
    host's byte order; every other target here is little-endian, so until
    this phase existed that claim had never been executed.
 
-Phases 3, 4 and 6 are the first in this script to execute code a compiler
+7. **the device phase** — Stage 6 G2, spec §5.5's same-bits claim measured.
+   Each `device=amdgcn` program directory is emitted for
+   `--hospes x86_64-linux` (GCN flat pointers are 64-bit little-endian; that
+   row's `_Static_assert`s hold on the device), concatenated with
+   `tests/c/exsrt_shim_amdgpu.c` into **one translation unit** — the
+   kernel descriptor's register budget is computed per unit, and a kernel
+   linked against a separately compiled program corrupts values across
+   calls, measured — compiled by clang for every AMD GPU agent
+   `tools/amd-dispatch` lists, dispatched as one workitem, and held to the
+   program's own golden by `cmp`, its exit status, or its `abort=` kind.
+   Six directories (`DEVICE_PROGRAM_FLOOR`), every one on every agent.
+
+   It runs only under `tests/run.sh --device=amdgcn` (`make test-device`):
+   a GPU is hardware, not a flake input, and `nix flake check` runs this
+   script in a sandbox with no `/dev/kfd`. With the flag given, a missing
+   ROCm runtime, agent, shim or clang is a **failure**, never a skip —
+   the cross phase's rule for qemu. Without it the phase reports itself
+   not requested and applies no floor.
+
+Phases 3, 4, 6 and 7 are the first in this script to execute code a compiler
 *emitted*. Until them a `tests/unit/` fixture could only compare emitted
 text — it cannot `execve` — and the running half was done by hand and
 reported (`bfa_emit_tier1.asm`'s header says so). Every binary either phase
@@ -371,6 +391,15 @@ There is deliberately **no glob** in `tests/run.sh` that passes over a
 directory: a name silently absent from a phase is the false green
 `UNIT_FIXTURE_FLOOR`'s header lists four times over, so exclusion is data in
 the fixture and the count of exclusions is printed on every run.
+
+### The device phase's key
+
+`device=amdgcn` (programs only) opts a directory into the device phase, the
+way `cross=yes` opts it into the cross phase; the value set is closed and
+any other value fails the fixture. Sizing is the reason a program is *not*
+carried: the per-workitem private segment is 256 KiB, and `signaculum`'s
+512² caller-owned buffers are 2.9 MB (`docs/design/amdgpu-backend.md` §10),
+so it stays off until buffers can be placed in device global memory.
 
 ## Adding a case
 

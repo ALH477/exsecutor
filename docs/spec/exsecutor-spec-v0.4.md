@@ -962,7 +962,11 @@ scales.
 
 ## 5.5 Device placement and heterogeneous execution
 
-`[OPEN]` — designed, nothing implemented. Stage 3 at the earliest.
+`[OPEN]` — the language surface below (`apud`, `@nucleus`, `poscit machina`,
+`acceleratores`) is designed and not implemented: `apud machina` parses and is
+lowered as host memory, `@nucleus` parses and constrains nothing. What IS
+measured, since 2026-09-21, is the execution path underneath it — see "The
+rule that makes CPU and GPU agree" below.
 
 A GPU is not "more cores." It is a separate device with a separate address
 space, a separate ISA, its own floating-point behaviour, and no business being
@@ -1029,9 +1033,23 @@ warp, lane are tiles, exactly as cache block and SIMD group are tiles. Because
 the nest is declared rather than inferred, the summation order is identical on
 both, and the accelerator changes only how long the work takes.
 
-`[UNTESTED]`. Nothing about this has been measured, and the claim is strong
-enough that it must be treated as a hypothesis until `proba-reproducibilitatem`
-compares a CPU result against a device result byte for byte.
+**Measured, for a named set, on 2026-09-21** — and `[UNTESTED]` beyond it.
+Through the C backend's unit built as one translation unit with
+`tests/c/exsrt_shim_amdgpu.c` and dispatched by `tools/amd-dispatch/` on an
+RDNA3 dGPU (gfx1102) and an RDNA3 APU (gfx1103), these programs produce the
+bytes the reference backend produces: the hello world (§14 entry 15), the
+whole-acies arithmetic program `acies_float8` (`vf32.8`/`vf64.8`, 640 bytes),
+and both pictures (entries 26 and 27 — the 1,555,215-byte lane-parallel
+rasterization included); `float_constants` and `float_division` exit as on
+the CPU. `tests/run.sh --device=amdgcn` holds that set as a floor
+(`docs/design/amdgpu-backend.md` §10). None of it engages the rule above:
+no program in the set declares numerics a device could refuse, and the
+device's rounding-mode and subnormal state was neither pinned nor examined
+— that measurement, per generation, is the next stage. Until then the
+claim stays a hypothesis for the rest of the language: no `@nucleus`, no
+`apud machina`, no declared tile nest has run on a device; the measured
+programs ran as one workitem each, which is a CPU program on a GPU core,
+not a decomposition.
 
 ### Targets
 

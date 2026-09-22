@@ -18,4 +18,4 @@
 #
 # (No stdout= on purpose: expected.out IS the reference; naming both is
 # the run.sh failure for "which of the two governs?".)
-TEST: expect-exit=0 sources=examples/pictura/pictura.exsc,examples/pictura/triangulum.exsc cross=yes
+TEST: expect-exit=0 sources=examples/pictura/pictura.exsc,examples/pictura/triangulum.exsc cross=yes device=amdgcn

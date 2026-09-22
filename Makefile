@@ -22,7 +22,7 @@ export INCLUDE
 SRC     = compiler/x86_64/exsc.asm
 OUT     = build/exsc
 
-.PHONY: all clean test audit reproduce smoke spec-check map-order-probe check
+.PHONY: all clean test test-device audit reproduce smoke spec-check map-order-probe check
 
 all: $(OUT)
 
@@ -58,6 +58,12 @@ endif
 
 test: $(EXSC_DEP)
 	tests/run.sh
+
+# The device phase needs an AMD GPU and the ROCm runtime -- hardware, not a
+# flake input -- so it is a separate target rather than part of `test`.
+# With the flag given, a missing runtime or agent FAILS the phase.
+test-device: $(EXSC_DEP)
+	tests/run.sh --device=amdgcn
 
 # §9.3: "No network access, ever, at any phase." Verified, not promised.
 #

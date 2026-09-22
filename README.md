@@ -390,7 +390,9 @@ exactly four divisions, all in setup; twelve `addps` and six `mulps`, each
 packed op emitting its two SSE2 halves; zero `subps` and zero `divps`; and,
 on the mips64 qemu run, the C backend's soft `vector_size` lowering
 reproducing all 1,555,215 bytes bit for bit on a target with no SSE at
-all (spec §14 entry 27).
+all (spec §14 entry 27) — and, since Stage 6 G2, the same 1,555,215 bytes
+from an AMD GPU, both generations this machine has (the status bullets
+below).
 
 ![the RGB triangle at 960x540, rendered lane-parallel by examples/pictura/octonaria.exsc](docs/images/pictura_octonaria.png)
 
@@ -454,6 +456,21 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   to emit exactly its expected code and nothing else (the other 14 report
   `DEFERRED` and are never counted as passing); 0 program directories
   deferred.
+- `tests/run.sh --device=amdgcn` (measured 2026-09-21, not part of the
+  hermetic run above because a GPU is hardware, not a flake input): a
+  **device phase** in which six of those program directories — the hello
+  world, `acies_float8`, both pictures, and the two exit-code float
+  programs — are emitted through the C backend, built as one translation
+  unit with `tests/c/exsrt_shim_amdgpu.c`, and **dispatched on both of this
+  machine's AMD GPUs** (an RDNA3 dGPU, gfx1102, and an RDNA3 APU, gfx1103)
+  by `tools/amd-dispatch/`, one workitem each. Every byte matches the CPU
+  goldens on both — the 1,555,215-byte lane rasterization in 0.95–1.7 s on the
+  dGPU — and `tests/ir/trap_add_carry.ir` aborts on device with the same
+  `abortus 1` line. That is spec §5.5's same-bits sentence measured for a
+  named set (`docs/design/amdgpu-backend.md` §10) and `[UNTESTED]` beyond
+  it: no `@nucleus`, no `apud machina`, no declared tile nest has run on a
+  device, and the device's rounding and subnormal state is the next
+  measurement, not this one.
 - `make audit`: PASS — the nine allowlisted syscalls and nothing else, on the
   real binary. `make reproduce`: PASS on four artifacts — the compiler
   itself and three emitted C units, one of them the N64 row's — byte-identical

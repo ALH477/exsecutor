@@ -27,7 +27,15 @@
 #      and required to agree with the reference on stdout bytes, exit status
 #      and trap-or-not with the abort kind. Two loops and two banners, one
 #      phase: tests/ir/ then tests/programs/.
-#   Phases 3, 4 and 5 are the only places in this script that execute code a
+#   6. run_cross_tests: the same programs, opted in with `cross=yes`,
+#      cross-built for big-endian mips64 and run under qemu (ADR 0015).
+#   7. run_device_tests: the same programs, opted in with `device=amdgcn`,
+#      built as ONE translation unit with tests/c/exsrt_shim_amdgpu.c for
+#      every AMD GPU present and dispatched by tools/amd-dispatch/ -- only
+#      when this script is invoked with `--device=amdgcn`, because a GPU is
+#      hardware, not a flake input, and `nix flake check` must stay
+#      hermetic. With the flag, a missing runtime or agent is a FAILURE.
+#   Phases 3 to 7 are the only places in this script that execute code a
 #   compiler EMITTED; everything before them compares text or diagnostics.
 #
 # See tests/README.md for the directive format and how to add a fixture.
@@ -38,6 +46,18 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 FASMG="${FASMG:-fasmg}"
+
+# The one argument this script takes. Everything else about a run is a fact
+# of the tree (directive keys, floors) or of the environment the flake
+# builds; this is the exception because the device phase needs hardware.
+DEVICE=""
+for arg in "$@"; do
+  case "$arg" in
+    --device=amdgcn) DEVICE="amdgcn" ;;
+    --device=*) echo "tests/run.sh: --device takes exactly 'amdgcn', got '${arg#--device=}'" >&2; exit 2 ;;
+    *) echo "usage: tests/run.sh [--device=amdgcn]" >&2; exit 2 ;;
+  esac
+done
 export INCLUDE="${INCLUDE:-$REPO_ROOT/vendor/fasmg-x86}"
 AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 
@@ -151,6 +171,18 @@ DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-136}"
 # lowering reproduces a whole 960x540 SSAA image on the big-endian run,
 # ~1.9 s measured against the 120 s budget.
 CROSS_PROGRAM_FLOOR="${CROSS_PROGRAM_FLOOR:-10}"
+
+# The device phase's floor (Stage 6 G2): programs carrying `device=amdgcn`,
+# each built as one translation unit with tests/c/exsrt_shim_amdgpu.c and
+# dispatched on every AMD GPU the machine has, byte-diffed against the
+# program's own golden. 6 at the start: saluta, acies_float8,
+# pictura_triangulum, pictura_octonaria (byte-identical on gfx1102 and
+# gfx1103, 2026-09-21), float_constants and float_division (exit 100).
+# signaculum is NOT here: its 2.9 MB of caller-owned buffers exceed the
+# 256 KiB per-workitem private segment (docs/design/amdgpu-backend.md 10).
+# Counted only when --device=amdgcn is given; otherwise the phase reports
+# itself not requested and no floor is applied.
+DEVICE_PROGRAM_FLOOR="${DEVICE_PROGRAM_FLOOR:-6}"
 
 PASS=0
 FAIL=0
@@ -997,7 +1029,7 @@ parse_run_keys() {
   # Empty, not "0": empty means "no C-specific verdict given, so parity with
   # the reference's own key applies". A default of "0" would silently claim
   # parity with success even where emit-exit= says the reference refuses.
-  k_c_emit_exit=""; k_c_exsc_exit=""; k_c_differentia=""; k_cross=""
+  k_c_emit_exit=""; k_c_exsc_exit=""; k_c_differentia=""; k_cross=""; k_device=""
   local kv
   for kv in "$@"; do
     case "$kv" in
@@ -1036,6 +1068,10 @@ parse_run_keys() {
       # nothing else -- and the set of directories that carry it is a fact
       # you can grep for rather than a glob inside the harness.
       cross=*)       k_cross="${kv#cross=}" ;;
+      # OPT-IN TO THE DEVICE PHASE, the cross phase's twin: the value set is
+      # CLOSED (amdgcn), the directories carrying it are grep-able, and a
+      # typo is a failed fixture. See run_device_tests.
+      device=*)      k_device="${kv#device=}" ;;
       sources=*)     k_sources="${kv#sources=}" ;;
       status=*)      k_status="${kv#status=}" ;;
       needs=*)       k_needs="${kv#needs=}" ;;
@@ -1044,6 +1080,9 @@ parse_run_keys() {
   done
   if [[ -n "$k_cross" && "$k_cross" != "yes" ]]; then
     bad "$label: cross='$k_cross' -- the only value is 'yes'"; return 1
+  fi
+  if [[ -n "$k_device" && "$k_device" != "amdgcn" ]]; then
+    bad "$label: device='$k_device' -- the only value is 'amdgcn'"; return 1
   fi
   if [[ "$k_status" != "run" && "$k_status" != "deferred" ]]; then
     bad "$label: unknown status='$k_status' (expected run|deferred)"; return 1
@@ -2071,6 +2110,185 @@ run_cross_tests() {
 }
 
 
+# -----------------------------------------------------------------------------
+# DEVICE PHASE -- Stage 6 G2: the same program, the same bytes, on an AMD GPU.
+#
+# Spec 5.5's claim is that a program's bytes do not depend on which of the
+# machine's processors ran it. This phase measures it the only way that
+# counts: every tests/programs/ directory carrying `device=amdgcn` is emitted
+# through the C backend (`--hospes x86_64-linux`: GCN flat pointers are
+# 64-bit little-endian, that row's _Static_asserts hold on the device),
+# concatenated with tests/c/exsrt_shim_amdgpu.c into ONE translation unit,
+# compiled by clang for every GPU agent tools/amd-dispatch finds, dispatched
+# as a single workitem, and its output byte-diffed against the same golden
+# the reference backend is held to.
+#
+# ONE TRANSLATION UNIT IS LOAD-BEARING. The kernel descriptor's register
+# budget is computed per unit; a kernel linked against a separately compiled
+# program runs with a budget sized for the shim alone and corrupts live
+# values across calls -- measured (acies_float8 wrote 640 correct bytes and
+# then trapped on a garbage operand). tools/amd-dispatch/README.md.
+#
+# WHY A SUITE-LEVEL FLAG AND NOT JUST THE DIRECTIVE. cross=yes needs qemu,
+# which flake.nix provides, so a missing qemu is a failure. A GPU cannot be
+# provided by a flake, and `nix flake check` runs this script in a sandbox
+# with no /dev/kfd. So the phase runs only under `--device=amdgcn`; WITH the
+# flag, every missing piece -- the ROCm runtime, an agent, the shim, clang --
+# is a failure, never a skip, exactly as the cross phase treats qemu.
+# -----------------------------------------------------------------------------
+run_device_tests() {
+  echo "== device phase: amdgcn -- the C backend's unit on every AMD GPU present =="
+  if [[ -z "$DEVICE" ]]; then
+    note "not requested -- run tests/run.sh --device=amdgcn on a machine with an AMD GPU and the ROCm runtime"
+    return
+  fi
+  local shim="$REPO_ROOT/tests/c/exsrt_shim_amdgpu.c"
+  if [[ ! -f "$shim" ]]; then
+    bad "device: tests/c/exsrt_shim_amdgpu.c is missing -- nothing can be built"
+    return
+  fi
+  local tool
+  for tool in cc clang ld.lld; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+      bad "device: $tool not found on PATH -- this phase needs it"
+      return
+    fi
+  done
+  local workdir
+  workdir="$(mktemp -d)" || { bad "device: mktemp failed"; return; }
+
+  local disp="$workdir/amd-dispatch"
+  if ! cc -O2 -std=c11 -o "$disp" "$REPO_ROOT/tools/amd-dispatch/amd-dispatch.c" -ldl \
+       >"$workdir/disp.cclog" 2>&1; then
+    bad "device: tools/amd-dispatch/amd-dispatch.c does not build"
+    sed 's/^/         /' "$workdir/disp.cclog"; rm -rf "$workdir"; return
+  fi
+  ok "device: amd-dispatch builds"
+  local agents=()
+  if ! "$disp" --list >"$workdir/agents" 2>"$workdir/agents.err"; then
+    bad "device: no GPU agent -- $(head -1 "$workdir/agents.err")"
+    rm -rf "$workdir"; return
+  fi
+  mapfile -t agents <"$workdir/agents"
+  if [[ "${#agents[@]}" -eq 0 ]]; then
+    bad "device: amd-dispatch --list found no agents"; rm -rf "$workdir"; return
+  fi
+  note "agents: ${agents[*]}"
+
+  local exsc="$workdir/exsc"
+  if ! "$FASMG" "$REPO_ROOT/compiler/x86_64/exsc.asm" "$exsc" \
+       >"$workdir/exsc.asmlog" 2>&1; then
+    bad "device: exsc.asm failed to assemble -- the device phase cannot run"
+    sed 's/^/         /' "$workdir/exsc.asmlog"
+    rm -rf "$workdir"; return
+  fi
+  chmod +x "$exsc"
+
+  # NIX_HARDENING_ENABLE= for the same reason the cross phase sets it: the
+  # nixpkgs wrapper's -fzero-call-used-regs is refused by the amdgcn target.
+  local cflags="--target=amdgcn-amdhsa -O2 -ffreestanding -fno-builtin -nostdlib"
+  cflags="$cflags -Wno-unused-command-line-argument"
+  local ldflags="-fuse-ld=lld -Wl,-e,exs_amdgcn_entry -Wl,--build-id=none"
+
+  local found=0 ran=0 d name ref srcs a
+  shopt -s nullglob
+  for d in "$REPO_ROOT"/tests/programs/*/; do
+    name="$(basename "$d")"
+    [[ -f "$d/TEST" ]] || continue
+    local directive
+    directive="$(grep -m1 '^[[:space:]]*TEST:' "$d/TEST" 2>/dev/null || true)"
+    [[ -n "$directive" ]] || continue
+    directive="${directive#*TEST:}"
+    # shellcheck disable=SC2086
+    parse_run_keys "device/$name" $directive || continue
+    [[ "$k_device" == "amdgcn" ]] || continue
+    found=$((found + 1))
+    if [[ "$k_status" != "run" ]]; then
+      note "device/$name: status=$k_status -- not run"
+      continue
+    fi
+
+    srcs=()
+    if [[ -n "$k_sources" ]]; then
+      local IFS=,
+      for s in $k_sources; do srcs+=("$REPO_ROOT/$s"); done
+      unset IFS
+    else
+      local f
+      for f in "$d"*.exsc; do srcs+=("$f"); done
+    fi
+    if [[ "${#srcs[@]}" -eq 0 ]]; then
+      bad "device/$name: no sources"; continue
+    fi
+
+    local w="$workdir/$name"
+    if ! "$exsc" aedifica --hospes x86_64-linux "${srcs[@]}" --emitte c \
+         -o "$w.c" >"$w.emitlog" 2>&1; then
+      bad "device/$name: exsc --emitte c failed"
+      sed 's/^/         /' "$w.emitlog"; continue
+    fi
+    { cat "$w.c"; echo; cat "$shim"; } >"$w.one.c"
+
+    ref=""
+    if [[ -n "$k_stdout" ]]; then
+      ref="$REPO_ROOT/$k_stdout"
+    elif [[ -f "$d/expected.out" ]]; then
+      ref="$d/expected.out"
+    fi
+    local input=()
+    [[ -n "$k_stdin" ]] && input=(--input "$REPO_ROOT/$k_stdin")
+
+    for a in "${agents[@]}"; do
+      # shellcheck disable=SC2086
+      if ! env NIX_HARDENING_ENABLE= clang $cflags -mcpu="$a" -c "$w.one.c" \
+             -o "$w.$a.o" >"$w.$a.cclog" 2>&1 ||
+         ! env NIX_HARDENING_ENABLE= clang $cflags -mcpu="$a" $ldflags "$w.$a.o" \
+             -o "$w.$a.co" >>"$w.$a.cclog" 2>&1; then
+        bad "device/$name on $a: clang cannot build the amdgcn unit"
+        grep -v 'cc-wrapper is currently not designed' "$w.$a.cclog" |
+          sed 's/^/         /'; continue
+      fi
+      local t0 t1 rc=0
+      t0="$(date +%s%N)"
+      "$disp" --co "$w.$a.co" --agent "$a" --output "$w.$a.out" "${input[@]}" \
+        --capacity 4194304 --timeout 120 >"$w.$a.log" 2>&1 || rc=$?
+      t1="$(date +%s%N)"
+      local report
+      report="$(grep -m1 '^amd-dispatch: agent=' "$w.$a.log" | sed 's/^amd-dispatch: //' || true)"
+      local ms=$(( (t1 - t0) / 1000000 ))
+      if [[ -n "$k_abort" ]]; then
+        # the CPU's `abortus N` + SIGILL is the device's exit 111 + the line
+        # as the tail of the output buffer (tools/amd-dispatch/README.md)
+        if [[ "$rc" -eq 111 ]] && tail -c 64 "$w.$a.out" 2>/dev/null |
+             grep -q "exsecutor: abortus ${k_abort}\$"; then
+          ok "device/$name on $a: abortus $k_abort recorded on device ($ms ms)"
+        else
+          bad "device/$name on $a: expected abortus $k_abort, got exit $rc -- $report"
+          sed 's/^/         /' "$w.$a.log" | head -5
+        fi
+      else
+        local want="${k_expect_exit:-0}"
+        if [[ "$rc" -ne "$want" ]]; then
+          bad "device/$name on $a: exit $rc, expected $want -- $report"
+          sed 's/^/         /' "$w.$a.log" | head -5
+        elif [[ -n "$ref" ]] && ! cmp -s "$w.$a.out" "$ref"; then
+          bad "device/$name on $a: output differs from $(basename "$ref") -- $report"
+        else
+          ok "device/$name on $a: $report ($ms ms)"
+        fi
+      fi
+      ran=$((ran + 1))
+    done
+  done
+  shopt -u nullglob
+  rm -rf "$workdir"
+
+  floor_check "device program directories" "$found" "$DEVICE_PROGRAM_FLOOR" DEVICE_PROGRAM_FLOOR
+  note "$ran runs over ${#agents[@]} agent(s)"
+  floor_check "device runs" "$ran" "$((found * ${#agents[@]}))" "found x agents"
+}
+
+
 run_unit_tests
 echo
 run_conformance_tests
@@ -2082,6 +2300,8 @@ echo
 run_differential_tests
 echo
 run_cross_tests
+echo
+run_device_tests
 echo
 echo "== summary =="
 echo "pass: $PASS  fail: $FAIL"

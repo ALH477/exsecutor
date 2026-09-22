@@ -49,4 +49,4 @@
 # (No stdout= on purpose: expected.out IS the reference; naming both is
 # the run.sh failure for "which of the two governs?". run.sh never runs
 # the oracle; expected.out is checked in.)
-TEST: expect-exit=0 sources=examples/pictura/octonaria.exsc,examples/pictura/octonarium.exsc cross=yes
+TEST: expect-exit=0 sources=examples/pictura/octonaria.exsc,examples/pictura/octonarium.exsc cross=yes device=amdgcn
