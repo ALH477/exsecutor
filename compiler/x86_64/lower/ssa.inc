@@ -162,6 +162,25 @@ struct LwrLoop
 	field lpad,  dd
 end struct
 
+; One `contrahe` accumulator of one enclosing reduction loop: the ACCUMULATOR
+; DECLARATION and the `redinit` handle it stands for (docs/design/lowering.md
+; section 2.5, "the handle goes in the loop-stack record {acc decl -> %h},
+; never in `vars`"). `LwrState.accs` is that record, kept as one stack keyed by
+; declaration rather than as a variable-length tail on `LwrLoop`: an
+; accumulator declaration belongs to exactly one `Contrahe` of exactly one
+; loop (ast/from_cst.inc's `__ast_w_contrahe` makes one `AST_D_ACCUM` per
+; clause), so the declaration id alone identifies the loop, and a nested
+; reduction's records simply sit above the outer loop's. `__lwr_for` records
+; the base on entry and truncates to it at the exit, which is what makes the
+; nesting a stack.
+struct LwrAcc
+	field adcl, dd		; the `AST_D_ACCUM` declaration
+	field ahnd, dd		; its `%h = redinit F op shape w`
+	field afir, dd		; F as an IR type id -- `contrib`'s value type and
+				;    `redfin`'s result type (verify.inc rule 1)
+	field apad, dd
+end struct
+
 struct LwrState
 	field tree,  dq		; -> Ast
 	field mdl,   dq		; -> BfaModule
@@ -173,6 +192,8 @@ struct LwrState
 	field vars,  dq		; -> Vec<LwrVar>, indexed by var id (1-based)
 	field scps,  dq		; -> Vec<LwrFrame>
 	field lps,   dq		; -> Vec<LwrLoop>
+	field accs,  dq		; -> Vec<LwrAcc>, the `contrahe` handles of every
+				;    enclosing reduction loop (section 2.5)
 	field caps,  dq		; -> Vec<dd>, 11 per frame
 	field rels,  dq		; -> Vec<dd>, decl ids in initialisation order
 	field tmpv,  dq		; -> Vec<dd>, phi-operand staging (stack
@@ -343,6 +364,12 @@ proc lwr_fn_begin, lwrsp, lwrfn, lwrnv
 	mov	rdx, 8
 	call	__lwr_scratch_vec
 	mov	[rbx + LwrState.lps], rax
+
+	mov	rdi, rbx
+	mov	rsi, sizeof.LwrAcc
+	mov	rdx, 8
+	call	__lwr_scratch_vec
+	mov	[rbx + LwrState.accs], rax
 
 	mov	rdi, rbx
 	mov	rsi, 4

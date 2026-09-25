@@ -90,6 +90,552 @@ proc lwr_loop_top, lwrsp
 	return
 endp
 
+; ============================================================================
+; `contrahe`: the reduction stack (docs/design/lowering.md section 2.5)
+; ============================================================================
+;
+; THREE INSTRUCTIONS AND WHERE EACH GOES. Per `Contrahe` of a `ForHead`, in
+; list order: one `%h = redinit F op shape w` in the block the loop is entered
+; from, BEFORE `jmp header`; one `contrib %h <e>` per `acc = e;` in the body
+; (spec section 5.4: "Writing to it is the contribution", and the only
+; statement that may name `acc` -- any read is `EXS-E0341`, the checker's);
+; one `%r = redfin F %h` in the exit block after it is sealed, followed by
+; `writeVariable(acc, exit, %r)` so that reads after the loop find `%r` --
+; after the loop `acc` is "an ordinary binding" of type F.
+;
+; That placement is not a style: verify.inc rule 5 checks that the `redinit`'s
+; block DOMINATES every `contrib`'s and that the `redfin`'s block
+; POST-DOMINATES every `contrib`'s. `rumpe` out of a reduction loop would
+; break the second half and is `EXS-E0342`, the checker's; a tree that has one
+; never reaches here (lowering.md hazard H4).
+;
+; WHERE F COMES FROM, AND WHY NOT FROM THE ACCUMULATOR'S TYPE. lowering.md
+; section 2.5 says `F = types[acc.ty].a`, reading the accumulator's `red.F`
+; type as carrying F. It does not: `checker/types/stmt.inc`'s
+; `__chk_ty_forhead` interns `red` with `a` = THE ACCUMULATOR'S OWN
+; DECLARATION ID, and says so in its own comment ("F has no other
+; representation in this tree"). Nothing in the typed tree records F. So this
+; pass takes F from THE CONTRIBUTION -- the `Node.ty` of the right-hand side
+; of the `Assign` whose left-hand side is this accumulator -- which is the
+; type `contrib` must carry anyway (verify.inc's `__bfa_verify_pa_contrib`
+; compares the contributed value's type against the handle's inner F) and the
+; type spec section 5.4 gives `acc` after the loop. Recorded as finding 20 and
+; as a request to the checker, which is where F belongs.
+; ============================================================================
+
+	jmp	__lwr_red_words_end
+  __lwr_forma_pool:
+	db 8,'ordinata'
+	db 7,'arborea'
+  LWR_FORMA_POOL_LEN = $ - __lwr_forma_pool
+  ; the IR mnemonics of docs/design/ssa-ir.md 2.3, interned into
+  ; `Module.names` as `redinit`'s `aux` exactly as parse.inc's
+  ; `__bfa_ps_redinit` interns the op token it reads
+  __lwr_op_fadd	db "fadd"
+  .len = $ - __lwr_op_fadd
+  __lwr_op_fsub	db "fsub"
+  .len = $ - __lwr_op_fsub
+  __lwr_op_fmul	db "fmul"
+  .len = $ - __lwr_op_fmul
+  __lwr_op_add	db "add"
+  .len = $ - __lwr_op_add
+  __lwr_op_sub	db "sub"
+  .len = $ - __lwr_op_sub
+  __lwr_op_mul	db "mul"
+  .len = $ - __lwr_op_mul
+  __lwr_op_addw	db "addw"
+  .len = $ - __lwr_op_addw
+  __lwr_op_subw	db "subw"
+  .len = $ - __lwr_op_subw
+  __lwr_op_adds	db "adds"
+  .len = $ - __lwr_op_adds
+  __lwr_op_subs	db "subs"
+  .len = $ - __lwr_op_subs
+  __lwr_red_words_end:
+
+; lwr_acc_push(st, lwrad, lwrah, lwrafi) -- one live accumulator record.
+proc lwr_acc_push, lwrsp, lwrad, lwrah, lwrafi
+	uses	rbx
+	locals
+	endl
+	mov	rbx, [lwrsp]
+	mov	rdi, [rbx + LwrState.accs]
+	call	vec_push
+	mov	ecx, [lwrad]
+	mov	[rax + LwrAcc.adcl], ecx
+	mov	ecx, [lwrah]
+	mov	[rax + LwrAcc.ahnd], ecx
+	mov	ecx, [lwrafi]
+	mov	[rax + LwrAcc.afir], ecx
+	mov	dword [rax + LwrAcc.apad], 0
+	return
+endp
+
+; lwr_acc_find(st, lwrad) -> eax = the `redinit` handle for accumulator
+; declaration `lwrad`, or 0 if no enclosing loop declared it. Searched from the
+; TOP down, so an inner reduction is found before an outer one -- though the
+; two can never collide: each `Contrahe` clause makes its own `AST_D_ACCUM`.
+proc lwr_acc_find, lwrsp, lwrad
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [lwrsp]
+	mov	rdi, [rbx + LwrState.accs]
+	mov	r12, [rdi + Vec.len]
+  .scan:
+	test	r12, r12
+	jz	.miss
+	dec	r12
+	mov	rdi, [rbx + LwrState.accs]
+	mov	rsi, r12
+	call	vec_get
+	mov	ecx, [rax + LwrAcc.adcl]
+	cmp	ecx, [lwrad]
+	jne	.scan
+	mov	eax, [rax + LwrAcc.ahnd]
+	return
+  .miss:
+	xor	eax, eax
+	return
+endp
+
+; __lwr_acc_trunc(st, lwrbse) -- drop every record above `lwrbse`. The loop
+; that pushed them has finished its `redfin`s.
+proc __lwr_acc_trunc, lwrsp, lwrbse
+	locals
+	endl
+	mov	rdi, [lwrsp]
+	mov	rdi, [rdi + LwrState.accs]
+	mov	rax, [rdi + Vec.len]
+	mov	ecx, [lwrbse]
+	rassert	rax ge rcx
+	mov	[rdi + Vec.len], rcx
+	return
+endp
+
+; __lwr_acc_f(st, lwrad) -> eax = the `Ast.types` id of F for accumulator
+; declaration `lwrad`: the type of the contribution. See this section's header
+; for why the accumulator's own `red` type cannot answer it.
+;
+; ONE LINEAR SCAN of `Ast.nodes` for the `Assign` whose left-hand `Path`
+; resolves to `lwrad`. Deterministic (node index order, the first match wins),
+; and an accumulator can be written nowhere but inside its own loop body --
+; every other mention is `EXS-E0341`, so the scan cannot find a write this
+; loop does not own. A reduction that never contributes has no F and traps:
+; the checker admits such a loop today (nothing requires a contribution) and
+; there is no spec section 13 code to refuse it with, which is finding 20's
+; second half.
+proc __lwr_acc_f, lwrsp, lwrad
+	uses	rbx, r12, r13
+	locals
+		slot lwrnn, dq
+		slot lwrl2, dd
+	endl
+	mov	rbx, [lwrsp]
+	mov	rdi, [rbx + LwrState.tree]
+	call	ast_node_count
+	mov	[lwrnn], rax
+	mov	r12, 1
+  .scan:
+	cmp	r12, [lwrnn]
+	ja	.miss
+	mov	rdi, rbx
+	mov	esi, r12d
+	call	__lwr_nkind
+	cmp	eax, AST_ASSIGN
+	jne	.next
+	mov	rdi, rbx
+	mov	esi, r12d
+	call	__lwr_node
+	mov	ecx, [rax + AstNode.a]
+	mov	[lwrl2], ecx
+	mov	r13d, [rax + AstNode.b]
+	mov	rdi, rbx
+	mov	esi, [lwrl2]
+	call	__lwr_nkind
+	cmp	eax, AST_PATH
+	jne	.next
+	mov	rdi, rbx
+	mov	esi, [lwrl2]
+	call	__lwr_node
+	mov	ecx, [rax + AstNode.d]
+	cmp	ecx, [lwrad]
+	jne	.next
+	mov	rdi, rbx
+	mov	esi, r13d
+	call	__lwr_nty
+	return
+  .next:
+	inc	r12
+	jmp	.scan
+  .miss:
+	xor	eax, eax
+	rassert	eax ne 0		; a `contrahe` with no contribution
+	return
+endp
+
+; __lwr_forma_shape(st, lwrc) -> eax = `BFA_RSHAPE_*` for the `forma` name id
+; in `ForHead.c`.
+;
+; `ordinata` and `arborea` are IDENTs, not keywords (checker/types/prim.inc's
+; `chk_ty_forma_names` says so), so the shape is a name compared against a
+; pool -- the same two-entry pool, in the same order, as the checker's.
+; `EXS-E0343` is the checker's: a third spelling never reaches here.
+;
+; `ForHead.c` = 0 IS `contrahe` WITH NO `forma` CLAUSE, and spec section 8.6's
+; `['forma' IDENT [INT]]` makes the clause optional while section 5.4 makes
+; the shape part of the operation. Nothing says which shape an omitted clause
+; means. This pass emits `ordinata`: strict left-to-right is the one shape
+; that is not a reassociation, so it is the only default that cannot change
+; what an existing program computes. Recorded as finding 21.
+proc __lwr_forma_shape, lwrsp, lwrc
+	uses	rbx
+	locals
+		slot lwrp2, dq
+		slot lwrn3, dq
+	endl
+	mov	rbx, [lwrsp]
+	cmp	dword [lwrc], 0
+	je	.ordinata
+	mov	rdi, [rbx + LwrState.tree]
+	mov	rdi, [rdi + Ast.names]
+	mov	esi, [lwrc]
+	call	intern_bytes
+	mov	[lwrp2], rax
+	mov	[lwrn3], rdx
+	lea	rdi, [__lwr_forma_pool]
+	mov	rsi, LWR_FORMA_POOL_LEN
+	mov	rdx, [lwrp2]
+	mov	rcx, [lwrn3]
+	call	ast_name_id
+	cmp	eax, 1
+	je	.ordinata
+	cmp	eax, 2
+	je	.arborea
+	rassert	eax eq 1		; `EXS-E0343` is the checker's
+  .ordinata:
+	mov	eax, BFA_RSHAPE_ORDINATA
+	return
+  .arborea:
+	mov	eax, BFA_RSHAPE_ARBOREA
+	return
+endp
+
+; __lwr_op_word(st, lwrao, lwrfl) -> eax = the interned IR mnemonic for
+; `ArithOp` `lwrao` at a float (`lwrfl` = 1) or integer (0) F.
+;
+; lowering.md section 2.5's table: float `+ - *` -> `fadd fsub fmul`; integer
+; `+ - *` -> `add sub mul` (the TRAPPING forms, spec section 5.4's default),
+; `+% -%` -> `addw subw`, `+| -|` -> `adds subs`. A wrapping or saturating
+; operator on a float is `EXS-E0305`, the checker's, and `-` under `arborea`
+; is passed through and recorded (lowering.md finding 4) -- today the checker
+; refuses every non-associative operator under `EXS-E0343`, so the three
+; subtracting rows are unreachable from source and exist because the table
+; does.
+proc __lwr_op_word, lwrsp, lwrao, lwrfl
+	uses	rbx
+	locals
+		slot lwrp3, dq
+		slot lwrn4, dq
+	endl
+	mov	rbx, [lwrsp]
+	cmp	dword [lwrfl], 0
+	je	.int
+	mov	eax, [lwrao]
+	cmp	eax, AST_OP_ADD
+	je	.fadd
+	cmp	eax, AST_OP_SUB
+	je	.fsub
+	cmp	eax, AST_OP_MUL
+	je	.fmul
+	rassert	eax eq AST_OP_ADD	; `EXS-E0305`, the checker's
+  .int:
+	mov	eax, [lwrao]
+	cmp	eax, AST_OP_ADD
+	je	.add
+	cmp	eax, AST_OP_SUB
+	je	.sub
+	cmp	eax, AST_OP_MUL
+	je	.mul
+	cmp	eax, AST_OP_ADDW
+	je	.addw
+	cmp	eax, AST_OP_SUBW
+	je	.subw
+	cmp	eax, AST_OP_ADDS
+	je	.adds
+	cmp	eax, AST_OP_SUBS
+	je	.subs
+	rassert	eax eq AST_OP_ADD	; not an `ArithOp` at all
+  .fadd:
+	lea	rax, [__lwr_op_fadd]
+	mov	rdx, __lwr_op_fadd.len
+	jmp	.intern
+  .fsub:
+	lea	rax, [__lwr_op_fsub]
+	mov	rdx, __lwr_op_fsub.len
+	jmp	.intern
+  .fmul:
+	lea	rax, [__lwr_op_fmul]
+	mov	rdx, __lwr_op_fmul.len
+	jmp	.intern
+  .add:
+	lea	rax, [__lwr_op_add]
+	mov	rdx, __lwr_op_add.len
+	jmp	.intern
+  .sub:
+	lea	rax, [__lwr_op_sub]
+	mov	rdx, __lwr_op_sub.len
+	jmp	.intern
+  .mul:
+	lea	rax, [__lwr_op_mul]
+	mov	rdx, __lwr_op_mul.len
+	jmp	.intern
+  .addw:
+	lea	rax, [__lwr_op_addw]
+	mov	rdx, __lwr_op_addw.len
+	jmp	.intern
+  .subw:
+	lea	rax, [__lwr_op_subw]
+	mov	rdx, __lwr_op_subw.len
+	jmp	.intern
+  .adds:
+	lea	rax, [__lwr_op_adds]
+	mov	rdx, __lwr_op_adds.len
+	jmp	.intern
+  .subs:
+	lea	rax, [__lwr_op_subs]
+	mov	rdx, __lwr_op_subs.len
+  .intern:
+	mov	[lwrp3], rax
+	mov	[lwrn4], rdx
+	mov	rdi, rbx
+	mov	rsi, [lwrp3]
+	mov	rdx, [lwrn4]
+	call	__lwr_intern
+	return
+endp
+
+; __lwr_contrahe_init(st, lwrhd) -> eax = the base index in `accs` this loop's
+; records start at. Emits one `redinit` per `Contrahe` in LIST ORDER into the
+; current block, which is the block the loop is entered from.
+;
+; `ForHead`: `a` the `Contrahe` list offset, `b` its length, `c` the `forma`
+; name id (0 for no clause), `d` the width (0 for `ordinata`; `EXS-E0343`
+; makes the pairing the checker's). `Contrahe`: `aux` the `ArithOp`, `d` the
+; accumulator declaration.
+proc __lwr_contrahe_init, lwrsp, lwrhd
+	uses	rbx, r12, r13
+	locals
+		slot lwroff, dd
+		slot lwrcnt, dd
+		slot lwrshp, dd
+		slot lwrwd,  dd
+		slot lwri,   dd
+		slot lwrbse, dd
+		slot lwrcn2, dd
+		slot lwrad,  dd
+		slot lwrft,  dd
+		slot lwrir,  dd
+		slot lwrrt,  dd
+		slot lwrow,  dd
+	endl
+	mov	rbx, [lwrsp]
+	mov	rdi, [rbx + LwrState.accs]
+	mov	rax, [rdi + Vec.len]
+	mov	[lwrbse], eax
+	cmp	dword [lwrhd], 0
+	je	.done
+	mov	rdi, rbx
+	mov	esi, [lwrhd]
+	call	__lwr_node
+	movzx	ecx, word [rax + AstNode.kind]
+	rassert	ecx eq AST_FORHEAD
+	mov	ecx, [rax + AstNode.a]
+	mov	[lwroff], ecx
+	mov	ecx, [rax + AstNode.b]
+	mov	[lwrcnt], ecx
+	mov	ecx, [rax + AstNode.c]
+	mov	r12d, ecx
+	mov	ecx, [rax + AstNode.d]
+	mov	[lwrwd], ecx
+	mov	rdi, rbx
+	mov	esi, r12d
+	call	__lwr_forma_shape
+	mov	[lwrshp], eax
+
+	mov	dword [lwri], 0
+  .clause:
+	mov	eax, [lwri]
+	cmp	eax, [lwrcnt]
+	jae	.done
+	mov	rdi, rbx
+	mov	esi, [lwroff]
+	mov	edx, [lwri]
+	call	__lwr_listat
+	mov	[lwrcn2], eax
+	mov	rdi, rbx
+	mov	esi, eax
+	call	__lwr_node
+	movzx	ecx, word [rax + AstNode.kind]
+	rassert	ecx eq AST_CONTRAHE
+	movzx	r12d, word [rax + AstNode.aux]
+	mov	ecx, [rax + AstNode.d]
+	mov	[lwrad], ecx
+	rassert	ecx ne 0
+
+	mov	rdi, rbx
+	mov	esi, [lwrad]
+	call	__lwr_acc_f
+	mov	[lwrft], eax
+	mov	rdi, rbx
+	mov	esi, eax
+	call	lwr_ty_scalar
+	rassert	eax eq 1		; a reduction over an aggregate is not a
+					; shape spec section 5.4 defines
+	mov	rdi, rbx
+	mov	esi, [lwrft]
+	call	lwr_ty_ir
+	mov	[lwrir], eax
+	mov	rdi, rbx
+	mov	esi, [lwrft]
+	call	lwr_ty_kind
+	xor	r13d, r13d
+	cmp	eax, AST_TY_FLOAT
+	jne	.notfloat
+	mov	r13d, 1
+  .notfloat:
+	mov	rdi, rbx
+	mov	esi, r12d
+	mov	edx, r13d
+	call	__lwr_op_word
+	mov	[lwrow], eax
+
+	mov	rdi, [rbx + LwrState.mdl]
+	mov	esi, BFA_TK_RED
+	xor	edx, edx
+	xor	ecx, ecx
+	mov	r8d, [lwrir]
+	call	bfa_type_intern
+	mov	[lwrrt], eax
+
+	mov	rdi, rbx
+	mov	esi, BFA_OP_REDINIT
+	mov	edx, [lwrow]
+	mov	ecx, [lwrrt]
+	mov	r8d, [lwrshp]
+	mov	r9d, [lwrwd]
+	call	lwr_emit
+	mov	r12d, eax
+	mov	rdi, rbx
+	mov	esi, [lwrad]
+	mov	edx, r12d
+	mov	ecx, [lwrir]
+	call	lwr_acc_push
+
+	mov	eax, [lwri]
+	inc	eax
+	mov	[lwri], eax
+	jmp	.clause
+  .done:
+	mov	eax, [lwrbse]
+	return
+endp
+
+; __lwr_contrahe_fin(st, lwrbse) -- one `%r = redfin F %h` per accumulator this
+; loop declared, in the SAME ORDER the `redinit`s were emitted, into the
+; current block (the exit, already sealed), each followed by
+; `writeVariable(acc, exit, %r)`. Then the records come off the stack.
+;
+; The accumulator becomes an ORDINARY SSA VARIABLE here and not before: its
+; `vars` slot is written at this point, so a read anywhere inside the body
+; would find `LWR_VK_NONE` -- which is the shape `EXS-E0341` is the checker's
+; half of.
+proc __lwr_contrahe_fin, lwrsp, lwrbse
+	uses	rbx, r12, r13
+	locals
+		slot lwri,  dd
+		slot lwrn5, dd
+		slot lwrad, dd
+		slot lwrir, dd
+		slot lwrr,  dd
+	endl
+	mov	rbx, [lwrsp]
+	mov	rdi, [rbx + LwrState.accs]
+	mov	rax, [rdi + Vec.len]
+	mov	[lwrn5], eax
+	mov	eax, [lwrbse]
+	mov	[lwri], eax
+  .acc:
+	mov	eax, [lwri]
+	cmp	eax, [lwrn5]
+	jae	.done
+	mov	rdi, [rbx + LwrState.accs]
+	mov	esi, [lwri]
+	call	vec_get
+	mov	ecx, [rax + LwrAcc.adcl]
+	mov	[lwrad], ecx
+	mov	r12d, [rax + LwrAcc.ahnd]
+	mov	ecx, [rax + LwrAcc.afir]
+	mov	[lwrir], ecx
+
+	mov	rdi, rbx
+	mov	esi, BFA_OP_REDFIN
+	xor	edx, edx
+	mov	ecx, [lwrir]
+	mov	r8d, r12d
+	xor	r9d, r9d
+	call	lwr_emit
+	mov	[lwrr], eax
+
+	mov	rdi, rbx
+	mov	esi, [lwrad]
+	mov	edx, LWR_VK_SSA
+	mov	ecx, [lwrir]
+	xor	r8, r8
+	call	lwr_var_set
+	mov	rdi, rbx
+	mov	esi, [lwrad]
+	mov	edx, [rbx + LwrState.cur]
+	mov	ecx, [lwrr]
+	call	lwr_write_var
+
+	mov	eax, [lwri]
+	inc	eax
+	mov	[lwri], eax
+	jmp	.acc
+  .done:
+	mov	rdi, rbx
+	mov	esi, [lwrbse]
+	call	__lwr_acc_trunc
+	return
+endp
+
+; __lwr_is_accum(st, lwrd2) -> eax = 1 if declaration `lwrd2` is a `contrahe`
+; accumulator. The prelude tag is tested first: a tagged reference is not an
+; `Ast.decls` index at all (lower/ty.inc's `LWR_PRELUDE_TAG`).
+proc __lwr_is_accum, lwrsp, lwrd2
+	uses	rbx
+	locals
+	endl
+	mov	rbx, [lwrsp]
+	mov	eax, [lwrd2]
+	test	eax, eax
+	jz	.no
+	test	eax, LWR_PRELUDE_TAG
+	jnz	.no
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, eax
+	call	ast_decl_at
+	movzx	eax, byte [rax + AstDecl.kind]
+	cmp	eax, AST_D_ACCUM
+	jne	.no
+	mov	eax, 1
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
 ; __lwr_release_to(st, lwrdp) -- release every open frame from the innermost
 ; down to frame `lwrdp` inclusive, without popping any of them. `redde` passes
 ; 0 (every frame, to the function root); `rumpe`/`perge` pass the loop's.
@@ -694,6 +1240,14 @@ endp
 ; For a reference variable the order is: evaluate `rhs`, retain it if it is
 ; borrowed, release the OLD value, then write -- so `x = x` is a retain then a
 ; release and not a use after free.
+;
+; AN ACCUMULATOR ON THE LEFT IS NOT A WRITE. Spec section 5.4: inside the body
+; of an iteration carrying `contrahe`, `acc = e;` CONTRIBUTES `e` under the
+; declared operator, and is the only statement that may name `acc`. It lowers
+; to `contrib %h <e>` against the handle the loop stack holds (lowering.md
+; 2.5), never to `writeVariable` -- and the test comes FIRST, before the
+; left-hand side's type is read at all: that type is `red.F`, which is not a
+; place and has no IR type of its own.
 proc __lwr_assign, lwrsp, lwrn
 	uses	rbx, r12, r13
 	locals
@@ -713,6 +1267,42 @@ proc __lwr_assign, lwrsp, lwrn
 	mov	[lwrl], ecx
 	mov	ecx, [rax + AstNode.b]
 	mov	[lwrr], ecx
+
+	mov	rdi, rbx
+	mov	esi, [lwrl]
+	call	__lwr_nkind
+	cmp	eax, AST_PATH
+	jne	.notcontrib
+	mov	rdi, rbx
+	mov	esi, [lwrl]
+	call	__lwr_node
+	mov	ecx, [rax + AstNode.d]
+	mov	[lwrd], ecx
+	mov	rdi, rbx
+	mov	esi, ecx
+	call	__lwr_is_accum
+	test	eax, eax
+	jz	.notcontrib
+	mov	rdi, rbx
+	mov	esi, [lwrd]
+	call	lwr_acc_find
+	mov	[lwrv], eax
+	rassert	eax ne 0		; an accumulator with no live handle: a
+					; write outside its own loop, which is
+					; `EXS-E0341`, the checker's
+	mov	rdi, rbx
+	mov	esi, [lwrr]
+	call	lwr_expr
+	mov	r12d, eax
+	mov	rdi, rbx
+	mov	esi, BFA_OP_CONTRIB
+	xor	edx, edx
+	xor	ecx, ecx
+	mov	r8d, [lwrv]
+	mov	r9d, r12d
+	call	lwr_emit
+	return
+  .notcontrib:
 
 	mov	rdi, rbx
 	mov	esi, [lwrl]
@@ -1318,6 +1908,7 @@ proc __lwr_for, lwrsp, lwrn
 		slot lwrhi, dd
 		slot lwrdp, dq
 		slot lwraux, dd
+		slot lwrabs, dd
 	endl
 	mov	rbx, [lwrsp]
 	mov	rdi, rbx
@@ -1334,11 +1925,6 @@ proc __lwr_for, lwrsp, lwrn
 	mov	ecx, [rax + AstNode.d]
 	mov	[lwrd], ecx
 	rassert	ecx ne 0
-	; `contrahe` accumulators are a `ForHead` this slice does not build:
-	; `redinit`/`contrib`/`redfin` are designed in lowering.md 2.5 and have
-	; no fixture, and emitting them untested would be worse than refusing
-	mov	eax, [lwrhead]
-	rassert	eax eq 0
 
 	mov	rdi, rbx
 	mov	esi, [lwrrng]
@@ -1377,6 +1963,15 @@ proc __lwr_for, lwrsp, lwrn
 	mov	edx, [rbx + LwrState.cur]
 	mov	ecx, r12d
 	call	lwr_write_var
+
+	; `contrahe`: one `redinit` per accumulator HERE, in the block the loop
+	; is entered from and before the `jmp header`, so that the handle's
+	; definition dominates every `contrib` in the body (lowering.md 2.5,
+	; verify.inc rule 5). A `ForHead` of 0 pushes nothing.
+	mov	rdi, rbx
+	mov	esi, [lwrhead]
+	call	__lwr_contrahe_init
+	mov	[lwrabs], eax
 
 	mov	rdi, rbx
 	call	lwr_blk_new
@@ -1482,6 +2077,13 @@ proc __lwr_for, lwrsp, lwrn
 	call	lwr_seal
 	mov	eax, [lwrexit]
 	mov	[rbx + LwrState.cur], eax
+	; `contrahe`: the `redfin`s go in the EXIT, after it is sealed -- the
+	; exit post-dominates every block of the body, which is what verify.inc
+	; rule 5's second half asks of them, and `writeVariable(acc, exit, %r)`
+	; is what makes a read after the loop find the result.
+	mov	rdi, rbx
+	mov	esi, [lwrabs]
+	call	__lwr_contrahe_fin
 	return
 endp
 
