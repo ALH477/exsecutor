@@ -209,6 +209,104 @@ proc __chk_lay_ty, chkl_wk, chkl_ty, chkl_dp
 	return
 endp
 
+; ---- is this field list parser debris? --------------------------------------
+;     __chk_lay_debris(wk, extra index of the first `Field`, field count)
+;         -> rax = 1 if any field's TYPE cannot have come from admissible
+;                    source, so nothing this pass would say about the struct
+;                    is a statement about the program
+;
+; WHAT IT LOOKS FOR, AND WHY NOT AN `Error` NODE. checker.md hazard H3 reads
+; "the walk gives an `Error` node type id 1 and says nothing; a pass that
+; diagnoses it duplicates the parser," and the obvious fix for §14 entry 22
+; was to test for that type id. MEASURED, AND IT IS NOT WHAT `u4:maior`
+; PRODUCES. `cst/parse.inc`'s `.order` arm raises `EXS-E0201` and then keeps
+; the suffix in the tree on purpose -- "the token is still put in the tree --
+; losing it would cost the round trip, and the diagnostic is the deliverable,
+; not the shape" is that file's rule for the whole bit-width family -- so
+; there is no `CST_ERROR`, no `AST_ERROR` and no type id 1 anywhere in entry
+; 22's tree. `build/exsc ... --emitte ast` on it prints a fully formed
+; `t 15 int 0 1 0 4 0 0`: an `AST_TY_INT` of width 4 carrying
+; `AST_ORD_MAIOR`. That shape is the detection, because spec §5.2 rule 3 says
+; byte order "is not part of the grammar at or below" eight bits -- a
+; sub-byte integer with an explicit order cannot be written, so a field
+; carrying one came from recovery and its declared width is not the
+; programmer's. The test is width < 8 exactly, not <= 8, because that is the
+; condition `__cst_core_type` raises `EXS-E0201` on (`cmp r13d, 8 / jae`), and
+; a detection wider than the parser's diagnostic would silence a struct the
+; parser said nothing about. (`u8:maior` is `[OPEN]` on both sides: §5.2 rule
+; 3's "at or below" covers it and the parser admits it. Reported, not widened
+; here -- cst/ is not this agent's tree.)
+;
+; AND NOTHING ELSE -- IN PARTICULAR NOT "THE FIELD'S TYPE IS THE ERROR TYPE".
+; That was the first version of this routine and `tests/unit/
+; chk_row_layout_src.asm`'s case c22 refuted it: `@transitus structura T<X> {
+; x: X }` asserts `{EXS-E0301, EXS-E0321}`, both of them, deliberately -- a
+; field whose TYPE NAME does not resolve is still a field this pass must call
+; `:nativus`, because `E0301` is a resolution diagnostic and not a parse one,
+; so suppressing `E0321` behind it withholds a rule the program really does
+; break. A field with no declaration, or one pass 2 never typed, is skipped
+; for its width but does not silence the struct, for the same reason. Whether
+; a `Field` whose type is genuinely an `AST_ERROR` node exists at all is
+; `[OPEN]`: nothing measured in this tree produces one, and until something
+; does, widening the test here would be a guess dressed as H3.
+proc __chk_lay_debris, chkl_wk2, chkl_ix2, chkl_nx2
+	uses	rbx, r12, r13, r14
+	locals
+		slot chkl_j,   dq
+		slot chkl_m,   dq
+		slot chkl_fd2, dq
+	endl
+	mov	rbx, [chkl_wk2]
+	mov	r14, [rbx + ChkRowWork.wtree]
+	mov	rax, [chkl_ix2]
+	mov	[chkl_j], rax
+	mov	rax, [chkl_nx2]
+	mov	[chkl_m], rax
+  .field:
+	cmp	qword [chkl_m], 0
+	jle	.clean
+	mov	rdi, r14
+	mov	rsi, [chkl_j]
+	call	ast_extra_at
+	mov	rdi, r14
+	mov	rsi, rax
+	call	ast_node_at
+	mov	ecx, [rax + AstNode.d]
+	test	ecx, ecx
+	jz	.next
+	mov	rdi, r14
+	mov	rsi, rcx
+	call	ast_decl_at
+	mov	esi, [rax + AstDecl.ty]
+	test	esi, esi
+	jz	.next
+	mov	[chkl_fd2], rsi
+	mov	rax, [r14 + Ast.types.len]
+	cmp	rsi, rax
+	ja	.next
+	mov	rdi, r14
+	call	ast_type_at
+	movzx	ecx, byte [rax + AstType.kind]
+	cmp	ecx, AST_TY_INT
+	jne	.next
+	movzx	ecx, byte [rax + AstType.order]
+	cmp	ecx, AST_ORD_NATIVUS
+	je	.next
+	mov	eax, [rax + AstType.width]
+	cmp	eax, 8
+	jb	.debris			; spec §5.2 rule 3: unwritable
+  .next:
+	inc	qword [chkl_j]
+	dec	qword [chkl_m]
+	jmp	.field
+  .clean:
+	xor	eax, eax
+	return
+  .debris:
+	mov	eax, 1
+	return
+endp
+
 ; ---- one struct ------------------------------------------------------------
 ; Idempotent: a struct reached twice (a field naming one declared later, then
 ; the decl-order loop reaching it) is laid out once. A struct that reaches
@@ -265,6 +363,28 @@ proc __chk_lay_struct, chkl_wk, chkl_sd, chkl_dp
 	mov	[chkl_i], rcx
 	mov	ecx, [rax + AstNode.b]
 	mov	[chkl_n], rcx
+
+	; ---- PARSER DEBRIS: lay the struct out, say nothing about it --------
+	; Spec §5.2 rule 3 admits exactly one code for `campus: u4:maior`
+	; ("`u4:maior` does not parse, so it is EXS-E0201... Neither needs a new
+	; code" -- ONE fires, not both), and §14 entry 22 measured two. Clearing
+	; the `@transitus` bit is the whole of the fix: every §5.2 check below
+	; (`EXS-E0321`, `EXS-E0309`, rule 2 and rule 4's `EXS-E0322`) is gated on
+	; it, while the offsets are not -- packing is alignment 1 for every
+	; struct (this file's header), so the `Ast.layout` entries this struct
+	; gets are byte-identical either way and only the diagnostics go away.
+	; Filling them anyway matters because `chk_verify` wants an entry per
+	; `STRUCT` and `FIELD` decl (checker.md section 3) and pass 4 must not
+	; leave a hole behind a diagnostic some other pass raised.
+	cmp	qword [chkl_tr], 0
+	je	.field
+	mov	rdi, rbx
+	mov	rsi, [chkl_i]
+	mov	rdx, [chkl_n]
+	call	__chk_lay_debris
+	test	eax, eax
+	jz	.field
+	mov	qword [chkl_tr], 0
 
   .field:
 	cmp	qword [chkl_n], 0

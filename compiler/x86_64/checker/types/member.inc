@@ -834,6 +834,8 @@ proc __chk_ty_call, chkt_wCL, chkt_nCL
 		slot chkt_iCL, dq
 		slot chkt_jCL, dq
 		slot chkt_mCL, dq	; the mutable-borrow argument found, or 0
+		slot chkt_kCL, dq	; the parameter ordinal of the argument
+					; being checked (spec §4.2's `sicut`)
 	endl
 	mov	rbx, [chkt_wCL]
 	mov	r12, [chkt_nCL]
@@ -975,6 +977,9 @@ proc __chk_ty_call, chkt_wCL, chkt_nCL
 	je	.pidx
 	inc	rax
   .pidx:
+	mov	[chkt_kCL], rax		; the parameter ORDINAL, kept because
+					; `sicut` names a parameter positionally
+					; (spec §4.2) and the check below needs it
 	cmp	rax, [chkt_pCL]
 	jae	.arg_untyped
 	mov	rdi, [rbx + ChkTyWork.wtre]
@@ -988,6 +993,26 @@ proc __chk_ty_call, chkt_wCL, chkt_nCL
 	call	__chk_ty_borrowparam
 	test	eax, eax
 	jnz	.arg_next
+	; ---- spec §4.2: a `sicut`-named parameter is ROW-POLYMORPHIC ---------
+	; checker.md section 2.1 rule 3: *"A parameter named by `sicut f` accepts
+	; an argument of any row and substitutes it (spec §4.2, positionally:
+	; `RowItem.d` = ordinal); every other parameter's row must be EQUAL."*
+	; The second half was built and the first half was not, so §14 entry 10
+	; -- `applica`, §4.2's own worked example of a HOF written CORRECTLY --
+	; got `EXS-E0303` at `applica(v, nocens)` on top of the `EXS-E0421` its
+	; caller has coming. Measured.
+	mov	rdi, rbx
+	mov	rsi, [chkt_tCL]
+	mov	rdx, [chkt_kCL]
+	call	__chk_ty_issicut
+	test	eax, eax
+	jz	.arg_want
+	mov	rdi, rbx
+	mov	rsi, r13
+	mov	rdx, r14
+	call	__chk_ty_wantsicut
+	jmp	.arg_next
+  .arg_want:
 	mov	rdi, rbx
 	mov	rsi, r13
 	mov	rdx, r14

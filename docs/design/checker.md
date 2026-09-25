@@ -138,9 +138,9 @@ visit.
 | # | pass | file | shape | fills | raises |
 |---|---|---|---|---|---|
 | 0 | atoms | `resolve.inc` | push 11 decls | `Ast.decls` N+1..N+11 in §4.6 order | — |
-| 1 | resolve | `resolve.inc` | one walk | `Seg.d` `Path.d` `RowItem.d` `Sub` frames, `Decl.flags` `address_taken` | `E0500`; shadowing, unresolved, duplicate (no code) |
+| 1 | resolve | `resolve.inc` | one walk | `Seg.d` `Path.d` `RowItem.d` `Sub` frames, `Decl.flags` `address_taken` | shadowing, unresolved, duplicate (no code) — **not `E0500`**, see below |
 | 2 | types | `types.inc` | signatures loop, then one walk | `Ast.types`, `Node.ty`, `Decl.ty`, `Member.d`, `konst`, `own`, `memory_resident` | `E0311` `E0332` `E0341` `E0342` `E0520`; mismatch etc. (no code) |
-| 3 | rows | `rows.inc` | intern API (used by 2); one walk building a use list; **fixpoint over the list**; one check loop | `Ast.rows`, fn/dyn `TypeNode.b`, `Decl.flags` `capability_bearing` | `E0421` `E0501` `E0510` |
+| 3 | rows | `rows.inc` | intern API (used by 2); one walk building a use list; **fixpoint over the list**; one check loop | `Ast.rows`, fn/dyn `TypeNode.b`, `Decl.flags` `capability_bearing` | `E0421` `E0500` `E0501` `E0510` |
 | 4 | layout | `layout.inc` | loop over struct decls in decl order | `Ast.layout` | `E0321` `E0322` |
 | 5 | lexicon | `lexicon.inc` | loop over public decls in decl order | — | `E0601` `E0602` `E0603` `E0610` |
 | 6 | verify | `verify.inc` | AST section 3's Stage 2 list | — | `rassert` only |
@@ -176,6 +176,21 @@ error; an inner block shadowing an ordinary name is allowed (names resolve
 by name, so nearest-wins is unambiguous — only capabilities resolve by type
 and only they forbid shadowing). `Member.d` is *not* resolved here: a
 member needs the receiver's type. `&x` on a `Path` sets `address_taken`.
+
+**`E0500` is not pass 1's**, and this document said it was until 2026-09-25.
+Spec §4.1 rule 7 reads *"No module-level mutable state. (`EXS-E0500`; with a
+capability, `EXS-E0501`.)"* — **one** code per offending binding, chosen by
+whether the binding's type is capability-bearing (§4.3). Pass 1 cannot choose:
+capability-bearing is pass 3's fixpoint over `Decl.ty`, which is pass 2's. So
+pass 1 raised `E0500` unconditionally and pass 3 added `E0501`, and
+`mutabilis retis_globalis: rete;` — §14 entry 11, which expects exactly
+`{EXS-E0501}` — got both. **Decision: the whole of rule 7 is pass 3's**, and
+pass 1 says nothing; the two facts pass 3 needs are already on the declaration
+(`AST_F_MUTABILIS`, and `AstDecl.parent == 0` for module level), so no ninth
+`Decl.flags` bit is spent (hazard H4). `E0500` keeps its span — moved onto the
+declaration — and its required fix (`mutabilis` → `firma`), which is why the
+fix text stays in `resolve.inc` beside the other `E05xx` literals while the
+code that raises it lives in `rows/compute.inc`. Finding 24.
 
 **Pass 2** interns declared types first, in decl order, so bodies may call
 functions declared later: for every `Fn`/`ExternFn`/`Member`/`Struct`/
@@ -270,7 +285,9 @@ the rows of any `fn`/`dyn` it contains; the result sets `AST_F_CAPBEAR`.
 The spec's "must be declared so" has no syntax (finding 7); the flag is
 computed and the ego emitter reads it. A module-level binding, `firma` or
 `mutabilis`, whose type bears anything is `EXS-E0501`
-(`cases/bad_capability_module_state.exsc`, §14 entry 11).
+(`cases/bad_capability_module_state.exsc`, §14 entry 11); one that bears
+nothing is `EXS-E0500` if it is `mutabilis` and nothing if it is `firma`. Both
+codes, one per binding, in this pass — the roster above says why.
 
 ### 2.4 Diagnostics: what §13 has, what it lacks, and a proposal
 
@@ -281,12 +298,21 @@ computed and the ego emitter reads it. A module-level binding, `firma` or
 | `E0311` | integer index on `textus` | §5.1 | 2 | the `Index` node |
 | `E0321` | `:nativus` (or unannotated multi-byte) field in `@transitus` | §5.2 r.3 | 4 | the field |
 | `E0322` | implicit padding in `@transitus`: partial trailing byte, or a >8-bit field off a byte boundary | §5.2 r.2, r.4 | 4 | the field / the struct |
+
+Pass 4 raises neither `E0321`, `E0309` nor `E0322` for a `@transitus` struct
+one of whose fields is an integer of width < 8 carrying an explicit byte order:
+that shape cannot be written (§5.2 r.3) and is therefore parser recovery, which
+the parser has already diagnosed `EXS-E0201` (finding 23).
 | `E0332` | branded offset applied to another buffer | §5.1 | 2 | the argument |
 | `E0341` | accumulator read in its own body | §5.4 | 2 | the `Path` |
 | `E0342` | `rumpe` in an iteration carrying `contrahe` | §5.4 | 2 | the `Rumpe` |
 | `E0421` | a draw with no provider in a declared function | §4.1–§4.2 | 3 | the drawing node |
-| `E0500` | module-level `mutabilis` | §4.1 r.7 | 1 | the `Binding` |
+| `E0500` | module-level `mutabilis` of a type bearing no capability | §4.1 r.7 | 3 | the `Binding` |
 | `E0501` | module-level binding of a capability-bearing type | §4.1 r.7, §4.3 | 3 | the `Binding` |
+
+`E0500` and `E0501` are **alternatives**, never both: one binding, one code,
+chosen by capability-bearing. That is why `E0500`'s pass column reads 3 and not
+1 (finding 24).
 | `E0510` | mark exceeds ceiling or `dyn` bound | §4.4 | 3 | the impl head / the cast |
 | `E0520` | non-atomic `refero` in an `externus` signature | §5.3, §6.4 | 2 | the type node |
 | `E0601` `E0602` `E0603` `E0610` | lexicon | §3.1, §3.4, §3.5, §3.8 | 5 | the declaring name |
@@ -671,3 +697,116 @@ Numbered; each names the section and the sentence. Not edited here.
 22. **AST 2.1 status line** says "the checker that fills them is
     `docs/design/checker.md`"; this is that document, and AST section 7's
     item 3 (spec §9.1 should point here) is still owed.
+
+Findings 23–26 were added 2026-09-25, from the cascade-diagnostic wave that
+made §14 entries 22, 11 and 10 emit their expected code and nothing else.
+Every code set below was measured with
+`build/exsc aedifica --hospes x86_64-linux --diagnostica json FILE`, on a
+scratch copy where the fixture is missing a `;`, and the before/after pair is
+stated in each.
+
+23. **Spec §5.2 rule 3 fires once; pass 4 fired twice, and the cause is not
+    hazard H3.** §14 entry 22 (`campus: u4:maior` in a `@transitus` struct)
+    emitted `{EXS-E0201, EXS-E0322}` where rule 3's own text — *"`u4:maior`
+    does not parse, so it is `EXS-E0201`. Neither needs a new code"* —
+    presumes one. H3 says an `Error` node has type id 1 and pass 4 should say
+    nothing about it, so the expected fix was to test for that id. **There is
+    no `Error` node.** `cst/parse.inc`'s `.order` arm raises `EXS-E0201` and
+    *keeps* the suffix in the tree — "the token is still put in the tree —
+    losing it would cost the round trip, and the diagnostic is the
+    deliverable, not the shape," which is that file's rule for the whole
+    bit-width family — so `--emitte cst` shows `BIT_TYPE` + `ORDER_SUFFIX`
+    with no `CST_ERROR`, and `--emitte ast` shows a fully formed
+    `t 15 int 0 1 0 4 0 0`: an `AST_TY_INT` of width 4 carrying
+    `AST_ORD_MAIOR`. Pass 4 was reading a well-formed tree, not debris it
+    could recognise as debris.
+    **Decision: the unwritable *shape* is the detection.** A `@transitus`
+    field whose type is an integer of width < 8 with an explicit byte order
+    cannot be written under rule 3, so it came from recovery; pass 4 lays the
+    struct out and raises none of `E0321`, `E0309`, `E0322` for it
+    (`__chk_lay_debris`, layout.inc). Width < 8 exactly, not ≤ 8, because that
+    is the condition `__cst_core_type` raises `EXS-E0201` on; a wider test
+    would silence a struct the parser said nothing about. Entry 22 now
+    measures `{EXS-E0201}` and entry 21 still measures `{EXS-E0322}`.
+    **Two things this finding leaves open.** (a) `u8:maior` — rule 3's "at or
+    below" covers it and the parser admits it, so nothing rejects it today;
+    reported to the cst agent, not widened here. (b) Whether a `Field` whose
+    type is genuinely an `AST_ERROR` node is reachable at all: nothing
+    measured produces one. Testing for it was the first version of
+    `__chk_lay_debris` and `tests/unit/chk_row_layout_src.asm` case c22
+    refuted it — `@transitus structura T<X> { x: X }` asserts
+    `{EXS-E0301, EXS-E0321}` deliberately, because `E0301` is a *resolution*
+    diagnostic and suppressing `E0321` behind it withholds a rule the program
+    really does break. H3 is about the parser's codes, not every code.
+    `[UNTESTED]` for the `Error`-node case.
+
+24. **Spec §4.1 rule 7 is one code and the checker raised two.** *"No
+    module-level mutable state. (`EXS-E0500`; with a capability,
+    `EXS-E0501`.)"* — a parenthesis that *chooses*. Pass 1 raised `E0500` for
+    every module-level `mutabilis` and pass 3 added `E0501` when the type bore
+    a capability, so §14 entry 11 (`mutabilis retis_globalis: rete;`) measured
+    `{EXS-E0500, EXS-E0501}` against an expectation of `{EXS-E0501}`.
+    **Decision: the whole of rule 7 moves to pass 3**, the only pass that
+    knows capability-bearing; pass 1 says nothing. No new `Decl.flags` bit is
+    needed (hazard H4: there is none to spend) because both facts are already
+    on the declaration — `AST_F_MUTABILIS` from Stage 1, and
+    `AstDecl.parent == 0` for module level. `E0500` keeps its span (moved onto
+    the declaration) and its §8.3 required fix, so `resolve.inc` still owns
+    the fix *text* while `rows/compute.inc` owns the *choice*. Measured after:
+    entry 11 `{EXS-E0501}`; `mutabilis c: i32 = 0;` `{EXS-E0500}` with the
+    same span and fix as before; `firma c: i32 = 0;` clean; and
+    `firma x: rete;` `{EXS-E0501}` — the case that shows the two codes do not
+    nest, since `firma` is not mutable state. Section 2.4's table now reads
+    pass 3 for `E0500`.
+    **Answering the grammar question this raised:** a module-level
+    `mutabilis x: rete;` with no initialiser **does** parse — `BindingDecl`'s
+    `= Expr` is optional, confirmed by running — so entry 11 reaches Stage 2
+    on its own terms. Without the `;` it also gets `EXS-E0203` ("unexpected
+    end of input… it wants `;`"), which is that fixture's own defect and
+    `tests/conformance/`'s to fix.
+
+25. **`sicut` was never consulted at a call site, and function types do not
+    intern canonically.** Section 2.1 rule 3 is two claims; only the second
+    was built. §14 entry 10 — `applica(v: f32, f: functio(f32) -> f32) -> f32
+    poscit alloc, sicut f`, §4.2's own worked example of a HOF written
+    *correctly* — measured `{EXS-E0303, EXS-E0421}`: the argument compare
+    reached `__chk_ty_same` with `nocens`'s `{rete}`-rowed type against the
+    parameter's empty-rowed one and reported a mismatch, on top of the
+    `E0421` `exterior` has coming. **Decision: at an argument whose parameter
+    the callee's declared row names by ordinal, compare everything but the
+    row** (`__chk_ty_issicut`, `__chk_ty_fneqnorow`, `__chk_ty_wantsicut`, all
+    in types/types.inc, reached from `__chk_ty_call`'s argument loop). The
+    argument's row is not compared against anything here — it *travels*, into
+    pass 3's substitution, which is where the authority becomes visible to the
+    caller's own declared row. Entry 10 now measures `{EXS-E0421}` and entry 9
+    — the bare parameter — still measures `{EXS-E0303}`, which is what makes
+    the pair non-vacuous.
+    **And a second defect found while building it, wider than `sicut` and not
+    fixed here.** `ast_type_intern`'s key is all sixteen bytes of `AstType`;
+    an `fn` type's `a` is an `Ast.extra` *offset*; `ast_list_emit` appends a
+    fresh run for every list it emits and never dedupes. So two structurally
+    identical function types written in two places get two ids, and
+    "compatibility is equality of interned type ids" (section 1.5) is false
+    for every `fn` type. Measured: a bare `functio(f32) -> f32` parameter
+    handed an ordinary `publica functio purus(x: f32) -> f32` with no `poscit`
+    — both the empty row — is `EXS-E0303` today, and should not be. That is
+    why `__chk_ty_fneqnorow` compares element by element instead of
+    re-interning with the other's row: substituting a row and comparing ids
+    would answer "different" for every pair. The fix belongs either in
+    `ast/types.inc` (key an `fn` type on its element ids rather than on an
+    offset) or in `ast/build.inc` (dedupe emitted runs), both the ast agent's
+    tree, and it is the reason no fixture here asserts that two separately
+    written identical function types are one type. `[OPEN]`.
+
+26. **A unit fixture could not assert a code set spanning the parser and the
+    checker**, which is what findings 23 and 24 both turn on.
+    `tests/unit/chk_row_layout_src.asm`'s harness bails out with −1 the moment
+    the lexer or the parser has said anything, so "exactly `{EXS-E0201}`, and
+    nothing from pass 4" was unassertable in it. The three fixtures this wave
+    adds — `chk_row_layout_debris.asm`, `chk_e0501_supersedes_e0500.asm`,
+    `chk_ty_sicut_row.asm` — reuse that harness with the gate removed and
+    return the whole diagnostic vector's length, so each row asserts a count
+    and then each code by number. `tests/run.sh`'s `UNIT_FIXTURE_FLOOR` should
+    rise by three (178 → 181) in the commit that lands them; that file is not
+    this agent's tree, and adding fixtures never *trips* the floor (the test
+    is `found < floor`), so nothing fails until someone raises it.

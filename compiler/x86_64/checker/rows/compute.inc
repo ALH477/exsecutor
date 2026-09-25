@@ -866,11 +866,29 @@ proc __chk_row_bear, chkw_wk
 	return
 endp
 
-; ---- EXS-E0501 -------------------------------------------------------------
-; Spec §4.1 rule 7 with §4.3: a MODULE-LEVEL binding -- `firma` or
-; `mutabilis`, both -- whose type bears a capability. `EXS-E0500` (module-level
-; `mutabilis`, capability or not) is pass 1's and is not raised here.
-; The span is the `Binding` node (checker.md section 2.4's table).
+; ---- EXS-E0500 AND EXS-E0501, WHICHEVER -- ONE PER BINDING ------------------
+; Spec §4.1 rule 7, verbatim: *"No module-level mutable state. (`EXS-E0500`;
+; with a capability, `EXS-E0501`.)"* That parenthesis is ONE code chosen by
+; whether the binding's type is capability-bearing (spec §4.3), not two codes
+; that both fire, and the choice needs `Decl.ty` -- so this pass makes it and
+; pass 1 says nothing (checker/resolve/resolve.inc's `.binding` arm records
+; why). `mutabilis retis_globalis: rete;` (§14 entry 11) emitted BOTH codes
+; while `E0500` was pass 1's; measured, and that is what this arm fixes.
+;
+; The three cases, and nothing else raises:
+;
+;   capability-bearing type, `firma` or `mutabilis`   `EXS-E0501`
+;   not capability-bearing, `mutabilis`               `EXS-E0500`
+;   not capability-bearing, `firma`                   nothing
+;
+; "Module-level" is `AstDecl.parent == 0` and `mutabilis` is
+; `AST_F_MUTABILIS`, both already on the declaration -- no new `Decl.flags`
+; bit (checker.md hazard H4 says there is none to spend). The span is the
+; `Binding` node (checker.md section 2.4's table for both codes), moved onto
+; the DECLARATION for `E0500` so that its required fix -- §8.3 promises one,
+; `diag_fix_required` lists 500 -- starts exactly at the `mutabilis` keyword,
+; which is what pass 1 did and what `tests/unit/chk_e0500_module_mutabilis.asm`
+; pins.
 proc __chk_row_e0501, chkw_wk
 	uses	rbx, r12, r13, r14
 	locals
@@ -898,7 +916,50 @@ proc __chk_row_e0501, chkw_wk
 	xor	rdx, rdx
 	call	__chk_row_tyatoms
 	test	rax, rax
+	jnz	.cap
+	; not capability-bearing: `EXS-E0500` iff the binding is `mutabilis`
+	mov	rdi, r14
+	mov	rsi, r12
+	call	ast_decl_at
+	movzx	ecx, byte [rax + AstDecl.flags]
+	test	ecx, AST_F_MUTABILIS
 	jz	.next
+	test	r13, r13
+	jz	.d500
+	mov	rdi, rbx
+	mov	rsi, CHK_P_ROWS
+	mov	rdx, 500
+	mov	rcx, r13
+	call	__chk_row_at
+	jmp	.fix500
+  .d500:
+	mov	rdi, rbx
+	mov	rsi, CHK_P_ROWS
+	mov	rdx, 500
+	mov	rcx, r12
+	call	__chk_row_atd
+  .fix500:
+	; rax = the buffered `ChkDiag` (`chk_raise`/`chk_raise_span` return it
+	; and both wrappers pass it through). The caret moves onto the
+	; declaration's span, and the fix is the one edit that span starts at:
+	; `mutabilis` -> `firma` (resolve.inc's `CHK_MUTABILIS_LEN` and
+	; `chk_lit_firma`, which that file keeps with the other `E05xx` text).
+	mov	r13, rax
+	mov	rdi, [rbx + ChkRowWork.wctx]
+	mov	rsi, r13
+	mov	rdx, r12
+	call	__chk_at_decl
+	mov	dword [r13 + ChkDiag.fkind], DIAG_FIX_REPLACE
+	mov	eax, [r13 + ChkDiag.caret.file_id]
+	mov	[r13 + ChkDiag.fx.file_id], eax
+	mov	eax, [r13 + ChkDiag.caret.start]
+	mov	[r13 + ChkDiag.fx.start], eax
+	mov	dword [r13 + ChkDiag.fx.len], CHK_MUTABILIS_LEN
+	lea	rcx, [chk_lit_firma]
+	mov	[r13 + ChkDiag.ftxt], rcx
+	mov	qword [r13 + ChkDiag.ftxtn], CHK_LIT_FIRMA_LEN
+	jmp	.next
+  .cap:
 	test	r13, r13
 	jz	.by_decl
 	mov	rdi, rbx

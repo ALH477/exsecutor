@@ -370,7 +370,10 @@ CHK_LIT_COMMA_LEN = $ - chk_lit_comma
 ; `mutabilis` is 9 bytes and a module-level `Binding` node's span starts at it
 ; (measured: `mutabilis c: i32 = 0;` is span 0..21 on the `Binding`). That is
 ; what makes `E0500`'s required fix -- §8.3 promises one, `diag_fix_required`
-; lists 500 -- derivable without a keyword span the tree does not keep.
+; lists 500 -- derivable without a keyword span the tree does not keep. The
+; CONSUMER is pass 3 (`__chk_row_e0501`, checker/rows/compute.inc), not this
+; file: the fix text lives with the other `E05xx` literals and the code that
+; chooses between `E0500` and `E0501` lives in the pass that can.
 CHK_MUTABILIS_LEN = 9
 
 ; =============================================================================
@@ -1589,7 +1592,8 @@ endp
 ; any expression:
 ;
 ;   `EXS-E0302`  a second module-scope declaration of one name
-;   `EXS-E0500`  a module-level `mutabilis` (spec §4.1 rule 7)
+;   (`EXS-E0500` is NOT raised here: spec §4.1 rule 7 is one code chosen by
+;    capability-bearing, which pass 3 knows -- see the `.binding` arm below)
 ;   `EXS-E0424`  two `initium`, or none where a program was asked for
 ;
 ; MODULE SCOPE IS A SCAN OF `Ast.decls`, NOT OF `Module.a`. Declarations are
@@ -1737,31 +1741,23 @@ proc __chk_mods, chk_c
 	jmp	.next
 
   .binding:
-	; spec §4.1 rule 7: a module has no mutable state.
-	movzx	ecx, byte [r13 + AstDecl.flags]
-	test	ecx, AST_F_MUTABILIS
-	jz	.next
-	mov	ecx, [r13 + AstDecl.node]
-	mov	rdi, rbx
-	mov	rsi, CHK_P_RESOLVE
-	mov	rdx, 500
-	call	chk_raise
-	mov	r14, rax
-	mov	rdi, rbx
-	mov	rsi, r14
-	mov	rdx, r12
-	call	__chk_at_decl
-	; §8.3 promises `E0500` a fix (`diag_fix_required` lists 500) and it is
-	; exactly one edit: the keyword the binding's span starts at.
-	mov	dword [r14 + ChkDiag.fkind], DIAG_FIX_REPLACE
-	mov	eax, [r14 + ChkDiag.caret.file_id]
-	mov	[r14 + ChkDiag.fx.file_id], eax
-	mov	eax, [r14 + ChkDiag.caret.start]
-	mov	[r14 + ChkDiag.fx.start], eax
-	mov	dword [r14 + ChkDiag.fx.len], CHK_MUTABILIS_LEN
-	lea	rcx, [chk_lit_firma]
-	mov	[r14 + ChkDiag.ftxt], rcx
-	mov	qword [r14 + ChkDiag.ftxtn], CHK_LIT_FIRMA_LEN
+	; SPEC §4.1 RULE 7 IS ONE CODE, AND THIS PASS CANNOT CHOOSE IT. The rule
+	; reads "No module-level mutable state. (`EXS-E0500`; with a capability,
+	; `EXS-E0501`.)" -- one diagnostic per offending binding, and WHICH one
+	; depends on whether the binding's type is capability-bearing (spec
+	; §4.3). That is `AST_F_CAPBEAR`, which pass 3's fixpoint computes from
+	; `Decl.ty`, which pass 2 fills. This pass has neither, so raising
+	; `E0500` here produced BOTH codes for `mutabilis retis_globalis: rete;`
+	; -- measured on §14 entry 11, which expects exactly `{EXS-E0501}`.
+	;
+	; So pass 1 says nothing and pass 3 raises exactly one. NOTHING HAS TO BE
+	; RECORDED FOR IT: `mutabilis` is already `AST_F_MUTABILIS` on the
+	; declaration (Stage 1 sets it, ast/kinds.inc), and "module level" is
+	; already `AstDecl.parent == 0`, so `__chk_row_e0501` in
+	; checker/rows/compute.inc reads the same two facts this arm read and
+	; needs no new `Decl.flags` bit (checker.md hazard H4: there is no ninth
+	; flag to spend). `chk_lit_firma` / `CHK_MUTABILIS_LEN` above stay here,
+	; where the other `E05xx` fix text lives, and that file uses them.
 	jmp	.next
 
   .fn:
