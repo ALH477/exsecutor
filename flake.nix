@@ -181,8 +181,17 @@
           assertBuildClosure (buildExsecutorPackage {
             pname = "exsc";
             version = "0.0.0-unreleased"; # no versioning scheme exists yet; honest placeholder
-            src = ./compiler/x86_64;
-            main = "exsc.asm";
+            # The source root must be ./compiler, not ./compiler/x86_64. The lexer
+            # reaches sideways into the shared Unicode tables --
+            #   compiler/x86_64/lexer/token.inc:
+            #     include '../../shared/unicode/nfc.inc'  (also script.inc, xid.inc)
+            # -- which resolves to compiler/shared/unicode/. Rooted at x86_64/ those
+            # paths escape the source, fasmg falls back to the INCLUDE store path, and
+            # the build dies with "source file '.../fasmg-x86-includes-l8vn/../../
+            # shared/unicode/nfc.inc' not found". `make` never hit this because the dev
+            # shell assembles in the work tree, where the relative paths do exist.
+            src = ./compiler;
+            main = "x86_64/exsc.asm";
             meta = {
               description = "Exsecutor compiler (exsc) -- freestanding x86-64, assembled by fasmg";
               # Plain GPL-3.0-or-later is correct for the compiler itself. The
