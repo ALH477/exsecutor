@@ -1836,6 +1836,20 @@ these types sit in comma-separated lists where a bare row is ambiguous;
 §4.4's `poscit P` is schematic for `poscit {P}`. Nested function types bind a
 row innermost; parenthesise to override.
 
+**`refero<T>` has a type form** (§6.4). `refero` is a tier-1 reserved word
+(§8.4) and the `CoreType` alternative below is spelled with it directly rather
+than through `Path`, so the peek is `refero <` — one token, at a token no
+enclosing production can want, since `<` is a delimiter and never an operator
+(decision 6). The amendment is deliberately this narrow: the TYPE form is
+settled and a **bare** `refero` is still `EXS-E0201` at the word, because the
+form the language admits is `refero<T>` and not the name. Evidence:
+`tests/unit/cst_refero_type.asm` (the accepted form, the nested form
+`refero<refero<u32>>`, the bare word refused, and the unclosed `<` carrying
+decision 6's `lt` edit) and `tests/unit/chk_ty_e0520_refero_source.asm` (§14
+entry 13's own source, now parsed rather than hand-built, reaching `EXS-E0520`).
+`refero_communis<T>` needs none of this: it is an ordinary identifier and
+always parsed as `Path [GenericArgs]`.
+
 ### Where `poscit` attaches
 
 | position | form | ends at |
@@ -1929,6 +1943,8 @@ Terminals are §8.4's tokens; `IDENT` `INT` `STRING` are the lexer's classes.
     CoreType      ::= BitType | Path [GenericArgs] | '(' Type ')'
                     | 'dyn' Path [GenericArgs] [TypeRow]
                     | 'functio' '(' [Type (',' Type)*] ')' '->' Type [TypeRow]
+                    | 'refero' GenericArgs                 (* §6.4; peek `refero <`;
+                                                      tests/unit/cst_refero_type.asm *)
     BitType       ::= IDENT                                  (* 'u' + admitted width *)
     GenericArgs   ::= '<' TypeArg (',' TypeArg)* '>'
     TypeArg       ::= Type | INT
@@ -2060,10 +2076,13 @@ refusing symbolic comparisons — is what makes that last one possible.
   does need them. Shifts and exclusive or are settled above as `sursum`
   `deorsum` `aut` (`tests/unit/cst_shift_xor.asm`), and did not become
   `<<`/`>>` tokens.
-- `[OPEN]` `refero` (§6.4) is reserved and has no phrase-level form here; `apud`
-  is admitted only as a type suffix; annotation arguments;
-  labelled `rumpe`/`perge`; a `sub` list form; `si`/`discerne` as expressions.
-  Struct literals were on this list and are settled above
+- `[OPEN]` The `refero` EXPRESSION form — how a program CONSTRUCTS one. The
+  TYPE form `refero<T>` is settled above (`tests/unit/cst_refero_type.asm`,
+  `tests/unit/chk_ty_e0520_refero_source.asm`); this bullet used to say
+  `refero` "has no phrase-level form here", and that half of it is no longer
+  true. Also `[OPEN]`: `apud` is admitted only as a type suffix; annotation
+  arguments; labelled `rumpe`/`perge`; a `sub` list form; `si`/`discerne` as
+  expressions. Struct literals were on this list and are settled above
   (`tests/unit/cst_structlit.asm`); array literals were on it and are
   settled above (`tests/unit/cst_acies.asm`).
 - `[OPEN]` `sub` inside `per`/`quisque` bodies (§8.5).

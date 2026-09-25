@@ -145,8 +145,13 @@ generic arguments; comparison is `lt`" with the edit attached (spec §8.3).
 ### 2.7 Type grammar
 
 EBNF in section 3. Prefixes `&` `*`; suffixes `:maior`/`:minor`/`:nativus`
-and `apud machina`; `functio(Types) -> Type [TypeRow]`; `dyn`; parenthesised
-type; `TypeArg ::= Type | INT` decided by peeking `INT` (`acies<f32, 1024>`;
+and `apud machina`; `functio(Types) -> Type [TypeRow]`; `dyn`; `refero<T>`
+(added after this document was written — spec §6.4's reference type is a
+reserved word, so the alternative is spelled with the keyword and not through
+`Path`; one peek, `refero <`, which section 4's H1 already makes harmless, and a
+BARE `refero` stays `EXS-E0201`: `tests/unit/cst_refero_type.asm`);
+parenthesised type; `TypeArg ::= Type | INT` decided by peeking `INT`
+(`acies<f32, 1024>`;
 a const-parameter name parses as a path, resolved semantically). A function
 or `dyn` type consumes `poscit` only when the next token is `{` (two-token
 peek), so a declaration's bare row after a function-typed return type needs
@@ -228,6 +233,7 @@ trivially LL(1). Hashes and target names are the hazard (H12).
     Type          ::= ('&' | '*')* CoreType (':' IDENT | 'apud' 'machina')*
     CoreType      ::= Path [GenericArgs] | 'dyn' Path [GenericArgs] [TypeRow] | '(' Type ')'
                     | 'functio' '(' [Type (',' Type)*] ')' '->' Type [TypeRow]
+                    | 'refero' GenericArgs               (* spec §6.4; peek `refero <` *)
     GenericArgs   ::= '<' (Type | INT) (',' (Type | INT))* '>'
     Path          ::= IDENT ('.' IDENT)*
 

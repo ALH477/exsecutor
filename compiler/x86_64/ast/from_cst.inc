@@ -769,6 +769,8 @@ proc __ast_w_type, w, red
 	je	.core_other
 	cmp	eax, CST_PAREN_TYPE
 	je	.core_other
+	cmp	eax, CST_REFERO_TYPE
+	je	.core_other
 	cmp	eax, CST_ERROR
 	je	.core_other
 	cmp	eax, CST_MISSING
@@ -4111,6 +4113,112 @@ proc __ast_w_typearg, w, red
 	return
 endp
 
+; `refero<T>` (spec §6.4, spec §8.6's `CoreType`) -> the SAME
+; `TyPath -> Path -> Seg` a generic path type becomes, with `refero` as the one
+; segment's spelling. Not a node kind of its own, and that is the whole point:
+; checker/types/prim.inc resolves `refero` and `refero_communis` BY SPELLING out
+; of one primitive-name pool, so a dedicated `AST_TY_*` here would be a second
+; place that knows what the word means -- and the two would drift. The shape is
+; pinned from both ends: tests/unit/chk_ty_e0520_refero.asm builds it by hand
+; and tests/unit/chk_ty_e0520_refero_source.asm compiles it from source; the two
+; must agree or `EXS-E0520` fires on one and not the other.
+;
+; THE SPAN IS THE WORD, NOT THE WHOLE FORM. `Seg`, `Path` and `TyPath` all take
+; the keyword leaf's span (`refero`, six bytes) rather than the `REFERO_TYPE`
+; node's (`refero<u32>`, eleven), because that is what a plain path type does --
+; its `CST_PATH` child does not contain the `GENERIC_ARGS` sibling -- and
+; because `EXS-E0520`'s caret is "the type node" (docs/design/checker.md 2.4).
+; The `GenericArgs` node keeps its own extent, brackets included.
+proc __ast_w_refero, w, red
+	uses	rbx, r12, r13
+	locals
+		slot wrf_sub,  sizeof.CstRed
+		slot wrf_leaf, sizeof.CstRed
+		slot wrf_g,    dq
+		slot wrf_mark, dq
+		slot wrf_off,  dq
+		slot wrf_cnt,  dq
+	endl
+	mov	rbx, [w]
+	mov	r12, [red]
+	mov	qword [wrf_g], 0
+
+	; The arguments first: `Seg.b` is an `ast_node` operand and postorder
+	; means an operand's index is fixed before its user exists.
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, CST_GENERIC_ARGS
+	lea	rcx, [wrf_sub]
+	call	__ast_w_kidk
+	test	eax, eax
+	jz	.no_gargs
+	mov	rdi, rbx
+	lea	rsi, [wrf_sub]
+	call	__ast_w_node
+	mov	[wrf_g], rax
+  .no_gargs:
+
+	; The word. `__ast_w_text` interns the leaf's bytes, which is how the
+	; spelling reaches the primitive table; no `KW_*` id survives into a
+	; green leaf (this file's header, "WORDS ARE COMPARED, NOT TOKEN KINDS").
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, CST_TK_KEYWORD
+	lea	rcx, [wrf_leaf]
+	call	__ast_w_kidk
+	test	eax, eax
+	jz	.bad
+	mov	rdi, rbx
+	lea	rsi, [wrf_leaf]
+	call	__ast_w_text
+	mov	r13, rax
+
+	mov	rdi, [rbx + AstWalk.ast]
+	call	ast_list_mark
+	mov	[wrf_mark], rax
+	mov	rdi, rbx
+	lea	rsi, [wrf_leaf]
+	mov	rdx, AST_SEG
+	xor	rcx, rcx
+	mov	r8, r13
+	mov	r9, [wrf_g]
+	call	__ast_w_mk
+	mov	rdi, [rbx + AstWalk.ast]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, [rbx + AstWalk.ast]
+	mov	rsi, [wrf_mark]
+	call	ast_list_emit
+	mov	[wrf_off], rax
+	mov	[wrf_cnt], rdx
+
+	mov	rdi, rbx
+	lea	rsi, [wrf_leaf]
+	mov	rdx, AST_PATH
+	xor	rcx, rcx
+	mov	r8, [wrf_off]
+	mov	r9, [wrf_cnt]
+	call	__ast_w_mk
+	mov	r13, rax
+	mov	rdi, rbx
+	lea	rsi, [wrf_leaf]
+	mov	rdx, AST_TYPATH
+	xor	rcx, rcx
+	mov	r8, r13
+	xor	r9, r9
+	call	__ast_w_mk
+	return
+  .bad:
+	; No keyword leaf: the parser cannot produce this node without one, so
+	; this is unreachable rather than a recovery path. It is an `AST_ERROR`
+	; and not a trap for this file's stated reason -- a construct the walker
+	; cannot express never traps.
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__ast_w_err
+	return
+endp
+
 ; `dyn Path [GenericArgs] [TypeRow]` (spec §4.4, §8.6).
 proc __ast_w_dyn, w, red
 	uses	rbx, r12, r13, r14
@@ -4631,6 +4739,8 @@ proc __ast_w_node, w, red
 	je	.fntype
 	cmp	r13, CST_PAREN_TYPE
 	je	.type
+	cmp	r13, CST_REFERO_TYPE
+	je	.refero
 	cmp	r13, CST_GENERIC_ARGS
 	je	.genargs
 	cmp	r13, CST_TYPE_ARG
@@ -4939,6 +5049,11 @@ proc __ast_w_node, w, red
 	mov	rdi, rbx
 	mov	rsi, r12
 	call	__ast_w_dyn
+	return
+  .refero:
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__ast_w_refero
 	return
   .fntype:
 	mov	rdi, rbx

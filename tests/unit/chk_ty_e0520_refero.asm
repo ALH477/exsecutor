@@ -33,17 +33,30 @@
 ;	externus("C", abi: sysv_amd64) { functio nova(x: refero_communis<u32>) -> u8 }
 ;
 ; ---------------------------------------------------------------------------
+; SUPERSEDED IN PART: `refero<T>` PARSES NOW. Spec §8.6's `CoreType` gained the
+; alternative `'refero' GenericArgs` (tests/unit/cst_refero_type.asm), so the
+; paragraph below -- which was true when this file was written, and is the
+; reason the tree here is hand-built -- no longer describes the front end. The
+; from-source twin is tests/unit/chk_ty_e0520_refero_source.asm, and it asserts
+; the SHAPE this file documents: a `TyPath` over a `Path` of one `Seg` spelled
+; `refero`, carrying one generic argument, spanning the word alone. THIS FILE IS
+; KEPT: it pins that shape from the other end, without a parser in the loop, so
+; a walker that drifts fails one of the two and not both.
+;
+; ---------------------------------------------------------------------------
 ; WHY THIS ONE FIXTURE IS HAND-BUILT WHEN THE OTHER FOUR `chk_ty_*` ARE NOT.
 ;
-; **`refero<T>` DOES NOT PARSE.** `refero` is a RESERVED WORD (spec §8.4's
-; "value flow" row, `lexer/keywords.inc`'s `KW_REFERO`), spec §8.6's `CoreType
-; ::= BitType | Path [GenericArgs] | ...` admits only an `IDENT` there, and
+; **`refero<T>` DID NOT PARSE WHEN THIS WAS WRITTEN.** `refero` is a RESERVED
+; WORD (spec §8.4's "value flow" row, `lexer/keywords.inc`'s `KW_REFERO`), spec
+; §8.6's `CoreType ::= BitType | Path [GenericArgs] | ...` admitted only an
+; `IDENT` there, and
 ; `cst/parse.inc`'s type parser deliberately does not consume a reserved word
 ; in type position. Feeding the first line above to the real front end gets
 ; `EXS-E0201` at column 21 and never reaches the checker. Spec §8.6 already
-; knows: *"`[OPEN]` `refero` (§6.4) is reserved and has no phrase-level form
-; here"*. So the rule is real, the code is real, and the surface form for the
-; REJECTED half does not exist yet.
+; knew: *"`[OPEN]` `refero` (§6.4) is reserved and has no phrase-level form
+; here"*. So the rule was real, the code was real, and the surface form for the
+; REJECTED half did not exist yet. That sentence in §8.6 has since been narrowed
+; to the EXPRESSION form; the type form is settled.
 ;
 ; The tree is therefore built through `ast/load.inc` -- checker.md section 6's
 ; own route, "hand-built trees ... make every pass testable without a parser"

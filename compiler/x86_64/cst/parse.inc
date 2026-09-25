@@ -110,6 +110,15 @@
 ; leaves the arborea/ordinata pairing to the checker, which is what the
 ; amendment asks for.
 ;
+; §8.6 WAS AMENDED AGAIN, for `refero<T>`: `CoreType` gained
+; `'refero' GenericArgs` (§6.4), because the checker's `EXS-E0520` rule for a
+; non-atomic `refero` crossing an `externus` boundary existed with no surface
+; form to reach it -- §14 entry 13's own source was `EXS-E0201` at the word, and
+; tests/unit/chk_ty_e0520_refero.asm had to build its tree by hand for that
+; reason. `__cst_at_refero` is the whole cost: one peek, `refero <`. The
+; EXPRESSION form (constructing one) is still `[OPEN]` there, and a BARE
+; `refero` in type position is still `EXS-E0201` at the word.
+;
 ; TRIVIA IS A GAP, NOT A TOKEN. lexer/lex.inc skips whitespace and comments
 ; without emitting anything, so this file reconstructs them: the bytes between
 ; the end of one token's span and the start of the next are, by construction,
@@ -1615,6 +1624,45 @@ proc __cst_width_ok, w
 	return
 endp
 
+; __cst_at_refero(p) -> eax = 1 if the cursor is at `refero <`.
+;
+; §8.6's `CoreType` gained the alternative `'refero' '<' TypeArg '>'`, and this
+; is the whole of its cost: ONE peek, at a token the enclosing production can
+; never want. `refero` is a tier-1 reserved word (§8.4's "value flow" row), so
+; it can never begin a type name, and §8.6 decision 6 makes `<` a delimiter and
+; never an operator -- so `refero <` is not a comparison and cannot be one.
+;
+; THE PEEK IS REQUIRED RATHER THAN ASSUMED, which is why this routine exists
+; instead of a bare `__cst_kw p, KW_REFERO`. A bare `refero` in type position
+; stays exactly what it was before this alternative existed -- `EXS-E0201` at
+; the word, via `__cst_core_type`'s reserved-word arm -- because §8.6 admits
+; the form `refero<T>` and NOT the bare name, and because narrowing the peek is
+; what keeps `__cst_type_starts` from answering "yes" where it answered "no".
+; The EXPRESSION form (constructing a `refero`) is still `[OPEN]` in §8.6.
+proc __cst_at_refero, p
+	uses	rbx
+	locals
+	endl
+	mov	rbx, [p]
+	mov	rdi, rbx
+	mov	esi, KW_REFERO
+	call	__cst_kw
+	test	eax, eax
+	jz	.no
+	mov	rdi, rbx
+	mov	esi, 1
+	call	__cst_tokp
+	cmp	dword [rax + Tok.kind], TOK_PUNCT
+	jne	.no
+	cmp	dword [rax + Tok.aux], PUN_LT
+	jne	.no
+	mov	eax, 1
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
 ; __cst_type_starts(p) -> eax = 1 if a `Type` can begin at the cursor.
 proc __cst_type_starts, p
 	uses	rbx
@@ -1659,6 +1707,10 @@ proc __cst_type_starts, p
 	mov	rdi, rbx
 	mov	esi, KW_FUNCTIO
 	call	__cst_kw
+	test	eax, eax
+	jnz	.yes
+	mov	rdi, rbx
+	call	__cst_at_refero
 	test	eax, eax
 	jnz	.yes
 	xor	eax, eax
@@ -2019,6 +2071,10 @@ proc __cst_core_type, p
 	test	eax, eax
 	jnz	.paren
 	mov	rdi, rbx
+	call	__cst_at_refero
+	test	eax, eax
+	jnz	.refero
+	mov	rdi, rbx
 	xor	esi, esi
 	call	__cst_kindn
 	cmp	eax, TOK_IDENT
@@ -2086,6 +2142,33 @@ proc __cst_core_type, p
 	jae	.bits_done
 	mov	eax, 1
   .bits_done:
+	return
+
+	; `refero<T>` (§6.4, §8.6's `CoreType`). Keyword-led and decided by
+	; `__cst_at_refero`'s one peek, so this arm has nothing to back out of.
+	;
+	; THE WORD STAYS A KEYWORD LEAF and there is no `CST_PATH` here: §8.6
+	; writes the alternative as `'refero' '<' TypeArg '>'`, not as a `Path`,
+	; and a green leaf's kind is the lexer's class plus one (`__cst_bump`) --
+	; emitting `TK_IDENT` for a tier-1 reserved word would be a lexical lie a
+	; formatter reads. ast/from_cst.inc synthesises the `TyPath -> Path -> Seg`
+	; the checker's spelling table needs (checker/types/prim.inc); the CST's
+	; job is to record what was written. `__cst_generic_args` raises the
+	; `EXS-E0201` for a missing `>` and recovers a malformed argument list, so
+	; this arm reports nothing of its own; a bare `refero` never reaches here.
+  .refero:
+	mov	rdi, [rbx + CstParser.tree]
+	call	cst_open
+	mov	r12, rax
+	mov	rdi, rbx
+	call	__cst_bump
+	mov	rdi, rbx
+	call	__cst_generic_args
+	mov	rdi, [rbx + CstParser.tree]
+	mov	esi, CST_REFERO_TYPE
+	mov	rdx, r12
+	call	cst_close
+	xor	eax, eax
 	return
 
   .paren:
