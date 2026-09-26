@@ -14,7 +14,9 @@ Exsecutor source, nine programs, all compiled and run by `tests/run.sh`:
 - **`hydramodem/`, the melody transmitter** (`melos*.exsc`) — HydraModem's
   musical profile: just-intonation 8-FSK over a drone, 481,964 bytes of WAV
   byte for byte with the reference (`tests/programs/melos_*/`,
-  `docs/design/melos.md`);
+  `docs/design/melos.md`), with the **bass voice** (`bassus*.exsc`) and the
+  **duet** (`bicinium_emitte.exsc`, two frames in one burst), each 689,324
+  bytes byte for byte (`tests/programs/{bassus,bicinium}_*/`);
 - **`hydramodem/`, the receiver** — reads one of those WAVs from standard
   input and writes the 17-byte frame back out, or exits with a code that
   says why not. `tests/programs/receptio_*/` feed it the three vendored

@@ -1,0 +1,42 @@
+// examples/hydramodem/bicinium_loopback.exsc -- the duet driver, and the only
+// file of its unit that names `Mundus`: dcf_loopback's frame
+// d310123400a1ffffdeadbeef0a1b2ca961 on the melody voice and the zero word
+// (seventeen zero bytes) on the bass voice, in one burst. The zero word is there
+// for its last bass symbol, 1, where every valid frame so far ends on 0: the
+// bass release plays that note (docs/design/melos.md section 8). It writes what
+// HydraModem's poly_tx writes for the pair:
+// vendor/hydramodem-bicinium/bicinium-d310123400a1ffffdeadbeef0a1b2ca961-0000000000000000000000000000000000.wav,
+// byte for byte (tests/programs/bicinium_loopback/). Exit 0 when all 689,324
+// bytes were written, 1 otherwise.
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma s = Scriptor.ad_exitum(a);
+    firma fa = DeModFrame {
+        signum: 0xd3,
+        versio: 1,
+        genus: 0,
+        numerus: 0x1234,
+        fons: 0x00a1,
+        meta: 0xffff,
+        onus: 0xdeadbeef,
+        tempus: 0x0a1b2c,
+        cursus: 0xa961
+    };
+    firma fb = DeModFrame {
+        signum: 0,
+        versio: 0,
+        genus: 0,
+        numerus: 0,
+        fons: 0,
+        meta: 0,
+        onus: 0,
+        tempus: 0,
+        cursus: 0
+    };
+    si bicinium_modula(s, fa sicut acies<u8, 17>, fb sicut acies<u8, 17>) ne 689324 {
+        redde 1;
+    }
+    redde 0;
+}

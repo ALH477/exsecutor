@@ -49,6 +49,22 @@ cmp melody.wav vendor/hydramodem-melos/d310123400a1ffffdeadbeef0a1b2ca961.wav
 Play `melody.wav`: five seconds of a tune over a drone, not a warble. It is
 the same seventeen bytes.
 
+The **bass voice** (`bassus*.exsc`, D2 B2 D3 A3, 75–225 Hz) and the **duet**
+(`bicinium_emitte.exsc`: two frames in one burst, melody over bass, the melody
+entering 54 symbols in) are the same machinery. Both are byte-identical to
+HydraModem's `frame_tx --profile bass` and `poly_tx`
+(`tests/programs/{bassus_loopback,bicinium_loopback,bassus_basis}/`,
+`vendor/hydramodem-bicinium/`, `docs/design/melos.md` section 8):
+
+```sh
+build/exsc aedifica --hospes x86_64-linux \
+  examples/hydramodem/quantum.exsc examples/hydramodem/modulator.exsc \
+  examples/hydramodem/melos.exsc examples/hydramodem/melos_emitte.exsc \
+  examples/hydramodem/bassus.exsc examples/hydramodem/bicinium_emitte.exsc \
+  examples/hydramodem/bicinium_loopback.exsc -o duet.asm
+fasmg duet.asm duet && chmod +x duet && ./duet > duet.wav
+```
+
 ## Hear it first
 
 `loopback.wav` in this directory is what `loopback.exsc` writes: 0.396 s of
@@ -126,6 +142,11 @@ checked. `modulator.exsc` is in the unit because the receiver reuses its
 | `melos_emitte.exsc` | walks the melody layout with its three phase counters and writes every byte to a `Scriptor` | whatever the `Scriptor` carries |
 | `melos_loopback.exsc`, `melos_nihil.exsc` | one `initium` each, one frame, melody profile | `Mundus`, from which `ambitus` |
 | `melos_basis.exsc` | the melody certificate driver: 124 notes (0–7) of each of the 137 basis words | `Mundus`, from which `ambitus` |
+| `bassus.exsc` | the bass voice: its note table, its 178-symbol stream, the header it and the duet share | none: pure |
+| `bassus_emitte.exsc` | writes the bass alone | whatever the `Scriptor` carries |
+| `bicinium_emitte.exsc` | writes the duet: both voices' phase counters, the melody entering at symbol 54, their f32 sum | whatever the `Scriptor` carries |
+| `bassus_loopback.exsc`, `bicinium_loopback.exsc` | one `initium` each: the bass alone, and the duet (a frame on the melody, the zero word on the bass) | `Mundus`, from which `ambitus` |
+| `bassus_basis.exsc` | the bass certificate driver: 178 notes (0–3) of each of the 137 basis words | `Mundus`, from which `ambitus` |
 
 Only a driver names `Mundus`. `modulator.exsc` and `receptor.exsc` declare no
 `poscit` and take no capability, so they are pure in spec §4.1 rule 6's sense:

@@ -262,12 +262,27 @@ publica functio melos_vox(q: acies<f64, 481>, a: mensura, b1: mensura, b2: mensu
     mutabilis v: f64 = gd * melos_sinus(q, a);
     v = v + 0.12 * melos_sinus(q, b1);
     v = v + 0.12 * melos_sinus(q, b2);
-    firma y: f32 = (e * v) sicut f32;
+    redde melos_scribibilis((e * v) sicut f32);
+}
+
+// The WAV writer's step, on the sample the modem hands it: lround(s x 32767.0)
+// with s widened from f32 exactly as C promotes it. |s| <= 0.9 for every
+// profile here, so the writer's clamp never acts.
+publica functio melos_scribibilis(y: f32) -> u16 {
     firma z: f64 = (y sicut f64) * 32767.0;
     si z ge 0.0 {
         redde melos_rotunda(z);
     }
     redde 0 -% melos_rotunda(-z);
+}
+
+// One voice with no drone, as music_render computes it when a profile has none
+// (the bass, and the melody voice of the duet): gd = tx_gain - 0 x 0.0, which is
+// tx_gain exactly, so g is passed as the voice's tx_gain; then v = g x sin(a)
+// and the voice's contribution (float)(e x v). Summing voices is the caller's.
+publica functio melos_vox_simplex(q: acies<f64, 481>, g: f64, a: mensura, e: f64) -> f32 {
+    firma v: f64 = g * melos_sinus(q, a);
+    redde (e * v) sicut f32;
 }
 
 // The raised-cosine envelope over R = 480 samples: cos(2 pi (2i + 1) / 4R),

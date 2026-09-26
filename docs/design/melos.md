@@ -1,6 +1,7 @@
 # The musical transmitter — HydraModem's `melody` profile in Exsecutor
 
-Status: **implemented, transmitter only.** `examples/hydramodem/melos*.exsc`
+Status: **implemented, transmitters only: melody (sections 1–7), and the bass
+voice and the two-voice duet (section 8).** `examples/hydramodem/melos*.exsc`
 writes HydraModem's melody-profile WAV byte for byte on the two vendored
 inputs (`tests/programs/melos_{loopback,nihil}/`, 481,964 bytes each) and its
 symbol stream on all 137 basis words (`tests/programs/melos_basis/`,
@@ -168,3 +169,75 @@ These **survive**, and the certificate cannot see them:
   libm's `sin` gives the same 481 values is **[UNTESTED]**; if it does not, it
   is the reference that moves, and this program stays pinned to the vendored
   bytes.
+
+## 8. The bass voice and the duet (bicinium)
+
+Status: **implemented.**
+
+- `bassus.exsc` is HydraModem's `bass` profile: 4-FSK at 25 baud on harmonics
+  3 5 6 9 of 25 Hz (D2 B2 D3 A3), no drone, 178 symbols.
+- `bassus_emitte.exsc` writes the bass alone.
+- `bicinium_emitte.exsc` writes the **duet**: `hydra_modem_tx_poly` with
+  `hydra_profile_duet`, two frames in one burst, frame A on the melody voice
+  (gain 0.5, no drone) and frame B on the bass (0.4).
+
+The reference is Punctim `3aeff9d`, and `vendor/hydramodem-bicinium/` holds its
+output with the recipe. `tests/programs/bassus_loopback/` and
+`bicinium_loopback/` compare the two 689,324-byte WAVs byte for byte, and
+`bassus_basis/` compares hydra_frame_build's symbols on the 137 basis words.
+All three agree under the reference backend and the C backend (gcc and clang,
+`-O0`/`-O2`).
+
+**What made the duet portable.** The reference sums voices into one float buffer:
+the melody into zeros, then the bass added, so a sample is `(0 + m) + b` in f32.
+`0 + m` is `m` because no contribution is `-0.0` (qsin's only zeros are `+0.0`),
+and IEEE-754 addition of two operands is commutative. So `m + b` here is the same
+bits whichever voice is written first. That is not a guess: the swapped order
+survives as an equivalent mutant below.
+
+**Layout.** The reference right-aligns voices by whole symbols. The bass is 178
+symbols and the melody 124, so the melody enters 54 symbols in:
+
+- Its attack is the last quarter of bass symbol 53 (samples 104,640–105,119).
+- Its symbol `y` sits under bass symbol `y + 54`.
+- The two releases coincide.
+
+The writer walks the bass's 178 symbols and adds the melody where it sounds, so
+no voice needs an offset counter.
+
+**What the certificate covers.** Section 5's argument carries over: body
+symbols depend only on their note, and the attack is always note 0.
+
+- **Bass release:** the last bass symbol is two bits, so the release can be any
+  of 4 notes.
+  - The bass-alone WAV (a valid frame) checks note 0.
+  - The duet, which puts the zero word on the bass, checks note 1.
+  - Notes 2 and 3 **are not byte-checked**. They run the same code on another
+    table entry, so they are argued, not measured.
+- **Melody release in the duet:** note 0 (a valid frame). Its note-4 release is
+  checked single-voice in `vendor/hydramodem-melos/`.
+- **Melody entry:** the duet WAV checks where the melody enters and how the two
+  voices add.
+
+**Negative controls.** Nine mutants were run against both WAVs and the bass
+basis. These **fail**, each where it should:
+
+- the bass Gray table
+- the bass preamble note (3 → 2)
+- the bass sync bit order
+- the bass-alone gain (0.9 → 0.89; only the bass WAV sees it)
+- the duet's entry symbol (54 → 53)
+- the duet's bass gain (0.4 → 0.41)
+- dropping the melody's attack
+- summing in f64 with a perturbation
+
+One **survives**, as it must: the sum written `b + m` instead of `m + b`, an
+equivalent mutant because two-operand addition is commutative.
+
+**Refactor.** `melos.exsc` gained `melos_scribibilis` (the WAV writer's
+quantizer, split out of `melos_vox`) and `melos_vox_simplex` (one voice with no
+drone). The melody certificates were re-run and are byte-identical.
+
+**Not done:** a duet receiver (section 7's receiver problem, times two voices),
+duets of more than two voices, and `hydra:profile=duet`'s pairing rule, which is
+a medium and lives in Punctim's Python.
