@@ -815,6 +815,16 @@
             # on stdin (stdin=vendor/hydramodem-rx/<kind>/<name>.wav); without
             # them here those directories would have nothing to decode.
             cp -r --no-preserve=mode -- ${./vendor/hydramodem-rx} repo/vendor/hydramodem-rx
+            # tests/programs/melos_*/, bassus_*/ and bicinium_*/ compare stdout
+            # against the musical transmitter's reference renders, and
+            # tests/programs/auditus_*/ read those renders and the impaired WAVs
+            # on stdin. Every vendor tree a TEST names must be copied here: the
+            # sandbox sees only what this list copies, so a tree left off it
+            # fails every test that reads it (51 failures in the first CI run,
+            # while the full checkout passed locally).
+            cp -r --no-preserve=mode -- ${./vendor/hydramodem-melos} repo/vendor/hydramodem-melos
+            cp -r --no-preserve=mode -- ${./vendor/hydramodem-bicinium} repo/vendor/hydramodem-bicinium
+            cp -r --no-preserve=mode -- ${./vendor/hydramodem-auditus} repo/vendor/hydramodem-auditus
             # tests/programs/streamdb_*/ read these four containers on stdin.
             # This comment said "no Exsecutor StreamDB v3 reader exists yet,
             # so nothing under tests/ reads this tree today" and the tree was
