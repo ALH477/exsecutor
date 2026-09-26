@@ -18,20 +18,13 @@
 // program -- so this is deliberately an ordinary, already-valid file
 // (`saluta`'s own shape: pure, no `poscit`, per examples/saluta.exsc).
 //
-// DEFERRED: needs a real object-emitting build to diff two of.
-// `tools/reproduce.sh`, run directly, already says so and degrades
-// honestly: with no `compiler/x86_64/exsc.asm` output to build, it falls
-// back to reproducing a `tests/unit/` toolchain fixture instead and prints
-// ">>> THIS RUN TESTS THE FIXTURE, NOT exsc. Re-run once exsc.asm exists.
-// <<<" -- and even now that `exsc.asm` exists, `exsc aedifica -o OUT`
-// itself answers "code generation is not implemented... Spec 16 Stage 3"
-// (exit 4, confirmed by actually running it). A reproduce.sh PASS on the
-// fallback fixture is proof the harness can tell bytes apart, never
-// evidence that entry 16 holds -- counting it as a pass would be exactly
-// the false-green class CLAUDE.md's evidence discipline exists to prevent.
+// DEFERRED, current blocker: `exsc proba-reproducibilitatem` is a stub
+// (exit 4), and `tools/reproduce.sh` never compiles THIS fixture -- it
+// diffs its own toolchain-fixture fallback, which is proof the harness can
+// tell bytes apart, never evidence that entry 16 holds for this source.
 
 publica functio saluta() -> textus {
-    redde "Ave, mundus."
+    redde "Ave, mundus.";
 }
 
 // TEST: entry=16 shape=bytes status=deferred needs=backend

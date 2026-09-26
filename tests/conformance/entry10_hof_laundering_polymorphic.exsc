@@ -17,21 +17,27 @@
 // the other" -- this fixture and entry09's are independent checks of the
 // same code, from opposite ends of the call.
 //
-// DEFERRED: needs the capability-row checker (§4), which needs the type
-// checker (Stage 2). compiler/x86_64/ast/ and cst/ are both still empty;
-// `exsc aedifica`, run directly against this file, exits 0 and reports
-// nothing -- confirmed, not assumed.
+// RUNS since b86b080 (2026-09-25). Before it, exsc emitted {EXS-E0303,
+// EXS-E0421} here: the call-site argument compare read function types by
+// id, rows included, and did not know that a parameter named by the
+// callee's own `sicut f` accepts an argument of any row (checker.md 2.1,
+// rule 3 -- stated, not implemented). b86b080 implements it; entry 9's
+// bare-parameter case is still EXS-E0303, pinned beside this one in
+// tests/unit/chk_ty_sicut_row.asm. The `;` after each `redde` was a
+// fixture defect (spec 8.6 requires it) and is fixed here. Measured on the
+// main tree at fe24fe5 with `exsc aedifica --hospes x86_64-linux
+// --diagnostica json`: exactly {EXS-E0421}, exit 1.
 
 publica functio applica(v: f32, f: functio(f32) -> f32) -> f32 poscit alloc, sicut f {
-    redde f(v)
+    redde f(v);
 }
 
 publica functio nocens(x: f32) -> f32 poscit rete {
-    redde x
+    redde x;
 }
 
 publica functio exterior(v: f32) -> f32 poscit alloc {
-    redde applica(v, nocens)
+    redde applica(v, nocens);
 }
 
-// TEST: entry=10 shape=code expect-code=EXS-E0421 status=deferred needs=capability_checker
+// TEST: entry=10 shape=code expect-code=EXS-E0421 status=run

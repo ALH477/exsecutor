@@ -14,14 +14,19 @@
 // miscount"). Indexing `textus` itself with a bare integer names none of
 // the three, so it is rejected rather than guessing which one was meant.
 //
-// DEFERRED: needs the type checker (Stage 2) to know that `t` has type
-// `textus` and that `textus` has no `[integer]` operator at all.
-// compiler/x86_64/ast/ and cst/ are both still empty; `exsc aedifica`, run
-// directly against this file, exits 0 and reports nothing -- confirmed,
-// not assumed.
+// MEASURED 2026-09-25. The fixture's own return type used to be `octetus`,
+// which is not a type any section of the spec defines --
+// compiler/x86_64/checker/types/prim.inc records that absence as
+// deliberate (§5.3's own example writes `*octetus`, but `octetus` bare is
+// never declared; §5.1 defines `octeti`, the plural view, not this). That
+// drew a spurious EXS-E0301 on the return type ahead of the EXS-E0311 this
+// entry is actually about. Changed to `u8` (an eight-bit unsigned integer,
+// which is what a byte value is), run directly through `exsc aedifica
+// --hospes x86_64-linux --diagnostica json` after b86b080's checker fixes:
+// exsc now rejects `t[0]` with exactly {EXS-E0311}, and nothing else.
 
-publica functio primum_octetum(t: textus) -> octetus {
-    redde t[0]
+publica functio primum_octetum(t: textus) -> u8 {
+    redde t[0];
 }
 
-// TEST: entry=8 shape=code expect-code=EXS-E0311 status=deferred needs=type_checker
+// TEST: entry=8 shape=code expect-code=EXS-E0311 status=run

@@ -8,10 +8,15 @@
 // type that MAY cross this same boundary -- its absence here is the point,
 // not an oversight.
 //
-// DEFERRED: needs the FFI/refcount-crossing checker (§5.3, §6.4), which
-// needs the type checker (Stage 2). compiler/x86_64/ast/ and cst/ are both
-// still empty; `exsc aedifica`, run directly against this file, exits 0
-// and reports nothing -- confirmed, not assumed.
+// RUNS since 6f6cd8c (2026-09-25). The EXS-E0520 rule existed and was
+// unit-pinned from a hand-built AST (tests/unit/chk_ty_e0520_refero.asm)
+// because `refero` was a reserved word with no phrase-level form: this
+// file was EXS-E0201 at the word. 6f6cd8c gives spec 8.6's CoreType the
+// alternative `'refero' GenericArgs` (one peek, `refero <`), and the
+// from-source twin tests/unit/chk_ty_e0520_refero_source.asm pins that
+// `refero<u32>` is E0520 and `refero_communis<u32>` is silent. This
+// fixture needed no edit. Measured on the main tree at fe24fe5: exactly
+// {EXS-E0520}, exit 1.
 
 structura Nodus { valor: mensura }
 
@@ -19,4 +24,4 @@ externus("C", abi: sysv_amd64) {
     functio consume_nodum(n: refero<Nodus>) -> mensura
 }
 
-// TEST: entry=13 shape=code expect-code=EXS-E0520 status=deferred needs=ffi_checker
+// TEST: entry=13 shape=code expect-code=EXS-E0520 status=run

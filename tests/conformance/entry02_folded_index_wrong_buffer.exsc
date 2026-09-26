@@ -15,15 +15,16 @@
 // uploaded .txt"). §5.1: "This makes CVE-2026-24895's class
 // unrepresentable rather than discouraged."
 //
-// DEFERRED: needs branded-offset generativity, which needs the type
-// checker (Stage 2). compiler/x86_64/ast/ and cst/ are both still empty;
-// `exsc aedifica`, run directly against this file, exits 0 and reports
-// nothing -- confirmed, not assumed.
+// DEFERRED, current blocker: the brand syntax this entry depends on,
+// `positio<'t>`, is `[OPEN]` in §8.6 -- no grammar exists for a lifetime-
+// style brand parameter. EXS-E0332 itself is implemented, but unreachable
+// through this fixture's shape until the brand syntax parses
+// (`docs/design/checker.md` §2.6).
 
 publica functio corrige(via: textus) -> textus poscit alloc {
-    firma abassus = via.plica_unicode()
-    firma ubi     = abassus.quaere("/")?
-    redde via.sectio(0..ubi)?
+    firma abassus = via.plica_unicode();
+    firma ubi     = abassus.quaere("/")?;
+    redde via.sectio(0..ubi)?;
 }
 
 // TEST: entry=2 shape=code expect-code=EXS-E0332 status=deferred needs=type_checker

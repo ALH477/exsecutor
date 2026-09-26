@@ -13,15 +13,12 @@
 // plain agentive `-or` this rule is written for) so this fixture is not
 // also exercising an open question the suite cannot yet settle either way.
 //
-// DEFERRED: needs the lexicon/morpheme checker (§3), which is one of this
-// project's eight agents' domains outside compiler/x86_64/lexer/'s current
-// scope and needs the type checker (Stage 2) to know `lector` is declared
-// `functio` at all. compiler/x86_64/ast/ and cst/ are both still empty;
-// `exsc aedifica`, run directly against this file, exits 0 and reports
-// nothing -- confirmed, not assumed.
+// DEFERRED, current blocker: the lexicon pass is built and switched off;
+// `lexicon.norma` does not exist (§3.3, `docs/design/checker.md` finding
+// 16).
 
 publica functio lector() -> textus {
-    redde "lectio"
+    redde "lectio";
 }
 
 // TEST: entry=14 shape=code expect-code=EXS-E0602 status=deferred needs=lexicon_checker

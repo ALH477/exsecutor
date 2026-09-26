@@ -11,8 +11,9 @@ calls):
    its verifier, the driver, and the prelude. This item once said the only
    thing testable here was the toolchain itself; that was true for the first
    four fixtures.
-2. **`tests/conformance/`** — spec §14's 25-entry suite. **All 25 cases
-   are written; 11 run.** `exsc` now exists, so the entries the lexer can
+2. **`tests/conformance/`** — spec §14's suite: 28 entries, 26 with a
+   fixture file here (27 and 28 are carried by `tests/programs/`
+   directories, below). **18 run as of 2026-09-25.** `exsc` now exists, so the entries the lexer can
    decide are checked against a real diagnostic: 3 (bidi in a comment,
    `EXS-E0103`), 5 (non-NFC, `E0102`), 18 (BOM, `E0101`), 19 (mixed-script,
    `E0104`), 20 (CRLF, `E0106`). The wire-codec branch's `@transitus`
@@ -39,31 +40,45 @@ calls):
    deduplication, not merely to contain it — a substring/presence check
    passes a fixture that ALSO emits an unrelated second diagnostic, which
    is exactly what a prior version of this check did. That tightening
-   moved **entry 22** (`u4:maior`, `E0201`) to `DEFERRED`: it now emits
-   `E0201` *and* a spurious `E0322` from the wire-layout checker running
-   over the parser's recovery from the unparseable annotation — a real
-   compiler-side cascading-diagnostic gap (`needs=parser_error_recovery`),
-   not a fixture defect, and outside this tree to fix (CLAUDE.md's Scope).
+   once moved **entry 22** (`u4:maior`, `E0201`) to `DEFERRED`, because
+   the wire-layout checker also raised `E0322` over the parser's recovery
+   from the unparseable annotation; b86b080 (2026-09-25) closed that and
+   two more checker gaps, 6f6cd8c gave `refero<T>` a grammar production,
+   and five entries moved to run in one wave: 8 (`E0311`; its own return
+   type had named `octetus`, which no spec section defines — a fixture
+   defect, changed to `u8`), 10 (`E0421`, the `sicut`-named parameter now
+   row-polymorphic), 11 (`E0501`, one code chosen by the capability
+   instead of `E0500` and `E0501` both), 13 (`E0520`, from source), and 22
+   (`E0201` alone). Each fixture's header records the measurement.
    Entry 19 (mixed-script) was a genuine fixture defect instead — two
    missing `;`s that a source-policy fast-path had been masking on 3/5/18/20
    but not on 19, whose `E0104` is raised later, mid-lex, without halting
    the parser — and was fixed in place; both `xа` occurrences still raise
    `E0104`, which is one element of the set, not two.
 
-   **Entry 25 runs**, and phase 6 below is what carries it: the N64 row's
+   **Entries 25–28 are carried by program directories.** 25 and 26 keep
+   an ordinary, already-valid placeholder fixture here (the `bytes` shape,
+   `tools/reproduce.sh`), but their substance is `tests/programs/`
+   (`pictura_triangulum/` for 26, and phase 6 below for 25: the N64 row's
    emitted unit, cross-compiled and executed big-endian with 32-bit
-   addresses, against the reference backend.
+   addresses, against the reference backend). 27 (`pictura_octonaria/`)
+   and 28 (`contractio/`, the reduction shapes) have no fixture file at
+   all; `run_conformance_tests` never sees them, and the run, differential
+   and cross phases are what carry them.
 
-   The other 14 report **`DEFERRED`** with what they wait on —
-   `type_checker`, `capability_checker`, `import_closure`, `ffi_checker`,
-   `lexicon_checker`, `backend`, `runtime`, `cross_compile`,
-   `parser_error_recovery` — and are **never counted as passing**. A suite
-   reporting 25/25 while running 11 would be worse than no suite.
+   The other 9 — 1, 2, 4, 12, 14, 15, 16, 17, 24 — report **`DEFERRED`**
+   with what they wait on, each fixture's header naming the current
+   blocker (a `nocap` runner shape and `textus` methods with no
+   declaration site; brand syntax `[OPEN]` in §8.6; no import closure;
+   generic impl heads; no `lexicon.norma`; no ARC runtime and no `abort`
+   shape; a stub `proba-reproducibilitatem`; no riscv64 reference backend)
+   — and are **never counted as passing**. A suite reporting 26/26 while
+   running 18 would be worse than no suite.
 
    Five rule shapes, and a runner assuming one will quietly mishandle four:
-   reject-with-exact-code (most), byte-identical output (16, 17, 25), external
-   certificate (23), runtime abort (15), capability absence with no code
-   assigned (1).
+   reject-with-exact-code (most), byte-identical output (16, 17, 25–28),
+   external certificate (23), runtime abort (15), capability absence with
+   no code assigned (1).
 
    `run_conformance_tests` carries its own floor, mirroring
    `UNIT_FIXTURE_FLOOR`. It earned that immediately: with `exsc.asm`
@@ -195,8 +210,8 @@ a shipped artifact, and is checked every time it is built instead.
 
 ## What is deliberately absent
 
-- **`tests/conformance/` entries that run.** See above: all 24 are written,
-  10 run, 14 are `DEFERRED` on a named component. (This item was written
+- **`tests/conformance/` entries that run.** See above: 28 entries, 26 with
+  a fixture file, 18 run, 9 `DEFERRED` on a named component. (This item was written
   when `exsc` did not exist and said what each of the 24 rows would need: a
   source fixture plus an expectation — a diagnostic code for most; byte-
   identical output under varied conditions for #16, which is what
@@ -219,10 +234,11 @@ a shipped artifact, and is checked every time it is built instead.
   from reading `entry23/codex.exsc`, not measured; the example frame in the
   stream's third section is one non-basis spot check of it.
 
-  **25 entries, five rule shapes.** Most are "rejects with exactly code
-  EXS-Exxxx". Entries 16, 17 and 25 instead require byte-identical output
-  across conditions and hosts — 17 compares the cross-compiled text, 25
-  compares what the cross-compiled artifact does. Entry 23 is the
+  **28 entries, five rule shapes.** Most are "rejects with exactly code
+  EXS-Exxxx". Entries 16, 17 and 25–28 instead require byte-identical
+  output across conditions and hosts — 17 compares the cross-compiled
+  text, 25–28 compare what the compiled artifact does, on both backends
+  and big-endian under emulation. Entry 23 is the
   certificate. Entry 15 is a runtime
   abort, not a compile failure. Entry 1 is a capability absence with no code
   assigned. A runner that assumes one shape will quietly mis-handle four.
