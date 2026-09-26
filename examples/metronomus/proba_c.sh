@@ -5,6 +5,12 @@
 # exemplum.c -- a two-peer lockstep/rollback session over a laggy link -- is
 # built against the host row with every C compiler given and run under
 # UBSan, its transcript compared byte for byte with exemplum.expected.
+# exemplum_horologii.c -- the library as a digital watch's firmware -- is
+# checked the same way against exemplum_horologii.expected, and then, when
+# ld.lld and qemu-arm are on PATH, built BARE (no libc) for a Cortex-M4 and
+# a Cortex-M0+ from the 32-bit-address unit and run under qemu-arm: the
+# same transcript, byte for byte, from the Thumb code a watch would run.
+# ARM_CC names the ARM-capable clang (default: clang).
 #
 # Usage: examples/metronomus/proba_c.sh [CC...]    (default: gcc clang)
 # Needs build/exsc (make all). Run from anywhere; writes only to a temp dir.
@@ -49,6 +55,16 @@ for cc in "${ccs[@]}"; do
   san=(-fsanitize=undefined -fno-sanitize-recover=all)
   [ "$cc" = clang ] && san=(-fsanitize=undefined -fsanitize-trap=undefined)
   for opt in -O0 -O2; do
+    bin="$work/horologium_${cc##*/}$opt"
+    "$cc" -std=c11 "$opt" -Wall -Wextra -Werror -Wno-unused-function "${san[@]}" \
+      -I "$here" "$here/exemplum_horologii.c" "$work/metronomus_x86_64-linux.gen.c" -o "$bin"
+    if "$bin" >"$bin.out" && cmp -s "$bin.out" "$here/exemplum_horologii.expected"; then
+      echo "  [ok]   $cc $opt: exemplum_horologii exit 0, transcript byte-identical"
+    else
+      echo "  [FAIL] $cc $opt: exemplum_horologii exit or transcript differs"; fail=1
+    fi
+  done
+  for opt in -O0 -O2; do
     bin="$work/exemplum_${cc##*/}$opt"
     "$cc" -std=c11 "$opt" -Wall -Wextra -Werror -Wno-unused-function "${san[@]}" \
       -I "$here" "$here/exemplum.c" "$work/metronomus_x86_64-linux.gen.c" -o "$bin"
@@ -59,6 +75,30 @@ for cc in "${ccs[@]}"; do
     fi
   done
 done
+
+# The watch, bare, on emulated Cortex-M cores.
+arm_cc="${ARM_CC:-clang}"
+if command -v ld.lld >/dev/null && command -v qemu-arm >/dev/null && command -v "$arm_cc" >/dev/null; then
+  for pair in thumbv7em-none-eabi:cortex-m4 thumbv6m-none-eabi:cortex-m0plus; do
+    tgt="${pair%%:*}" cpu="${pair##*:}"
+    flags=(--target="$tgt" -mcpu="$cpu" -Os -ffreestanding -fno-builtin -std=c11
+           -Werror -Wno-unused-function -ffunction-sections)
+    elf="$work/horologium_$cpu.elf"
+    if "$arm_cc" "${flags[@]}" -Wall -Wextra -DMETRONOMUS_NUDUS -I "$here" \
+          -c "$here/exemplum_horologii.c" -o "$work/w_$cpu.o" 2>"$work/arm.log" &&
+       "$arm_cc" "${flags[@]}" -c "$work/metronomus_mips64-none-o64.gen.c" \
+          -o "$work/l_$cpu.o" 2>>"$work/arm.log" &&
+       ld.lld --gc-sections -e _start -static "$work/w_$cpu.o" "$work/l_$cpu.o" -o "$elf" &&
+       qemu-arm -cpu max "$elf" >"$elf.out" &&
+       cmp -s "$elf.out" "$here/exemplum_horologii.expected"; then
+      echo "  [ok]   $cpu: bare Thumb build under qemu-arm, exit 0, transcript byte-identical ($(wc -c <"$elf") byte ELF)"
+    else
+      echo "  [FAIL] $cpu: bare ARM build, run or transcript failed"; sed 's/^/         /' "$work/arm.log" | grep -v "cc-wrapper\|nix-wrapped" | head -5; fail=1
+    fi
+  done
+else
+  echo "  -      ARM: ld.lld or qemu-arm not on PATH; the bare Cortex-M run was NOT done"
+fi
 
 [ "$fail" -eq 0 ] && echo "RESULT: ok" || echo "RESULT: FAIL"
 exit "$fail"

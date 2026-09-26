@@ -12,8 +12,9 @@ Exsecutor for two consumers:
 
 `metronomus.exsc` is the library: pure, with no `poscit`, no `initium`, no
 allocation and no I/O. `probatio.exsc` is the test driver.
-`metronomus.h` is the C face for Kiln. `exemplum.c` is a two-peer
-lockstep/rollback session in C. `proba_c.sh` checks the C side.
+`metronomus.h` is the C face for Kiln or any C host. `exemplum.c` is a
+two-peer lockstep/rollback session in C. `exemplum_horologii.c` is the same
+library as the firmware of a digital watch. `proba_c.sh` checks the C side.
 
 ## Why a clock library reads no clock
 
@@ -38,7 +39,7 @@ lets its whole stream be certified byte-for-byte below.
 | 1 | `quotus`, `residuum`, `proportio` | Integer division by shift-and-subtract. The language has no integer `/` or remainder (§8.4, both `[OPEN]`). `proportio` computes `floor(n·a/b)` without forming `n·a`. |
 | 2 | `multiplica_modulo` | Wrapping 64-bit multiply. `*%` is `[OPEN]` too. |
 | 3 | `Metronomus` | The **fixed-step clock** (details below). |
-| 4 | `hora_civilis` | **Wall clock.** Unix milliseconds plus a zone offset in minutes (data, passed in) become year, month, day, time of day and weekday. |
+| 4 | `hora_civilis`, `tempus_ex_hora` | **Wall clock.** Unix milliseconds plus a zone offset in minutes (data, passed in) become year, month, day, time of day and weekday, and back again: `tempus_ex_hora` turns a date and time the user set into milliseconds, and refuses one that does not exist (29 February 2027, 31 September, 24:00, second 60). |
 | 5 | `Horologia` | **Sixteen timers** counted in ticks, one-shot or periodic. Fired as a slot-ordered bitmask, so every peer handles them in the same order. Periodic timers keep their phase across stalls. `pulsus_ex_millesimis` rounds up, so a timer never fires early. |
 | 6 | `Mandatum`, `tempus24`, `revolve` | **Punctim's wire.** The DCF-Game INPUT body `tick u32 \| buttons u16` (big-endian, 6 bytes), the DeModFrame timestamp, and `unwrap_pid` generalised from 2¹¹ to any 2ᵏ (16 for `seq`, 24 for the timestamp). |
 | 7 | `Consonantia` | **Clock sync.** Offset and round trip from PING/PONG's four instants. The offset is taken from the minimum-delay exchange of the last eight. The round trip is smoothed with an integer EWMA at α = 1/8, Punctim's own `udp_node.py` value. `pulsus_remotus` gives the server's tick now. |
@@ -112,6 +113,54 @@ integer, and its C unit refuses `-ffast-math`. Kiln's simulation code is
 schedule, the inputs and the RNG are identical by construction; `summa_misce`
 exists to catch the tick at which the game state diverges.
 
+## Using it in a digital watch
+
+Yes, for the timekeeping core, and that is measured, not argued.
+`exemplum_horologii.c` is the library as watch firmware:
+
+- a 32,768 Hz crystal whose RTC wakes the CPU eight times a second;
+- a time of day and date **set with the buttons** (`tempus_ex_hora`), with an
+  impossible date refused;
+- an alarm, a 45-second countdown (`Horologia`), and a 1/100 s stopwatch with
+  a lap time;
+- the whole thing crossing midnight into a leap day, then running for one
+  simulated day.
+
+A crystal gives 327.68 counts per centisecond, which is not an integer. The
+rational accumulator keeps the stopwatch exact: a day reads **24:00:00.00**.
+A firmware that divides by 327 reads 24:02:59.66, and the transcript prints
+both.
+
+It builds **bare** (no libc, its own `_start`) from the 32-bit-address unit
+for a **Cortex-M4** and a **Cortex-M0+**, the range most watch chips sit in.
+It runs under `qemu-arm`, and the transcript is byte-identical to the PC's.
+The whole firmware is about **8 KB of code and 452 bytes of RAM** on either
+core. `proba_c.sh` repeats all of this.
+
+The 32-bit-address row is named `mips64-none-o64`, but its C has no MIPS in
+it. It asserts 32-bit pointers and reads `__BYTE_ORDER__`, and that is all.
+
+On a v6-M part (M0/M0+) the compiler calls three 64-bit helpers
+(`__aeabi_llsl`, `__aeabi_llsr`, `__aeabi_lmul`). Every toolchain's libgcc or
+compiler-rt supplies them, as it does `__aeabi_memcpy`. The demo's bare build
+carries its own copies only because this environment has no ARM runtime.
+
+**What a watch still needs from elsewhere:**
+
+- **Crystal trim.** A watch crystal is off by tens of ppm, and the Q8
+  `celeritas` step (1/256, about 3,900 ppm) is far too coarse to correct it.
+  Use the RTC's own calibration register, which is the normal way on
+  STM32/nRF/SAM parts. Fine trim in the library is `[OPEN]`.
+- **Daylight saving.** The zone offset is data the host supplies. Choosing it
+  from DST rules is not here.
+- **Power.** `[UNTESTED]`: no cycle count or current draw has been measured
+  on hardware. The per-wake work is two `pulsa` calls, one `excita` and a
+  compare. On an M0+, each `quotus` is a 64-step loop over 64-bit values
+  built from 32-bit operations.
+- **Hardware.** `[UNTESTED]`: nothing has run on a real microcontroller, only
+  its instruction set under `qemu-arm` (A-profile user mode, running the same
+  Thumb-2 and Thumb-1 code a Cortex-M would).
+
 ## Using it with Punctim
 
 - **INPUT body.** `mandatum_scribe(tick, buttons)` produces DCF-Game message
@@ -137,7 +186,7 @@ and its exit status names the first vector that fails:
 Both are copied verbatim from Punctim `99baf3f`; the oracle's docstring records
 the files' hashes.
 
-**Independent: the whole 2,432-byte stream.**
+**Independent: the whole 2,616-byte stream.**
 `tests/programs/metronomus/expected.out` is written by
 `prototypes/metronomus_oracle.py`, which computes everything its own way:
 
@@ -158,6 +207,10 @@ harness; it is not in the suite, because Kiln is not vendored.
 
 **C side.** `proba_c.sh` checks:
 
+- the watch demo, hosted under UBSan with gcc and clang at `-O0` and `-O2`,
+  then bare on Cortex-M4 and Cortex-M0+ under `qemu-arm`: one transcript,
+  byte-identical everywhere (`exemplum_horologii.expected`);
+
 - the header agrees with the generated definitions, and a deliberately wrong
   prototype is a compile error;
 - `exemplum.c` runs clean under UBSan with gcc and clang at `-O0` and `-O2`,
@@ -165,31 +218,35 @@ harness; it is not in the suite, because Kiln is not vendored.
   240 ticks, 66 and 100 rollbacks, and **240 of 240 tick checksums agreeing**
   at the end.
 
-**Mutants.** Fifteen mechanical mutants of `metronomus.exsc` were run against
-the stream:
+**Mutants.** Nineteen mechanical mutants of `metronomus.exsc` were run against
+the final stream (byte positions are into the 2,616-byte stream):
 
 - **M1: unwrap exactly-half-modulus `le`→`lt`.** Survived at first, because
   none of Punctim's eight vectors sits on the boundary. Boundary cases were
-  added, and it now fails at byte 1151.
+  added, and it now fails at byte 1335.
 - **M3: min-delay tie to the later slot.** Survived at first because the
-  scenario had no tie. A tie was added, and it now fails at byte 1791.
+  scenario had no tie. A tie was added, and it now fails at byte 1975.
 - **M8 and the first M10 were equivalent mutants,** and so not failures of the
   test. M8 disabled a `quotus` special case for divisors ≥ 2⁶³ that cannot
   arise: after step *i* the remainder is below 2ⁱ⁺¹. The case was removed.
   The first M10 changed a guard whose body clamps to the same value; the
-  re-aimed M10 fails at byte 1936.
+  re-aimed M10 fails at byte 2120.
 - **M13 made the compiler crash** (see findings).
 - **Every other mutant fails at a stated byte:**
   - M2, INPUT `claves` `:maior`→`:minor`: exit 10, byte 5.
   - M4, civil month: byte 802.
-  - M5, prediction not recorded: byte 1968.
+  - M5, prediction not recorded: byte 2240.
   - M6, slips not counted: byte 528.
-  - M7, periodic re-arm from now: byte 1048.
-  - M9, EWMA α 1/4: byte 1231.
+  - M7, periodic re-arm from now: byte 1232.
+  - M9, EWMA α 1/4: byte 1415.
   - M11, `quotus` `ge`→`gt`: byte 176.
-  - M12, 23-bit timestamp: byte 1094.
+  - M12, 23-bit timestamp: byte 1278.
   - M14, Q15 fraction: byte 351.
-  - M15, xorshift shift 25→24: byte 2301.
+  - M15, xorshift shift 25→24: byte 2485.
+- **Setting the time (W1–W4):** dropping the 400-year leap rule fails at byte
+  897, a flipped zone sign at 917, admitting second 60 at 1001. W4 forgot that
+  September has 30 days; it survived until 31 September was added as a case,
+  and now fails at byte 1033.
 
 ## Findings
 

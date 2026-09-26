@@ -27,7 +27,7 @@
 //                            Q8 time scale, a Q16 interpolation fraction
 //   4  Hora                  the wall clock: Unix milliseconds and a zone
 //                            offset (data, not ambient state) to a civil date
-//                            and time of day
+//                            and time of day, and back (setting the time)
 //   5  Horologia             sixteen one-shot or periodic timers counted in
 //                            ticks, fired in slot order, periodic ones
 //                            re-armed without drift
@@ -328,6 +328,77 @@ publica functio hora_civilis(ms: u64, zona: i64) -> Hora {
         hebdomas: residuum(dies + 4, 7) sicut u8,
         millesimum: millesimum sicut u16
     };
+}
+
+// Days in month `mensis` (1..12) of `annus`, Gregorian; 0 for a month that
+// does not exist. Leap: divisible by 4, not by 100 unless by 400.
+publica functio dies_mensis(annus: u64, mensis: u64) -> u64 {
+    si mensis eq 0 vel mensis gt 12 {
+        redde 0;
+    }
+    si mensis eq 2 {
+        si residuum(annus, 4) eq 0 et (residuum(annus, 100) ne 0 vel residuum(annus, 400) eq 0) {
+            redde 29;
+        }
+        redde 28;
+    }
+    si mensis eq 4 vel mensis eq 6 vel mensis eq 9 vel mensis eq 11 {
+        redde 30;
+    }
+    redde 31;
+}
+
+// The inverse of hora_civilis: a LOCAL civil time `h` in a zone `zona`
+// minutes east of UTC, to milliseconds since the Unix epoch -- what a watch
+// needs when its wearer sets the date and time with the buttons. `hebdomas`
+// is ignored (it follows from the date). nullus for a date or time that does
+// not exist (2027-02-29, 24:00, month 13, second 60 -- leap seconds are not
+// civil time here) or one before the epoch in UTC. Hinnant's
+// days_from_civil, unsigned: the era shift keeps it non-negative.
+publica functio tempus_ex_hora(h: Hora, zona: i64) -> u64 {
+    firma annus = h.annus sicut u64;
+    firma mensis = h.mensis sicut u64;
+    firma dies = h.dies sicut u64;
+    si dies eq 0 vel dies gt dies_mensis(annus, mensis) {
+        redde nullus;
+    }
+    si (h.hora sicut u64) ge 24 vel (h.minutum sicut u64) ge 60 {
+        redde nullus;
+    }
+    si (h.secundum sicut u64) ge 60 vel (h.millesimum sicut u64) ge 1000 {
+        redde nullus;
+    }
+    // March-based months: January and February belong to the previous year.
+    mutabilis y: u64 = annus;
+    mutabilis mp: u64 = 0;
+    si mensis le 2 {
+        si y eq 0 {
+            redde nullus;
+        }
+        y = y - 1;
+        mp = mensis + 9;
+    } aliter {
+        mp = mensis - 3;
+    }
+    firma era = quotus(y, 400);
+    firma yoe = y - era * 400;
+    firma doy = quotus(153 * mp + 2, 5) + dies - 1;
+    firma doe = yoe * 365 + quotus(yoe, 4) - quotus(yoe, 100) + doy;
+    firma z = era * 146097 + doe;
+    si z lt 719468 {
+        redde nullus;
+    }
+    firma d = z - 719468;
+    firma loc = d * 86400000 + (h.hora sicut u64) * 3600000 + (h.minutum sicut u64) * 60000
+        + (h.secundum sicut u64) * 1000 + (h.millesimum sicut u64);
+    si zona ge 0 {
+        firma w = (zona sicut u64) * 60000;
+        si w gt loc {
+            redde nullus;
+        }
+        redde loc - w;
+    }
+    redde loc + ((0 - zona) sicut u64) * 60000;
 }
 
 // ---- 5. timers -------------------------------------------------------------

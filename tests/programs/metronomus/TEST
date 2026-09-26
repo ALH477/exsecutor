@@ -1,7 +1,7 @@
 # examples/metronomus/: the timer, clock and multiplayer tick layer for Kiln
 # and Punctim, driven by its probatio.exsc through every part of the library.
 #
-# expected.out (2,432 bytes) is WRITTEN BY prototypes/metronomus_oracle.py,
+# expected.out (2,616 bytes) is WRITTEN BY prototypes/metronomus_oracle.py,
 # not by this program: Python's // and %, fractions.Fraction for the clock,
 # datetime for the civil dates, a dict for the input buffer. Regenerate it
 # with
@@ -14,10 +14,11 @@
 # vectors (four DCF-Game INPUT bodies, eight unwrap_pid cases): 0 only if all
 # pass, 10+i / 20+i naming the first that does not.
 #
-# NON-VACUOUS, measured: of fifteen mechanical mutants of metronomus.exsc,
+# NON-VACUOUS, measured: of nineteen mechanical mutants of metronomus.exsc,
 # every one that changes behaviour fails here, each at a stated byte
-# (examples/metronomus/README.md lists them); the two that survived first
-# were a missing boundary case and a missing tie, both added, and two more
+# (examples/metronomus/README.md lists them); the three that survived first
+# were a missing boundary case, a missing tie and a missing 31 September,
+# all added, and two more
 # are equivalent mutants, said so there.
 #
 # cross=yes: the same bytes from the C backend's mips64-none-o64 row,

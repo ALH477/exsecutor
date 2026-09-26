@@ -242,6 +242,40 @@ functio sectio_horae(s: Scriptor) -> mensura {
     per i in 0..8 {
         n = n + scribe_horam(s, hora_civilis(ms[i], zona[i]));
     }
+    // Back again: setting the time. Each date above round-trips (the one
+    // clamped to the epoch comes back as the epoch's local time in UTC-5).
+    per i in 0..8 {
+        n = n + scribe_u64(s, tempus_ex_hora(hora_civilis(ms[i], zona[i]), zona[i]));
+    }
+    // Dates that exist and dates that do not, set in UTC+1.
+    // annus, mensis, dies, hora, minutum, secundum, millesimum
+    firma d: acies<u64, 84> = [
+        2028, 2, 29, 23, 59, 59, 999,
+        2027, 2, 29, 0, 0, 0, 0,
+        2100, 2, 29, 0, 0, 0, 0,
+        2000, 2, 29, 12, 0, 0, 0,
+        2026, 13, 1, 0, 0, 0, 0,
+        2026, 4, 31, 0, 0, 0, 0,
+        2026, 9, 26, 24, 0, 0, 0,
+        2026, 9, 26, 23, 59, 60, 0,
+        1970, 1, 1, 0, 59, 59, 999,
+        1970, 1, 1, 1, 0, 0, 0,
+        2026, 1, 1, 0, 0, 0, 0,
+        2026, 9, 31, 0, 0, 0, 0
+    ];
+    per i in 0..12 {
+        firma k = i * 7;
+        firma h = Hora {
+            annus: d[k] sicut u16, mensis: d[k + 1] sicut u8, dies: d[k + 2] sicut u8,
+            hora: d[k + 3] sicut u8, minutum: d[k + 4] sicut u8,
+            secundum: d[k + 5] sicut u8, hebdomas: 0,
+            millesimum: d[k + 6] sicut u16
+        };
+        n = n + scribe_u64(s, tempus_ex_hora(h, 60));
+    }
+    n = n + scribe_u64(s, dies_mensis(2028, 2));
+    n = n + scribe_u64(s, dies_mensis(1900, 2));
+    n = n + scribe_u64(s, dies_mensis(2026, 0));
     redde n;
 }
 

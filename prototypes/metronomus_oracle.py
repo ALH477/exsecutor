@@ -240,6 +240,28 @@ def sectio_horae(o):
         weekday = (t.weekday() + 1) % 7      # Python: Monday 0; here Sunday 0
         o.raw(struct.pack(">HBBBBBBH", t.year, t.month, t.day, t.hour,
                           t.minute, t.second, weekday, t.microsecond // 1000))
+    for ms, zone in cases:
+        local = max(0, ms + zone * 60000)
+        o.u64(local - zone * 60000)          # always >= 0 for these cases
+    dates = [
+        (2028, 2, 29, 23, 59, 59, 999), (2027, 2, 29, 0, 0, 0, 0),
+        (2100, 2, 29, 0, 0, 0, 0), (2000, 2, 29, 12, 0, 0, 0),
+        (2026, 13, 1, 0, 0, 0, 0), (2026, 4, 31, 0, 0, 0, 0),
+        (2026, 9, 26, 24, 0, 0, 0), (2026, 9, 26, 23, 59, 60, 0),
+        (1970, 1, 1, 0, 59, 59, 999), (1970, 1, 1, 1, 0, 0, 0),
+        (2026, 1, 1, 0, 0, 0, 0), (2026, 9, 31, 0, 0, 0, 0),
+    ]
+    for y, mo, d, h, mi, se, ms in dates:
+        try:
+            t = datetime.datetime(y, mo, d, h, mi, se, ms * 1000)
+        except ValueError:
+            o.u64(NULLUS)
+            continue
+        utc = (t - epoch) // datetime.timedelta(milliseconds=1) - 60 * 60000
+        o.u64(utc if utc >= 0 else NULLUS)
+    for y, mo in [(2028, 2), (1900, 2)]:
+        o.u64(((datetime.date(y + (mo == 12), mo % 12 + 1, 1)) - datetime.date(y, mo, 1)).days)
+    o.u64(0)
 
 
 # ---- timers -------------------------------------------------------------------------------

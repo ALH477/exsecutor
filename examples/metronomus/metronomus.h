@@ -104,6 +104,11 @@ uint64_t exs_pulsus_ex_millesimis(uint64_t cadentia, uint64_t ms); // rounded up
 // `ms` since the Unix epoch and a zone offset in minutes east (an int64_t
 // passed as its two's-complement bits) into the 10 bytes at `hora`.
 void exs_hora_civilis(unsigned char *hora, uint64_t ms, uint64_t zona);
+// The inverse, for setting a watch: the local time in the 10 bytes at `hora`
+// (hebdomas ignored) and its zone, to Unix ms; METRONOMUS_NULLUS for a date
+// or time that does not exist or falls before the epoch.
+uint64_t exs_tempus_ex_hora(unsigned char *hora, uint64_t zona);
+uint64_t exs_dies_mensis(uint64_t annus, uint64_t mensis); // 0 if no such month
 
 // ---- 5. timers -----------------------------------------------------------------
 
