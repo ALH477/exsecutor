@@ -1,5 +1,24 @@
 # examples/hydramodem/
 
+
+
+<!-- truth:claim
+id: exsecutor-basis-137
+kind: file_contains
+severity: error
+path: examples/hydramodem/README.md
+pattern: 137
+-->
+`examples/hydramodem/README.md` cites a 137-word basis for the default-profile transmitter's affine/basis argument.
+<!-- truth:end -->
+<!-- truth:claim
+id: exsecutor-rx-impaired
+kind: dir_exists
+severity: error
+path: vendor/hydramodem-rx
+-->
+`vendor/hydramodem-rx/` is vendored in this repository: 70 impaired WAVs plus HydraModem's own verdict on each (R3).
+<!-- truth:end -->
 A transmitter **and a receiver** for
 [HydraModem](https://github.com/ALH477/HydraMesh)'s acoustic 2-FSK modem,
 written in Exsecutor. Give the transmitter a 17-byte DeModFrame and it writes
@@ -29,6 +48,16 @@ controls** — mutants that decode anyway — which `docs/design/receptor.md`
 section 6 names rather than hides.
 
 ## The melody profile
+
+> Everything before this section is the **default profile**: 2-FSK, 48 kHz,
+> 1000 baud — `exsecutor-tx-bytes` (the transmitter, byte-identical) and
+> `exsecutor-rx-verdicts` (the receiver, verdict-matched, R2 clean + R3
+> impaired). Everything from here down is a **separate profile family**
+> — 8-FSK melody, 4-FSK bass, and the duet — certified as
+> `exsecutor-musical`: TX byte identity plus a 137-word basis per voice,
+> a verdict-matched musical receiver, and a verdict-matched streaming
+> receiver (`docs/design/melos.md`). Neither implies the other; the
+> mutant/impaired-vector figures above are the default profile's alone.
 
 `melos*.exsc` is a second transmitter beside the first: HydraModem's MUSICAL
 `melody` profile. It is 8-FSK on a just-intonation major pentatonic drawn

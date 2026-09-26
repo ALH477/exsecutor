@@ -1,5 +1,15 @@
 # 0014 — The HydraModem receiver: certified by decode success against HydraModem's own verdicts, not by internal bit identity
 
+
+<!-- truth:claim
+id: exsecutor-timing
+kind: file_contains
+severity: error
+path: docs/design/receptor.md
+pattern: timing loop
+-->
+`docs/design/receptor.md` §13 documents D10, the receiver's timing loop, and the ablation showing what it buys on the vendored impaired set.
+<!-- truth:end -->
 **Status:** Accepted, 2026-09-11. **R2 and R3 both implemented and running.**
 `docs/design/receptor.md` is the design. The Exsecutor program is
 `examples/hydramodem/{receptor,recipe,circuitus}.exsc`, certified by
@@ -17,7 +27,7 @@ bound; the emitter defect has since been fixed and the struct now compiles
 (finding 28), and converting the receiver to it is a named follow-up.
 **Relates to:** ADR 0011 (the first external certificate), ADR 0013 (the
 transmitter, the second); spec §3.1, §4.6, §5.4, §6.3, §8.6, §11, §12;
-`vendor/hydramodem-tx/`; the proposed `vendor/hydramodem-rx/`.
+`vendor/hydramodem-tx/`; `vendor/hydramodem-rx/`.
 
 ## Context
 
