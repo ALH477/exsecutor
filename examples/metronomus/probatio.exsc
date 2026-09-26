@@ -1,0 +1,429 @@
+// examples/metronomus/probatio.exsc -- the driver for metronomus.exsc, and
+// the only file of the unit that names `Mundus` or `Scriptor`. It reads
+// nothing; it runs a fixed scenario through every part of the library and
+// writes what the library answered, raw, to standard output.
+//
+// TWO CERTIFICATES, TWO KINDS.
+//   * EXTERNAL, checked here: Punctim's own golden vectors, copied verbatim
+//     from Documentation/game_vectors.json `input_roundtrip` (4) and
+//     Documentation/snake_vectors.json `unwrap` (8) at Punctim commit
+//     99baf3f49e0f8eba2eeb6a66d77ef607de313869. A mismatch is the exit
+//     status: 10 + the vector's index for an INPUT body, 20 + index for an
+//     unwrap. They are ALSO in the stream, so the oracle checks them twice.
+//   * INDEPENDENT, checked by `cmp`: tests/programs/metronomus/expected.out
+//     is written by prototypes/metronomus_oracle.py, which computes every
+//     value its own way -- Python's `//` and `%`, `fractions.Fraction` for the
+//     clock, `datetime` for the civil dates, the JSON files themselves for
+//     the Punctim sections -- rather than transliterating this program.
+//
+// THE STREAM is a sequence of big-endian u64 words, except where a section
+// says it writes a record's own bytes (Metronomus: 40, Hora: 10, Mandatum: 6),
+// which pins the `@transitus` layouts the C header states. A signed value is
+// two words: 1 if negative else 0, then the magnitude. The oracle's comments
+// name every section in order.
+
+@transitus
+structura Octo {
+    valor: u64:maior
+}
+
+functio scribe_u64(s: Scriptor, v: u64) -> mensura {
+    firma t = Octo { valor: v } sicut acies<u8, 8>;
+    mutabilis n: mensura = 0;
+    per i in 0..8 {
+        n = n + s.scribe_octeto(t[i]);
+    }
+    redde n;
+}
+
+functio scribe_i64(s: Scriptor, v: i64) -> mensura {
+    si v lt 0 {
+        firma a = scribe_u64(s, 1);
+        redde a + scribe_u64(s, (0 - v) sicut u64);
+    }
+    firma b = scribe_u64(s, 0);
+    redde b + scribe_u64(s, v sicut u64);
+}
+
+functio scribe_metronomum(s: Scriptor, m: Metronomus) -> mensura {
+    firma t = m sicut acies<u8, 40>;
+    mutabilis n: mensura = 0;
+    per i in 0..40 {
+        n = n + s.scribe_octeto(t[i]);
+    }
+    redde n;
+}
+
+functio scribe_horam(s: Scriptor, h: Hora) -> mensura {
+    firma t = h sicut acies<u8, 10>;
+    mutabilis n: mensura = 0;
+    per i in 0..10 {
+        n = n + s.scribe_octeto(t[i]);
+    }
+    redde n;
+}
+
+// ---- Punctim's vectors -----------------------------------------------------
+
+// game_vectors.json input_roundtrip, in file order: bytes, tick, buttons.
+functio mandata() -> acies<u8, 24> {
+    redde [
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x08, 0x94, 0xb7, 0x30, 0xde, 0x66
+    ];
+}
+
+functio mandatorum_pulsus() -> acies<u64, 4> {
+    redde [66051, 4294967295, 0, 143963952];
+}
+
+functio mandatorum_claves() -> acies<u64, 4> {
+    redde [1029, 65535, 0, 56934];
+}
+
+// snake_vectors.json unwrap, in file order: prev_abs, raw, expect; mod is
+// 2048 (= 2^11) in every one.
+functio revolutiones() -> acies<u64, 24> {
+    redde [
+        0, 1, 1,
+        5, 5, 5,
+        2047, 0, 2048,
+        2040, 5, 2053,
+        100, 98, 98,
+        0, 2047, 0,
+        1000, 1500, 1500,
+        5000, 3, 4099
+    ];
+}
+
+// ---- the scenario, section by section ----------------------------------------
+
+functio sectio_punctim(s: Scriptor) -> u8 {
+    mutabilis n: mensura = 0;
+    firma v = mandata();
+    firma vp = mandatorum_pulsus();
+    firma vc = mandatorum_claves();
+    mutabilis verdictum: u8 = 0;
+    per i in 0..4 {
+        firma b = mandatum_scribe(vp[i], vc[i]);
+        mutabilis crudum: acies<u8, 6> = [0; 6];
+        per j in 0..6 {
+            n = n + s.scribe_octeto(b[j]);
+            crudum[j] = v[i * 6 + j];
+            si b[j] ne v[i * 6 + j] {
+                si verdictum eq 0 {
+                    verdictum = 10 + (i sicut u8);
+                }
+            }
+        }
+        firma m = mandatum_lege(crudum);
+        n = n + scribe_u64(s, m.pulsus sicut u64);
+        n = n + scribe_u64(s, m.claves sicut u64);
+        si (m.pulsus sicut u64) ne vp[i] vel (m.claves sicut u64) ne vc[i] {
+            si verdictum eq 0 {
+                verdictum = 10 + (i sicut u8);
+            }
+        }
+    }
+    firma r = revolutiones();
+    per i in 0..8 {
+        firma x = revolve(r[i * 3], r[i * 3 + 1], 11);
+        n = n + scribe_u64(s, x);
+        si x ne r[i * 3 + 2] {
+            si verdictum eq 0 {
+                verdictum = 20 + (i sicut u8);
+            }
+        }
+    }
+    redde verdictum;
+}
+
+functio sectio_arithmetica(s: Scriptor) -> mensura {
+    mutabilis n: mensura = 0;
+    firma a: acies<u64, 16> = [
+        0, 1,
+        1, 1,
+        1000000007, 60,
+        0xffffffffffffffff, 1,
+        0xffffffffffffffff, 0x8000000000000000,
+        0xffffffffffffffff, 0xffffffffffffffff,
+        12345678901234, 97,
+        5, 0
+    ];
+    per i in 0..8 {
+        n = n + scribe_u64(s, quotus(a[i * 2], a[i * 2 + 1]));
+        n = n + scribe_u64(s, residuum(a[i * 2], a[i * 2 + 1]));
+    }
+    firma b: acies<u64, 8> = [
+        0xffffffffffffffff, 0xffffffffffffffff,
+        0x2545f4914f6cdd1d, 0x123456789abcdef0,
+        3, 5,
+        0x100000000, 0x100000000
+    ];
+    per i in 0..4 {
+        n = n + scribe_u64(s, multiplica_modulo(b[i * 2], b[i * 2 + 1]));
+    }
+    redde n;
+}
+
+functio gradus(s: Scriptor, m: &mutabilis Metronomus, dt: u64) -> mensura {
+    firma k = pulsa(m, dt);
+    firma a = scribe_u64(s, k);
+    redde a + scribe_u64(s, fractio(*m));
+}
+
+functio sectio_metronomi(s: Scriptor) -> mensura {
+    mutabilis n: mensura = 0;
+    // A: nanoseconds, 60 Hz, at most 5 ticks per pulse.
+    mutabilis m = metronomum_para(1000000000, 60, 5);
+    n = n + scribe_u64(s, metronomus_valet(m) sicut u64);
+    firma dt: acies<u64, 8> = [
+        16666667, 16666666, 16666667, 8000000, 8666667, 0, 50000000, 2000000000
+    ];
+    per i in 0..8 {
+        n = n + gradus(s, m, dt[i]);
+    }
+    firma c0 = celeritatem_pone(m, 0);
+    n = n + gradus(s, m, 100000000);
+    firma c1 = celeritatem_pone(m, 128);
+    n = n + gradus(s, m, 33333334);
+    firma c2 = celeritatem_pone(m, 512);
+    n = n + gradus(s, m, 16666667);
+    n = n + scribe_u64(s, celeritatem_pone(m, 65536) sicut u64);
+    n = n + scribe_u64(s, m.pulsus);
+    n = n + scribe_u64(s, m.reliquum);
+    n = n + scribe_u64(s, m.lapsi);
+    n = n + scribe_u64(s, tempus_pulsus(m, m.pulsus));
+    n = n + scribe_metronomum(s, m);
+
+    // B: the N64's COP0 count, 46,875,000 Hz; 781,250 counts is 1/60 s.
+    mutabilis b = metronomum_para(46875000, 60, 4);
+    per i in 0..3 {
+        n = n + gradus(s, b, 781250);
+    }
+    n = n + scribe_u64(s, tempus_pulsus(b, 3));
+
+    // Refused clocks, and a refused clock's pulse.
+    mutabilis z0 = metronomum_para(0, 60, 5);
+    firma z1 = metronomum_para(1000000000, 0, 5);
+    firma z2 = metronomum_para(0x80000000, 60, 5);
+    firma z3 = metronomum_para(1000000000, 60, 0);
+    firma z4 = metronomum_para(1000000000, 0x10000, 5);
+    n = n + scribe_u64(s, metronomus_valet(z0) sicut u64);
+    n = n + scribe_u64(s, metronomus_valet(z1) sicut u64);
+    n = n + scribe_u64(s, metronomus_valet(z2) sicut u64);
+    n = n + scribe_u64(s, metronomus_valet(z3) sicut u64);
+    n = n + scribe_u64(s, metronomus_valet(z4) sicut u64);
+    n = n + scribe_u64(s, pulsa(z0, 1000000000));
+
+    // Conversions.
+    firma t: acies<u64, 5> = [0, 16666666, 16666667, 1000000000, 3600000000000];
+    per i in 0..5 {
+        n = n + scribe_u64(s, pulsus_ex_tempore(1000000000, 60, t[i]));
+    }
+    firma ms: acies<u64, 8> = [0, 1, 16, 17, 250, 1000, 16667, 50];
+    per i in 0..8 {
+        n = n + scribe_u64(s, pulsus_ex_millesimis(60, ms[i]));
+    }
+    n = n + scribe_u64(s, pulsus_ex_millesimis(1000, 7));
+    n = n + scribe_u64(s, pulsus_ex_millesimis(30, 100));
+    redde n;
+}
+
+functio sectio_horae(s: Scriptor) -> mensura {
+    mutabilis n: mensura = 0;
+    firma ms: acies<u64, 8> = [
+        0, 0, 951782400000, 1758844800123, 1758844800123, 1758844800123,
+        4102444799999, 253402300799000
+    ];
+    firma zona: acies<i64, 8> = [0, 0 - 300, 0, 0, 330, 0 - 420, 0, 0];
+    per i in 0..8 {
+        n = n + scribe_horam(s, hora_civilis(ms[i], zona[i]));
+    }
+    redde n;
+}
+
+functio sectio_horologiorum(s: Scriptor) -> mensura {
+    mutabilis n: mensura = 0;
+    mutabilis h = Horologia { meta: [0; 16], periodus: [0; 16], status: [0; 16] };
+    n = n + scribe_u64(s, arma(h, 0, 0, 3, 0) sicut u64);
+    n = n + scribe_u64(s, arma(h, 1, 0, 2, 5) sicut u64);
+    n = n + scribe_u64(s, arma(h, 2, 0, 0, 0) sicut u64);
+    n = n + scribe_u64(s, arma(h, 15, 0, 10, 1) sicut u64);
+    n = n + scribe_u64(s, arma(h, 16, 0, 1, 0) sicut u64);
+    per k in 0..12 {
+        firma nunc = k sicut u64;
+        n = n + scribe_u64(s, excita(h, nunc));
+        si nunc eq 11 {
+            n = n + scribe_u64(s, exstingue(h, 15) sicut u64);
+        }
+    }
+    n = n + scribe_u64(s, restat(h, 1, 11));
+    n = n + scribe_u64(s, excita(h, 40));
+    n = n + scribe_u64(s, restat(h, 1, 40));
+    n = n + scribe_u64(s, restat(h, 0, 40));
+    n = n + scribe_u64(s, restat(h, 15, 40));
+    n = n + scribe_u64(s, restat(h, 99, 40));
+    n = n + scribe_u64(s, exstingue(h, 16) sicut u64);
+    redde n;
+}
+
+functio sectio_filorum(s: Scriptor) -> mensura {
+    mutabilis n: mensura = 0;
+    n = n + scribe_u64(s, tempus24(0));
+    n = n + scribe_u64(s, tempus24(16777215));
+    n = n + scribe_u64(s, tempus24(16777216));
+    n = n + scribe_u64(s, tempus24(0x0102030405));
+    n = n + scribe_u64(s, revolve(65535, 2, 16));
+    n = n + scribe_u64(s, revolve(70000, 65535, 16));
+    n = n + scribe_u64(s, revolve(5, 16777210, 24));
+    n = n + scribe_u64(s, revolve(16777200, 20, 24));
+    // Exactly half the modulus ahead is FORWARD (Punctim's `fwd <= MOD/2`);
+    // none of Punctim's eight vectors sits on that boundary, so these do.
+    n = n + scribe_u64(s, revolve(0, 1024, 11));
+    n = n + scribe_u64(s, revolve(65536, 32768, 16));
+    n = n + scribe_u64(s, revolve(1025, 0, 11));
+    redde n;
+}
+
+functio nota(s: Scriptor, c: &mutabilis Consonantia, t0: u64, t1: u64, t2: u64, t3: u64) -> mensura {
+    firma v = consonantiam_nota(c, t0, t1, t2, t3);
+    mutabilis n: mensura = scribe_u64(s, v sicut u64);
+    n = n + scribe_u64(s, reditus_levis(*c));
+    redde n + scribe_i64(s, dislocatio_optima(*c));
+}
+
+functio sectio_consonantiae(s: Scriptor) -> mensura {
+    mutabilis n: mensura = 0;
+    mutabilis c = Consonantia { numerus: 0, levis8: 0, reditus: [0; 8], dislocatio: [0; 8] };
+    n = n + scribe_i64(s, dislocatio_optima(c));
+    n = n + nota(s, c, 1000, 7000, 7100, 3100);
+    n = n + nota(s, c, 2000, 8500, 8600, 5600);
+    n = n + nota(s, c, 3000, 9000, 8000, 4000);
+    n = n + nota(s, c, 4000, 9500, 9510, 4600);
+    n = n + nota(s, c, 5000, 10001, 10002, 5002);
+    n = n + nota(s, c, 100000, 90000, 90010, 100030);
+    n = n + nota(s, c, 200000, 190001, 190001, 200000);
+    n = n + nota(s, c, 10, 5, 5, 9);
+    per i in 0..8 {
+        firma k = i sicut u64;
+        firma t0 = 300000 + k * 1000;
+        firma t1 = t0 + 5400 + k * 3;
+        firma t2 = t1 + 50;
+        firma t3 = t0 + 850 + k * 2;
+        n = n + nota(s, c, t0, t1, t2, t3);
+    }
+    n = n + scribe_u64(s, c.numerus);
+    firma m = metronomum_para(1000000000, 60, 5);
+    n = n + scribe_u64(s, pulsus_remotus(m, 1000000000, 16666667));
+    n = n + scribe_u64(s, pulsus_remotus(m, 1000000000, 0 - 2000000000));
+    n = n + scribe_u64(s, pulsus_remotus(m, 1000000000, 0 - 16666668));
+    // A tie on the round trip goes to the earlier ring slot: 950, not 1050.
+    mutabilis e = Consonantia { numerus: 0, levis8: 0, reditus: [0; 8], dislocatio: [0; 8] };
+    n = n + nota(s, e, 0, 1000, 1000, 100);
+    n = n + nota(s, e, 1000, 2100, 2100, 1100);
+    firma sp = specimen_proba(5000, 10001, 10002, 5002);
+    n = n + scribe_u64(s, sp.reditus);
+    n = n + scribe_i64(s, sp.dislocatio);
+    n = n + scribe_i64(s, dimidium(0 - 7));
+    n = n + scribe_i64(s, dimidium(7));
+    n = n + scribe_i64(s, dimidium(0 - 8));
+    redde n;
+}
+
+functio sectio_celeritatis(s: Scriptor) -> mensura {
+    mutabilis n: mensura = 0;
+    firma a: acies<i64, 9> = [0 - 20, 0 - 8, 0 - 3, 0 - 1, 0, 1, 3, 8, 20];
+    per i in 0..9 {
+        n = n + scribe_u64(s, celeritatem_elige(a[i]));
+    }
+    redde n;
+}
+
+functio inscr(s: Scriptor, c: &mutabilis Consessus, l: u64, p: u64, b: u64) -> mensura {
+    firma v = inscribe(c, l, p, b);
+    firma a = scribe_u64(s, v sicut u64);
+    redde a + scribe_u64(s, (*c).confirmatum);
+}
+
+functio sectio_consessus(s: Scriptor) -> mensura {
+    mutabilis n: mensura = 0;
+    mutabilis c = Consessus {
+        lusores: 0, confirmatum: 0, revertendum: 0,
+        pulsus: [0; 512], claves: [0; 512], status: [0; 512]
+    };
+    n = n + scribe_u64(s, consessum_para(c, 0, 100) sicut u64);
+    n = n + scribe_u64(s, consessum_para(c, 9, 100) sicut u64);
+    n = n + scribe_u64(s, consessum_para(c, 2, 100) sicut u64);
+    n = n + inscr(s, c, 0, 100, 0x0001);
+    n = n + inscr(s, c, 1, 100, 0x0010);
+    n = n + scribe_u64(s, paratus(c, 100) sicut u64);
+    n = n + scribe_u64(s, paratus(c, 101) sicut u64);
+    n = n + scribe_u64(s, lege(c, 0, 101));
+    n = n + scribe_u64(s, lege(c, 1, 101));
+    n = n + scribe_u64(s, lege(c, 0, 101));
+    n = n + inscr(s, c, 0, 101, 0x0001);
+    n = n + inscr(s, c, 1, 101, 0x0030);
+    n = n + inscr(s, c, 1, 101, 0x0030);
+    n = n + inscr(s, c, 1, 101, 0x0031);
+    n = n + inscr(s, c, 0, 99, 0x0001);
+    n = n + inscr(s, c, 0, 166, 0x0001);
+    n = n + inscr(s, c, 2, 102, 0x0001);
+    n = n + scribe_u64(s, lege(c, 1, 103));
+    n = n + scribe_u64(s, lege(c, 0, 105));
+    n = n + inscr(s, c, 0, 103, 0x0002);
+    n = n + inscr(s, c, 1, 103, 0x0030);
+    n = n + scribe_u64(s, revertendum_cape(c));
+    n = n + scribe_u64(s, revertendum_cape(c));
+    n = n + inscr(s, c, 0, 102, 0x0002);
+    n = n + inscr(s, c, 1, 102, 0x0030);
+    n = n + scribe_u64(s, lege(c, 0, 50));
+    n = n + scribe_u64(s, lege(c, 0, 100));
+    n = n + scribe_u64(s, lege(c, 0, 168));
+    n = n + scribe_u64(s, lege(c, 5, 104));
+    n = n + inscr(s, c, 0, 105, 0x1ffff);
+    n = n + scribe_u64(s, revertendum_cape(c));
+    redde n;
+}
+
+functio sectio_aleae(s: Scriptor) -> mensura {
+    mutabilis n: mensura = 0;
+    mutabilis x: u64 = alea_semen(0);
+    per i in 0..5 {
+        x = alea_gradere(x);
+        n = n + scribe_u64(s, alea_valor(x));
+    }
+    x = alea_semen(12345);
+    per i in 0..3 {
+        x = alea_gradere(x);
+        n = n + scribe_u64(s, alea_valor(x));
+    }
+    per i in 0..4 {
+        n = n + scribe_u64(s, alea_pulsus(0xc0ffee, i sicut u64));
+    }
+    mutabilis h: u64 = summa_initium();
+    n = n + scribe_u64(s, h);
+    firma w: acies<u64, 4> = [0, 1, 0xdeadbeef, 0xffffffffffffffff];
+    per i in 0..4 {
+        h = summa_misce(h, w[i]);
+        n = n + scribe_u64(s, h);
+    }
+    redde n;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma s = Scriptor.ad_exitum(m.ambitus());
+    firma v = sectio_punctim(s);
+    firma a = sectio_arithmetica(s);
+    firma b = sectio_metronomi(s);
+    firma c = sectio_horae(s);
+    firma d = sectio_horologiorum(s);
+    firma e = sectio_filorum(s);
+    firma f = sectio_consonantiae(s);
+    firma g = sectio_celeritatis(s);
+    firma h = sectio_consessus(s);
+    firma i = sectio_aleae(s);
+    redde v;
+}

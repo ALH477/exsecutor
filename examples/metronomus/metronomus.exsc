@@ -1,0 +1,839 @@
+// examples/metronomus/metronomus.exsc -- a timer, a clock and a multiplayer
+// tick layer, written in Exsecutor for Kiln (the N64/host engine) and Punctim
+// (the DCF mesh). PURE: no `poscit`, no `initium`, no allocation, no I/O.
+// `probatio.exsc` is the only file of the unit that names `Mundus`.
+//
+// WHY PURE, WHEN A CLOCK IS THE WHOLE POINT. Reading the time is `horologium`
+// (spec §4.6, §11: "Time is a capability; time zones are data"), and the
+// prelude has no `horologium` routine to call today (tools/syscall-audit.sh
+// lists none). That is not worked around here, because it does not need to
+// be: the host that owns the clock reads it -- Kiln's `TICKS_READ()` at
+// 46,875,000 Hz, `CLOCK_MONOTONIC` in nanoseconds, a 48 kHz audio sample
+// count, Punctim's microseconds -- and hands the READING in as an integer.
+// Everything below is a function of the readings it is given. The same
+// readings give the same ticks, on the console and on the PC, which is the
+// property lockstep multiplayer, replays and rollback all need, and which a
+// timer that read its own clock could not have.
+//
+// WHAT IS IN IT
+//   1  quotus / residuum     integer division by shift and subtract; the
+//                            language has no integer `/` or remainder (§8.4:
+//                            both `[OPEN]`)
+//   2  multiplica_modulo     wrapping 64-bit multiply; `*%` is `[OPEN]` too
+//   3  Metronomus            the fixed-step clock: any source frequency, any
+//                            integer tick rate, EXACT (a rational accumulator:
+//                            60 Hz over nanoseconds never drifts), a catch-up
+//                            cap that slips rather than spirals, pause and
+//                            Q8 time scale, a Q16 interpolation fraction
+//   4  Hora                  the wall clock: Unix milliseconds and a zone
+//                            offset (data, not ambient state) to a civil date
+//                            and time of day
+//   5  Horologia             sixteen one-shot or periodic timers counted in
+//                            ticks, fired in slot order, periodic ones
+//                            re-armed without drift
+//   6  Mandatum, revolve,    Punctim's wire: the DCF-Game INPUT body
+//      tempus24              (`tick u32 | buttons u16`, big-endian), its
+//                            `unwrap_pid` generalised to any power-of-two
+//                            modulus, and the 24-bit microsecond DeModFrame
+//                            timestamp
+//   7  Consonantia           clock offset and round trip from PING/PONG's
+//                            four timestamps; minimum-delay filter, integer
+//                            EWMA of the round trip (Punctim's alpha = 1/8)
+//   8  celeritatem_elige     time dilation: the Q8 speed that walks a client's
+//                            tick back onto the server's without a jump
+//   9  Consessus             the lockstep / rollback input buffer: 8 players
+//                            x 64 ticks, repeat-last prediction, and the
+//                            earliest tick a late input proved wrong
+//  10  alea_*, summa_misce   Kiln's xorshift64* bit for bit, seeded per tick,
+//                            and an FNV-1a fold for desync checks
+//
+// OVERFLOW IS NOT SILENT. `+` `-` `*` trap (§5.4), so every product below is
+// bounded by an argument written next to it. The bounds are also the
+// preconditions `metronomum_para` checks: a clock it refuses has cadentia 0
+// and `pulsa` then returns 0 forever rather than trapping later.
+
+// ---- constants ------------------------------------------------------------
+
+// "No tick": the sentinel `Consessus.revertendum` holds when nothing needs
+// rolling back. u64's maximum, which no tick counter reaches.
+publica firma nullus: u64 = 0xffffffffffffffff;
+
+// Consessus's shape. The `acies<...>` lengths below repeat 512 as a literal
+// because a type cannot name a module `firma` (examples/streamdb's finding).
+publica firma lusores_maximi: u64 = 8;
+publica firma fenestra: u64 = 64;
+
+// ---- 1. integer division ---------------------------------------------------
+
+// Restoring division, one quotient bit per step, most significant first. `d`
+// of 0 answers nullus: total, and never mistaken for a real quotient by the
+// callers below, which all pass a non-zero divisor.
+publica functio quotus(n: u64, d: u64) -> u64 {
+    si d eq 0 {
+        redde nullus;
+    }
+    // `r sursum 1` never loses a bit: after step i, r is at most the top
+    // i + 1 bits of n, so it is below 2^63 before every shift but the last
+    // step's, whatever d is. (An earlier draft special-cased d >= 2^63; a
+    // mutant that disabled it survived, because the case cannot arise.)
+    mutabilis q: u64 = 0;
+    mutabilis r: u64 = 0;
+    per i in 0..64 {
+        r = (r sursum 1) + ((n sursum (i sicut u64)) deorsum 63);
+        q = q sursum 1;
+        si r ge d {
+            r = r - d;
+            q = q + 1;
+        }
+    }
+    redde q;
+}
+
+// The remainder beside `quotus`. `d` of 0 answers n.
+publica functio residuum(n: u64, d: u64) -> u64 {
+    si d eq 0 {
+        redde n;
+    }
+    redde n - quotus(n, d) * d;
+}
+
+// ---- 2. wrapping multiply ---------------------------------------------------
+
+// a * b mod 2^64 without `*%`. Split into 32-bit halves: the low product is
+// below 2^64; each cross product is reduced mod 2^32 before it is added (the
+// shift-discard idiom, no mask), so their sum is below 2^33 and `sursum 32`
+// drops what belongs above bit 63. The final add wraps on purpose.
+publica functio multiplica_modulo(a: u64, b: u64) -> u64 {
+    firma al = (a sursum 32) deorsum 32;
+    firma ah = a deorsum 32;
+    firma bl = (b sursum 32) deorsum 32;
+    firma bh = b deorsum 32;
+    firma x = (((ah * bl) sursum 32) deorsum 32) + (((al * bh) sursum 32) deorsum 32);
+    redde (al * bl) +% (x sursum 32);
+}
+
+// ---- 3. the fixed-step clock -------------------------------------------------
+
+// All state, 40 bytes, big-endian, packed: the language defines this layout
+// (§5.2), so the same 40 bytes mean the same clock on the big-endian console
+// and a little-endian PC, and a snapshot can be saved, sent or compared as
+// bytes.
+//
+//   pulsus      ticks elapsed since the clock was made
+//   reliquum    the accumulator: source units x cadentia x 256 not yet spent.
+//               A tick is due each time it reaches fons x 256. Integer, so
+//               60 Hz over 1 GHz nanoseconds is exact: no 16,666,666.67.
+//   lapsi       ticks the catch-up cap threw away (slips), for the host's
+//               statistics
+//   fons        source frequency, Hz: 1,000,000,000 for nanoseconds,
+//               46,875,000 for the N64's COP0 count, 48,000 for samples
+//   cadentia    tick rate, Hz
+//   maximi      most ticks one `pulsa` will return; beyond it the clock slips
+//               (Kiln's host pacer drops a 250 ms stall rather than replaying
+//               it, and this is the same choice, made per clock)
+//   celeritas   Q8 speed: 256 real time, 0 paused, 128 half, 512 double
+//   reservatum  zero; keeps the record a multiple of 8
+@transitus
+publica structura Metronomus {
+    pulsus: u64:maior
+    reliquum: u64:maior
+    lapsi: u64:maior
+    fons: u32:maior
+    cadentia: u16:maior
+    maximi: u16:maior
+    celeritas: u16:maior
+    reservatum: u16:maior
+    vacuum: u32:maior
+}
+
+// A clock at real time. REFUSED -- returned with cadentia 0, which `pulsa`
+// treats as stopped -- unless 1 <= fons < 2^31, 1 <= cadentia, and
+// 1 <= maximi. Those bounds are what keep `pulsa`'s product below 2^64:
+// dt <= fons < 2^31, cadentia < 2^16, celeritas < 2^16.
+publica functio metronomum_para(fons: u64, cadentia: u64, maximi: u64) -> Metronomus {
+    mutabilis m = Metronomus {
+        pulsus: 0, reliquum: 0, lapsi: 0, fons: 0, cadentia: 0,
+        maximi: 0, celeritas: 256, reservatum: 0, vacuum: 0
+    };
+    si fons eq 0 vel fons ge 0x80000000 {
+        redde m;
+    }
+    si cadentia eq 0 vel cadentia gt 0xffff {
+        redde m;
+    }
+    si maximi eq 0 vel maximi gt 0xffff {
+        redde m;
+    }
+    m.fons = fons sicut u32;
+    m.cadentia = cadentia sicut u16;
+    m.maximi = maximi sicut u16;
+    redde m;
+}
+
+// 1 if `metronomum_para` accepted the clock.
+publica functio metronomus_valet(m: &Metronomus) -> u8 {
+    si (*m).cadentia eq 0 {
+        redde 0;
+    }
+    redde 1;
+}
+
+// Set the Q8 speed. 0 pauses; the accumulated fraction is kept, so resuming
+// does not lose or gain a partial tick.
+publica functio celeritatem_pone(m: &mutabilis Metronomus, q8: u64) -> u8 {
+    si q8 gt 0xffff {
+        redde 1;
+    }
+    (*m).celeritas = q8 sicut u16;
+    redde 0;
+}
+
+// Advance by `dt` source units and answer how many ticks to simulate now.
+// A `dt` above one second of source is clamped to one second first (a debugger
+// stop is not a reason to trap); ticks beyond `maximi` are counted in `lapsi`
+// and dropped, keeping the fractional phase.
+publica functio pulsa(m: &mutabilis Metronomus, dt: u64) -> u64 {
+    si (*m).cadentia eq 0 {
+        redde 0;
+    }
+    firma fons = (*m).fons sicut u64;
+    mutabilis d: u64 = dt;
+    si d gt fons {
+        d = fons;
+    }
+    firma gradus = fons sursum 8;
+    firma summa = (*m).reliquum + d * ((*m).cadentia sicut u64) * ((*m).celeritas sicut u64);
+    mutabilis n: u64 = quotus(summa, gradus);
+    (*m).reliquum = summa - n * gradus;
+    firma maximi = (*m).maximi sicut u64;
+    si n gt maximi {
+        (*m).lapsi = (*m).lapsi + (n - maximi);
+        n = maximi;
+    }
+    (*m).pulsus = (*m).pulsus + n;
+    redde n;
+}
+
+// How far the clock is between its last tick and its next, Q16 (0..65535):
+// the render interpolation alpha. reliquum < fons x 256 < 2^39, so the shift
+// by 16 stays below 2^55.
+publica functio fractio(m: &Metronomus) -> u64 {
+    si (*m).cadentia eq 0 {
+        redde 0;
+    }
+    redde quotus((*m).reliquum sursum 16, ((*m).fons sicut u64) sursum 8);
+}
+
+// floor(n * a / b) without forming n * a: n = q*b + r, so the result is
+// q*a + floor(r*a / b), and r*a < b*a. Callers keep a, b below 2^32. The
+// RESULT must fit a u64 or `q * a` traps: for tempus_pulsus over nanoseconds
+// at 60 Hz that is tick 1.1 x 10^12, some 580 years in.
+publica functio proportio(n: u64, a: u64, b: u64) -> u64 {
+    firma q = quotus(n, b);
+    firma r = n - q * b;
+    redde q * a + quotus(r * a, b);
+}
+
+// The source time, in source units, at which tick `p` began at real time:
+// floor(p * fons / cadentia).
+publica functio tempus_pulsus(m: &Metronomus, p: u64) -> u64 {
+    si (*m).cadentia eq 0 {
+        redde 0;
+    }
+    redde proportio(p, (*m).fons sicut u64, (*m).cadentia sicut u64);
+}
+
+// The inverse: how many whole ticks a real-time clock of `cadentia` Hz has
+// completed after `t` units of a `fons` Hz source.
+publica functio pulsus_ex_tempore(fons: u64, cadentia: u64, t: u64) -> u64 {
+    redde proportio(t, cadentia, fons);
+}
+
+// Milliseconds to ticks, rounded UP so a timer never fires early:
+// ceil(ms * cadentia / 1000). Kiln's kiln_event converts 1/60 s to a
+// truncated 16 ms per frame and runs ~4% slow; counting ticks does not.
+// ms = q*1000 + r, so ms*cadentia/1000 has a fraction exactly when
+// r*cadentia does, and r*cadentia < 1000 * cadentia never overflows.
+publica functio pulsus_ex_millesimis(cadentia: u64, ms: u64) -> u64 {
+    firma f = proportio(ms, cadentia, 1000);
+    si residuum(residuum(ms, 1000) * cadentia, 1000) ne 0 {
+        redde f + 1;
+    }
+    redde f;
+}
+
+// ---- 4. the wall clock -------------------------------------------------------
+
+// A civil date and time, 10 bytes, big-endian. `hebdomas` is the weekday,
+// 0 Sunday .. 6 Saturday.
+@transitus
+publica structura Hora {
+    annus: u16:maior
+    mensis: u8
+    dies: u8
+    hora: u8
+    minutum: u8
+    secundum: u8
+    hebdomas: u8
+    millesimum: u16:maior
+}
+
+// `ms` milliseconds since 1970-01-01T00:00:00Z, read by whoever holds
+// `horologium`, and a zone offset in minutes east of UTC -- data, passed in,
+// never looked up. A local time before the epoch clamps to the epoch.
+// Days to a date is Hinnant's civil_from_days, unsigned throughout: the era
+// shift makes every intermediate non-negative for any date from 0000-03-01.
+publica functio hora_civilis(ms: u64, zona: i64) -> Hora {
+    mutabilis t: u64 = ms;
+    si zona ge 0 {
+        t = t + (zona sicut u64) * 60000;
+    } aliter {
+        firma w = ((0 - zona) sicut u64) * 60000;
+        si w gt t {
+            t = 0;
+        } aliter {
+            t = t - w;
+        }
+    }
+    firma secunda = quotus(t, 1000);
+    firma millesimum = t - secunda * 1000;
+    firma dies = quotus(secunda, 86400);
+    firma diei = secunda - dies * 86400;
+    firma hora = quotus(diei, 3600);
+    firma minutum = quotus(diei - hora * 3600, 60);
+    firma secundum = diei - hora * 3600 - minutum * 60;
+
+    firma z = dies + 719468;
+    firma era = quotus(z, 146097);
+    firma doe = z - era * 146097;
+    firma yoe = quotus(doe - quotus(doe, 1460) + quotus(doe, 36524) - quotus(doe, 146096), 365);
+    firma doy = doe - (365 * yoe + quotus(yoe, 4) - quotus(yoe, 100));
+    firma mp = quotus(5 * doy + 2, 153);
+    firma d = doy - quotus(153 * mp + 2, 5) + 1;
+    mutabilis mensis: u64 = mp + 3;
+    si mp ge 10 {
+        mensis = mp - 9;
+    }
+    mutabilis annus: u64 = yoe + era * 400;
+    si mensis le 2 {
+        annus = annus + 1;
+    }
+    redde Hora {
+        annus: annus sicut u16,
+        mensis: mensis sicut u8,
+        dies: d sicut u8,
+        hora: hora sicut u8,
+        minutum: minutum sicut u8,
+        secundum: secundum sicut u8,
+        hebdomas: residuum(dies + 4, 7) sicut u8,
+        millesimum: millesimum sicut u16
+    };
+}
+
+// ---- 5. timers -------------------------------------------------------------
+
+// Sixteen timers, counted in ticks. Caller-owned, 272 bytes: two arrays of
+// u64 then one of u8, in that order, so the natural and the packed layout are
+// the same and the C header's size is not a guess.
+//   meta[i]      the tick at which timer i fires
+//   periodus[i]  0 for one-shot, else the re-arm interval in ticks
+//   status[i]    0 idle, 1 armed
+publica structura Horologia {
+    meta: acies<u64, 16>
+    periodus: acies<u64, 16>
+    status: acies<u8, 16>
+}
+
+// Arm timer `i` to fire `mora` ticks after tick `nunc`, then every `periodus`
+// ticks if that is not 0. A `mora` of 0 fires at the next `excita`.
+// 0 armed, 1 no such timer.
+publica functio arma(h: &mutabilis Horologia, i: u64, nunc: u64, mora: u64, periodus: u64) -> u8 {
+    si i ge 16 {
+        redde 1;
+    }
+    firma k = i sicut mensura;
+    (*h).meta[k] = nunc + mora;
+    (*h).periodus[k] = periodus;
+    (*h).status[k] = 1;
+    redde 0;
+}
+
+// Disarm timer `i`. 0 disarmed (or already idle), 1 no such timer.
+publica functio exstingue(h: &mutabilis Horologia, i: u64) -> u8 {
+    si i ge 16 {
+        redde 1;
+    }
+    (*h).status[i sicut mensura] = 0;
+    redde 0;
+}
+
+// Ticks until timer `i` fires, 0 if due, nullus if idle or no such timer.
+publica functio restat(h: &Horologia, i: u64, nunc: u64) -> u64 {
+    si i ge 16 {
+        redde nullus;
+    }
+    firma k = i sicut mensura;
+    si (*h).status[k] eq 0 {
+        redde nullus;
+    }
+    si (*h).meta[k] le nunc {
+        redde 0;
+    }
+    redde (*h).meta[k] - nunc;
+}
+
+// Fire every armed timer due at or before tick `nunc`. The answer is a mask,
+// bit i for timer i, so the host handles them in slot order -- deterministic,
+// and the same on every peer. A one-shot timer goes idle; a periodic one moves
+// its deadline forward by whole periods past `nunc`, so a timer that missed
+// three periods during a stall fires once and keeps its phase.
+publica functio excita(h: &mutabilis Horologia, nunc: u64) -> u64 {
+    mutabilis mask: u64 = 0;
+    per k in 0..16 {
+        si (*h).status[k] eq 1 {
+            firma m = (*h).meta[k];
+            si m le nunc {
+                mask = mask + (1 sursum (k sicut u64));
+                firma p = (*h).periodus[k];
+                si p eq 0 {
+                    (*h).status[k] = 0;
+                } aliter {
+                    (*h).meta[k] = m + (quotus(nunc - m, p) + 1) * p;
+                }
+            }
+        }
+    }
+    redde mask;
+}
+
+// ---- 6. Punctim's wire ------------------------------------------------------
+
+// The DCF-Game INPUT body (Punctim Documentation/DCF_GAME_SPEC.md; C
+// codec/demod_game.h): the simulation tick, then the buttons, big-endian.
+// Six bytes. Punctim's game_vectors.json `input_roundtrip` is its certificate
+// and probatio.exsc runs all four.
+@transitus
+publica structura Mandatum {
+    pulsus: u32:maior
+    claves: u16:maior
+}
+
+publica functio mandatum_scribe(pulsus: u64, claves: u64) -> acies<u8, 6> {
+    firma m = Mandatum {
+        pulsus: ((pulsus sursum 32) deorsum 32) sicut u32,
+        claves: ((claves sursum 48) deorsum 48) sicut u16
+    };
+    redde m sicut acies<u8, 6>;
+}
+
+publica functio mandatum_lege(b: acies<u8, 6>) -> Mandatum {
+    redde b sicut Mandatum;
+}
+
+// The low `bitus` bits of x, 1 <= bitus <= 63. No mask: the shift pair.
+publica functio imum(x: u64, bitus: u64) -> u64 {
+    redde (x sursum (64 - bitus)) deorsum (64 - bitus);
+}
+
+// A DeModFrame's 24-bit microsecond timestamp (bytes 12..14): the low 24 bits
+// of whatever microsecond count the sender keeps. It wraps every 16.78 s.
+publica functio tempus24(us: u64) -> u64 {
+    redde imum(us, 24);
+}
+
+// Recover an absolute counter from its low `bitus` bits, given the last
+// absolute value seen. Punctim's `unwrap_pid` (client/src-tauri/src/sync.rs,
+// PID_MOD = 2048 = 2^11) generalised to any power of two: step forward if the
+// forward distance is at most half the modulus, else step back, saturating at
+// 0. `bitus` 11 is DCF-Game's packet_id and DCF-Snake's pid, 16 a DeModFrame
+// seq, 24 its timestamp. Punctim's snake_vectors.json `unwrap` is its
+// certificate and probatio.exsc runs all eight.
+publica functio revolve(prius: u64, crudum: u64, bitus: u64) -> u64 {
+    firma modulus = 1 sursum bitus;
+    firma ante = imum(crudum -% imum(prius, bitus), bitus);
+    si ante le (modulus deorsum 1) {
+        redde prius + ante;
+    }
+    firma retro = modulus - ante;
+    si retro gt prius {
+        redde 0;
+    }
+    redde prius - retro;
+}
+
+// ---- 7. clock offset and round trip -----------------------------------------
+
+// One PING/PONG exchange, all four instants in microseconds:
+//   t0 client sends    t1 server receives    t2 server replies    t3 client receives
+// reditus    = (t3 - t0) - (t2 - t1)          the network's share of the wait
+// dislocatio = ((t1 - t0) + (t2 - t3)) / 2    server clock minus client clock,
+//                                             rounded toward minus infinity
+// Punctim's PONG echoes the PING's u64 microsecond timestamp; the server's
+// t1/t2 ride in the PONG body.
+publica structura Specimen {
+    reditus: u64
+    dislocatio: i64
+    valet: u8
+}
+
+// Halve a signed value, rounding toward minus infinity, with no signed shift.
+publica functio dimidium(x: i64) -> i64 {
+    si x ge 0 {
+        redde ((x sicut u64) deorsum 1) sicut i64;
+    }
+    firma m = (0 - x) sicut u64;
+    redde 0 - (((m + 1) deorsum 1) sicut i64);
+}
+
+// valet 0 when the instants cannot be one exchange (t3 before t0, t2 before
+// t1, or the server's hold longer than the whole wait).
+publica functio specimen_proba(t0: u64, t1: u64, t2: u64, t3: u64) -> Specimen {
+    mutabilis s = Specimen { reditus: 0, dislocatio: 0, valet: 0 };
+    si t3 lt t0 vel t2 lt t1 {
+        redde s;
+    }
+    si (t2 - t1) gt (t3 - t0) {
+        redde s;
+    }
+    s.reditus = (t3 - t0) - (t2 - t1);
+    // 2 x offset = (t1 + t2) - (t0 + t3), taken as sign and magnitude so no
+    // u64 instant is ever cast to i64. Instants below 2^62 us (146,000 years
+    // of Unix time) keep both sums in range.
+    firma l = t1 + t2;
+    firma r = t0 + t3;
+    si l ge r {
+        s.dislocatio = dimidium((l - r) sicut i64);
+    } aliter {
+        s.dislocatio = dimidium(0 - ((r - l) sicut i64));
+    }
+    s.valet = 1;
+    redde s;
+}
+
+// A running estimate over the last eight exchanges.
+//   numerus      exchanges accepted
+//   levis8       smoothed round trip x 8 (RFC 6298's SRTT scaled: alpha 1/8,
+//                Punctim's udp_node.py alpha, in integers)
+//   reditus[i]   the eight most recent round trips, ring order
+//   dislocatio[i] their offsets
+// The offset reported is the one measured by the exchange with the SMALLEST
+// round trip in the window: the least-delayed exchange bounds the offset error
+// tightest (NTP's clock filter makes the same choice).
+publica structura Consonantia {
+    numerus: u64
+    levis8: u64
+    reditus: acies<u64, 8>
+    dislocatio: acies<i64, 8>
+}
+
+// Fold in one exchange. 0 accepted, 1 rejected (its instants were not one
+// exchange) and the estimate unchanged.
+publica functio consonantiam_nota(c: &mutabilis Consonantia, t0: u64, t1: u64, t2: u64, t3: u64) -> u8 {
+    firma s = specimen_proba(t0, t1, t2, t3);
+    si s.valet eq 0 {
+        redde 1;
+    }
+    firma k = (imum((*c).numerus, 3)) sicut mensura;
+    (*c).reditus[k] = s.reditus;
+    (*c).dislocatio[k] = s.dislocatio;
+    si (*c).numerus eq 0 {
+        (*c).levis8 = s.reditus * 8;
+    } aliter {
+        (*c).levis8 = (*c).levis8 - ((*c).levis8 deorsum 3) + s.reditus;
+    }
+    (*c).numerus = (*c).numerus + 1;
+    redde 0;
+}
+
+// The smoothed round trip, microseconds (floor of levis8 / 8).
+publica functio reditus_levis(c: &Consonantia) -> u64 {
+    redde (*c).levis8 deorsum 3;
+}
+
+// The offset of the least-delayed exchange in the window; 0 before any. Ties
+// go to the earlier ring slot.
+publica functio dislocatio_optima(c: &Consonantia) -> i64 {
+    mutabilis n: mensura = 8;
+    si (*c).numerus lt 8 {
+        n = (*c).numerus sicut mensura;
+    }
+    si n eq 0 {
+        redde 0;
+    }
+    mutabilis optimus: mensura = 0;
+    per i in 1..n {
+        si (*c).reditus[i] lt (*c).reditus[optimus] {
+            optimus = i;
+        }
+    }
+    redde (*c).dislocatio[optimus];
+}
+
+// The server's tick now, from this peer's own source reading `nunc` and the
+// offset (both in the clock's source units): pulsus_ex_tempore of nunc +
+// dislocatio, clamped at 0.
+publica functio pulsus_remotus(m: &Metronomus, nunc: u64, d: i64) -> u64 {
+    mutabilis t: u64 = nunc;
+    si d ge 0 {
+        t = t + (d sicut u64);
+    } aliter {
+        firma w = (0 - d) sicut u64;
+        si w gt t {
+            t = 0;
+        } aliter {
+            t = t - w;
+        }
+    }
+    redde pulsus_ex_tempore((*m).fons sicut u64, (*m).cadentia sicut u64, t);
+}
+
+// ---- 8. time dilation --------------------------------------------------------
+
+// The Q8 speed for a client whose tick is `ante` ticks AHEAD of where it
+// should be (negative: behind). Each tick of error moves the speed by 2/256,
+// capped at 16/256 (6.25%) either way: fast enough to converge in a second or
+// two at 60 Hz, slow enough that nobody sees it. 0 error is 256 exactly.
+publica functio celeritatem_elige(ante: i64) -> u64 {
+    si ante ge 0 {
+        mutabilis e: u64 = ante sicut u64;
+        si e gt 8 {
+            e = 8;
+        }
+        redde 256 - e * 2;
+    }
+    mutabilis e: u64 = (0 - ante) sicut u64;
+    si e gt 8 {
+        e = 8;
+    }
+    redde 256 + e * 2;
+}
+
+// ---- 9. the lockstep / rollback input buffer -------------------------------
+
+// Inputs for up to 8 players over a 64-tick window. Slot for player p at tick
+// t is p * 64 + (t mod 64); `pulsus[slot]` says which tick the slot holds, so
+// a stale slot is never read as a new one. Caller-owned, 5,656 bytes: three
+// u64 scalars, then the u64 array, the u16 array and the u8 array, largest
+// first, so natural and packed layout agree.
+//   lusores       players in the session, 1..8
+//   confirmatum   the lowest tick not yet confirmed for EVERY player: every
+//                 tick below it is final, and lockstep may simulate it
+//   revertendum   the earliest tick whose prediction a real input proved
+//                 wrong, or nullus -- where a rollback host resimulates from
+//   pulsus[s]     the tick slot s holds
+//   claves[s]     its buttons
+//   status[s]     0 empty, 1 confirmed (a real input), 2 predicted
+publica structura Consessus {
+    lusores: u64
+    confirmatum: u64
+    revertendum: u64
+    pulsus: acies<u64, 512>
+    claves: acies<u16, 512>
+    status: acies<u8, 512>
+}
+
+// Start a session of `lusores` players at tick `primus`. 0 ok, 1 bad count.
+publica functio consessum_para(c: &mutabilis Consessus, lusores: u64, primus: u64) -> u8 {
+    si lusores eq 0 vel lusores gt lusores_maximi {
+        redde 1;
+    }
+    (*c).lusores = lusores;
+    (*c).confirmatum = primus;
+    (*c).revertendum = nullus;
+    per s in 0..512 {
+        (*c).pulsus[s] = 0;
+        (*c).claves[s] = 0;
+        (*c).status[s] = 0;
+    }
+    redde 0;
+}
+
+publica functio sedes(lusor: u64, pulsus: u64) -> mensura {
+    redde ((lusor sursum 6) + imum(pulsus, 6)) sicut mensura;
+}
+
+// 1 if player `lusor`'s REAL input for `pulsus` is held.
+publica functio habet(c: &Consessus, lusor: u64, pulsus: u64) -> u8 {
+    firma s = sedes(lusor, pulsus);
+    si (*c).pulsus[s] eq pulsus et (*c).status[s] eq 1 {
+        redde 1;
+    }
+    redde 0;
+}
+
+// 1 if every player's real input for `pulsus` is held: lockstep may run it.
+publica functio paratus(c: &Consessus, pulsus: u64) -> u8 {
+    per p in 0..8 {
+        firma l = p sicut u64;
+        si l lt (*c).lusores {
+            si habet(c, l, pulsus) eq 0 {
+                redde 0;
+            }
+        }
+    }
+    redde 1;
+}
+
+// Record player `lusor`'s real input for tick `pulsus`.
+//   0  new, confirmed
+//   1  a repeat of an input already held; nothing changes
+//   2  it contradicts the PREDICTION already used for that tick: confirmed,
+//      and revertendum lowered to this tick if it was higher
+//   3  too old: below confirmatum, final already, ignored
+//   4  too far ahead: beyond the 64-tick window, ignored (the host should
+//      throttle the sender)
+//   5  no such player
+//   6  contradicts a real input already held for that tick, ignored -- two
+//      different truths for one tick is a peer bug or a cheat, not lag
+publica functio inscribe(c: &mutabilis Consessus, lusor: u64, pulsus: u64, claves: u64) -> u8 {
+    si lusor ge (*c).lusores {
+        redde 5;
+    }
+    si pulsus lt (*c).confirmatum {
+        redde 3;
+    }
+    si pulsus - (*c).confirmatum ge fenestra {
+        redde 4;
+    }
+    firma s = sedes(lusor, pulsus);
+    firma b = imum(claves, 16);
+    mutabilis verdictum: u8 = 0;
+    si (*c).pulsus[s] eq pulsus {
+        si (*c).status[s] eq 1 {
+            si ((*c).claves[s] sicut u64) eq b {
+                redde 1;
+            }
+            redde 6;
+        }
+        si (*c).status[s] eq 2 {
+            si ((*c).claves[s] sicut u64) ne b {
+                verdictum = 2;
+                si pulsus lt (*c).revertendum {
+                    (*c).revertendum = pulsus;
+                }
+            }
+        }
+    }
+    (*c).pulsus[s] = pulsus;
+    (*c).claves[s] = b sicut u16;
+    (*c).status[s] = 1;
+    // Advance the confirmed watermark over every tick now whole. At most 64:
+    // nothing at or beyond confirmatum + 64 can be held.
+    per i in 0..64 {
+        si paratus(*c, (*c).confirmatum) eq 0 {
+            rumpe;
+        }
+        (*c).confirmatum = (*c).confirmatum + 1;
+    }
+    redde verdictum;
+}
+
+// The buttons to simulate player `lusor` with at tick `pulsus`, in bits 0..15,
+// with bit 16 set if they are a PREDICTION. A real input is returned as is.
+// Otherwise the prediction is the most recent real input before `pulsus` that
+// the window still holds (players hold buttons far more often than they change
+// them), or 0; it is recorded, so the real input's arrival can be checked
+// against exactly what was simulated. A tick below confirmatum whose slot has
+// been reused, or one 64 or more ahead of it, answers 0 with bit 16 set and
+// records nothing.
+publica functio lege(c: &mutabilis Consessus, lusor: u64, pulsus: u64) -> u64 {
+    si lusor ge (*c).lusores {
+        redde 0x10000;
+    }
+    firma s = sedes(lusor, pulsus);
+    // Below the watermark every tick is final: its real input, if the slot
+    // still holds it, and nothing is ever predicted there.
+    si pulsus lt (*c).confirmatum {
+        si (*c).pulsus[s] eq pulsus et (*c).status[s] eq 1 {
+            redde (*c).claves[s] sicut u64;
+        }
+        redde 0x10000;
+    }
+    si pulsus - (*c).confirmatum ge fenestra {
+        redde 0x10000;
+    }
+    si (*c).pulsus[s] eq pulsus {
+        si (*c).status[s] eq 1 {
+            redde (*c).claves[s] sicut u64;
+        }
+        si (*c).status[s] eq 2 {
+            redde ((*c).claves[s] sicut u64) + 0x10000;
+        }
+    }
+    mutabilis praedictum: u64 = 0;
+    mutabilis t: u64 = pulsus;
+    per i in 1..64 {
+        si t eq 0 {
+            rumpe;
+        }
+        t = t - 1;
+        firma r = sedes(lusor, t);
+        si (*c).pulsus[r] eq t et (*c).status[r] eq 1 {
+            praedictum = (*c).claves[r] sicut u64;
+            rumpe;
+        }
+    }
+    (*c).pulsus[s] = pulsus;
+    (*c).claves[s] = praedictum sicut u16;
+    (*c).status[s] = 2;
+    redde praedictum + 0x10000;
+}
+
+// The earliest tick to resimulate from, or nullus; reading it clears it.
+publica functio revertendum_cape(c: &mutabilis Consessus) -> u64 {
+    firma r = (*c).revertendum;
+    (*c).revertendum = nullus;
+    redde r;
+}
+
+// ---- 10. deterministic randomness and desync checks ---------------------------
+
+// Kiln's KilnRng (engine/src/kiln/kiln_rng.c), bit for bit: xorshift64* with
+// shifts 12, 25, 27 and multiplier 0x2545F4914F6CDD1D, the HIGH 32 bits out.
+// A PRNG is not `fortuna` (§4.6): `fortuna` is entropy from the host, and
+// this is a pure function of its seed, which is why peers agree on it.
+// A seed of 0 is remapped to 0x9E3779B97F4A7C15, as kiln_rng.c does.
+publica functio alea_semen(semen: u64) -> u64 {
+    si semen eq 0 {
+        redde 0x9e3779b97f4a7c15;
+    }
+    redde semen;
+}
+
+publica functio alea_gradere(x: u64) -> u64 {
+    mutabilis y: u64 = x;
+    y = y aut (y deorsum 12);
+    y = y aut (y sursum 25);
+    y = y aut (y deorsum 27);
+    redde y;
+}
+
+publica functio alea_valor(x: u64) -> u64 {
+    redde multiplica_modulo(x, 0x2545f4914f6cdd1d) deorsum 32;
+}
+
+// A per-tick stream: the state for tick `pulsus` of a session seeded `semen`,
+// independent of how many draws earlier ticks made, so a resimulated tick
+// draws the same numbers. splitmix64's finaliser over semen + pulsus * golden.
+publica functio alea_pulsus(semen: u64, pulsus: u64) -> u64 {
+    mutabilis z: u64 = semen +% multiplica_modulo(pulsus +% 1, 0x9e3779b97f4a7c15);
+    z = multiplica_modulo(z aut (z deorsum 30), 0xbf58476d1ce4e5b9);
+    z = multiplica_modulo(z aut (z deorsum 27), 0x94d049bb133111eb);
+    redde alea_semen(z aut (z deorsum 31));
+}
+
+// FNV-1a 64 over the eight bytes of `w`, most significant first. Start from
+// summa_initium() and fold every word of the simulation state each tick; peers
+// that exchange the result find a desync at the tick it happens.
+publica functio summa_initium() -> u64 {
+    redde 0xcbf29ce484222325;
+}
+
+publica functio summa_misce(h: u64, w: u64) -> u64 {
+    mutabilis x: u64 = h;
+    per i in 0..8 {
+        firma b = (w sursum ((i sicut u64) * 8)) deorsum 56;
+        x = multiplica_modulo(x aut b, 0x100000001b3);
+    }
+    redde x;
+}

@@ -1,0 +1,25 @@
+# examples/metronomus/: the timer, clock and multiplayer tick layer for Kiln
+# and Punctim, driven by its probatio.exsc through every part of the library.
+#
+# expected.out (2,432 bytes) is WRITTEN BY prototypes/metronomus_oracle.py,
+# not by this program: Python's // and %, fractions.Fraction for the clock,
+# datetime for the civil dates, a dict for the input buffer. Regenerate it
+# with
+#   python3 prototypes/metronomus_oracle.py --punctim PUNCTIM_CHECKOUT \
+#       tests/programs/metronomus/expected.out
+# and `--punctim` re-reads Punctim's own game_vectors.json and
+# snake_vectors.json and refuses to write if the embedded copies drifted.
+#
+# The exit status is the program's own check of Punctim's twelve golden
+# vectors (four DCF-Game INPUT bodies, eight unwrap_pid cases): 0 only if all
+# pass, 10+i / 20+i naming the first that does not.
+#
+# NON-VACUOUS, measured: of fifteen mechanical mutants of metronomus.exsc,
+# every one that changes behaviour fails here, each at a stated byte
+# (examples/metronomus/README.md lists them); the two that survived first
+# were a missing boundary case and a missing tie, both added, and two more
+# are equivalent mutants, said so there.
+#
+# cross=yes: the same bytes from the C backend's mips64-none-o64 row,
+# big-endian, 32-bit addresses, under qemu -- the console's row.
+TEST: expect-exit=0 sources=examples/metronomus/metronomus.exsc,examples/metronomus/probatio.exsc cross=yes
