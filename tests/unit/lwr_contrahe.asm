@@ -55,11 +55,10 @@
 ;                 finds the outer handle.
 ;
 ; ---------------------------------------------------------------------------
-; WHY THE CHECKER RAISES DIAGNOSTICS ON A VALID PROGRAM, AND WHY THIS FIXTURE
-; TOLERATES EXACTLY TWO CODES. Spec §5.4 is explicit: inside the body
-; `acc = e;` CONTRIBUTES `e`, and after the loop `acc` is an ordinary binding.
-; Stage 2 implements neither sentence yet, and this fixture's source is refused
-; by `exsc` today:
+; HISTORY: WHY THIS FIXTURE ONCE TOLERATED EXACTLY TWO CODES. Spec §5.4 is
+; explicit: inside the body `acc = e;` CONTRIBUTES `e`, and after the loop
+; `acc` is an ordinary binding. When this fixture was written Stage 2
+; implemented neither sentence and this source was refused by `exsc`:
 ;
 ;   C1  `EXS-E0303` on every contribution. `__chk_ty_assign` types the
 ;       right-hand side with the left-hand side's type as its expectation, and
@@ -71,26 +70,26 @@
 ;       binds the accumulator in the LOOP's frame and pops it with the body,
 ;       so the name does not resolve after the loop at all.
 ;
-; Neither is this pass's to fix (CLAUDE.md, Scope: checker/ is another tree),
-; and both are reported. What this fixture does about them:
+; Both were the checker's (docs/design/checker.md finding 27) and both are
+; CLOSED on the same day: `red` now carries F in its `b`, the contribution is
+; typed against F, and the accumulator is bound in the enclosing scope
+; (tests/unit/chk_ty_contrahe.asm pins all five of this fixture's shapes
+; clean, and every rejected shape at one code). So this fixture now requires
+; what it always should have:
 ;
-;   - `fx_front` accepts a diagnostic whose code is 303 or 301 and rejects any
-;     other, rather than requiring an empty vector. It does NOT pin the COUNT:
-;     the day C1 and C2 land, zero diagnostics still satisfies the rule and
-;     this fixture keeps passing. A ninth diagnostic, or a different code,
-;     fails it.
-;   - the tree the checker leaves behind is otherwise exactly right -- every
-;     `Node.ty` the lowering reads is set, including the contribution's -- with
-;     ONE exception, C2's unresolved `Path`, which carries `d` = 0 and the
-;     error type. `fx_patch` writes the two fields Stage 2 would have written
-;     (the accumulator declaration and F), so that `summa`'s read after the
-;     loop is a read and not a rassert. It is idempotent: once C2 lands it
-;     finds `d` already set and changes nothing.
+;   - `fx_front` requires an EMPTY diagnostic vector. The tolerance for codes
+;     303 and 301 that stood between the lowering landing and the checker
+;     catching up is gone; any diagnostic is exit 11.
+;   - `fx_patch` is now a CHECK, not a patch: it asserts the post-loop read's
+;     `Path` already names the accumulator declaration (`d` set by Stage 2).
+;     A tree where it is 0 -- C2 regressing -- is exit 14, where it used to
+;     be silently patched.
 ;
 ; ---------------------------------------------------------------------------
-; Exit 0 = the printed module matches. 10 = setup, 11 = the front end said
-; something other than C1/C2, 12 = `lwr_module` refused, 13 = the verifier
-; named a rule, 14 = `fx_patch`'s tree assumptions do not hold, 20 = length
+; Exit 0 = the printed module matches. 10 = setup, 11 = the front end raised
+; any diagnostic, 12 = `lwr_module` refused, 13 = the verifier
+; named a rule, 14 = the post-loop read does not name its accumulator (C2
+; regressed) or the tree shape moved, 20 = length
 ; mismatch, 21 = byte mismatch. Run with any argument to write the produced
 ; text to stdout instead of comparing.
 ;
@@ -229,8 +228,9 @@ include '../../compiler/x86_64/lower/lower.inc'
 ; Plain labels (a `proc` argument name is an unmangled global); each helper
 ; pushes an odd number of registers.
 
-; fx_patch -> eax = 0 once `summa`'s post-loop read names its accumulator.
-; C2's two fields, and nothing else. See the header.
+; fx_patch -> eax = 0 iff `summa`'s post-loop read already names its
+; accumulator (Stage 2 wrote `Path.d`); a 0 there is C2 back, exit 14. The name
+; is historical -- it patched those fields once; see the header.
   fx_patch:
 	push	rbx
 	lea	rdi, [fx_tree]
@@ -252,18 +252,10 @@ include '../../compiler/x86_64/lower/lower.inc'
 	cmp	ecx, AST_PATH
 	jne	.bad
 	mov	ecx, [rax + AstNode.d]
-	test	ecx, ecx
-	jnz	.already			; C2 landed: nothing to do
-	mov	dword [rax + AstNode.d], FX_RD_ACC
-	mov	[rax + AstNode.ty], ebx
-	lea	rdi, [fx_tree]
-	mov	rsi, FX_RD_SEG
-	call	ast_node_at
-	movzx	ecx, word [rax + AstNode.kind]
-	cmp	ecx, AST_SEG
+	cmp	ecx, FX_RD_ACC			; Stage 2 resolved it to the
+	jne	.bad				; accumulator, or C2 is back
+	cmp	[rax + AstNode.ty], ebx		; and typed it as F
 	jne	.bad
-	mov	dword [rax + AstNode.d], FX_RD_ACC
-	mov	[rax + AstNode.ty], ebx
   .already:
 	xor	eax, eax
 	pop	rbx
@@ -273,36 +265,20 @@ include '../../compiler/x86_64/lower/lower.inc'
 	pop	rbx
 	ret
 
-; fx_diags_ok -> eax = 0 if every diagnostic is C1 (`EXS-E0303`) or C2
-; (`EXS-E0301`), 1 if any other code is present. The COUNT is deliberately not
-; checked -- see the header.
+; fx_diags_ok -> eax = 0 iff the front end raised NO diagnostic. (It once
+; admitted codes 303 and 301 -- see the header.)
   fx_diags_ok:
 	push	rbx
-	xor	rbx, rbx
-  .loop:
-	cmp	rbx, [fx_diags + Vec.len]
-	jae	.ok
-	lea	rdi, [fx_diags]
-	mov	rsi, rbx
-	call	vec_get
-	mov	ecx, [rax + Diag.code_num]
-	cmp	ecx, 303
-	je	.next
-	cmp	ecx, 301
-	je	.next
-	mov	eax, 1
-	pop	rbx
-	ret
-  .next:
-	inc	rbx
-	jmp	.loop
-  .ok:
 	xor	eax, eax
+	cmp	qword [fx_diags + Vec.len], 0
+	je	.ok
+	mov	eax, 1
+  .ok:
 	pop	rbx
 	ret
 
 ; fx_front -> rax = 0 once the lexer, the parser and the checker have run and
-; said nothing but C1/C2.
+; said nothing.
   fx_front:
 	push	rbx
 	lea	rdi, [fx_toks]
