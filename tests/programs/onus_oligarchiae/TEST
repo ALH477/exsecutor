@@ -11,16 +11,19 @@
 # The exit status is the program's own count: 0 only if all 7,897 bytes
 # were written.
 #
-# [UNTESTED] under exsc. Written 2026-09-26 in a container with no fasmg,
-# so this directory has never run; PROGRAM_FIXTURE_FLOOR is deliberately
-# not raised for it. What HAS run: a mechanical transliteration of
-# partitura.exsc + onus.exsc into Python (mensura arithmetic trapping on
-# underflow, `sicut u8` keeping the low eight bits) produced exactly the
-# oracle's 7,897 bytes and exit 0, and eight mutants of onus.exsc were put
-# through it: seven change the bytes or the exit. The eighth -- the VLQ's
-# third group firing at 16,385 instead of 16,384 -- is EQUIVALENT for this
-# score, whose longest delta is 5,760 ticks; nothing here exercises a
-# three-byte VLQ. That transliteration is evidence about the program's
-# logic, not about the compiler: the first real run of this directory is
-# its first test.
+# Measured 2026-09-26 on the reference backend: compiles and assembles,
+# exits 0, stdout byte-identical, syscall surface within {Mundus, ambitus}.
+# Its first CI run is what found the two defects the first draft had, both
+# the compiler being right: `varius(s, c, (*c).mora)` is an aliased mutable
+# argument (EXS-E0310), and `gradus`/`tactus` took 9 and 10 arguments where
+# the Tier 1 emitter passes six -- hence the note riding in the pen.
+# PROGRAM_FIXTURE_FLOOR is not raised here: the floor is set to measured
+# suite counts, and this change measured one directory, not the suite.
+#
+# Before it compiled, a mechanical Python transliteration of the two files
+# was the only check, and eight mutants of onus.exsc were run through it:
+# seven change the bytes or the exit. The eighth -- the VLQ's third group
+# firing at 16,385 instead of 16,384 -- is EQUIVALENT for this score, whose
+# longest delta is 5,760 ticks; nothing here exercises a three-byte VLQ.
+# Those mutants have not been re-run against the compiled program.
 TEST: expect-exit=0 stdout=examples/onus/onus_oligarchiae.mid sources=examples/onus/partitura.exsc,examples/onus/onus.exsc

@@ -51,7 +51,7 @@ A sequencer usually expands every note into absolute-time on and off events,
 sorts them, and delta-codes the result. The oracle works that way. This
 program never holds an event: it walks each track once as a stream of
 *steps*. A step is up to three pitches with a length and a sounding length.
-It carries the delta it owes in a `Calamus` (a pen), a two-field struct
+It carries the delta it owes, and the note in hand, in a `Calamus` (a pen)
 passed as `&mutabilis`. A note-on pays the debt. The note-off owes the
 sounding length. The rest of the step becomes the next debt. A rest only
 adds to the debt. `finis` pays whatever is left, so every track ends at tick
@@ -73,19 +73,28 @@ bitwise and or or, and no signed integer:
 
 ## Evidence, exactly
 
-**`[UNTESTED]` under `exsc`.** This directory was written in a container
-with no `fasmg`, so `exsc` has never compiled it.
-`tests/programs/onus_oligarchiae/` is the check, and its first run is the
-first test. What has run:
+On the reference backend, `tests/programs/onus_oligarchiae/` passes: the
+program compiles and assembles, exits 0, writes the golden file byte for
+byte, and stays within `{Mundus, ambitus}`.
+
+The first draft was written without `fasmg` and did not compile. The
+compiler was right both times:
+
+- `varius(s, c, (*c).mora)` passes the pen and a field of it to one call,
+  which is an aliased mutable argument (`EXS-E0310`). The delta is now
+  copied out first.
+- `gradus` and `tactus` took 9 and 10 arguments, but the Tier 1 emitter
+  passes six. So the note in hand (channel, pitches, velocity) now rides in
+  the pen, set by `tene`.
+
+Also run:
 
 - the oracle, which also asserts what the stream form takes on faith: every
   track fills exactly 40 bars, and no pitch overlaps itself on its channel;
-- a mechanical Python transliteration of these two files, with trapping
-  `mensura` arithmetic and `sicut u8` as truncation. It produced the
-  oracle's 7,897 bytes exactly and exited 0;
-- eight mutants through that transliteration, recorded in the TEST header.
-  Seven are caught. The survivor is the VLQ's third group, which this score
-  never reaches, because its longest delta is 5,760 ticks.
+- before the program compiled, a mechanical Python transliteration of the
+  first draft, with eight mutants recorded in the TEST header. Seven were
+  caught. The survivor is the VLQ's third group, which this score never
+  reaches, because its longest delta is 5,760 ticks. The mutants have not
+  been re-run against the compiled program.
 
-The transliteration is evidence about the program's logic, not about the
-compiler.
+`[UNTESTED]`: the C backend's differential builds of this directory.

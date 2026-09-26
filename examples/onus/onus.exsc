@@ -20,11 +20,31 @@
 //
 // Exit 0 when all 7,897 bytes were written, 1 otherwise.
 
-// The pen: the delta owed before the next event, in ticks, and whether the
-// bytes are being written (1) or only counted (0).
+// The pen: the delta owed before the next event, in ticks; whether the
+// bytes are being written (1) or only counted (0); and the note in hand --
+// channel, up to three pitches, velocity. The note rides in the pen rather
+// than in `gradus`'s parameters because the reference backend's Tier 1
+// emitter passes at most six arguments.
 structura Calamus {
     mora: mensura
     vere: mensura
+    ch: mensura
+    p0: mensura
+    p1: mensura
+    p2: mensura
+    v: mensura
+}
+
+// Put a note in the pen: channel ch, pitches p0 p1 p2 (0 = absent; p0 = 0
+// is a rest), velocity v.
+functio tene(c: &mutabilis Calamus, ch: mensura, p0: mensura, p1: mensura,
+             p2: mensura, v: mensura) -> mensura {
+    (*c).ch = ch;
+    (*c).p0 = p0;
+    (*c).p1 = p1;
+    (*c).p2 = p2;
+    (*c).v = v;
+    redde 0;
 }
 
 // ---- bytes ------------------------------------------------------------------
@@ -88,10 +108,13 @@ functio signum(s: Scriptor, c: &mutabilis Calamus, a: mensura, b: mensura,
 
 // ---- events -----------------------------------------------------------------
 
-// The delta owed, then a three-byte channel event. The debt is paid.
+// The delta owed, then a three-byte channel event. The debt is paid. It is
+// copied out first: passing `c` and `(*c).mora` to one call is an aliased
+// mutable argument, EXS-E0310.
 functio eventus(s: Scriptor, c: &mutabilis Calamus, status: mensura, a: mensura,
                 b: mensura) -> mensura {
-    mutabilis n: mensura = varius(s, c, (*c).mora);
+    firma d: mensura = (*c).mora;
+    mutabilis n: mensura = varius(s, c, d);
     (*c).mora = 0;
     n = n + octetus(s, c, status);
     n = n + octetus(s, c, a);
@@ -103,7 +126,8 @@ functio eventus(s: Scriptor, c: &mutabilis Calamus, status: mensura, a: mensura,
 // The caller writes the length's bytes.
 functio meta(s: Scriptor, c: &mutabilis Calamus, genus: mensura,
              longitudo: mensura) -> mensura {
-    mutabilis n: mensura = varius(s, c, (*c).mora);
+    firma d: mensura = (*c).mora;
+    mutabilis n: mensura = varius(s, c, d);
     (*c).mora = 0;
     n = n + octetus(s, c, 255);
     n = n + octetus(s, c, genus);
@@ -147,18 +171,22 @@ functio porta(genus: mensura, d: mensura) -> mensura {
     redde d - (d deorsum 3);
 }
 
-// One step of d ticks on channel ch: up to three pitches (0 = absent;
-// p0 = 0 is a rest), sounding g ticks at velocity v. The note-ons go at the
-// owed delta, the note-offs g ticks later, and the step's remaining d - g
-// ticks become the next event's debt. A rest only adds to the debt.
-functio gradus(s: Scriptor, c: &mutabilis Calamus, ch: mensura, p0: mensura,
-               p1: mensura, p2: mensura, d: mensura, g: mensura, v: mensura) -> mensura {
+// One step of d ticks of the note in the pen, sounding g ticks. The
+// note-ons go at the owed delta, the note-offs g ticks later, and the step's
+// remaining d - g ticks become the next event's debt. A rest only adds to
+// the debt. The note is copied out of the pen first: `c` and a field of it
+// in one call is an aliased mutable argument, EXS-E0310.
+functio gradus(s: Scriptor, c: &mutabilis Calamus, d: mensura, g: mensura) -> mensura {
+    firma p0: mensura = (*c).p0;
+    firma p1: mensura = (*c).p1;
+    firma p2: mensura = (*c).p2;
+    firma v: mensura = (*c).v;
     si p0 eq 0 vel v eq 0 {
         (*c).mora = (*c).mora + d;
         redde 0;
     }
-    firma sonat: mensura = 144 + ch;
-    firma tacet: mensura = 128 + ch;
+    firma sonat: mensura = 144 + (*c).ch;
+    firma tacet: mensura = 128 + (*c).ch;
     mutabilis n: mensura = eventus(s, c, sonat, p0, v);
     si p1 ne 0 {
         n = n + eventus(s, c, sonat, p1, v);
@@ -178,29 +206,28 @@ functio gradus(s: Scriptor, c: &mutabilis Calamus, ch: mensura, p0: mensura,
     redde n;
 }
 
-// One 480-tick bar in a mode: 0 rest, 1 sustained (articulation tenta),
-// 2 the Mars rhythm (articulation pulsata), 3 a roll of fifteen triplet
-// eighths at three quarters.
-functio tactus(s: Scriptor, c: &mutabilis Calamus, ch: mensura, modus: mensura,
-               p0: mensura, p1: mensura, p2: mensura, v: mensura,
-               tenta: mensura, pulsata: mensura) -> mensura {
-    si modus eq 0 vel v eq 0 {
+// One 480-tick bar of the note in the pen, in a mode: 0 rest, 1 sustained
+// (articulation tenta), 2 the Mars rhythm (articulation pulsata), 3 a roll
+// of fifteen triplet eighths at three quarters.
+functio tactus(s: Scriptor, c: &mutabilis Calamus, modus: mensura, tenta: mensura,
+               pulsata: mensura) -> mensura {
+    si modus eq 0 vel (*c).v eq 0 {
         (*c).mora = (*c).mora + 480;
         redde 0;
     }
     si modus eq 1 {
-        redde gradus(s, c, ch, p0, p1, p2, 480, porta(tenta, 480), v);
+        redde gradus(s, c, 480, porta(tenta, 480));
     }
     mutabilis n: mensura = 0;
     si modus eq 2 {
         firma r: acies<mensura, 8> = [32, 32, 32, 96, 96, 48, 48, 96];
         per i in 0..8 {
-            n = n + gradus(s, c, ch, p0, p1, p2, r[i], porta(pulsata, r[i]), v);
+            n = n + gradus(s, c, r[i], porta(pulsata, r[i]));
         }
         redde n;
     }
     per i in 0..15 {
-        n = n + gradus(s, c, ch, p0, p1, p2, 32, porta(1, 32), v);
+        n = n + gradus(s, c, 32, porta(1, 32));
     }
     redde n;
 }
@@ -248,7 +275,8 @@ functio ostinatum(s: Scriptor, c: &mutabilis Calamus) -> mensura {
     firma v: acies<mensura, 40> = ostinati_vires();
     mutabilis n: mensura = initium_vestigii(s, c, 1, 0, 45);
     per b in 0..40 {
-        n = n + tactus(s, c, 0, m[b], p[b], 0, 0, v[b], 1, 0);
+        n = n + tene(c, 0, p[b], 0, 0, v[b]);
+        n = n + tactus(s, c, m[b], 1, 0);
     }
     redde n + finis(s, c);
 }
@@ -260,7 +288,8 @@ functio aes(s: Scriptor, c: &mutabilis Calamus) -> mensura {
     mutabilis n: mensura = initium_vestigii(s, c, 2, 1, 57);
     per b in 0..40 {
         firma j: mensura = b + b + b;
-        n = n + tactus(s, c, 1, m[b], p[j], p[j + 1], p[j + 2], v[b], 2, 1);
+        n = n + tene(c, 1, p[j], p[j + 1], p[j + 2], v[b]);
+        n = n + tactus(s, c, m[b], 2, 1);
     }
     redde n + finis(s, c);
 }
@@ -270,7 +299,8 @@ functio scurra(s: Scriptor, c: &mutabilis Calamus) -> mensura {
     firma d: acies<mensura, 100> = scurrae_morae();
     mutabilis n: mensura = initium_vestigii(s, c, 3, 2, 72);
     per i in 0..100 {
-        n = n + gradus(s, c, 2, p[i], 0, 0, d[i], porta(1, d[i]), 90);
+        n = n + tene(c, 2, p[i], 0, 0, 90);
+        n = n + gradus(s, c, d[i], porta(1, d[i]));
     }
     redde n + finis(s, c);
 }
@@ -280,7 +310,8 @@ functio fagottus(s: Scriptor, c: &mutabilis Calamus) -> mensura {
     firma d: acies<mensura, 61> = fagotti_morae();
     mutabilis n: mensura = initium_vestigii(s, c, 4, 3, 70);
     per i in 0..61 {
-        n = n + gradus(s, c, 3, p[i], 0, 0, d[i], porta(3, d[i]), 84);
+        n = n + tene(c, 3, p[i], 0, 0, 84);
+        n = n + gradus(s, c, d[i], porta(3, d[i]));
     }
     redde n + finis(s, c);
 }
@@ -293,11 +324,12 @@ functio tympanum(s: Scriptor, c: &mutabilis Calamus) -> mensura {
     firma v: acies<mensura, 40> = tympani_vires();
     mutabilis n: mensura = initium_vestigii(s, c, 5, 4, 47);
     per b in 0..40 {
+        n = n + tene(c, 4, p[b], 0, 0, v[b]);
         si m[b] eq 1 et v[b] ne 0 {
-            n = n + gradus(s, c, 4, p[b], 0, 0, 96, porta(1, 96), v[b]);
+            n = n + gradus(s, c, 96, porta(1, 96));
             (*c).mora = (*c).mora + 384;
         } aliter {
-            n = n + tactus(s, c, 4, m[b], p[b], 0, 0, v[b], 1, 1);
+            n = n + tactus(s, c, m[b], 1, 1);
         }
     }
     redde n + finis(s, c);
@@ -356,7 +388,7 @@ publica functio initium(m: Mundus) -> u8 {
     firma a = m.ambitus();
     sub ambitus = a;
     firma s = Scriptor.ad_exitum(a);
-    mutabilis c = Calamus { mora: 0, vere: 1 };
+    mutabilis c = Calamus { mora: 0, vere: 1, ch: 0, p0: 0, p1: 0, p2: 0, v: 0 };
     si opus(s, c) ne 7897 {
         redde 1;
     }
