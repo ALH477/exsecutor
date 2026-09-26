@@ -1,0 +1,364 @@
+// examples/onus/onus.exsc -- "Onus Oligarchiae" as a Standard MIDI File on
+// standard output: format 1, six tracks (the conductor, then ostinatum, aes,
+// scurra, fagottus, tympanum), 96 ticks a quarter. partitura.exsc is the
+// score; this file is the engraver, and the only one that names `Mundus`.
+//
+// What it writes is examples/onus/onus_oligarchiae.mid, 7,897 bytes, byte
+// for byte (tests/programs/onus_oligarchiae/). That file was written by
+// prototypes/onus_oracle.py, which encodes the same score the ordinary
+// sequencer's way -- every note expanded to absolute-time on and off events,
+// sorted, then delta-coded. This program never holds an event list: it walks
+// each track once as a stream of steps, carrying the pending delta forward
+// in a `Calamus`, and walks it twice -- once counting, once writing -- to
+// learn the MTrk length before the first byte of the chunk.
+//
+// Like the hydramodem transmitter it uses no division, no remainder, no
+// bitwise and or or and no signed integer. A variable-length quantity's low
+// seven bits are `x - ((x deorsum 7) sursum 7)`; a big-endian field is its
+// shifts, each narrowed by `sicut u8`, which keeps the low eight bits (spec
+// §5.4). No running status: every channel event carries its status byte.
+//
+// Exit 0 when all 7,897 bytes were written, 1 otherwise.
+
+// The pen: the delta owed before the next event, in ticks, and whether the
+// bytes are being written (1) or only counted (0).
+structura Calamus {
+    mora: mensura
+    vere: mensura
+}
+
+// ---- bytes ------------------------------------------------------------------
+
+// One byte -- the low eight bits of x -- written or counted. Returns what it
+// wrote, 1 when it only counted.
+functio octetus(s: Scriptor, c: &mutabilis Calamus, x: mensura) -> mensura {
+    si (*c).vere eq 1 {
+        firma b: u8 = x sicut u8;
+        redde s.scribe_octeto(b);
+    }
+    redde 1;
+}
+
+functio septem(x: mensura) -> mensura {
+    redde x - ((x deorsum 7) sursum 7);
+}
+
+// A MIDI variable-length quantity, most significant group first, the
+// continuation bit on every group but the last. Three groups cover d < 2^21;
+// the longest delta in the score is 5,760.
+functio varius(s: Scriptor, c: &mutabilis Calamus, d: mensura) -> mensura {
+    mutabilis n: mensura = 0;
+    si d ge 16384 {
+        n = n + octetus(s, c, 128 + septem(d deorsum 14));
+    }
+    si d ge 128 {
+        n = n + octetus(s, c, 128 + septem(d deorsum 7));
+    }
+    n = n + octetus(s, c, septem(d));
+    redde n;
+}
+
+functio duo(s: Scriptor, c: &mutabilis Calamus, x: mensura) -> mensura {
+    mutabilis n: mensura = octetus(s, c, x deorsum 8);
+    n = n + octetus(s, c, x);
+    redde n;
+}
+
+functio tres(s: Scriptor, c: &mutabilis Calamus, x: mensura) -> mensura {
+    mutabilis n: mensura = octetus(s, c, x deorsum 16);
+    n = n + duo(s, c, x);
+    redde n;
+}
+
+functio quattuor(s: Scriptor, c: &mutabilis Calamus, x: mensura) -> mensura {
+    mutabilis n: mensura = octetus(s, c, x deorsum 24);
+    n = n + tres(s, c, x);
+    redde n;
+}
+
+// A chunk tag: MThd is 77 84 104 100, MTrk 77 84 114 107.
+functio signum(s: Scriptor, c: &mutabilis Calamus, a: mensura, b: mensura,
+               d: mensura, e: mensura) -> mensura {
+    mutabilis n: mensura = octetus(s, c, a);
+    n = n + octetus(s, c, b);
+    n = n + octetus(s, c, d);
+    n = n + octetus(s, c, e);
+    redde n;
+}
+
+// ---- events -----------------------------------------------------------------
+
+// The delta owed, then a three-byte channel event. The debt is paid.
+functio eventus(s: Scriptor, c: &mutabilis Calamus, status: mensura, a: mensura,
+                b: mensura) -> mensura {
+    mutabilis n: mensura = varius(s, c, (*c).mora);
+    (*c).mora = 0;
+    n = n + octetus(s, c, status);
+    n = n + octetus(s, c, a);
+    n = n + octetus(s, c, b);
+    redde n;
+}
+
+// The delta owed, then a meta event's head: 0xFF, its kind, its length.
+// The caller writes the length's bytes.
+functio meta(s: Scriptor, c: &mutabilis Calamus, genus: mensura,
+             longitudo: mensura) -> mensura {
+    mutabilis n: mensura = varius(s, c, (*c).mora);
+    (*c).mora = 0;
+    n = n + octetus(s, c, 255);
+    n = n + octetus(s, c, genus);
+    n = n + varius(s, c, longitudo);
+    redde n;
+}
+
+// Name k (0 the conductor's, 1-5 the sections') as a track-name meta event.
+functio nomen(s: Scriptor, c: &mutabilis Calamus, k: mensura) -> mensura {
+    firma t: acies<mensura, 96> = nomina();
+    firma l: acies<mensura, 6> = nominum_longitudines();
+    firma z: mensura = l[k];
+    mutabilis n: mensura = meta(s, c, 3, z);
+    per i in 0..z {
+        n = n + octetus(s, c, t[k * 16 + i]);
+    }
+    redde n;
+}
+
+// End of track, after whatever delta is still owed: every track ends at
+// tick 19,200, so the last rest is paid here.
+functio finis(s: Scriptor, c: &mutabilis Calamus) -> mensura {
+    redde meta(s, c, 47, 0);
+}
+
+// ---- steps and bars ---------------------------------------------------------
+
+// How long a note of d ticks sounds, by articulation: 0 half (col legno),
+// 1 three quarters, 2 all but 24 ticks (the brass held), 3 seven eighths
+// (the bassoon).
+functio porta(genus: mensura, d: mensura) -> mensura {
+    si genus eq 0 {
+        redde d deorsum 1;
+    }
+    si genus eq 1 {
+        redde d - (d deorsum 2);
+    }
+    si genus eq 2 {
+        redde d - 24;
+    }
+    redde d - (d deorsum 3);
+}
+
+// One step of d ticks on channel ch: up to three pitches (0 = absent;
+// p0 = 0 is a rest), sounding g ticks at velocity v. The note-ons go at the
+// owed delta, the note-offs g ticks later, and the step's remaining d - g
+// ticks become the next event's debt. A rest only adds to the debt.
+functio gradus(s: Scriptor, c: &mutabilis Calamus, ch: mensura, p0: mensura,
+               p1: mensura, p2: mensura, d: mensura, g: mensura, v: mensura) -> mensura {
+    si p0 eq 0 vel v eq 0 {
+        (*c).mora = (*c).mora + d;
+        redde 0;
+    }
+    firma sonat: mensura = 144 + ch;
+    firma tacet: mensura = 128 + ch;
+    mutabilis n: mensura = eventus(s, c, sonat, p0, v);
+    si p1 ne 0 {
+        n = n + eventus(s, c, sonat, p1, v);
+    }
+    si p2 ne 0 {
+        n = n + eventus(s, c, sonat, p2, v);
+    }
+    (*c).mora = g;
+    n = n + eventus(s, c, tacet, p0, 64);
+    si p1 ne 0 {
+        n = n + eventus(s, c, tacet, p1, 64);
+    }
+    si p2 ne 0 {
+        n = n + eventus(s, c, tacet, p2, 64);
+    }
+    (*c).mora = d - g;
+    redde n;
+}
+
+// One 480-tick bar in a mode: 0 rest, 1 sustained (articulation tenta),
+// 2 the Mars rhythm (articulation pulsata), 3 a roll of fifteen triplet
+// eighths at three quarters.
+functio tactus(s: Scriptor, c: &mutabilis Calamus, ch: mensura, modus: mensura,
+               p0: mensura, p1: mensura, p2: mensura, v: mensura,
+               tenta: mensura, pulsata: mensura) -> mensura {
+    si modus eq 0 vel v eq 0 {
+        (*c).mora = (*c).mora + 480;
+        redde 0;
+    }
+    si modus eq 1 {
+        redde gradus(s, c, ch, p0, p1, p2, 480, porta(tenta, 480), v);
+    }
+    mutabilis n: mensura = 0;
+    si modus eq 2 {
+        firma r: acies<mensura, 8> = [32, 32, 32, 96, 96, 48, 48, 96];
+        per i in 0..8 {
+            n = n + gradus(s, c, ch, p0, p1, p2, r[i], porta(pulsata, r[i]), v);
+        }
+        redde n;
+    }
+    per i in 0..15 {
+        n = n + gradus(s, c, ch, p0, p1, p2, 32, porta(1, 32), v);
+    }
+    redde n;
+}
+
+// A section's head: its name, then its General MIDI program, so the file
+// also plays on any GM synth.
+functio initium_vestigii(s: Scriptor, c: &mutabilis Calamus, k: mensura, ch: mensura,
+                         programma: mensura) -> mensura {
+    mutabilis n: mensura = nomen(s, c, k);
+    n = n + varius(s, c, 0);
+    n = n + octetus(s, c, 192 + ch);
+    n = n + octetus(s, c, programma);
+    redde n;
+}
+
+// ---- the tracks -------------------------------------------------------------
+
+// The conductor: the title, 5/4, G major, and the tempo -- 150 a quarter,
+// broadening at bar 37 (tick 17,760) and again at bar 38 (18,240).
+functio rector(s: Scriptor, c: &mutabilis Calamus) -> mensura {
+    mutabilis n: mensura = nomen(s, c, 0);
+    n = n + meta(s, c, 88, 4);
+    n = n + octetus(s, c, 5);
+    n = n + octetus(s, c, 2);
+    n = n + octetus(s, c, 24);
+    n = n + octetus(s, c, 8);
+    n = n + meta(s, c, 89, 2);
+    n = n + octetus(s, c, 1);
+    n = n + octetus(s, c, 0);
+    n = n + meta(s, c, 81, 3);
+    n = n + tres(s, c, 400000);
+    (*c).mora = 17760;
+    n = n + meta(s, c, 81, 3);
+    n = n + tres(s, c, 460000);
+    (*c).mora = 480;
+    n = n + meta(s, c, 81, 3);
+    n = n + tres(s, c, 540000);
+    (*c).mora = 960;
+    redde n + finis(s, c);
+}
+
+functio ostinatum(s: Scriptor, c: &mutabilis Calamus) -> mensura {
+    firma m: acies<mensura, 40> = ostinati_modi();
+    firma p: acies<mensura, 40> = ostinati_soni();
+    firma v: acies<mensura, 40> = ostinati_vires();
+    mutabilis n: mensura = initium_vestigii(s, c, 1, 0, 45);
+    per b in 0..40 {
+        n = n + tactus(s, c, 0, m[b], p[b], 0, 0, v[b], 1, 0);
+    }
+    redde n + finis(s, c);
+}
+
+functio aes(s: Scriptor, c: &mutabilis Calamus) -> mensura {
+    firma m: acies<mensura, 40> = aeris_modi();
+    firma p: acies<mensura, 120> = aeris_soni();
+    firma v: acies<mensura, 40> = aeris_vires();
+    mutabilis n: mensura = initium_vestigii(s, c, 2, 1, 57);
+    per b in 0..40 {
+        firma j: mensura = b + b + b;
+        n = n + tactus(s, c, 1, m[b], p[j], p[j + 1], p[j + 2], v[b], 2, 1);
+    }
+    redde n + finis(s, c);
+}
+
+functio scurra(s: Scriptor, c: &mutabilis Calamus) -> mensura {
+    firma p: acies<mensura, 100> = scurrae_soni();
+    firma d: acies<mensura, 100> = scurrae_morae();
+    mutabilis n: mensura = initium_vestigii(s, c, 3, 2, 72);
+    per i in 0..100 {
+        n = n + gradus(s, c, 2, p[i], 0, 0, d[i], porta(1, d[i]), 90);
+    }
+    redde n + finis(s, c);
+}
+
+functio fagottus(s: Scriptor, c: &mutabilis Calamus) -> mensura {
+    firma p: acies<mensura, 61> = fagotti_soni();
+    firma d: acies<mensura, 61> = fagotti_morae();
+    mutabilis n: mensura = initium_vestigii(s, c, 4, 3, 70);
+    per i in 0..61 {
+        n = n + gradus(s, c, 3, p[i], 0, 0, d[i], porta(3, d[i]), 84);
+    }
+    redde n + finis(s, c);
+}
+
+// The timpani's mode 1 is one quarter-note stroke on the downbeat and a
+// rest for the other four beats; its other modes are every section's.
+functio tympanum(s: Scriptor, c: &mutabilis Calamus) -> mensura {
+    firma m: acies<mensura, 40> = tympani_modi();
+    firma p: acies<mensura, 40> = tympani_soni();
+    firma v: acies<mensura, 40> = tympani_vires();
+    mutabilis n: mensura = initium_vestigii(s, c, 5, 4, 47);
+    per b in 0..40 {
+        si m[b] eq 1 et v[b] ne 0 {
+            n = n + gradus(s, c, 4, p[b], 0, 0, 96, porta(1, 96), v[b]);
+            (*c).mora = (*c).mora + 384;
+        } aliter {
+            n = n + tactus(s, c, 4, m[b], p[b], 0, 0, v[b], 1, 1);
+        }
+    }
+    redde n + finis(s, c);
+}
+
+// ---- the file ---------------------------------------------------------------
+
+// Track k's events, from a clean debt.
+functio corpus(s: Scriptor, c: &mutabilis Calamus, k: mensura) -> mensura {
+    (*c).mora = 0;
+    si k eq 0 {
+        redde rector(s, c);
+    }
+    si k eq 1 {
+        redde ostinatum(s, c);
+    }
+    si k eq 2 {
+        redde aes(s, c);
+    }
+    si k eq 3 {
+        redde scurra(s, c);
+    }
+    si k eq 4 {
+        redde fagottus(s, c);
+    }
+    redde tympanum(s, c);
+}
+
+// One MTrk chunk: the body counted, then the tag, the length and the body
+// written. The two walks see the same score and the same pen, so the count
+// is the length.
+functio vestigium(s: Scriptor, c: &mutabilis Calamus, k: mensura) -> mensura {
+    (*c).vere = 0;
+    firma l: mensura = corpus(s, c, k);
+    (*c).vere = 1;
+    mutabilis n: mensura = signum(s, c, 77, 84, 114, 107);
+    n = n + quattuor(s, c, l);
+    n = n + corpus(s, c, k);
+    redde n;
+}
+
+// MThd: length 6, format 1, six tracks, 96 ticks a quarter; then the tracks.
+functio opus(s: Scriptor, c: &mutabilis Calamus) -> mensura {
+    mutabilis n: mensura = signum(s, c, 77, 84, 104, 100);
+    n = n + quattuor(s, c, 6);
+    n = n + duo(s, c, 1);
+    n = n + duo(s, c, 6);
+    n = n + duo(s, c, 96);
+    per k in 0..6 {
+        n = n + vestigium(s, c, k);
+    }
+    redde n;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma s = Scriptor.ad_exitum(a);
+    mutabilis c = Calamus { mora: 0, vere: 1 };
+    si opus(s, c) ne 7897 {
+        redde 1;
+    }
+    redde 0;
+}

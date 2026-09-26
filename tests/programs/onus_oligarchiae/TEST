@@ -1,0 +1,26 @@
+# examples/onus/: "Onus Oligarchiae", Oligarchy's theme, as a Standard MIDI
+# File. stdout is the file, compared with `cmp`, byte for byte, with
+# examples/onus/onus_oligarchiae.mid (7,897 bytes), which is WRITTEN BY
+# prototypes/onus_oracle.py, not by this program:
+#   python3 prototypes/onus_oracle.py examples/onus/onus_oligarchiae.mid
+# The score is shared (partitura.exsc's tables are printed by
+# `onus_oracle.py --exsc`); the encoding is not -- the oracle sorts
+# absolute-time events and delta-codes them, the program walks each track
+# as a stream with a carried delta and counts before it writes.
+#
+# The exit status is the program's own count: 0 only if all 7,897 bytes
+# were written.
+#
+# [UNTESTED] under exsc. Written 2026-09-26 in a container with no fasmg,
+# so this directory has never run; PROGRAM_FIXTURE_FLOOR is deliberately
+# not raised for it. What HAS run: a mechanical transliteration of
+# partitura.exsc + onus.exsc into Python (mensura arithmetic trapping on
+# underflow, `sicut u8` keeping the low eight bits) produced exactly the
+# oracle's 7,897 bytes and exit 0, and eight mutants of onus.exsc were put
+# through it: seven change the bytes or the exit. The eighth -- the VLQ's
+# third group firing at 16,385 instead of 16,384 -- is EQUIVALENT for this
+# score, whose longest delta is 5,760 ticks; nothing here exercises a
+# three-byte VLQ. That transliteration is evidence about the program's
+# logic, not about the compiler: the first real run of this directory is
+# its first test.
+TEST: expect-exit=0 stdout=examples/onus/onus_oligarchiae.mid sources=examples/onus/partitura.exsc,examples/onus/onus.exsc

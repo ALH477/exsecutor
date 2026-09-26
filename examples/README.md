@@ -1,6 +1,7 @@
 # examples/
 
-Exsecutor source, nine programs, all compiled and run by `tests/run.sh`:
+Exsecutor source, ten programs, all compiled and run by `tests/run.sh`
+(the tenth, `onus/`, not yet — see its entry):
 
 - **the hello world** — `saluta.exsc`, `imprime.exsc`, `initium.exsc`,
   below; `tests/programs/saluta/` and `tools/publish-gate.sh` run it;
@@ -103,6 +104,17 @@ Exsecutor source, nine programs, all compiled and run by `tests/run.sh`:
   `prototypes/signaculum_oracle.py` (itself ported to the lane pipeline)
   on both backends, all four C builds and the cross run;
   it is the program that closed float `load`/`store` in both emitters.
+- **`onus/`, the theme song** — "Onus Oligarchiae", Oligarchy's theme, a
+  5/4 march after Holst's Mars with a jester's piccolo loose in it, written
+  as a Standard MIDI File: `partitura.exsc` is the score as pure tables,
+  `onus.exsc` the engraver, streaming each track with a carried delta and
+  walking it twice (count, then write) for the MTrk length.
+  `tests/programs/onus_oligarchiae/` holds its 7,897 bytes against
+  `prototypes/onus_oracle.py`'s, which sorts absolute-time events instead.
+  **`[UNTESTED]` under `exsc`**: written without `fasmg` in reach, checked
+  so far only by a mechanical transliteration (`onus/README.md` says
+  exactly what that does and does not show). Oligarchy's FAUST orchestra
+  performs the file.
 
 This file said "nothing here compiles — there is no compiler" until
 2026-09-10, and then, until the hydramodem commit, that nothing here was
