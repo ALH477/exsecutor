@@ -6,7 +6,9 @@
 // borrow; this file decides the frame. docs/design/melos.md section 9 is the
 // design.
 //
-// The reference is Punctim's hydramodem/ at f86f5d5: decode_window, which is
+// The reference is Punctim's hydramodem/ at f86f5d5 (where verdicta.tsv was
+// taken) with one later change from 25ed001, the plateau rule (the first run of
+// best origins; melos.md section 10 re-measures it): decode_window, which is
 // profile-generic, run on hydra_profile_melody or hydra_profile_bass. Its
 // output is a verdict, not bytes, so this receiver is held to verdicts, as
 // receptor.exsc is (ADR 0014): the vendored WAVs decode to their frames, and
@@ -16,8 +18,8 @@
 // (tone, I/Q), over the whole burst, so any window's energy is two
 // subtractions. At 8 tones and the duet's 344,640 samples that is 16 x 344,641
 // x 8 bytes = 44 MB, against an 8 MiB stack that nothing checks. What is
-// stored here is the samples themselves, once, as f64 (2.76 MB, in the
-// driver), and every window is integrated when it is needed. The acquisition
+// stored here is the samples themselves, once, as f64 (2.81 MB at the
+// 351,840-sample capacity, in the driver), and every window is integrated when it is needed. The acquisition
 // scan, which wants a window at EVERY sample offset, uses the other property
 // the profile guarantees: each tone completes a whole number of cycles in L =
 // 1920 samples, so the window one sample on is a SLIDING DFT,

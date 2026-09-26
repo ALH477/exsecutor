@@ -306,9 +306,10 @@ at ±1000 and ±3000 ppm, melody and duet). They disagreed once: the duet at
 bounds. After the fix, 48 of 48 agree. That input is now vendored and tested
 (`auditus_bicinium_clock3000`).
 
-**Measured against the reference** (C `frame_rx`/`poly_rx`, Punctim `f86f5d5`,
-the same impaired WAVs fed to both, numpy-generated for this measurement, not
-vendored):
+**Measured against the reference [UNREPRODUCED]** (C `frame_rx`/`poly_rx`,
+Punctim `f86f5d5`, the same impaired WAVs fed to both, numpy-generated for this
+measurement and not vendored, so the table below cannot be re-run from this
+tree; only its one disagreeing input is vendored):
 
 | set | inputs | verdicts identical |
 |---|---|---|
@@ -349,8 +350,9 @@ These **survive**, and are named rather than hidden, as receptor.md section 6
 names its own:
 
 - **The timing loop disabled** (the gate never opens). It survives here, and it
-  survives on every clock input tried from ±1000 to ±8000 ppm, for both voices.
-  The reference itself fails from ±7000 ppm, loop or no loop. At 25 baud a
+  survives on every clock input tried from ±1000 to ±8000 ppm, for both voices
+  **[UNREPRODUCED]** (those inputs beyond the vendored +3000 ppm pair were not
+  vendored). The reference itself fails from ±7000 ppm, loop or no loop. At 25 baud a
   frame's whole drift within the reference's working range is about half a
   symbol, and an integrate-and-dump window mostly on the right note still has
   the right argmax. **The loop is kept for fidelity with the reference; no
@@ -414,9 +416,9 @@ fixed in both implementations the same way:
 - **The plateau is the first run.** Acquisition takes best-scoring origins only
   within one symbol of the first. A window holding two bursts would otherwise
   centre between their plateaus. One burst's plateau is never a symbol wide, so
-  single-burst verdicts do not move. Re-measured: the 96 impaired inputs of
-  section 9 give the same verdicts as before, 48/48 and 44/48 with the same four
-  cliff splits.
+  single-burst verdicts do not move. Re-measured **[UNREPRODUCED]** (the same
+  unvendored inputs): the 96 impaired inputs of section 9 give the same verdicts
+  as before, 48/48 and 44/48 with the same four cliff splits.
 
 Punctim's `hydramodem/tests/test_music.c` [6] pins the C half: 4 of 4, failing
 at 1 of 4 on the old code.
@@ -439,13 +441,40 @@ the C receiver; porting it is open.
   → A, A, Z, Z.
 - `auditus_fluxus_ictus`: noise, a click, noise, bass(A), noise, as **raw**
   s16le → A.
+- `auditus_fluxus_truncus`: a click, then melody(A) starting ~1,400 samples in,
+  cut by a dropout that closes the window short of the longest voice; then
+  bass(A) → A.
 
-Both streams come from `vendor/hydramodem-auditus/fluxus.py` (stdlib,
+The streams come from `vendor/hydramodem-auditus/fluxus.py` (stdlib,
 deterministic) applied to the vendored renders. Both mechanisms are proven
 load-bearing: without replay the contiguous stream yields 2 frames, and without
 truncated-burst recovery the ictus stream yields none.
 
-**Also measured, not vendored:**
+**Finding (review): the first draft's replay start could underflow.** It
+replayed from `truncus − 1920` and assumed a truncated burst starts at 9,120 or
+later. That holds for a full window, but a window closed by silence (or flushed
+at the end of the stream) can find the burst within its first symbol. Then `−`
+trapped (§5.4, exit 132), or at exactly 1,921 it returned 1, the value the
+driver also used for a failed write (exit 4, nothing wrong). A write failure is
+now a flag in the segmenter's state rather than a return value.
+
+Clamping the start to 1 was not enough. With only the clamp, the truncus stream
+decoded correctly but took 11.8 s against 0.7 s for the ictus stream. The replay
+re-closed the same window one sample shorter, about 1,400 times over. The root
+cause is that a burst cut off by silence or by the end of the stream really was
+cut, so replaying cannot recover it. Recovery now applies only to a **full**
+window, the click case it was built for, where a truncated burst starts at
+sample 10,081 or later. The clamp to 1 stays as a backstop.
+`auditus_fluxus_truncus` traps on the first draft (exit 132, measured) and
+passes now.
+
+The review also found that a window completing *during* a replay overwrote the
+replay cursor, dropping the rest of the replay it interrupted. The driver now
+moves that remainder down behind the new replay. Its safety argument: writes
+never pass reads. This path is argued, not exercised by a vendored input
+**[UNTESTED]**.
+
+**Also measured, not vendored [UNREPRODUCED]:**
 
 - The contiguous stream at −16 dB: A, A, Z, Z.
 - A stream of noise, a click, bass(A), melody(Z), duet(A, Z) and melody(A), with

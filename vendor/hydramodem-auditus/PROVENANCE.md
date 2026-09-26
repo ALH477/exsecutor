@@ -35,13 +35,16 @@ Here `<melos>` is `vendor/hydramodem-melos` and `<bicinium>` is
 ## The streams
 
 `fluxus.py` (standard library, deterministic, imports `impair.py`'s noise) makes
-the two streaming inputs from the clean renders; re-running it reproduced both
-byte for byte.
+the three streaming inputs from the clean renders; re-running it reproduced all three
+byte for byte. Run it as `python3 -B fluxus.py`: importing `impair.py` otherwise
+writes a `__pycache__/` into this tree, which the tree digest below would then
+cover (a git flake's source does not, so the digest would stop matching).
 
 | file | what it is | frames expected |
 |---|---|---|
 | `fluxus-contiguus.wav` | melody(A) ‖ duet(A, Z) ‖ melody(Z), the renders' PCM concatenated (60 ms apart), WAV-wrapped | A, A, Z, Z |
 | `fluxus-ictus.raw` | raw s16le: noise, a click, noise, the bass render of A, noise | A |
+| `fluxus-truncus.raw` | raw s16le: a click, noise, the melody render of A cut at sample 233,000, a 20,000-sample dropout, the bass render of A, noise | A |
 
 A is `d310123400a1ffffdeadbeef0a1b2ca961` and Z is seventeen zero bytes.
 
@@ -69,21 +72,21 @@ Tree digest, from the repository root,
 under `LC_ALL=C` (`flake.nix`'s `auditus-vendor-integrity`):
 
 ```
-07a73f7636e070917b72b6d45ac4bb15778d2c5d9932af885d08e0847be8356d
+e80367754244ffc3b70bdd886e46b3c17d992cd3ae94d07f58bcd4e2f1fcb3e9
 ```
 
 Per file:
 
 ```
-108c77d77a2d5deeb45f17abfe7253a4671d42f6f41e08ccb6e4fe41efaab34b  vendor/hydramodem-auditus/__pycache__/impair.cpython-311.pyc
 324e51fc8e5bd505c269a96ca372fe5cd6b32ffb284f058c71f27afb6e6caaed  vendor/hydramodem-auditus/bicinium-awgn-18.wav
 8fe4201b69db466f42c4009b242e2dff5505f843b3472f5944bab19a779d5728  vendor/hydramodem-auditus/bicinium-clock+3000.wav
 639a300b576c4fd19cb7693a263eb8a089a0da4262a059963e805022df5d076a  vendor/hydramodem-auditus/fluxus-contiguus.wav
 525307800b7425ac37df166a1898cdb3db2529db4e756117b2268f7e05b06b6b  vendor/hydramodem-auditus/fluxus-ictus.raw
-ad769fb30d999c30f9401dcd356880bc8ec2371d7446de0b8ccebcf73547dd4a  vendor/hydramodem-auditus/fluxus.py
+eeb004db3de880d55e9de364127692a3dd589451fbda4e188ce317fdc26d499d  vendor/hydramodem-auditus/fluxus-truncus.raw
+70e1a8d231e95b512949ce8fc196ab067dc2a892518a1b1ba6e7be1976e30799  vendor/hydramodem-auditus/fluxus.py
 9d970c4fd2f662d36572e5f7c257d95afb6c0a9318e6baff79d2abb52b35b90a  vendor/hydramodem-auditus/impair.py
 6be170a1716c5baeb0247e568f2fbedb214c71650483e854f43eba33602a9ac8  vendor/hydramodem-auditus/melos-awgn-18.wav
 251415ef9570c06b330d0fc742f2ddd1c7892444d1bbe65fea56c8ac94fb43e1  vendor/hydramodem-auditus/melos-awgn-26.wav
 5dd9a0445c99f1b1fc5779d2ad6c80480433df8424bf80278abaddec20707e32  vendor/hydramodem-auditus/melos-clock+3000.wav
-7f0d5fa9739927eba5f25d02e49ab788407b43d405f96ffa2e9f6a563e4be9ae  vendor/hydramodem-auditus/verdicta.tsv
+5903dbb2f4be51edd33e8487270a28b2c46f5b7f3765a5c25fc84ade9f69766c  vendor/hydramodem-auditus/verdicta.tsv
 ```

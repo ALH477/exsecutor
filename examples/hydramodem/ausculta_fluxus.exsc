@@ -18,9 +18,12 @@
 // frame). Exit 0 at the end of the stream, 3 for a header this program refuses, 4
 // when a write fails.
 //
-// THE SEGMENTER is HydraModem's streaming receiver (hydra_rx_push, Punctim
-// hydramodem/src/hydra_modem.c), sample for sample, in the reference's units
-// (a sample over 32768):
+// THE SEGMENTER follows HydraModem's streaming receiver (hydra_rx_push, Punctim
+// hydramodem/src/hydra_modem.c), in the reference's units (a sample over 32768).
+// The reference is single-profile; this one serves both voices, so its window is
+// the bass voice's frame_len, its silence minimum the melody voice's body, it
+// flushes an open window at the end of the stream, and it recovers truncated
+// bursts (below). Otherwise the rules are the reference's:
 //   - SEARCH: noise += 0.001 (|x| - noise); a sample over max(6 noise, 0.02)
 //     starts a window;
 //   - COLLECT: until the window holds 351,840 samples -- the longest voice (the
@@ -37,10 +40,10 @@
 // melody frames at frame_tx's 60 ms gap; Punctim's test_music [6] now pins 4 of
 // 4). The replay reads the window in place: a replayed sample is written at an
 // index no greater than the one it was read from, so no read sees its own write.
-// A failed window is discarded whole, as the reference discards it -- UNLESS a
-// burst starts inside it and runs off its end (a click started the window early
-// and noise kept the silence rule from closing it): then the replay begins a
-// symbol before that burst. Measured: a stream opening with a noise click lost
+// A failed window is discarded whole, as the reference discards it -- UNLESS it
+// is full and a burst starts inside it and runs off its end (a click started the
+// window early and noise kept the silence rule from closing it): then the replay
+// begins a symbol before that burst. Measured: a stream opening with a noise click lost
 // its first frame without this, and keeps it with it.
 
 publica firma fluxus_fenestra: mensura = 351840;    // frame_len: 178 x 1920 + 2400 + 7680
@@ -53,6 +56,7 @@ publica structura Status {
     n: mensura            // samples in the window
     quies: mensura        // consecutive quiet samples
     strepitus: f64        // the noise estimate (sample units over 32768)
+    fractum: u8           // 1 once a write to standard output has failed
 }
 
 // One sample through the segmenter. Returns 1 when the window is complete and must
@@ -102,9 +106,10 @@ functio fluxus_gradus(x: &mutabilis acies<f64, 351840>, st: &mutabilis Status, v
 
 // Decode a complete window for both voices and write what decodes, melody first.
 // The segmenter is reset. Returns where the replay starts -- the first sample after
-// the last decoded frame's release -- or 0 when nothing decoded or nothing follows
-// (0 is never a replay start: a frame ends past sample 238,080). A failed write is
-// returned as 1, which is never a replay start either.
+// the last decoded frame's release, or a symbol before a truncated burst -- or 0
+// for no replay. Every replay start is at least 1, so each replay is shorter than
+// the window it came from and replays cannot loop. A failed write sets
+// `fractum` and returns 0.
 functio fluxus_tracta(s: Scriptor, x: &mutabilis acies<f64, 351840>,
                       st: &mutabilis Status) -> mensura {
     firma n = (*st).n;
@@ -125,7 +130,8 @@ functio fluxus_tracta(s: Scriptor, x: &mutabilis acies<f64, 351840>,
         si r.status eq 0 {
             per i in 0..17 {
                 si s.scribe_octeto(r.frame[i]) ne 1 {
-                    redde 1;
+                    (*st).fractum = 1;
+                    redde 0;
                 }
             }
             si r.finis gt finis {
@@ -138,10 +144,20 @@ functio fluxus_tracta(s: Scriptor, x: &mutabilis acies<f64, 351840>,
         // began inside it and ran off its end -- the window was started early by
         // a false trigger (a click), and noise kept the silence rule from ending
         // it -- replay from a symbol before that burst so its preamble and
-        // pre-roll open a fresh window. Such a burst starts at 9,120 or later
-        // (anything earlier fits the window), so the replay start is never 0 or 1.
+        // pre-roll open a fresh window. Only a FULL window: one closed by
+        // silence or by the end of the stream cut the burst because the burst
+        // itself was cut (a musical burst has no silent gap), and replaying the
+        // same samples would find the same cut -- one sample shorter each time.
+        // In a full window a truncated burst starts at sample 10,081 or later,
+        // so the replay start below is far from 0; the floor of 1 is a backstop
+        // that keeps every replay start nonzero.
         si truncus gt 0 {
-            redde truncus - 1920;
+            si n ge fluxus_fenestra {
+                si truncus gt 1921 {
+                    redde truncus - 1920;
+                }
+                redde 1;
+            }
         }
         redde 0;
     }
@@ -158,7 +174,7 @@ publica functio initium(m: Mundus) -> u8 {
     firma l = Lector.ab_introitu(a);
     firma s = Scriptor.ad_exitum(a);
     mutabilis x: acies<f64, 351840> = [0.0; 351840];
-    mutabilis st = Status { colligit: 0, n: 0, quies: 0, strepitus: 0.0 };
+    mutabilis st = Status { colligit: 0, n: 0, quies: 0, strepitus: 0.0, fractum: 0 };
     mutabilis rp: mensura = 0;          // replay cursor
     mutabilis rq: mensura = 0;          // replay end
     mutabilis finitum: u8 = 0;          // stdin exhausted
@@ -242,12 +258,26 @@ publica functio initium(m: Mundus) -> u8 {
             si fluxus_gradus(x, st, v) eq 1 {
                 firma n0 = st.n;
                 firma r = fluxus_tracta(s, x, st);
-                si r eq 1 {
+                si st.fractum eq 1 {
                     redde 4;
                 }
-                si r gt 1 {
+                si r gt 0 {
+                    // A window can complete in the middle of a replay. What is
+                    // left of that replay, x[rp..rq), must follow the new one,
+                    // x[r..n0): move it down to start at n0. n0 <= rp (a
+                    // replayed sample is never written past where it was read),
+                    // so copying upward in index never overwrites a source.
+                    mutabilis resta: mensura = 0;
+                    si rp lt rq {
+                        resta = rq - rp;
+                    }
+                    mutabilis j: mensura = 0;
+                    dum j lt resta terminus 351840 {
+                        x[n0 + j] = x[rp + j];
+                        j = j + 1;
+                    }
                     rp = r;
-                    rq = n0;
+                    rq = n0 + resta;
                 }
             }
         } aliter {
@@ -259,10 +289,10 @@ publica functio initium(m: Mundus) -> u8 {
                 si st.n ge fluxus_brevissima {
                     firma n0 = st.n;
                     firma r = fluxus_tracta(s, x, st);
-                    si r eq 1 {
+                    si st.fractum eq 1 {
                         redde 4;
                     }
-                    si r gt 1 {
+                    si r gt 0 {
                         rp = r;
                         rq = n0;
                         finitum = 1;

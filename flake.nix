@@ -363,7 +363,7 @@
       biciniumVendorDigest = "4f729256777d326c6d00e93036304738013223efffd0f2455962d9db31071e72"; # LC_ALL=C
       # vendor/hydramodem-auditus: impaired melody/duet WAVs (impair.py, stdlib) and
       # the reference receiver's verdicts. Certifies auditus*.exsc.
-      auditusVendorDigest = "07a73f7636e070917b72b6d45ac4bb15778d2c5d9932af885d08e0847be8356d"; # LC_ALL=C
+      auditusVendorDigest = "e80367754244ffc3b70bdd886e46b3c17d992cd3ae94d07f58bcd4e2f1fcb3e9"; # LC_ALL=C
 
       # vendor/streamdb-v3: a 24-document StreamDB v3 container written by the
       # real upstream C writer, three mechanically-corrupted copies of it, the

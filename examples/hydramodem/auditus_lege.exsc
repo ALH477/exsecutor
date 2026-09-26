@@ -8,7 +8,8 @@
 // read through the transmitter's own `Caput`, every field compared with what
 // HydraModem's writer puts there. 48 kHz mono 16-bit PCM only. The data length
 // must be even, hold at least the shorter voice's symbols (124 x 1920 samples),
-// and fit auditus.exsc's capacity (344,640 samples, the duet's burst).
+// and fit this driver's cap, 344,640 samples (the duet's burst), which is below
+// auditus.exsc's capacity of 351,840 (the streaming receiver's window).
 //
 // Returns the sample count, or 0 for a WAV this program will not read (the
 // drivers' exit 3).
