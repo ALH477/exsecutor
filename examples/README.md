@@ -1,6 +1,6 @@
 # examples/
 
-Exsecutor source, six programs, all compiled and run by `tests/run.sh`:
+Exsecutor source, seven programs, all compiled and run by `tests/run.sh`:
 
 - **the hello world** — `saluta.exsc`, `imprime.exsc`, `initium.exsc`,
   below; `tests/programs/saluta/` and `tools/publish-gate.sh` run it;
@@ -51,6 +51,22 @@ Exsecutor source, six programs, all compiled and run by `tests/run.sh`:
   byte-identical against `prototypes/pictura_octonaria_oracle.py` on both
   backends, all four C builds, and the big-endian mips64 qemu run. Spec
   §14 entry 27; the division/packed census is in its TEST header.
+- **`metronomus/`, a timer, clock and multiplayer tick layer** — for Kiln
+  and Punctim. `metronomus.exsc` is a pure library: an exact fixed-step clock
+  over any source frequency (a rational accumulator, a catch-up cap that
+  slips, pause and time scale), a civil wall clock with the zone offset as
+  data (and back, for setting the time), sixteen tick-counted timers, Punctim's DCF-Game INPUT body and
+  `unwrap_pid`, PING/PONG clock sync, time dilation, and an 8-player
+  lockstep/rollback input buffer. It reads no clock: the host that holds
+  `horologium` passes readings in, so identical readings give identical ticks
+  on every peer. `probatio.exsc` checks Punctim's twelve golden vectors
+  in-program; `tests/programs/metronomus/` holds its whole stream
+  byte-identical against `prototypes/metronomus_oracle.py` on both backends
+  and big-endian mips64. `metronomus.h` and `exemplum.c` are the C side for
+  Kiln, checked by `proba_c.sh`, and `exemplum_horologii.c` runs the library
+  as digital-watch firmware (set time, alarm, countdown, stopwatch), bare on
+  emulated Cortex-M4 and M0+; `metronomus/README.md` has the mutants and the
+  compiler crash it found.
 - **`signaculum/`, the logo model** — the 3D model behind this repo's mark
   (1,493 vertices, 2,981 textured faces on the fixed-point stdin stream
   `prototypes/signaculum_mesh.py` writes) rasterised at 512×512 with a 1/z
