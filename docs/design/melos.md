@@ -423,7 +423,7 @@ fixed in both implementations the same way:
 Punctim's `hydramodem/tests/test_music.c` [6] pins the C half: 4 of 4, failing
 at 1 of 4 on the old code.
 
-**Beyond the reference: truncated-burst recovery.** A click opens a window
+**Truncated-burst recovery (first here, since ported to the reference).** A click opens a window
 early; background noise (σ = 150, about −47 dBFS) keeps the silence rule from
 ever closing it; and a real burst starting inside it then runs off the window's
 end. The reference, and this receiver without the fix, discard that window and
@@ -432,8 +432,12 @@ the burst with it.
 Here, when a window decodes nothing, acquisition continues past the
 complete-burst range for a known prefix (nknown − 3 matches) whose burst does
 not fit, and the driver replays from a symbol before it. This runs only after
-the reference's own scan has failed, so no verdict changes. It is **not** in
-the C receiver; porting it is open.
+the reference's own scan has failed, so no verdict changes. HydraModem 2.0.1
+(Punctim 21bb074) ported it to the C streaming receiver, full-window rule
+included. Run once per voice, the C receiver gives this receiver's frames on
+all three vendored streams. On `fluxus-ictus.raw` the bass voice gives A, where
+2.0.0 gave none. On the contiguous stream the melody voice gives A, A, Z and the
+bass voice gives Z.
 
 **The certificate:**
 
@@ -484,6 +488,5 @@ never pass reads. This path is argued, not exercised by a vendored input
 
 **Not done:**
 
-- truncated-burst recovery in the C receiver;
 - a duet streaming receiver in C (`hydra_rx_push` is single-profile);
 - live audio on real hardware.
