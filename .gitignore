@@ -9,3 +9,6 @@ __pycache__/
 result
 result-*
 .direnv/
+
+# Truthgate run receipt (python3 -m truthgate verify --receipt); not a source file
+.truthgate/receipt.json
