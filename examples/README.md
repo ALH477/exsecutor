@@ -1,6 +1,6 @@
 # examples/
 
-Exsecutor source, seven programs, all compiled and run by `tests/run.sh`:
+Exsecutor source, eight programs, all compiled and run by `tests/run.sh`:
 
 - **the hello world** — `saluta.exsc`, `imprime.exsc`, `initium.exsc`,
   below; `tests/programs/saluta/` and `tools/publish-gate.sh` run it;
@@ -67,6 +67,17 @@ Exsecutor source, seven programs, all compiled and run by `tests/run.sh`:
   as digital-watch firmware (set time, alarm, countdown, stopwatch), bare on
   emulated Cortex-M4 and M0+; `metronomus/README.md` has the mutants and the
   compiler crash it found.
+- **`tempus/`, the time register** — one DeModFrame carrying a node's held
+  time onto the Punctim wire, and the read of one that arrives. Built as one
+  unit with §14 entry 23's fixture and codex, so the frame declaration is
+  spec §5.2's and the CRC, seal and verdict are the codec certified against
+  all 246 vendored vectors; the register restates nothing about the wire.
+  Time advances only while the clock is granted, the room and the sequence
+  number are what Punctim's `meta` and `seq` are, and a reader unwraps the
+  24-bit timestamp into an era the wire never carries. `probatio.exsc`
+  seals two published frames from their fields in-program;
+  `tests/programs/tempus/` holds the stream byte-identical against
+  `prototypes/tempus_oracle.py` on both backends and big-endian mips64.
 - **`signaculum/`, the logo model** — the 3D model behind this repo's mark
   (1,493 vertices, 2,981 textured faces on the fixed-point stdin stream
   `prototypes/signaculum_mesh.py` writes) rasterised at 512×512 with a 1/z

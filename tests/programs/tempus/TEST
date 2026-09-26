@@ -1,0 +1,23 @@
+# examples/tempus/: the time register -- one DeModFrame carrying a node's
+# held time onto the Punctim wire, and the read of one that arrives -- driven
+# by its probatio.exsc.
+#
+# THE UNIT IS FOUR FILES, in this order: §14 entry 23's fixture (the
+# DeModFrame declaration, spec §5.2 verbatim), entry 23's codex (the codec
+# certified against all 246 vendored vectors), the register, the driver. The
+# register restates nothing about the wire; the codec it calls is the one the
+# conformance suite certifies.
+#
+# expected.out is WRITTEN BY prototypes/tempus_oracle.py -- struct.pack, a
+# table-driven CRC, Punctim's unwrap formula -- not by this program:
+#   python3 prototypes/tempus_oracle.py --wire vendor/hydramesh-wire/golden_vectors.json \
+#       tests/programs/tempus/expected.out
+# and `--wire` checks the oracle's own CRC against every encode-basis vector
+# and the anchors before it writes anything.
+#
+# The exit status is the program's own check that it SEALS two published
+# frames from their fields: golden_vectors.json's exampleFrame_full (10 on a
+# mismatch) and the frame HydraModem's transmitter renders (11).
+#
+# cross=yes: the same bytes from the C backend's mips64-none-o64 row.
+TEST: expect-exit=0 sources=tests/conformance/entry23_demodframe_golden_vectors.exsc,tests/conformance/entry23/codex.exsc,examples/tempus/tempus.exsc,examples/tempus/probatio.exsc cross=yes
