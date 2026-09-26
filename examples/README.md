@@ -1,6 +1,6 @@
 # examples/
 
-Exsecutor source, nine programs, all compiled and run by `tests/run.sh`:
+Exsecutor source, ten programs, all compiled and run by `tests/run.sh`:
 
 - **the hello world** — `saluta.exsc`, `imprime.exsc`, `initium.exsc`,
   below; `tests/programs/saluta/` and `tools/publish-gate.sh` run it;
@@ -103,6 +103,16 @@ Exsecutor source, nine programs, all compiled and run by `tests/run.sh`:
   `prototypes/signaculum_oracle.py` (itself ported to the lane pipeline)
   on both backends, all four C builds and the cross run;
   it is the program that closed float `load`/`store` in both emitters.
+- **`onus/`, the theme song** — "Onus Oligarchiae", Oligarchy's theme, a
+  5/4 march after Holst's Mars with a jester's piccolo loose in it, written
+  as a Standard MIDI File: `partitura.exsc` is the score as pure tables,
+  `onus.exsc` the engraver, streaming each track with a carried delta and
+  walking it twice (count, then write) for the MTrk length.
+  `tests/programs/onus_oligarchiae/` holds its 7,897 bytes against
+  `prototypes/onus_oracle.py`'s, which sorts absolute-time events instead.
+  It passes on the reference backend; its C-backend builds are
+  `[UNTESTED]` (`onus/README.md`). Oligarchy's FAUST orchestra performs
+  the file.
 
 And one more that is **not** yet in the "all compiled and run" count above,
 because it has not been: **`somnium/`, the screensaver engine** — one
