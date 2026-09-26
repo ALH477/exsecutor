@@ -1,0 +1,5 @@
+# The MUSICAL receiver (examples/hydramodem/auditus*.exsc, docs/design/melos.md
+# section 9), melody voice, on HydraModem's own melody render of dcf_loopback's
+# frame. stdout must be the frame's 17 bytes (expected.out). A verdict, not bit
+# identity, as receptor.exsc's certificate is (ADR 0014).
+TEST: expect-exit=0 stdin=vendor/hydramodem-melos/d310123400a1ffffdeadbeef0a1b2ca961.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/melos.exsc,examples/hydramodem/bassus.exsc,examples/hydramodem/receptor.exsc,examples/hydramodem/auditus.exsc,examples/hydramodem/auditus_lege.exsc,examples/hydramodem/melos_recipe.exsc

@@ -1,0 +1,4 @@
+# The melody receiver at -26 dB, below the knee: the reference finds no frame and
+# neither does this receiver. Exit 1 and NOTHING written (the empty expected.out):
+# the receiver never writes a frame it has not checked.
+TEST: expect-exit=1 stdin=vendor/hydramodem-auditus/melos-awgn-26.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/melos.exsc,examples/hydramodem/bassus.exsc,examples/hydramodem/receptor.exsc,examples/hydramodem/auditus.exsc,examples/hydramodem/auditus_lege.exsc,examples/hydramodem/melos_recipe.exsc

@@ -1,0 +1,38 @@
+// examples/hydramodem/bassus_emitte.exsc -- the writer for the bass voice alone
+// (`--profile bass`, tx_gain 0.9, no drone), as melos_emitte.exsc is for the
+// melody: the header, 960 zeros, the attack, 178 symbols, the release, 960
+// zeros. One phase counter, advanced before its sample, walked with
+// melos_emitte.exsc's `melos_gradus`, whose unit this file is compiled into.
+
+functio bassus_modula(s: Scriptor, f: acies<u8, 17>) -> mensura {
+    firma q: acies<f64, 481> = melos_quadrans();
+    firma c: u16 = redundantia(f, 17);
+    firma b = bassus_caput() sicut acies<u8, 44>;
+    mutabilis n: mensura = 0;
+    per i in 0..44 {
+        n = n + s.scribe_octeto(b[i]);
+    }
+    n = n + melos_scribe_silentium(s);
+    mutabilis a: mensura = 0;
+    mutabilis h: mensura = bassus_harmonicus(bassus_tonus(f, c, 0));
+    per i in 0..melos_rampa {
+        a = melos_gradus(a, h);
+        n = n + melos_scribe_exemplum(s,
+                melos_scribibilis(melos_vox_simplex(q, 0.9, a, melos_ascensus(q, i))));
+    }
+    per y in 0..bassus_symbola {
+        h = bassus_harmonicus(bassus_tonus(f, c, y));
+        per i in 0..melos_exempla_symboli {
+            a = melos_gradus(a, h);
+            n = n + melos_scribe_exemplum(s,
+                    melos_scribibilis(melos_vox_simplex(q, 0.9, a, 1.0)));
+        }
+    }
+    per j in 0..melos_rampa {
+        a = melos_gradus(a, h);
+        n = n + melos_scribe_exemplum(s,
+                melos_scribibilis(melos_vox_simplex(q, 0.9, a, melos_descensus(q, j))));
+    }
+    n = n + melos_scribe_silentium(s);
+    redde n;
+}

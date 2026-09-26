@@ -112,8 +112,11 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-178}"
 # IR fixtures: 53 -> 64 is Stage 5.1's vector float group (sse-ir.md 2.2):
 # vec_arith and vec_mem positive, four rejections (parse lanes, verifier
 # x2 maior/minor, emitter vadd-on-scalar), all with C-backend parity.
+# Programs 104 -> 126: the musical HydraModem examples (transmitter melos/
+# bassus/bicinium, receiver auditus, streaming receiver auditus_fluxus), set to
+# the count measured with them in.
 IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-64}"
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-104}"
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-126}"
 
 # The differential phase (run_differential_tests, below), which compiles the
 # C backend's emitted units and runs them against the same expectations the
@@ -157,8 +160,12 @@ DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-184}"
 #     33 -> 34 and 132 -> 136: pictura_octonaria/ (Stage 5.3), its own unit --
 #     the lane rasterizer's 1.5 MB image byte-identical across the four
 #     toolchains.
-DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-34}"
-DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-136}"
+#     34 -> 56 and 136 -> 224: the musical HydraModem examples (melos_*,
+#     bassus_*, bicinium_*, auditus_*, auditus_fluxus_*), eligible and
+#     agreeing under all four builds; the floors are set to the counts
+#     measured with them in (56 directories, 224 runs).
+DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-56}"
+DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-224}"
 
 # The cross phase's own floor, deliberately NOT folded into the differential
 # numbers above: a cross-compiled, emulated run of a 32-bit-`mensura` unit is
@@ -2104,9 +2111,9 @@ run_cross_tests() {
   rm -rf "$workdir"
 
   note "discovered $found program directories opted into the cross phase (floor $CROSS_PROGRAM_FLOOR)"
-  floor_check "cross program directories" "$found" "$CROSS_PROGRAM_FLOOR"
+  floor_check "cross program directories" "$found" "$CROSS_PROGRAM_FLOOR" CROSS_PROGRAM_FLOOR
   note "$ran of them ran"
-  floor_check "cross runs" "$ran" "$CROSS_PROGRAM_FLOOR"
+  floor_check "cross runs" "$ran" "$CROSS_PROGRAM_FLOOR" CROSS_PROGRAM_FLOOR
 }
 
 

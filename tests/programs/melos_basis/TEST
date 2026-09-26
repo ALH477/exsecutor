@@ -1,0 +1,15 @@
+# The melody-profile transmitter certified on a basis, as hydramodem_basis/
+# certifies the default profile. melos_basis.exsc writes, for each of 137
+# words -- seventeen zero bytes, then wire bit i = 0..135 set, MSB first --
+# the note of each of the frame's 124 symbols (0-7), one byte a symbol, as
+# melos.exsc's `melos_tonus` decides it. stdout is compared with `cmp`
+# against hydra_frame_build's own symbols for the same words
+# (vendor/hydramodem-melos/symbola_basis.bin; PROVENANCE.md prints the
+# program). Byte-identical is 137/137; given that each symbol's bits are
+# affine over GF(2) in the word -- argued, not measured -- it is agreement on
+# all 2^136 inputs.
+#
+# Locating a failure: cmp's byte N is symbol s = (N - 1) mod 124 of basis
+# word k = (N - 1) div 124. Symbols 0-11 are the preamble, 12-17 the sync
+# word, and s >= 18 is data symbol d = s - 18, interleaved bits 3d..3d+2.
+TEST: expect-exit=0 stdout=vendor/hydramodem-melos/symbola_basis.bin sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/melos.exsc,examples/hydramodem/melos_basis.exsc

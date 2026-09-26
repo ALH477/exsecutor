@@ -1,0 +1,7 @@
+# The bass voice certified on a basis, as melos_basis/ certifies the melody: the
+# note (0-3) of each of 178 symbols for 137 words, compared with `cmp` against
+# hydra_frame_build's own (vendor/hydramodem-bicinium/symbola_bassus.bin).
+# 137/137 is, given the affinity argued in docs/design/melos.md, all 2^136
+# inputs. cmp's byte N is symbol (N - 1) mod 178 of word (N - 1) div 178;
+# symbols 0-11 preamble, 12-19 sync, s >= 20 data symbol s - 20.
+TEST: expect-exit=0 stdout=vendor/hydramodem-bicinium/symbola_bassus.bin sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/melos.exsc,examples/hydramodem/bassus.exsc,examples/hydramodem/bassus_basis.exsc

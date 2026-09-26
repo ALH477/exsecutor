@@ -1,6 +1,6 @@
 # examples/
 
-Exsecutor source, eight programs, all compiled and run by `tests/run.sh`:
+Exsecutor source, nine programs, all compiled and run by `tests/run.sh`:
 
 - **the hello world** — `saluta.exsc`, `imprime.exsc`, `initium.exsc`,
   below; `tests/programs/saluta/` and `tools/publish-gate.sh` run it;
@@ -11,6 +11,14 @@ Exsecutor source, eight programs, all compiled and run by `tests/run.sh`:
   vendored reference WAVs, and `hydramodem_basis/` compares its symbol
   streams on a 137-word basis, which under the design's affinity argument
   covers every 17-byte input;
+- **`hydramodem/`, the melody transmitter** (`melos*.exsc`) — HydraModem's
+  musical profile: just-intonation 8-FSK over a drone, 481,964 bytes of WAV
+  byte for byte with the reference (`tests/programs/melos_*/`,
+  `docs/design/melos.md`), with the **bass voice** (`bassus*.exsc`) and the
+  **duet** (`bicinium_emitte.exsc`, two frames in one burst), each 689,324
+  bytes byte for byte (`tests/programs/{bassus,bicinium}_*/`), and a **receiver**
+  for all three (`auditus*.exsc`, `tests/programs/auditus_*/`: clean, noisy and
+  clock-shifted inputs, matching the reference's verdicts);
 - **`hydramodem/`, the receiver** — reads one of those WAVs from standard
   input and writes the 17-byte frame back out, or exits with a code that
   says why not. `tests/programs/receptio_*/` feed it the three vendored

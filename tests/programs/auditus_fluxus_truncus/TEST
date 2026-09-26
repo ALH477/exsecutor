@@ -1,0 +1,7 @@
+# The streaming receiver on RAW s16le: a click opens a window, a melody burst
+# starts within its first symbol, and a dropout closes the window before the
+# burst ends: the burst starts about 1,400 samples into a window shorter
+# than the longest voice. The replay must start at sample 1; the first draft
+# computed `truncus - 1920`, which traps on this stream (exit 132, measured).
+# After the dropout, the bass burst of A must still come through.
+TEST: expect-exit=0 stdin=vendor/hydramodem-auditus/fluxus-truncus.raw sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/melos.exsc,examples/hydramodem/bassus.exsc,examples/hydramodem/receptor.exsc,examples/hydramodem/auditus.exsc,examples/hydramodem/ausculta_fluxus.exsc

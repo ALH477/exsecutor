@@ -1,0 +1,4 @@
+# The musical receiver on the DUET: both voices decoded from one burst by the
+# same samples, melody first (the loopback frame), bass second (the zero word),
+# 34 bytes -- the order poly_rx prints.
+TEST: expect-exit=0 stdin=vendor/hydramodem-bicinium/bicinium-d310123400a1ffffdeadbeef0a1b2ca961-0000000000000000000000000000000000.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/melos.exsc,examples/hydramodem/bassus.exsc,examples/hydramodem/receptor.exsc,examples/hydramodem/auditus.exsc,examples/hydramodem/auditus_lege.exsc,examples/hydramodem/bicinium_recipe.exsc

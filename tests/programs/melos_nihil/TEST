@@ -1,0 +1,8 @@
+# The melody-profile transmitter (examples/hydramodem/melos*.exsc) on the zero
+# word: seventeen zero bytes, not a valid DeModFrame, nonzero modem CRC. Kept
+# for its release: the release plays the last symbol's note, which is 0 for
+# every valid frame and 4 here, so this is the WAV that checks the other one
+# (docs/design/melos.md). stdout compared with `cmp`, all 481,964 bytes,
+# with frame_tx --profile melody's render (vendor/hydramodem-melos/). Sample
+# layout as in melos_loopback/TEST.
+TEST: expect-exit=0 stdout=vendor/hydramodem-melos/0000000000000000000000000000000000.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/melos.exsc,examples/hydramodem/melos_emitte.exsc,examples/hydramodem/melos_nihil.exsc

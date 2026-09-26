@@ -1,0 +1,85 @@
+// examples/hydramodem/melos_emitte.exsc -- the writer for melos.exsc, as
+// emitte.exsc is for modulator.exsc. It walks the layout and puts every
+// byte of the WAV on a Scriptor, one `scribe_octeto` per byte: the 44-byte
+// header, then 240,960 samples of two bytes each. It holds the three phase
+// counters music_render holds -- the carrier's `a` and the drones' `b1` and
+// `b2`, each in 1920ths of a cycle, each a walk with one subtraction to wrap
+// (every step is below 1920) -- and melos.exsc decides every sample from
+// them. The order is the reference's: the carrier advances BEFORE its
+// sample, a drone after.
+//
+// The helpers write no `poscit`; their rows are inferred (spec §4.1 rule 5),
+// for the reason emitte.exsc gives (docs/design/wire-codec.md finding 9).
+
+functio melos_scribe_exemplum(s: Scriptor, v: u16) -> mensura {
+    firma b = Exemplum { valor: v } sicut acies<u8, 2>;
+    mutabilis n: mensura = s.scribe_octeto(b[0]);
+    n = n + s.scribe_octeto(b[1]);
+    redde n;
+}
+
+functio melos_scribe_caput(s: Scriptor) -> mensura {
+    firma b = melos_caput() sicut acies<u8, 44>;
+    mutabilis n: mensura = 0;
+    per i in 0..44 {
+        n = n + s.scribe_octeto(b[i]);
+    }
+    redde n;
+}
+
+functio melos_scribe_silentium(s: Scriptor) -> mensura {
+    mutabilis n: mensura = 0;
+    per i in 0..melos_silentium {
+        n = n + melos_scribe_exemplum(s, 0);
+    }
+    redde n;
+}
+
+// A phase advanced by h and wrapped into 0..1919.
+functio melos_gradus(x: mensura, h: mensura) -> mensura {
+    firma y: mensura = x + h;
+    si y ge melos_exempla_symboli {
+        redde y - melos_exempla_symboli;
+    }
+    redde y;
+}
+
+// The whole WAV for the frame whose bytes are f. Returns the bytes written:
+// 481,964 when every call wrote its byte.
+functio melos_modula(s: Scriptor, f: acies<u8, 17>) -> mensura {
+    firma q: acies<f64, 481> = melos_quadrans();
+    firma c: u16 = redundantia(f, 17);
+    mutabilis n: mensura = melos_scribe_caput(s);
+    n = n + melos_scribe_silentium(s);
+    mutabilis a: mensura = 0;
+    mutabilis b1: mensura = 0;
+    mutabilis b2: mensura = 0;
+
+    // attack: R samples of symbol 0's note, rising
+    mutabilis h: mensura = melos_harmonicus(melos_tonus(f, c, 0));
+    per i in 0..melos_rampa {
+        a = melos_gradus(a, h);
+        n = n + melos_scribe_exemplum(s, melos_vox(q, a, b1, b2, melos_ascensus(q, i)));
+        b1 = melos_gradus(b1, 12);
+        b2 = melos_gradus(b2, 18);
+    }
+    // the symbols, at full level
+    per y in 0..melos_symbola {
+        h = melos_harmonicus(melos_tonus(f, c, y));
+        per i in 0..melos_exempla_symboli {
+            a = melos_gradus(a, h);
+            n = n + melos_scribe_exemplum(s, melos_vox(q, a, b1, b2, 1.0));
+            b1 = melos_gradus(b1, 12);
+            b2 = melos_gradus(b2, 18);
+        }
+    }
+    // release: R samples of the last symbol's note, falling
+    per j in 0..melos_rampa {
+        a = melos_gradus(a, h);
+        n = n + melos_scribe_exemplum(s, melos_vox(q, a, b1, b2, melos_descensus(q, j)));
+        b1 = melos_gradus(b1, 12);
+        b2 = melos_gradus(b2, 18);
+    }
+    n = n + melos_scribe_silentium(s);
+    redde n;
+}

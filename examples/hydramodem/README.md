@@ -26,6 +26,79 @@ bitwise and or or and no signed shift; what it costs is four **negative
 controls** — mutants that decode anyway — which `docs/design/receptor.md`
 section 6 names rather than hides.
 
+## The melody profile
+
+`melos*.exsc` is a second transmitter beside the first: HydraModem's MUSICAL
+`melody` profile. It is 8-FSK on a just-intonation major pentatonic drawn
+from the harmonic series of 25 Hz, Gray-mapped, over a 300 + 450 Hz drone,
+with a 10 ms attack and release. It writes the reference's 481,964-byte WAV
+byte for byte, and its symbol stream on all 137 basis words
+(`tests/programs/melos_{loopback,nihil,basis}/`, reference output in
+`vendor/hydramodem-melos/`, design in `docs/design/melos.md`):
+
+```sh
+build/exsc aedifica --hospes x86_64-linux \
+  examples/hydramodem/quantum.exsc examples/hydramodem/modulator.exsc \
+  examples/hydramodem/melos.exsc examples/hydramodem/melos_emitte.exsc \
+  examples/hydramodem/melos_loopback.exsc -o melos.asm
+fasmg melos.asm melos && chmod +x melos
+./melos > melody.wav
+cmp melody.wav vendor/hydramodem-melos/d310123400a1ffffdeadbeef0a1b2ca961.wav
+```
+
+Play `melody.wav`: five seconds of a tune over a drone, not a warble. It is
+the same seventeen bytes.
+
+The **bass voice** (`bassus*.exsc`, D2 B2 D3 A3, 75–225 Hz) and the **duet**
+(`bicinium_emitte.exsc`: two frames in one burst, melody over bass, the melody
+entering 54 symbols in) are the same machinery. Both are byte-identical to
+HydraModem's `frame_tx --profile bass` and `poly_tx`
+(`tests/programs/{bassus_loopback,bicinium_loopback,bassus_basis}/`,
+`vendor/hydramodem-bicinium/`, `docs/design/melos.md` section 8):
+
+```sh
+build/exsc aedifica --hospes x86_64-linux \
+  examples/hydramodem/quantum.exsc examples/hydramodem/modulator.exsc \
+  examples/hydramodem/melos.exsc examples/hydramodem/melos_emitte.exsc \
+  examples/hydramodem/bassus.exsc examples/hydramodem/bicinium_emitte.exsc \
+  examples/hydramodem/bicinium_loopback.exsc -o duet.asm
+fasmg duet.asm duet && chmod +x duet && ./duet > duet.wav
+```
+
+## The musical receiver
+
+`auditus*.exsc` receives all three: the melody, the bass, and both frames of
+the duet. It is HydraModem's `decode_window` (acquisition plateau, fine
+refinement, timing loop), with a sliding DFT in place of the prefix sums the
+44 MB duet would need. Each vendored render decodes, and so do noisy (−18 dB)
+and clock-shifted (+3000 ppm) copies, matching the reference's verdicts
+(`tests/programs/auditus_*/`, `vendor/hydramodem-auditus/`,
+`docs/design/melos.md` section 9):
+
+```sh
+build/exsc aedifica --hospes x86_64-linux \
+  examples/hydramodem/{quantum,modulator,melos,bassus,receptor,auditus,auditus_lege,bicinium_recipe}.exsc \
+  -o hear.asm
+fasmg hear.asm hear && chmod +x hear
+./hear < duet.wav | od -An -tx1      # frame A (melody) then frame B (bass)
+```
+
+## Streaming
+
+`ausculta_fluxus.exsc` is the same receiver on an unbounded stream: raw s16le
+48 kHz mono (or WAV) in, each frame out the moment it decodes. It handles
+melody, bass and duet bursts in any order, back to back, and a burst preceded by
+a noise click (`tests/programs/auditus_fluxus_*/`, `docs/design/melos.md`
+section 10):
+
+```sh
+build/exsc aedifica --hospes x86_64-linux \
+  examples/hydramodem/{quantum,modulator,melos,bassus,receptor,auditus,ausculta_fluxus}.exsc \
+  -o listen.asm
+fasmg listen.asm listen && chmod +x listen
+arecord -q -t raw -f S16_LE -r 48000 -c 1 | ./listen | od -An -tx1 -w17
+```
+
 ## Hear it first
 
 `loopback.wav` in this directory is what `loopback.exsc` writes: 0.396 s of
@@ -99,6 +172,19 @@ checked. `modulator.exsc` is in the unit because the receiver reuses its
 | `receptor.exsc` | the receiver: the Q7 oscillator table, the window energy, acquisition, the soft bits, the 64-state Viterbi, the residue | none: pure |
 | `recipe.exsc` | reads a WAV from standard input, verifies its header, builds the prefix sums, writes the 17 bytes | `Mundus`, from which `ambitus` (`Lector` and `Scriptor`) |
 | `circuitus.exsc` | the loopback certificate: 140 words out through `sona` and back through `receptor.exsc`, in one process | `Mundus`, from which `ambitus` (`Scriptor` only — it reads nothing) |
+| `melos.exsc` | the melody-profile transmitter: the quarter-wave table, one sample, the envelope, the Gray note table, the symbol stream | none: pure |
+| `melos_emitte.exsc` | walks the melody layout with its three phase counters and writes every byte to a `Scriptor` | whatever the `Scriptor` carries |
+| `melos_loopback.exsc`, `melos_nihil.exsc` | one `initium` each, one frame, melody profile | `Mundus`, from which `ambitus` |
+| `melos_basis.exsc` | the melody certificate driver: 124 notes (0–7) of each of the 137 basis words | `Mundus`, from which `ambitus` |
+| `bassus.exsc` | the bass voice: its note table, its 178-symbol stream, the header it and the duet share | none: pure |
+| `bassus_emitte.exsc` | writes the bass alone | whatever the `Scriptor` carries |
+| `bicinium_emitte.exsc` | writes the duet: both voices' phase counters, the melody entering at symbol 54, their f32 sum | whatever the `Scriptor` carries |
+| `bassus_loopback.exsc`, `bicinium_loopback.exsc` | one `initium` each: the bass alone, and the duet (a frame on the melody, the zero word on the bass) | `Mundus`, from which `ambitus` |
+| `bassus_basis.exsc` | the bass certificate driver: 178 notes (0–3) of each of the 137 basis words | `Mundus`, from which `ambitus` |
+| `auditus.exsc` | the musical receiver: sliding-DFT acquisition, plateau and fine refinement, the timing loop, max-log soft bits, for either voice | none: pure |
+| `auditus_lege.exsc` | reads and verifies a WAV into the caller's array (`&mutabilis`) | the `Lector`'s |
+| `melos_recipe.exsc`, `bassus_recipe.exsc`, `bicinium_recipe.exsc` | stdin drivers: one voice's 17 bytes, or the duet's 34 | `Mundus`, from which `ambitus` (`Lector` and `Scriptor`) |
+| `ausculta_fluxus.exsc` | the streaming driver: the reference segmenter, consume-and-replay, truncated-burst recovery; a frame out per decode | `Mundus`, from which `ambitus` (`Lector` and `Scriptor`) |
 
 Only a driver names `Mundus`. `modulator.exsc` and `receptor.exsc` declare no
 `poscit` and take no capability, so they are pure in spec §4.1 rule 6's sense:

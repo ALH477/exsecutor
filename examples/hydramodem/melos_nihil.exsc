@@ -1,0 +1,32 @@
+// examples/hydramodem/melos_nihil.exsc -- the melody-profile driver for the
+// zero word: seventeen zero bytes, `signum` included, so not a valid
+// DeModFrame and with a nonzero modem CRC. It is here for its LAST symbol.
+// Every valid frame's modem CRC is 0x0000, which makes its last symbol 0;
+// this word's is 4, the only other value the last symbol can take (one data
+// bit and two pad bits). The release plays the last symbol's note, so this
+// WAV is the one that checks the other release
+// (docs/design/melos.md, "What the certificate covers"). It writes
+// vendor/hydramodem-melos/0000000000000000000000000000000000.wav, byte for
+// byte (tests/programs/melos_nihil/). Exit 0 when all 481,964 bytes were
+// written, 1 otherwise.
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma s = Scriptor.ad_exitum(a);
+    firma f = DeModFrame {
+        signum: 0,
+        versio: 0,
+        genus: 0,
+        numerus: 0,
+        fons: 0,
+        meta: 0,
+        onus: 0,
+        tempus: 0,
+        cursus: 0
+    };
+    si melos_modula(s, f sicut acies<u8, 17>) ne 481964 {
+        redde 1;
+    }
+    redde 0;
+}

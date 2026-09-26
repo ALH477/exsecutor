@@ -1,0 +1,4 @@
+# The musical receiver, melody voice, on the zero word's render: seventeen zero
+# bytes back. Not a valid DeModFrame, but the modem CRC covers all 17 bytes and
+# DCF validity is a layer above the modem's.
+TEST: expect-exit=0 stdin=vendor/hydramodem-melos/0000000000000000000000000000000000.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/melos.exsc,examples/hydramodem/bassus.exsc,examples/hydramodem/receptor.exsc,examples/hydramodem/auditus.exsc,examples/hydramodem/auditus_lege.exsc,examples/hydramodem/melos_recipe.exsc

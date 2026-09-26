@@ -1,0 +1,76 @@
+// examples/hydramodem/bassus.exsc -- HydraModem's BASS voice (`bass` profile),
+// as pure functions: the note of each of a frame's 178 symbols, and the layout
+// the bass alone and the duet share. The sibling of melos.exsc, and pure the same
+// way: no `poscit`, no capability, no `initium`. Its samples come from melos.exsc
+// (the one sine table, `melos_vox_simplex`, `melos_scribibilis`).
+//
+// The reference is Punctim's hydramodem/ at 3aeff9d -- `hydra_profile_bass`
+// (hydra_profile.c) and `music_render` / `hydra_modem_tx_poly` (hydra_modem.c),
+// specified in its docs/MUSIC.md, "Bass and polyphony" -- and
+// vendor/hydramodem-bicinium/ holds what its frame_tx and poly_tx rendered.
+// docs/design/melos.md section 8 is the design.
+//
+// The profile: 25 baud (1920 samples a symbol), 4-FSK on harmonics 3 5 6 9 of
+// 25 Hz -- D2 B2 D3 A3, 75 to 225 Hz, the bass notes of the melody's D
+// pentatonic that lie on the 25 Hz grid -- Gray-mapped as melos.exsc's are; a
+// 12-symbol preamble, sync 0x2DD4, the code and interleaver of modulator.exsc;
+// no drone; the same 10 ms attack and release. Two bits a symbol, so 12 + 8 + 158
+// = 178 symbols: 7.12 s of notes.
+
+// ---- the layout ------------------------------------------------------------
+
+// 960 zeros, 480 + 178 x 1920 + 480 = 342,720 samples of span, 960 zeros:
+// 344,640 samples, 689,280 bytes of audio after the header. The duet's is the
+// same length -- its bass voice is the longer one -- so both use this header.
+publica firma bassus_symbola: mensura = 178;
+
+publica functio bassus_caput() -> Caput {
+    redde Caput {
+        riff: 0x52494646,
+        magnitudo: 689316,
+        wave: 0x57415645,
+        fmt: 0x666d7420,
+        fmt_longitudo: 16,
+        codex: 1,
+        canales: 1,
+        frequentia: 48000,
+        octeti_secundo: 96000,
+        passus: 2,
+        latitudo: 16,
+        data: 0x64617461,
+        longitudo: 689280
+    };
+}
+
+// ---- the notes ------------------------------------------------------------------
+
+// Symbol k plays harmonic H[k] of 25 Hz. Degrees 3 5 6 9 land on symbols
+// d xor (d >> 1) = 0 1 3 2, which is this table read the other way. The
+// preamble's notes, symbols 0 and 3, are 75 and 150 Hz: a D2-D3 octave.
+functio bassus_harmonici() -> acies<mensura, 4> {
+    redde [3, 5, 9, 6];
+}
+
+publica functio bassus_harmonicus(k: mensura) -> mensura {
+    firma h: acies<mensura, 4> = bassus_harmonici();
+    redde h[k];
+}
+
+// The symbol s (0 <= s < 178) of the frame f whose modem CRC is c: 12 preamble
+// symbols alternating 0 and 3, the 16 sync bits two to a symbol (8 symbols, no
+// padding), then the 316 interleaved coded bits two to a symbol (158, no
+// padding). Bits most significant first (hydra_bits_to_symbols).
+publica functio bassus_tonus(f: acies<u8, 17>, c: u16, s: mensura) -> mensura {
+    si s lt 12 {
+        si praeambulum(s) eq 1 {
+            redde 3;
+        }
+        redde 0;
+    }
+    si s lt 20 {
+        firma n: mensura = (s - 12) + (s - 12);
+        redde (synchronia(n) sursum 1) + synchronia(n + 1);
+    }
+    firma d: mensura = (s - 20) + (s - 20);
+    redde (melos_datum(f, c, d) sursum 1) + melos_datum(f, c, d + 1);
+}

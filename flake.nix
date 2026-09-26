@@ -350,6 +350,21 @@
       # excluded, LC_ALL=C pinned.
       rxVendorDigest = "4d8769c2a544057600d7271cfc75bac58dfe2801d97a9486eb6dbcddcc9ca05e"; # LC_ALL=C
 
+      # vendor/hydramodem-melos: the MUSICAL (melody-profile) transmitter's
+      # reference output -- two WAVs and the 137-word symbol basis, rendered by
+      # Punctim's hydramodem at 5c6a4e1 (PROVENANCE.md there has the recipe).
+      # Certifies examples/hydramodem/melos*.exsc (tests/programs/melos_*/).
+      # A separate tree and digest from hydramodem-tx: a different profile,
+      # re-vendored for different reasons. Same discipline: PROVENANCE.md
+      # excluded, LC_ALL=C pinned.
+      melosVendorDigest = "106744814f7cc21f7e331ca2e5473d42da001e0131d9a7c2871b3a9c7deefd34"; # LC_ALL=C
+      # vendor/hydramodem-bicinium: the bass voice and the duet (two frames, one
+      # burst) -- Punctim hydramodem at 3aeff9d. Certifies bassus*/bicinium*.exsc.
+      biciniumVendorDigest = "4f729256777d326c6d00e93036304738013223efffd0f2455962d9db31071e72"; # LC_ALL=C
+      # vendor/hydramodem-auditus: impaired melody/duet WAVs (impair.py, stdlib) and
+      # the reference receiver's verdicts. Certifies auditus*.exsc.
+      auditusVendorDigest = "e80367754244ffc3b70bdd886e46b3c17d992cd3ae94d07f58bcd4e2f1fcb3e9"; # LC_ALL=C
+
       # vendor/streamdb-v3: a 24-document StreamDB v3 container written by the
       # real upstream C writer, three mechanically-corrupted copies of it, the
       # 24 raw document payloads, and expectation.json -- a machine-readable
@@ -632,6 +647,91 @@
           '';
         };
 
+        # Same check for vendor/hydramodem-melos (the melody-profile reference
+        # output, melosVendorDigest above).
+        melos-vendor-integrity = pkgs.stdenvNoCC.mkDerivation {
+          name = "check-vendor-hydramodem-melos-integrity";
+          nativeBuildInputs = [ pkgs.coreutils pkgs.findutils ];
+          dontUnpack = true;
+          buildCommand = ''
+            set -e
+            export LC_ALL=C
+            mkdir -p work/vendor
+            cp -r --no-preserve=mode -- ${./vendor/hydramodem-melos} work/vendor/hydramodem-melos
+            cd work
+            actual="$(find vendor/hydramodem-melos -type f ! -name PROVENANCE.md | sort | xargs sha256sum | sha256sum | cut -d' ' -f1)"
+            echo "expected (LC_ALL=C): ${melosVendorDigest}"
+            echo "actual   (LC_ALL=C): $actual"
+            if [ "$actual" != "${melosVendorDigest}" ]; then
+              echo "" >&2
+              echo "FAIL: vendor/hydramodem-melos content hash does not match." >&2
+              echo "These files are HydraModem's melody-profile reference output," >&2
+              echo "vendored verbatim and never edited here. A mismatch means a" >&2
+              echo "local edit or a re-vendor; report it rather than updating" >&2
+              echo "this digest to match." >&2
+              exit 1
+            fi
+            mkdir -p "$out"
+            echo "$actual" > "$out"/digest
+          '';
+        };
+
+        # Same check for vendor/hydramodem-bicinium (biciniumVendorDigest above).
+        bicinium-vendor-integrity = pkgs.stdenvNoCC.mkDerivation {
+          name = "check-vendor-hydramodem-bicinium-integrity";
+          nativeBuildInputs = [ pkgs.coreutils pkgs.findutils ];
+          dontUnpack = true;
+          buildCommand = ''
+            set -e
+            export LC_ALL=C
+            mkdir -p work/vendor
+            cp -r --no-preserve=mode -- ${./vendor/hydramodem-bicinium} work/vendor/hydramodem-bicinium
+            cd work
+            actual="$(find vendor/hydramodem-bicinium -type f ! -name PROVENANCE.md | sort | xargs sha256sum | sha256sum | cut -d' ' -f1)"
+            echo "expected (LC_ALL=C): ${biciniumVendorDigest}"
+            echo "actual   (LC_ALL=C): $actual"
+            if [ "$actual" != "${biciniumVendorDigest}" ]; then
+              echo "" >&2
+              echo "FAIL: vendor/hydramodem-bicinium content hash does not match." >&2
+              echo "These files are HydraModem's bass/duet reference output," >&2
+              echo "vendored verbatim and never edited here. A mismatch means a" >&2
+              echo "local edit or a re-vendor; report it rather than updating" >&2
+              echo "this digest to match." >&2
+              exit 1
+            fi
+            mkdir -p "$out"
+            echo "$actual" > "$out"/digest
+          '';
+        };
+
+        # Same check for vendor/hydramodem-auditus (auditusVendorDigest above).
+        auditus-vendor-integrity = pkgs.stdenvNoCC.mkDerivation {
+          name = "check-vendor-hydramodem-auditus-integrity";
+          nativeBuildInputs = [ pkgs.coreutils pkgs.findutils ];
+          dontUnpack = true;
+          buildCommand = ''
+            set -e
+            export LC_ALL=C
+            mkdir -p work/vendor
+            cp -r --no-preserve=mode -- ${./vendor/hydramodem-auditus} work/vendor/hydramodem-auditus
+            cd work
+            actual="$(find vendor/hydramodem-auditus -type f ! -name PROVENANCE.md | sort | xargs sha256sum | sha256sum | cut -d' ' -f1)"
+            echo "expected (LC_ALL=C): ${auditusVendorDigest}"
+            echo "actual   (LC_ALL=C): $actual"
+            if [ "$actual" != "${auditusVendorDigest}" ]; then
+              echo "" >&2
+              echo "FAIL: vendor/hydramodem-auditus content hash does not match." >&2
+              echo "These files are impaired inputs and reference verdicts," >&2
+              echo "vendored verbatim and never edited here. A mismatch means a" >&2
+              echo "local edit or a re-vendor; report it rather than updating" >&2
+              echo "this digest to match." >&2
+              exit 1
+            fi
+            mkdir -p "$out"
+            echo "$actual" > "$out"/digest
+          '';
+        };
+
         # Same check again, for vendor/streamdb-v3 (a StreamDB v3 container
         # from the real upstream C writer, its three negative-case copies, the
         # 24 raw payloads, and expectation.json). Program output and this
@@ -715,6 +815,16 @@
             # on stdin (stdin=vendor/hydramodem-rx/<kind>/<name>.wav); without
             # them here those directories would have nothing to decode.
             cp -r --no-preserve=mode -- ${./vendor/hydramodem-rx} repo/vendor/hydramodem-rx
+            # tests/programs/melos_*/, bassus_*/ and bicinium_*/ compare stdout
+            # against the musical transmitter's reference renders, and
+            # tests/programs/auditus_*/ read those renders and the impaired WAVs
+            # on stdin. Every vendor tree a TEST names must be copied here: the
+            # sandbox sees only what this list copies, so a tree left off it
+            # fails every test that reads it (51 failures in the first CI run,
+            # while the full checkout passed locally).
+            cp -r --no-preserve=mode -- ${./vendor/hydramodem-melos} repo/vendor/hydramodem-melos
+            cp -r --no-preserve=mode -- ${./vendor/hydramodem-bicinium} repo/vendor/hydramodem-bicinium
+            cp -r --no-preserve=mode -- ${./vendor/hydramodem-auditus} repo/vendor/hydramodem-auditus
             # tests/programs/streamdb_*/ read these four containers on stdin.
             # This comment said "no Exsecutor StreamDB v3 reader exists yet,
             # so nothing under tests/ reads this tree today" and the tree was

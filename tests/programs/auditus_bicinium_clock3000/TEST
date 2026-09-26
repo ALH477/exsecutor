@@ -1,0 +1,5 @@
+# The duet with the receiving clock 3000 ppm fast. The input that caught a real
+# bug: a first draft asked for one symbol more than the reference needs, and the
+# compressed bass burst (343,608 samples) fell under it. The reference decodes
+# both voices (verdicta.tsv); so must this.
+TEST: expect-exit=0 stdin=vendor/hydramodem-auditus/bicinium-clock+3000.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/melos.exsc,examples/hydramodem/bassus.exsc,examples/hydramodem/receptor.exsc,examples/hydramodem/auditus.exsc,examples/hydramodem/auditus_lege.exsc,examples/hydramodem/bicinium_recipe.exsc
