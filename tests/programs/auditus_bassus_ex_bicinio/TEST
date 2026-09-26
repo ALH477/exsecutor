@@ -1,0 +1,4 @@
+# The bass receiver alone on the duet: the melody voice sounds over most of the
+# burst and is not heard, because every tone of both voices lies on one 25 Hz grid
+# and they change note on one symbol grid. The zero word comes back.
+TEST: expect-exit=0 stdin=vendor/hydramodem-bicinium/bicinium-d310123400a1ffffdeadbeef0a1b2ca961-0000000000000000000000000000000000.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/melos.exsc,examples/hydramodem/bassus.exsc,examples/hydramodem/receptor.exsc,examples/hydramodem/auditus.exsc,examples/hydramodem/auditus_lege.exsc,examples/hydramodem/bassus_recipe.exsc

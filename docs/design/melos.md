@@ -1,12 +1,12 @@
-# The musical transmitter — HydraModem's `melody` profile in Exsecutor
+# The musical modem — HydraModem's `melody`, `bass` and duet in Exsecutor
 
-Status: **implemented, transmitters only: melody (sections 1–7), and the bass
-voice and the two-voice duet (section 8).** `examples/hydramodem/melos*.exsc`
+Status: **implemented: the melody transmitter (sections 1–7), the bass voice
+and the two-voice duet (section 8), and a receiver for all three (section 9).** `examples/hydramodem/melos*.exsc`
 writes HydraModem's melody-profile WAV byte for byte on the two vendored
 inputs (`tests/programs/melos_{loopback,nihil}/`, 481,964 bytes each) and its
 symbol stream on all 137 basis words (`tests/programs/melos_basis/`,
 137/137). All three agree under the reference backend and under the C backend
-built by gcc and clang at `-O0` and `-O2`. There is no melody receiver.
+built by gcc and clang at `-O0` and `-O2`. The receiver is section 9.
 
 The reference is Punctim's `hydramodem/` at
 `5c6a4e11f50d3f0453c2f3a593fe98469afae257`. It is read-only and never linked.
@@ -157,10 +157,9 @@ These **survive**, and the certificate cannot see them:
 
 ## 7. Not done
 
-- **A melody receiver.** `receptor.md`'s integer receiver keeps
-  whole-frame prefix sums in stack arrays. At 240,960 samples and 8 tones that
-  is about 30 MB, against an 8 MiB stack that nothing checks, so the design
-  would need to change first.
+- ~~**A melody receiver.**~~ Done: section 9. The prefix-sum design would have
+  needed about 30 MB (44 MB for the duet); section 9 stores the samples instead
+  and slides the correlator.
 - **`chime` and `nocturne`**, the other musical presets. `nocturne` is the
   same shape with another table (minor pentatonic, one drone). `chime`'s
   `L = 480` is smaller than its `4R = 1920`, so its envelope is not the data
@@ -241,3 +240,134 @@ drone). The melody certificates were re-run and are byte-identical.
 **Not done:** a duet receiver (section 7's receiver problem, times two voices),
 duets of more than two voices, and `hydra:profile=duet`'s pairing rule, which is
 a medium and lives in Punctim's Python.
+
+## 9. The receiver (auditus)
+
+Status: **implemented, certified by verdicts.**
+
+- `auditus.exsc` is pure. It is HydraModem's `decode_window` for the melody and
+  bass voices, and so for the duet.
+- `auditus_lege.exsc` reads a WAV into the caller's array, through
+  `&mutabilis` (ADR 0016).
+- `melos_recipe.exsc`, `bassus_recipe.exsc` and `bicinium_recipe.exsc` are the
+  stdin drivers:
+  - exit 0 with 17 bytes, 17 bytes, or 34 bytes (melody first, then bass);
+  - 1 no sync, 2 CRC, 3 a WAV they will not read;
+  - **nothing written on any failure**, recipe.exsc's rule.
+
+The reference is `decode_window` at Punctim `f86f5d5`. The receiver is held to
+verdicts, not bytes, as `receptor.exsc` is (ADR 0014).
+
+**Design: store the samples, slide the correlator.** `receptor.exsc` keeps a
+prefix sum per (tone, I/Q), so any window is two subtractions. For 8 tones over
+the duet's 344,640 samples that is 44 MB, against an 8 MiB stack that nothing
+checks. This receiver instead:
+
+- **Stores the samples once**, as f64: 2.76 MB, in the driver's frame, borrowed
+  immutably from then on.
+- **Integrates each window on demand**, at L = 1920 multiply-adds a tone.
+- **Uses a sliding DFT for the acquisition scan**, which needs the argmax at
+  every sample offset. Every tone completes whole cycles in L samples, so
+  S(a+1) = S(a) + (x[a+L] − x[a])·w(a): one multiply-add a tone a sample.
+  - It is recomputed exactly once every L samples, so float error never spans
+    more than a symbol.
+  - The argmax is kept as one byte an origin (345 KB).
+  - An energy is invariant under a fixed phase rotation, so each window's phase
+    reference is simply its own first sample.
+
+Peak stack is about 3.2 MB, and a duet decodes both voices in 0.5 s (one run,
+native).
+
+**Kept from the reference, unchanged:**
+
+- the known-prefix plateau and its centre;
+- the ±L/2 fine refinement on the known prefix's energy, itself slid;
+- the nknown − 3 threshold;
+- the timing loop: ±2 search on total energy, 15 % gate, EMA 0.2, half the drift
+  a symbol.
+
+**Changed, and why:**
+
+- **The soft bit** is max E(1) − max E(0) (receptor.md D7's choice), not the
+  normalized form.
+- **The Viterbi and the residue** are `receptor.exsc`'s `decodifica` and
+  `residuum`, reused unchanged, so the soft bits are scaled to ±2^20.
+- **One voice's decoder serves the duet.** Each voice is decoded independently
+  from the same samples. They share a 25 Hz grid and a symbol grid, so each is
+  invisible to the other's correlators. `auditus_bassus_ex_bicinio` shows it: the
+  bass receiver, run alone on the duet, recovers its frame under the melody.
+
+**Finding: the comparison caught a bug.** The first draft asked for
+`total_syms·L + L` samples before scanning; the reference needs `total_syms·L`.
+The two receivers were run on 48 impaired inputs (noise at −10 to −20 dB, clock
+at ±1000 and ±3000 ppm, melody and duet). They disagreed once: the duet at
++3000 ppm, whose compressed bass burst is 343,608 samples, between the two
+bounds. After the fix, 48 of 48 agree. That input is now vendored and tested
+(`auditus_bicinium_clock3000`).
+
+**Measured against the reference** (C `frame_rx`/`poly_rx`, Punctim `f86f5d5`,
+the same impaired WAVs fed to both, numpy-generated for this measurement, not
+vendored):
+
+| set | inputs | verdicts identical |
+|---|---|---|
+| noise −10…−20 dB (4 each) and clock ±1000/±3000 ppm, melody and duet | 48 | **48** |
+| the cliff: noise −21…−24 dB (5 each) and clock ±4000/±5000 ppm | 48 | 44 |
+
+At the cliff the four splits go both ways: this receiver decodes 3 inputs the
+reference loses, and the reference decodes 1 this one loses. That is trial-level
+disagreement from the different soft metric, not a shifted knee. Both lose the
+melody at −23 dB and below, both lose the duet's bass from about −21 dB, and
+both keep the melody at ±5000 ppm.
+
+**The certificate** (`tests/programs/auditus_*`, 11 tests):
+
+- **Clean inputs**, the reference renders already vendored:
+  - melody: the loopback frame and the zero word;
+  - bass: the loopback frame;
+  - duet: both voices; and the bass voice alone out of the duet.
+- **Impaired inputs**, `vendor/hydramodem-auditus/` (a stdlib-only
+  deterministic generator plus the reference's verdicts):
+  - melody at −18 dB and at +3000 ppm;
+  - the duet at −18 dB and at +3000 ppm;
+  - melody at −26 dB, where the reference finds nothing: exit 1 and **nothing
+    written**.
+- **Negative:** the bass receiver on a melody-only burst: exit 1, nothing
+  written.
+
+**Negative controls.** Seven receiver mutants were run against the clean
+melody, melody at +3000 ppm and −18 dB, and the duet at +3000 ppm and −18 dB.
+
+These **fail**:
+
+- the soft bit's sign: all five inputs;
+- the sliding update's sign: all five;
+- the threshold raised to nknown: the noisy duet only.
+
+These **survive**, and are named rather than hidden, as receptor.md section 6
+names its own:
+
+- **The timing loop disabled** (the gate never opens). It survives here, and it
+  survives on every clock input tried from ±1000 to ±8000 ppm, for both voices.
+  The reference itself fails from ±7000 ppm, loop or no loop. At 25 baud a
+  frame's whole drift within the reference's working range is about half a
+  symbol, and an integrate-and-dump window mostly on the right note still has
+  the right argmax. **The loop is kept for fidelity with the reference; no
+  certificate input can tell it from its absence.**
+- **The plateau's first origin instead of its centre**, and **fine refinement
+  switched off.** Both survive: receptor.md's surviving mutants, one profile
+  on.
+- **The once-a-symbol exact recompute removed** (slide only). Binary64 drift
+  over 345k steps stays far below what changes an argmax. The recompute is
+  cheap insurance, not a load-bearing step.
+
+One more edge disagreement: the duet's bass at −6000 ppm decodes in the
+reference and not here, loop or no loop. That is twice the bass's documented
+±3000 ppm (MUSIC.md), and it is recorded, not chased.
+
+**Not done:**
+
+- a streaming receiver (this one is whole-burst, like `recipe.exsc`);
+- chime and nocturne (their tables would slot into `auditus_harmonicus`);
+- voices at different bauds;
+- any real acoustic channel.

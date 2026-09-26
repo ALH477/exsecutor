@@ -65,6 +65,24 @@ build/exsc aedifica --hospes x86_64-linux \
 fasmg duet.asm duet && chmod +x duet && ./duet > duet.wav
 ```
 
+## The musical receiver
+
+`auditus*.exsc` receives all three: the melody, the bass, and both frames of
+the duet. It is HydraModem's `decode_window` (acquisition plateau, fine
+refinement, timing loop), with a sliding DFT in place of the prefix sums the
+44 MB duet would need. Each vendored render decodes, and so do noisy (−18 dB)
+and clock-shifted (+3000 ppm) copies, matching the reference's verdicts
+(`tests/programs/auditus_*/`, `vendor/hydramodem-auditus/`,
+`docs/design/melos.md` section 9):
+
+```sh
+build/exsc aedifica --hospes x86_64-linux \
+  examples/hydramodem/{quantum,modulator,melos,bassus,receptor,auditus,auditus_lege,bicinium_recipe}.exsc \
+  -o hear.asm
+fasmg hear.asm hear && chmod +x hear
+./hear < duet.wav | od -An -tx1      # frame A (melody) then frame B (bass)
+```
+
 ## Hear it first
 
 `loopback.wav` in this directory is what `loopback.exsc` writes: 0.396 s of
@@ -147,6 +165,9 @@ checked. `modulator.exsc` is in the unit because the receiver reuses its
 | `bicinium_emitte.exsc` | writes the duet: both voices' phase counters, the melody entering at symbol 54, their f32 sum | whatever the `Scriptor` carries |
 | `bassus_loopback.exsc`, `bicinium_loopback.exsc` | one `initium` each: the bass alone, and the duet (a frame on the melody, the zero word on the bass) | `Mundus`, from which `ambitus` |
 | `bassus_basis.exsc` | the bass certificate driver: 178 notes (0–3) of each of the 137 basis words | `Mundus`, from which `ambitus` |
+| `auditus.exsc` | the musical receiver: sliding-DFT acquisition, plateau and fine refinement, the timing loop, max-log soft bits, for either voice | none: pure |
+| `auditus_lege.exsc` | reads and verifies a WAV into the caller's array (`&mutabilis`) | the `Lector`'s |
+| `melos_recipe.exsc`, `bassus_recipe.exsc`, `bicinium_recipe.exsc` | stdin drivers: one voice's 17 bytes, or the duet's 34 | `Mundus`, from which `ambitus` (`Lector` and `Scriptor`) |
 
 Only a driver names `Mundus`. `modulator.exsc` and `receptor.exsc` declare no
 `poscit` and take no capability, so they are pure in spec §4.1 rule 6's sense:

@@ -2104,9 +2104,9 @@ run_cross_tests() {
   rm -rf "$workdir"
 
   note "discovered $found program directories opted into the cross phase (floor $CROSS_PROGRAM_FLOOR)"
-  floor_check "cross program directories" "$found" "$CROSS_PROGRAM_FLOOR"
+  floor_check "cross program directories" "$found" "$CROSS_PROGRAM_FLOOR" CROSS_PROGRAM_FLOOR
   note "$ran of them ran"
-  floor_check "cross runs" "$ran" "$CROSS_PROGRAM_FLOOR"
+  floor_check "cross runs" "$ran" "$CROSS_PROGRAM_FLOOR" CROSS_PROGRAM_FLOOR
 }
 
 

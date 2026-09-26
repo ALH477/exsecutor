@@ -361,6 +361,9 @@
       # vendor/hydramodem-bicinium: the bass voice and the duet (two frames, one
       # burst) -- Punctim hydramodem at 3aeff9d. Certifies bassus*/bicinium*.exsc.
       biciniumVendorDigest = "4f729256777d326c6d00e93036304738013223efffd0f2455962d9db31071e72"; # LC_ALL=C
+      # vendor/hydramodem-auditus: impaired melody/duet WAVs (impair.py, stdlib) and
+      # the reference receiver's verdicts. Certifies auditus*.exsc.
+      auditusVendorDigest = "ca4943786de91a3a8dcf0d4cd2a0839ef3044bb79032a54c2928e49235bfb106"; # LC_ALL=C
 
       # vendor/streamdb-v3: a 24-document StreamDB v3 container written by the
       # real upstream C writer, three mechanically-corrupted copies of it, the
@@ -691,6 +694,34 @@
               echo "" >&2
               echo "FAIL: vendor/hydramodem-bicinium content hash does not match." >&2
               echo "These files are HydraModem's bass/duet reference output," >&2
+              echo "vendored verbatim and never edited here. A mismatch means a" >&2
+              echo "local edit or a re-vendor; report it rather than updating" >&2
+              echo "this digest to match." >&2
+              exit 1
+            fi
+            mkdir -p "$out"
+            echo "$actual" > "$out"/digest
+          '';
+        };
+
+        # Same check for vendor/hydramodem-auditus (auditusVendorDigest above).
+        auditus-vendor-integrity = pkgs.stdenvNoCC.mkDerivation {
+          name = "check-vendor-hydramodem-auditus-integrity";
+          nativeBuildInputs = [ pkgs.coreutils pkgs.findutils ];
+          dontUnpack = true;
+          buildCommand = ''
+            set -e
+            export LC_ALL=C
+            mkdir -p work/vendor
+            cp -r --no-preserve=mode -- ${./vendor/hydramodem-auditus} work/vendor/hydramodem-auditus
+            cd work
+            actual="$(find vendor/hydramodem-auditus -type f ! -name PROVENANCE.md | sort | xargs sha256sum | sha256sum | cut -d' ' -f1)"
+            echo "expected (LC_ALL=C): ${auditusVendorDigest}"
+            echo "actual   (LC_ALL=C): $actual"
+            if [ "$actual" != "${auditusVendorDigest}" ]; then
+              echo "" >&2
+              echo "FAIL: vendor/hydramodem-auditus content hash does not match." >&2
+              echo "These files are impaired inputs and reference verdicts," >&2
               echo "vendored verbatim and never edited here. A mismatch means a" >&2
               echo "local edit or a re-vendor; report it rather than updating" >&2
               echo "this digest to match." >&2
