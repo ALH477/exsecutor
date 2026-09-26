@@ -17,7 +17,7 @@ publica functio initium(m: Mundus) -> u8 {
     sub ambitus = a;
     firma l = Lector.ab_introitu(a);
     firma s = Scriptor.ad_exitum(a);
-    mutabilis x: acies<f64, 344640> = [0.0; 344640];
+    mutabilis x: acies<f64, 351840> = [0.0; 351840];
     firma n = auditus_lege(l, x);
     si n eq 0 {
         redde 3;

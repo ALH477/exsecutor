@@ -47,7 +47,11 @@
 // Floating point is used where the reference uses it (the correlator, the
 // energies, the timing loop); the Viterbi is receptor.exsc's integers.
 
-publica firma auditus_capacitas: mensura = 344640;   // the duet's (and the bass's) burst
+// One streaming window: the longest voice (the bass, 178 x 1920) plus the
+// reference streaming receiver's margin, 0.05 s + 4 symbols (hydra_rx_create:
+// frame_len = body + 2400 + 7680). It holds any whole burst, the duet's
+// 344,640 samples included, which is all the whole-file drivers need.
+publica firma auditus_capacitas: mensura = 351840;
 publica firma auditus_l: mensura = 1920;             // samples a symbol, both voices
 
 // ---- the voices -------------------------------------------------------------
@@ -114,7 +118,7 @@ functio auditus_gradus(p: mensura, h: mensura) -> mensura {
 
 // The energy of harmonic h over the window [a, a + L): integrate-and-dump, the
 // matched filter, phase referenced to the window's first sample.
-publica functio auditus_vis(x: &acies<f64, 344640>, s: &acies<f64, 1920>,
+publica functio auditus_vis(x: &acies<f64, 351840>, s: &acies<f64, 1920>,
                             a: mensura, h: mensura) -> f64 {
     mutabilis re: f64 = 0.0;
     mutabilis im: f64 = 0.0;
@@ -136,7 +140,7 @@ publica functio auditus_vis(x: &acies<f64, 344640>, s: &acies<f64, 1920>,
 // or a burst too short to hold the voice). The ARGMAX OF EVERY WINDOW is
 // computed by the sliding DFT into `am`, one byte an origin; the known-prefix
 // match then costs nknown comparisons an origin.
-publica functio auditus_origo(x: &acies<f64, 344640>, s: &acies<f64, 1920>,
+publica functio auditus_origo(x: &acies<f64, 351840>, s: &acies<f64, 1920>,
                               n: mensura, vox: mensura) -> mensura {
     firma nt = auditus_toni(vox);
     firma nk = auditus_noti(vox);
@@ -159,7 +163,7 @@ publica functio auditus_origo(x: &acies<f64, 344640>, s: &acies<f64, 1920>,
 
     // argmax at every origin a in [0, n - L], by the sliding DFT
     firma na = n - 1920 + 1;
-    mutabilis am: acies<u8, 344640> = [0; 344640];
+    mutabilis am: acies<u8, 351840> = [0; 351840];
     mutabilis re: acies<f64, 8> = [0.0; 8];
     mutabilis im: acies<f64, 8> = [0.0; 8];
     mutabilis ph: acies<mensura, 8> = [0; 8];         // phase of sample a, per tone
@@ -230,8 +234,15 @@ publica functio auditus_origo(x: &acies<f64, 344640>, s: &acies<f64, 1920>,
             si sc gt optima {
                 optima = sc; primus = o; ultimus = o;
             } aliter {
+                // The plateau is the FIRST run: an origin more than a symbol
+                // past its start is another burst's (hydra_modem.c, the same
+                // rule since Punctim's streaming fix). One burst's plateau is
+                // never a symbol wide, so for a single burst this is the old
+                // first..last.
                 si sc eq optima {
-                    ultimus = o;
+                    si o le primus + 1920 {
+                        ultimus = o;
+                    }
                 }
             }
         }
@@ -297,6 +308,26 @@ publica functio auditus_origo(x: &acies<f64, 344640>, s: &acies<f64, 1920>,
         }
     }
     si optima + 3 lt nk {
+        // No complete burst. For a streaming window, look past the complete-burst
+        // range for a known prefix whose burst runs off the window's end: the
+        // first origin matching nknown - 3 of it. Reported as n + 1 + origin, so
+        // the driver can replay from there instead of discarding a burst that a
+        // false trigger started the window too early for. This runs only when the
+        // reference's own scan has already failed, so no verdict changes.
+        firma ultima = n - nk * 1920;
+        per q in (ohi + 1)..(ultima + 1) {
+            mutabilis sc: mensura = 0;
+            mutabilis w: mensura = q;
+            per k in 0..nk {
+                si (am[w] sicut mensura) eq nota[k] {
+                    sc = sc + 1;
+                }
+                w = w + 1920;
+            }
+            si sc + 3 ge nk {
+                redde n + 1 + q;
+            }
+        }
         redde n;                                        // HYDRA_ERR_NO_SYNC
     }
     redde o + gradus - 960;
@@ -310,7 +341,7 @@ publica functio auditus_origo(x: &acies<f64, 344640>, s: &acies<f64, 1920>,
 // samples ends the frame early, and the zero soft bits it leaves decode to a
 // CRC failure -- the reference's HYDRA_ERR_NO_SYNC, reported as 2 here, which
 // the certificate never reaches (measured: every certified window lies inside).
-publica functio auditus_mollia(x: &acies<f64, 344640>, s: &acies<f64, 1920>,
+publica functio auditus_mollia(x: &acies<f64, 351840>, s: &acies<f64, 1920>,
                                n: mensura, vox: mensura, o: mensura) -> acies<i64, 316> {
     firma nt = auditus_toni(vox);
     firma bps = auditus_bits(vox);
@@ -419,16 +450,52 @@ functio auditus_scala(crudi: acies<f64, 318>) -> acies<i64, 316> {
 
 // ---- the verdict -----------------------------------------------------------
 
+// One voice's verdict, with where its frame ends: `finis` is the origin plus
+// the voice's symbols, the first sample after its body, so a streaming driver
+// can consume exactly that much and keep what follows. status 0 decoded, 1 no
+// sync, 2 CRC, 3 a burst STARTS at `finis` but runs past the window's end.
+publica structura Auditum {
+    status: u8
+    frame: acies<u8, 17>
+    finis: mensura
+}
+
+publica functio auditus_audi(x: &acies<f64, 351840>, n: mensura, vox: mensura) -> Auditum {
+    mutabilis r = Auditum { status: 0, frame: [0; 17], finis: 0 };
+    firma s: acies<f64, 1920> = auditus_tabula();
+    firma o = auditus_origo(x, s, n, vox);
+    si o eq n {
+        r.status = 1;
+        redde r;
+    }
+    si o gt n {
+        // a burst starts at o - n - 1 but does not fit the window
+        r.status = 3;
+        r.finis = o - n - 1;
+        redde r;
+    }
+    firma d = decodifica(auditus_mollia(x, s, n, vox, o));
+    si residuum(d) ne 0 {
+        r.status = 2;
+        redde r;
+    }
+    per i in 0..17 {
+        r.frame[i] = d[i];
+    }
+    r.finis = o + auditus_symbola(vox) * 1920;
+    redde r;
+}
+
 // One voice from the samples: [status, frame bytes 0..16]. status 0 = decoded
 // and the modem CRC's residue is zero; 1 = no sync; 2 = CRC. The frame bytes are
 // meaningful only at status 0.
-publica functio auditus_ausculta(x: &acies<f64, 344640>, n: mensura,
+publica functio auditus_ausculta(x: &acies<f64, 351840>, n: mensura,
                                  vox: mensura) -> acies<u8, 18> {
     mutabilis r: acies<u8, 18> = [0; 18];
     firma s: acies<f64, 1920> = auditus_tabula();
     firma o = auditus_origo(x, s, n, vox);
-    si o eq n {
-        r[0] = 1;
+    si o ge n {
+        r[0] = 1;                                       // no complete burst
         redde r;
     }
     firma d = decodifica(auditus_mollia(x, s, n, vox, o));

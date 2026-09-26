@@ -1,7 +1,8 @@
 # The musical modem — HydraModem's `melody`, `bass` and duet in Exsecutor
 
 Status: **implemented: the melody transmitter (sections 1–7), the bass voice
-and the two-voice duet (section 8), and a receiver for all three (section 9).** `examples/hydramodem/melos*.exsc`
+and the two-voice duet (section 8), a receiver for all three (section 9), and
+that receiver streaming (section 10).** `examples/hydramodem/melos*.exsc`
 writes HydraModem's melody-profile WAV byte for byte on the two vendored
 inputs (`tests/programs/melos_{loopback,nihil}/`, 481,964 bytes each) and its
 symbol stream on all 137 basis words (`tests/programs/melos_basis/`,
@@ -367,7 +368,93 @@ reference and not here, loop or no loop. That is twice the bass's documented
 
 **Not done:**
 
-- a streaming receiver (this one is whole-burst, like `recipe.exsc`);
+- ~~a streaming receiver~~: section 10;
 - chime and nocturne (their tables would slot into `auditus_harmonicus`);
 - voices at different bauds;
 - any real acoustic channel.
+
+## 10. Streaming (ausculta_fluxus)
+
+Status: **implemented.**
+
+`ausculta_fluxus.exsc` reads an unbounded stream on stdin and writes each frame
+the moment it decodes:
+
+    arecord -q -t raw -f S16_LE -r 48000 -c 1 | ./ausculta_fluxus
+
+- **Input** is raw s16le at 48 kHz mono, or the same behind a RIFF/WAVE header.
+  The header's format fields are checked (exit 3); its lengths are ignored,
+  since a stream has none.
+- **Output** is 17 bytes per decoded frame, in decode order. Every window is
+  tried for both voices, the melody's frame first: a melody burst gives one
+  frame, a bass burst one, a duet two.
+- **Memory** is one window, 351,840 samples (2.8 MB, f64). Nothing older is
+  kept.
+
+**The segmenter** is `hydra_rx_push`'s, in its units (a sample over 32768):
+
+- a noise EMA while searching;
+- trigger at max(6·noise, 0.02);
+- collect to `frame_len` (the longest voice plus 0.05 s + 4 symbols = 351,840),
+  or until quiet below max(3·noise, 0.01) for more than 3 symbols;
+- drop a silence-ended window shorter than the shorter voice.
+
+**Finding: the reference streaming receiver lost frames sent back to back.**
+Its window (body + margin) is longer than a melody burst plus the 60 ms between
+bursts, so the window held the next burst's start, and after decoding it
+discarded the whole window. Measured on Punctim's `hydra_rx_push`: **1 of 4**
+melody frames at frame_tx's 60 ms gap, 4 of 4 only once gaps exceeded 120 ms.
+The default profile was unaffected (8 of 8): its margin is about one gap. It is
+fixed in both implementations the same way:
+
+- **Consume through the frame, replay the rest.** After a successful decode,
+  only the samples through the frame's end (its release included) are consumed.
+  The rest of the window is replayed through the segmenter, in place; a replayed
+  sample is written at an index no greater than the one it is read from.
+- **The plateau is the first run.** Acquisition takes best-scoring origins only
+  within one symbol of the first. A window holding two bursts would otherwise
+  centre between their plateaus. One burst's plateau is never a symbol wide, so
+  single-burst verdicts do not move. Re-measured: the 96 impaired inputs of
+  section 9 give the same verdicts as before, 48/48 and 44/48 with the same four
+  cliff splits.
+
+Punctim's `hydramodem/tests/test_music.c` [6] pins the C half: 4 of 4, failing
+at 1 of 4 on the old code.
+
+**Beyond the reference: truncated-burst recovery.** A click opens a window
+early; background noise (σ = 150, about −47 dBFS) keeps the silence rule from
+ever closing it; and a real burst starting inside it then runs off the window's
+end. The reference, and this receiver without the fix, discard that window and
+the burst with it.
+
+Here, when a window decodes nothing, acquisition continues past the
+complete-burst range for a known prefix (nknown − 3 matches) whose burst does
+not fit, and the driver replays from a symbol before it. This runs only after
+the reference's own scan has failed, so no verdict changes. It is **not** in
+the C receiver; porting it is open.
+
+**The certificate:**
+
+- `auditus_fluxus_contiguus`: melody(A) ‖ duet(A, Z) ‖ melody(Z), back to back
+  → A, A, Z, Z.
+- `auditus_fluxus_ictus`: noise, a click, noise, bass(A), noise, as **raw**
+  s16le → A.
+
+Both streams come from `vendor/hydramodem-auditus/fluxus.py` (stdlib,
+deterministic) applied to the vendored renders. Both mechanisms are proven
+load-bearing: without replay the contiguous stream yields 2 frames, and without
+truncated-burst recovery the ictus stream yields none.
+
+**Also measured, not vendored:**
+
+- The contiguous stream at −16 dB: A, A, Z, Z.
+- A stream of noise, a click, bass(A), melody(Z), duet(A, Z) and melody(A), with
+  gaps of 0 to 1 s: all 5 frames in order.
+- The contiguous stream (17.2 s of audio) takes 1.1 s, about 15× real time on
+  one core (one run, native).
+
+**Not done:**
+
+- truncated-burst recovery in the C receiver;
+- a duet streaming receiver in C (`hydra_rx_push` is single-profile);
+- live audio on real hardware.

@@ -1,0 +1,6 @@
+# The streaming receiver on RAW s16le (no header): noise, a loud click, noise,
+# then the bass render of A, then noise. The click opens a window too early and
+# the noise keeps the silence rule from closing it, so the burst runs off the
+# window's end; the receiver replays from just before that burst instead of
+# discarding it. Without that recovery this stream yields nothing, measured.
+TEST: expect-exit=0 stdin=vendor/hydramodem-auditus/fluxus-ictus.raw sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/melos.exsc,examples/hydramodem/bassus.exsc,examples/hydramodem/receptor.exsc,examples/hydramodem/auditus.exsc,examples/hydramodem/ausculta_fluxus.exsc

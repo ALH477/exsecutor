@@ -13,7 +13,7 @@
 // Returns the sample count, or 0 for a WAV this program will not read (the
 // drivers' exit 3).
 
-functio auditus_lege(l: Lector, x: &mutabilis acies<f64, 344640>) -> mensura {
+functio auditus_lege(l: Lector, x: &mutabilis acies<f64, 351840>) -> mensura {
     mutabilis hd: acies<u8, 44> = [0; 44];
     per i in 0..44 {
         firma b = l.lege_octeto();

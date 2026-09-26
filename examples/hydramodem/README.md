@@ -83,6 +83,22 @@ fasmg hear.asm hear && chmod +x hear
 ./hear < duet.wav | od -An -tx1      # frame A (melody) then frame B (bass)
 ```
 
+## Streaming
+
+`ausculta_fluxus.exsc` is the same receiver on an unbounded stream: raw s16le
+48 kHz mono (or WAV) in, each frame out the moment it decodes. It handles
+melody, bass and duet bursts in any order, back to back, and a burst preceded by
+a noise click (`tests/programs/auditus_fluxus_*/`, `docs/design/melos.md`
+section 10):
+
+```sh
+build/exsc aedifica --hospes x86_64-linux \
+  examples/hydramodem/{quantum,modulator,melos,bassus,receptor,auditus,ausculta_fluxus}.exsc \
+  -o listen.asm
+fasmg listen.asm listen && chmod +x listen
+arecord -q -t raw -f S16_LE -r 48000 -c 1 | ./listen | od -An -tx1 -w17
+```
+
 ## Hear it first
 
 `loopback.wav` in this directory is what `loopback.exsc` writes: 0.396 s of
@@ -168,6 +184,7 @@ checked. `modulator.exsc` is in the unit because the receiver reuses its
 | `auditus.exsc` | the musical receiver: sliding-DFT acquisition, plateau and fine refinement, the timing loop, max-log soft bits, for either voice | none: pure |
 | `auditus_lege.exsc` | reads and verifies a WAV into the caller's array (`&mutabilis`) | the `Lector`'s |
 | `melos_recipe.exsc`, `bassus_recipe.exsc`, `bicinium_recipe.exsc` | stdin drivers: one voice's 17 bytes, or the duet's 34 | `Mundus`, from which `ambitus` (`Lector` and `Scriptor`) |
+| `ausculta_fluxus.exsc` | the streaming driver: the reference segmenter, consume-and-replay, truncated-burst recovery; a frame out per decode | `Mundus`, from which `ambitus` (`Lector` and `Scriptor`) |
 
 Only a driver names `Mundus`. `modulator.exsc` and `receptor.exsc` declare no
 `poscit` and take no capability, so they are pure in spec §4.1 rule 6's sense:

@@ -1,8 +1,8 @@
 # Impaired inputs for the musical receiver — vendored as a certificate
 
-Seven files, never edited: five WAVs, the generator that made them
-(`impair.py`, standard library only), and `verdicta.tsv`, HydraModem's own
-receiver's verdict on each. They certify `examples/hydramodem/auditus*.exsc`
+Ten files, never edited: five impaired WAVs and the generator that made them
+(`impair.py`, standard library only); two STREAMS and theirs (`fluxus.py`); and
+`verdicta.tsv`, the verdict each must reproduce. They certify `examples/hydramodem/auditus*.exsc`
 and its drivers under noise and clock offset (`tests/programs/auditus_*/`,
 `docs/design/melos.md` section 9). Like `vendor/hydramodem-rx/`, this is the
 kind of evidence that records what the reference **judges**, not what it
@@ -32,6 +32,24 @@ Here `<melos>` is `vendor/hydramodem-melos` and `<bicinium>` is
   of the receiver asked for one symbol more than the reference needs, and at
   +3000 ppm the duet's bass is compressed just under that bound.
 
+## The streams
+
+`fluxus.py` (standard library, deterministic, imports `impair.py`'s noise) makes
+the two streaming inputs from the clean renders; re-running it reproduced both
+byte for byte.
+
+| file | what it is | frames expected |
+|---|---|---|
+| `fluxus-contiguus.wav` | melody(A) ‖ duet(A, Z) ‖ melody(Z), the renders' PCM concatenated (60 ms apart), WAV-wrapped | A, A, Z, Z |
+| `fluxus-ictus.raw` | raw s16le: noise, a click, noise, the bass render of A, noise | A |
+
+A is `d310123400a1ffffdeadbeef0a1b2ca961` and Z is seventeen zero bytes.
+
+These verdicts are the frames that were sent: there is no reference streaming
+receiver for the duet or bass. Punctim's `hydra_rx_push` is single-profile.
+Since Punctim's streaming fix, it decodes a back-to-back melody stream in full
+(its `test_music` [6]). It has no truncated-burst recovery.
+
 ## The reference verdicts
 
 These are Punctim's `hydramodem/dcf-tools/frame_rx --profile melody` and
@@ -51,17 +69,21 @@ Tree digest, from the repository root,
 under `LC_ALL=C` (`flake.nix`'s `auditus-vendor-integrity`):
 
 ```
-ca4943786de91a3a8dcf0d4cd2a0839ef3044bb79032a54c2928e49235bfb106
+07a73f7636e070917b72b6d45ac4bb15778d2c5d9932af885d08e0847be8356d
 ```
 
 Per file:
 
 ```
+108c77d77a2d5deeb45f17abfe7253a4671d42f6f41e08ccb6e4fe41efaab34b  vendor/hydramodem-auditus/__pycache__/impair.cpython-311.pyc
 324e51fc8e5bd505c269a96ca372fe5cd6b32ffb284f058c71f27afb6e6caaed  vendor/hydramodem-auditus/bicinium-awgn-18.wav
 8fe4201b69db466f42c4009b242e2dff5505f843b3472f5944bab19a779d5728  vendor/hydramodem-auditus/bicinium-clock+3000.wav
+639a300b576c4fd19cb7693a263eb8a089a0da4262a059963e805022df5d076a  vendor/hydramodem-auditus/fluxus-contiguus.wav
+525307800b7425ac37df166a1898cdb3db2529db4e756117b2268f7e05b06b6b  vendor/hydramodem-auditus/fluxus-ictus.raw
+ad769fb30d999c30f9401dcd356880bc8ec2371d7446de0b8ccebcf73547dd4a  vendor/hydramodem-auditus/fluxus.py
 9d970c4fd2f662d36572e5f7c257d95afb6c0a9318e6baff79d2abb52b35b90a  vendor/hydramodem-auditus/impair.py
 6be170a1716c5baeb0247e568f2fbedb214c71650483e854f43eba33602a9ac8  vendor/hydramodem-auditus/melos-awgn-18.wav
 251415ef9570c06b330d0fc742f2ddd1c7892444d1bbe65fea56c8ac94fb43e1  vendor/hydramodem-auditus/melos-awgn-26.wav
 5dd9a0445c99f1b1fc5779d2ad6c80480433df8424bf80278abaddec20707e32  vendor/hydramodem-auditus/melos-clock+3000.wav
-4386bc680a7d77414fbe5804352d8a113c710eaf7202ffed98bb03da239bae90  vendor/hydramodem-auditus/verdicta.tsv
+7f0d5fa9739927eba5f25d02e49ab788407b43d405f96ffa2e9f6a563e4be9ae  vendor/hydramodem-auditus/verdicta.tsv
 ```

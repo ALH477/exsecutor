@@ -1,0 +1,275 @@
+// examples/hydramodem/ausculta_fluxus.exsc -- the STREAMING musical receiver: an
+// unbounded audio stream on standard input, every frame it carries written to
+// standard output the moment it is decoded. The only file of its unit that names
+// `Mundus`, `Lector` and `Scriptor`; auditus.exsc decides each frame.
+//
+//     arecord -q -t raw -f S16_LE -r 48000 -c 1 | ./ausculta_fluxus | od -An -tx1
+//
+// INPUT: 16-bit little-endian mono PCM at 48 kHz, raw. A stream that begins with a
+// RIFF/WAVE header is accepted too -- the 44 header bytes are read through the
+// transmitter's `Caput` and must say 48 kHz mono 16-bit PCM (exit 3 otherwise);
+// their length fields are not checked, since a stream has no length. Samples are
+// read two bytes at a time and never stored beyond one window.
+//
+// OUTPUT: seventeen bytes per decoded frame, in the order decoded. Every window is
+// tried for BOTH voices, the melody's frame first: a melody burst yields one
+// frame, a bass burst one, a duet two. Nothing unchecked is ever written: a frame
+// is written only when its modem CRC's residue is zero (recipe.exsc's rule, per
+// frame). Exit 0 at the end of the stream, 3 for a header this program refuses, 4
+// when a write fails.
+//
+// THE SEGMENTER is HydraModem's streaming receiver (hydra_rx_push, Punctim
+// hydramodem/src/hydra_modem.c), sample for sample, in the reference's units
+// (a sample over 32768):
+//   - SEARCH: noise += 0.001 (|x| - noise); a sample over max(6 noise, 0.02)
+//     starts a window;
+//   - COLLECT: until the window holds 351,840 samples -- the longest voice (the
+//     bass) plus 0.05 s + 4 symbols, the reference's frame_len -- or until
+//     |x| < max(3 noise, 0.01) for more than 3 symbols (5,760 samples); a
+//     silence-ended window shorter than the shorter voice (124 symbols) was a
+//     false trigger and is dropped;
+//   - then decode (auditus.exsc, both voices).
+// AND THE FIX BOTH NOW SHARE: after a successful decode only the samples through
+// the frame's end (its release included) are consumed, and the rest of the window
+// is REPLAYED through the segmenter. A musical window is longer than a melody
+// burst, so for bursts sent back to back it holds the start of the next one; the
+// reference used to discard the whole window and lost every other frame (1 of 4
+// melody frames at frame_tx's 60 ms gap; Punctim's test_music [6] now pins 4 of
+// 4). The replay reads the window in place: a replayed sample is written at an
+// index no greater than the one it was read from, so no read sees its own write.
+// A failed window is discarded whole, as the reference discards it -- UNLESS a
+// burst starts inside it and runs off its end (a click started the window early
+// and noise kept the silence rule from closing it): then the replay begins a
+// symbol before that burst. Measured: a stream opening with a noise click lost
+// its first frame without this, and keeps it with it.
+
+publica firma fluxus_fenestra: mensura = 351840;    // frame_len: 178 x 1920 + 2400 + 7680
+publica firma fluxus_brevissima: mensura = 238080;  // the shorter voice's symbols, 124 x 1920
+publica firma fluxus_quies: mensura = 5760;         // 3 symbols of silence ends a burst
+publica firma fluxus_rampa: mensura = 480;          // the release after the last symbol
+
+publica structura Status {
+    colligit: u8          // 0 SEARCH, 1 COLLECT
+    n: mensura            // samples in the window
+    quies: mensura        // consecutive quiet samples
+    strepitus: f64        // the noise estimate (sample units over 32768)
+}
+
+// One sample through the segmenter. Returns 1 when the window is complete and must
+// be decoded now, 0 otherwise.
+functio fluxus_gradus(x: &mutabilis acies<f64, 351840>, st: &mutabilis Status, v: f64) -> u8 {
+    mutabilis ax: f64 = v / 32768.0;
+    si ax lt 0.0 {
+        ax = 0.0 - ax;
+    }
+    mutabilis on: f64 = 6.0 * (*st).strepitus;
+    si on lt 0.02 { on = 0.02; }
+    mutabilis off: f64 = 3.0 * (*st).strepitus;
+    si off lt 0.01 { off = 0.01; }
+    si (*st).colligit eq 0 {
+        (*st).strepitus = (*st).strepitus + 0.001 * (ax - (*st).strepitus);
+        si ax gt on {
+            (*st).colligit = 1;
+            (*st).n = 0;
+            (*st).quies = 0;
+            (*x)[(*st).n] = v;
+            (*st).n = 1;
+        }
+        redde 0;
+    }
+    si (*st).n lt fluxus_fenestra {
+        (*x)[(*st).n] = v;
+        (*st).n = (*st).n + 1;
+    }
+    si ax lt off {
+        (*st).quies = (*st).quies + 1;
+    } aliter {
+        (*st).quies = 0;
+    }
+    si (*st).n ge fluxus_fenestra {
+        redde 1;
+    }
+    si (*st).quies gt fluxus_quies {
+        si (*st).n ge fluxus_brevissima {
+            redde 1;
+        }
+        (*st).colligit = 0;
+        (*st).n = 0;
+        (*st).quies = 0;
+    }
+    redde 0;
+}
+
+// Decode a complete window for both voices and write what decodes, melody first.
+// The segmenter is reset. Returns where the replay starts -- the first sample after
+// the last decoded frame's release -- or 0 when nothing decoded or nothing follows
+// (0 is never a replay start: a frame ends past sample 238,080). A failed write is
+// returned as 1, which is never a replay start either.
+functio fluxus_tracta(s: Scriptor, x: &mutabilis acies<f64, 351840>,
+                      st: &mutabilis Status) -> mensura {
+    firma n = (*st).n;
+    (*st).colligit = 0;
+    (*st).n = 0;
+    (*st).quies = 0;
+    mutabilis finis: mensura = 0;
+    mutabilis truncus: mensura = 0;       // earliest burst that ran off the window
+    per vox in 0..2 {
+        firma r = auditus_audi(*x, n, vox);
+        si r.status eq 3 {
+            si truncus eq 0 {
+                truncus = r.finis;
+            } aliter {
+                si r.finis lt truncus { truncus = r.finis; }
+            }
+        }
+        si r.status eq 0 {
+            per i in 0..17 {
+                si s.scribe_octeto(r.frame[i]) ne 1 {
+                    redde 1;
+                }
+            }
+            si r.finis gt finis {
+                finis = r.finis;
+            }
+        }
+    }
+    si finis eq 0 {
+        // Nothing decoded. The reference discards the window. But if a burst
+        // began inside it and ran off its end -- the window was started early by
+        // a false trigger (a click), and noise kept the silence rule from ending
+        // it -- replay from a symbol before that burst so its preamble and
+        // pre-roll open a fresh window. Such a burst starts at 9,120 or later
+        // (anything earlier fits the window), so the replay start is never 0 or 1.
+        si truncus gt 0 {
+            redde truncus - 1920;
+        }
+        redde 0;
+    }
+    firma finis_rampae = finis + fluxus_rampa;
+    si finis_rampae ge n {
+        redde 0;
+    }
+    redde finis_rampae;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma l = Lector.ab_introitu(a);
+    firma s = Scriptor.ad_exitum(a);
+    mutabilis x: acies<f64, 351840> = [0.0; 351840];
+    mutabilis st = Status { colligit: 0, n: 0, quies: 0, strepitus: 0.0 };
+    mutabilis rp: mensura = 0;          // replay cursor
+    mutabilis rq: mensura = 0;          // replay end
+    mutabilis finitum: u8 = 0;          // stdin exhausted
+
+    // An optional WAV header: the first four bytes decide.
+    mutabilis prima: acies<u8, 44> = [0; 44];
+    mutabilis habet: mensura = 0;       // how many of prima are samples, not header
+    per i in 0..4 {
+        firma b = l.lege_octeto();
+        si b ge 256 {
+            finitum = 1;
+        } aliter {
+            si finitum eq 0 {
+                prima[i] = b sicut u8;
+                habet = habet + 1;
+            }
+        }
+    }
+    si habet eq 4 {
+        si prima[0] eq 0x52 {
+            si prima[1] eq 0x49 {
+                si prima[2] eq 0x46 {
+                    si prima[3] eq 0x46 {
+                        per i in 4..44 {
+                            firma b = l.lege_octeto();
+                            si b ge 256 { redde 3; }
+                            prima[i] = b sicut u8;
+                        }
+                        firma c = prima sicut Caput;
+                        si c.wave ne 0x57415645 { redde 3; }
+                        si c.fmt ne 0x666d7420 { redde 3; }
+                        si c.codex ne 1 { redde 3; }
+                        si c.canales ne 1 { redde 3; }
+                        si c.frequentia ne 48000 { redde 3; }
+                        si c.latitudo ne 16 { redde 3; }
+                        si c.data ne 0x64617461 { redde 3; }
+                        habet = 0;
+                    }
+                }
+            }
+        }
+    }
+    // Raw PCM: the four bytes already read are the first two samples.
+    mutabilis pendentes: mensura = 0;   // of those, not yet fed
+    si habet eq 4 {
+        pendentes = 2;
+    }
+
+    dum finitum lt 2 terminus 1099511627776 {
+        mutabilis v: f64 = 0.0;
+        mutabilis habemus: u8 = 1;
+        si rp lt rq {
+            v = x[rp];
+            rp = rp + 1;
+        } aliter {
+            si pendentes gt 0 {
+                firma k = (2 - pendentes) sursum 1;
+                v = signatum(prima[k], prima[k + 1]) sicut f64;
+                pendentes = pendentes - 1;
+            } aliter {
+                si finitum eq 0 {
+                    firma b0 = l.lege_octeto();
+                    firma b1 = l.lege_octeto();
+                    si b0 ge 256 {
+                        finitum = 1;
+                        habemus = 0;
+                    } aliter {
+                        si b1 ge 256 {
+                            finitum = 1;
+                            habemus = 0;
+                        } aliter {
+                            v = signatum(b0 sicut u8, b1 sicut u8) sicut f64;
+                        }
+                    }
+                } aliter {
+                    habemus = 0;
+                }
+            }
+        }
+        si habemus eq 1 {
+            si fluxus_gradus(x, st, v) eq 1 {
+                firma n0 = st.n;
+                firma r = fluxus_tracta(s, x, st);
+                si r eq 1 {
+                    redde 4;
+                }
+                si r gt 1 {
+                    rp = r;
+                    rq = n0;
+                }
+            }
+        } aliter {
+            // End of the stream, and no replay pending: a window still open is
+            // decoded if it could hold a voice (the reference's silence rule),
+            // which may queue a replay; otherwise the stream is done.
+            finitum = 2;
+            si st.colligit eq 1 {
+                si st.n ge fluxus_brevissima {
+                    firma n0 = st.n;
+                    firma r = fluxus_tracta(s, x, st);
+                    si r eq 1 {
+                        redde 4;
+                    }
+                    si r gt 1 {
+                        rp = r;
+                        rq = n0;
+                        finitum = 1;
+                    }
+                }
+            }
+        }
+    }
+    redde 0;
+}
