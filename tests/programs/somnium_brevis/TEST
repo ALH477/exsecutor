@@ -1,0 +1,3 @@
+# Refusal: a 16-byte request (the seed's last byte missing). Exit 1, stdout
+# empty: the engine reads all 17 bytes before it writes anything.
+TEST: expect-exit=1 sources=examples/somnium/somnium.exsc,examples/somnium/plasma.exsc,examples/somnium/ignis.exsc,examples/somnium/vita.exsc,examples/somnium/pluvia.exsc,examples/somnium/stellae.exsc,examples/somnium/cuniculus.exsc,examples/somnium/abyssus.exsc,examples/somnium/titulus.exsc,examples/signaculum/forma.exsc,examples/somnium/signum.exsc,examples/somnium/machina.exsc stdin=tests/data/somnium_brevis.bin

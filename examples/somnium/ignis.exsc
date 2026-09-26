@@ -1,0 +1,83 @@
+// examples/somnium/ignis.exsc
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 The Exsecutor authors.
+// ---------------------------------------------------------------------------
+// Somnium 1: fire. The classical heat-diffusion flame: two seed rows under
+// the picture are refilled with noise every frame, and every cell above
+// takes the mean of the three cells below it and the one two below, less a
+// fixed cooling of 2. The heat field is `calor`, 160 x 102, owned by the
+// caller so it survives from frame to frame; this function advances it one
+// step and paints the frame from it.
+//
+// Rows are updated top to bottom, so every read of rows y+1 and y+2 sees
+// the PREVIOUS frame's heat -- the update is a function of the old field
+// alone, and the oracle can mirror it without caring about order within a
+// row. The four-cell mean is `deorsum 2` (a shift, not a division: the
+// language has no integer division, spec §5.4 `[OPEN]`). The columns wrap,
+// so the flame has no edges.
+//
+// The palette is black -> red -> yellow -> white on 3h: red saturates at
+// h = 85, green at 170; blue starts at 170 and never saturates, because the
+// cooling keeps h at or below 253.
+// ---------------------------------------------------------------------------
+
+publica functio ignis_pinge(fb: &mutabilis acies<u8, 48000>, calor: &mutabilis acies<u8, 16320>, semen: u32) -> u32 {
+    mutabilis x: u32 = semen;
+
+    // The two seed rows, 100 and 101: one draw per cell, hot above 140.
+    per i in 0..320 {
+        x = alea(x);
+        firma v: u32 = x deorsum 24;
+        mutabilis h: u8 = (v deorsum 2) sicut u8;
+        si v gt 140 {
+            h = 255;
+        }
+        (*calor)[16000 + i] = h;
+    }
+
+    per y in 0..100 {
+        firma r1: mensura = (y + 1) * 160;
+        firma r2: mensura = (y + 2) * 160;
+        firma linea: mensura = y * 160;
+        per i in 0..160 {
+            mutabilis xl: mensura = 159;
+            si i gt 0 {
+                xl = i - 1;
+            }
+            mutabilis xr: mensura = 0;
+            si i lt 159 {
+                xr = i + 1;
+            }
+            firma summa: mensura = (*calor)[r1 + xl] sicut mensura + (*calor)[r1 + i] sicut mensura
+                + (*calor)[r1 + xr] sicut mensura + (*calor)[r2 + i] sicut mensura;
+            firma n: mensura = summa deorsum 2;
+            mutabilis calidum: mensura = 0;
+            si n gt 1 {
+                calidum = n - 2;
+            }
+            (*calor)[linea + i] = calidum sicut u8;
+
+            firma h3: mensura = calidum * 3;
+            mutabilis r: mensura = h3;
+            si h3 gt 255 {
+                r = 255;
+            }
+            mutabilis g: mensura = 0;
+            si h3 gt 255 {
+                g = h3 - 255;
+                si g gt 255 {
+                    g = 255;
+                }
+            }
+            mutabilis b: mensura = 0;
+            si h3 gt 510 {
+                b = h3 - 510;
+            }
+            firma k: mensura = (linea + i) * 3;
+            (*fb)[k] = r sicut u8;
+            (*fb)[k + 1] = g sicut u8;
+            (*fb)[k + 2] = b sicut u8;
+        }
+    }
+    redde x;
+}

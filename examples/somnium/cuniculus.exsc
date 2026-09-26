@@ -1,0 +1,120 @@
+// examples/somnium/cuniculus.exsc
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 The Exsecutor authors.
+// ---------------------------------------------------------------------------
+// Somnium 5: the demoscene tunnel. Frame 0 builds two tables, an angle and
+// a depth for every pixel; every frame after is two table reads, two adds
+// and a texture lookup a pixel. The angle scrolls with t (the tunnel turns)
+// and the depth with 4t (it flies forward).
+//
+// Neither table needs a transcendental or a division:
+//
+//   * ANGLE. Fold the pixel into the first octant (p <= q) and find the
+//     largest a in 0..32 with p * 65536 >= q * tangentes()[a] -- a search
+//     by multiplication, 32 compares a pixel, once. Unfold by swap and
+//     quadrant into 0..255 (256 wraps to 0 as a byte).
+//   * DEPTH. d = 2048 / r, found bit by bit from the top as the largest d
+//     in 0..255 with d * d * r^2 <= 2048^2 -- eight compares a pixel, no
+//     square root and no divide. r is in half-pixels from the centre
+//     (2x + 1 - 160), so no pixel sits on it.
+//
+// The texture is the logo's two colours: 16 x 16 tiles alternating crimson
+// and navy by the low bit of the XOR of the coarse coordinates (taken by
+// the shift-discard idiom), with the XOR of the fine ones as grain, all
+// fading to black with depth. The tables live in the caller's two
+// 16,000-byte boards, which vita uses for its generations; one somnium runs
+// per request, so the storage is never shared.
+// ---------------------------------------------------------------------------
+
+publica functio cuniculus_pinge(fb: &mutabilis acies<u8, 48000>, ang: &mutabilis acies<u8, 16000>, prof: &mutabilis acies<u8, 16000>, t: mensura) -> u32 {
+    si t eq 0 {
+        firma tg: acies<u32, 33> = tangentes();
+        per y in 0..100 {
+            firma yy: mensura = 2 * y + 1;
+            mutabilis infra: u8 = 0;
+            mutabilis ay: mensura = 0;
+            si yy gt 100 {
+                infra = 1;
+                ay = yy - 100;
+            }
+            si yy lt 100 {
+                ay = 100 - yy;
+            }
+            per x in 0..160 {
+                firma xx: mensura = 2 * x + 1;
+                mutabilis dextra: u8 = 0;
+                mutabilis ax: mensura = 0;
+                si xx gt 160 {
+                    dextra = 1;
+                    ax = xx - 160;
+                }
+                si xx lt 160 {
+                    ax = 160 - xx;
+                }
+                mutabilis versa: u8 = 0;
+                si ay gt ax {
+                    versa = 1;
+                }
+                mutabilis pp: mensura = ay;
+                mutabilis qq: mensura = ax;
+                si versa eq 1 {
+                    pp = ax;
+                    qq = ay;
+                }
+                mutabilis a: mensura = 0;
+                per k in 1..33 {
+                    si pp * 65536 ge qq * (tg[k] sicut mensura) {
+                        a = k;
+                    }
+                }
+                si versa eq 1 {
+                    a = 64 - a;
+                }
+                mutabilis angulus: mensura = 0;
+                si dextra eq 1 {
+                    si infra eq 1 { angulus = a; }
+                    si infra eq 0 { angulus = 256 - a; }
+                }
+                si dextra eq 0 {
+                    si infra eq 1 { angulus = 128 - a; }
+                    si infra eq 0 { angulus = 128 + a; }
+                }
+                firma r2: mensura = ax * ax + ay * ay;
+                mutabilis d: mensura = 0;
+                mutabilis gradus: mensura = 128;
+                per n in 0..8 {
+                    firma c: mensura = d + gradus;
+                    si c * c * r2 le 4194304 {
+                        d = c;
+                    }
+                    gradus = gradus deorsum 1;
+                }
+                firma j: mensura = y * 160 + x;
+                (*ang)[j] = angulus sicut u8;
+                (*prof)[j] = d sicut u8;
+            }
+        }
+    }
+
+    per j in 0..16000 {
+        firma d: mensura = (*prof)[j] sicut mensura;
+        firma u: u8 = ((*ang)[j] sicut mensura + t) sicut u8;
+        firma v: u8 = (d + t * 4) sicut u8;
+        firma tegula: u8 = (((u deorsum 4) aut (v deorsum 4)) sursum 7) deorsum 7;
+        firma granum: mensura = ((((u aut v) sursum 4) deorsum 4) sicut mensura);
+        firma umbra: mensura = 255 - d;
+        mutabilis r: mensura = 20 + granum * 2;
+        mutabilis g: mensura = 40 + granum * 3;
+        mutabilis b: mensura = 110 + granum * 6;
+        si tegula eq 1 {
+            r = 200 + granum * 3;
+            g = 30 + granum * 2;
+            b = 50 + granum * 2;
+        }
+        firma k: mensura = j * 3;
+        (*fb)[k] = ((r * umbra) deorsum 8) sicut u8;
+        (*fb)[k + 1] = ((g * umbra) deorsum 8) sicut u8;
+        (*fb)[k + 2] = ((b * umbra) deorsum 8) sicut u8;
+    }
+    redde 0;
+}

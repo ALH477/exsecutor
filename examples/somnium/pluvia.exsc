@@ -1,0 +1,106 @@
+// examples/somnium/pluvia.exsc
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 The Exsecutor authors.
+// ---------------------------------------------------------------------------
+// Somnium 3: digital rain. The frame is 40 x 20 cells of 4 x 5 pixels, each
+// holding a 3 x 4 glyph and a brightness. Every column has a head that
+// falls velocitas/8 of a cell a frame (1..8, so it never skips a cell),
+// lights the cell it is in at full brightness with a fresh glyph, and on
+// leaving the bottom waits a random 0..31 cells before starting again at
+// the top. Every cell loses a sixteenth of its light a frame, which is the
+// trail. One glyph somewhere changes every frame, so still rain shimmers.
+//
+// A glyph is not stored: it is the top 12 bits of alea(signum << 10 + j + 1)
+// for the cell's byte `signum`, read as 3 x 4 pixels. The state is one
+// structura, borrowed once, because the reference backend passes at most
+// six argument words (backend_fasmg/emit.inc, __bfa_emit_argreg).
+// ---------------------------------------------------------------------------
+
+publica structura Pluvia {
+    caput: acies<u16, 40>
+    velocitas: acies<u8, 40>
+    lux: acies<u8, 800>
+    signum: acies<u8, 800>
+}
+
+publica functio pluvia_pinge(fb: &mutabilis acies<u8, 48000>, p: &mutabilis Pluvia, semen: u32, t: mensura) -> u32 {
+    mutabilis x: u32 = semen;
+
+    si t eq 0 {
+        per c in 0..40 {
+            x = alea(x);
+            (*p).caput[c] = (x deorsum 24) sicut u16;
+            x = alea(x);
+            (*p).velocitas[c] = ((x deorsum 29) sicut u8) + 1;
+        }
+    }
+
+    // ---- the heads -----------------------------------------------------
+    per c in 0..40 {
+        mutabilis h: mensura = (*p).caput[c] sicut mensura + (*p).velocitas[c] sicut mensura;
+        firma linea: mensura = h deorsum 3;
+        si linea lt 20 {
+            firma j: mensura = linea * 40 + c;
+            (*p).lux[j] = 255;
+            x = alea(x);
+            (*p).signum[j] = (x deorsum 24) sicut u8;
+        }
+        x = alea(x);
+        si linea ge 20 + ((x deorsum 27) sicut mensura) {
+            h = 0;
+            x = alea(x);
+            (*p).velocitas[c] = ((x deorsum 29) sicut u8) + 1;
+        }
+        (*p).caput[c] = h sicut u16;
+    }
+
+    // ---- one glyph anywhere changes --------------------------------------
+    x = alea(x);
+    firma mutanda: mensura = (((x deorsum 22) sicut mensura) * 800) deorsum 10;
+    x = alea(x);
+    (*p).signum[mutanda] = (x deorsum 24) sicut u8;
+
+    // ---- paint, then dim ---------------------------------------------------
+    per cy in 0..20 {
+        per cx in 0..40 {
+            firma j: mensura = cy * 40 + cx;
+            firma l: u8 = (*p).lux[j];
+            firma forma_signi: u32 = alea((((*p).signum[j] sicut u32) sursum 10) + (j sicut u32) + 1);
+            mutabilis r: u8 = l deorsum 3;
+            firma g: u8 = l;
+            mutabilis b: u8 = l deorsum 2;
+            si l eq 255 {
+                r = 180;
+                b = 180;
+            }
+            per gy in 0..5 {
+                per gx in 0..4 {
+                    firma k: mensura = ((cy * 5 + gy) * 160 + cx * 4 + gx) * 3;
+                    mutabilis lucet: u8 = 0;
+                    si gx lt 3 {
+                        si gy lt 4 {
+                            si l gt 0 {
+                                firma n: u32 = (gy * 3 + gx) sicut u32;
+                                si ((forma_signi sursum n) deorsum 31) eq 1 {
+                                    lucet = 1;
+                                }
+                            }
+                        }
+                    }
+                    si lucet eq 1 {
+                        (*fb)[k] = r;
+                        (*fb)[k + 1] = g;
+                        (*fb)[k + 2] = b;
+                    }
+                    si lucet eq 0 {
+                        (*fb)[k] = 0;
+                        (*fb)[k + 1] = 0;
+                        (*fb)[k + 2] = 0;
+                    }
+                }
+            }
+            (*p).lux[j] = (((l sicut mensura) * 15) deorsum 4) sicut u8;
+        }
+    }
+    redde x;
+}

@@ -1,0 +1,131 @@
+// examples/somnium/vita.exsc
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 The Exsecutor authors.
+// ---------------------------------------------------------------------------
+// Somnium 2: Conway's Life on a 160 x 100 torus, one cell per pixel. A cell
+// holds its AGE, 0 for dead and 1..255 for alive (saturating), and the age
+// is the colour: newborn white, cooling to blue by age 63. A cell that dies
+// leaves a trail that halves every frame, which is why the frame buffer is
+// read here as well as written -- `fb` is the caller's and persists.
+//
+// Frame 0 fills the board at density 1/4 from the seed. Every eighth frame
+// (t mod 8 == 0, as `(t8 sursum 5) deorsum 5`, the shift-discard idiom:
+// there is no bitwise and) one draw picks a spot and a 3x3 handful of fresh
+// cells lands there, so the board never settles into still life. The spot
+// is a byte scaled into range, (b * 158) deorsum 8 and (b * 98) deorsum 8 --
+// multiply and shift, because there is no remainder -- so the 3x3 always
+// fits without wrapping and every attempt lands.
+//
+// The step reads `a` and writes `b`, then copies `b` back while painting:
+// the generation is a function of the previous one alone.
+// ---------------------------------------------------------------------------
+
+publica functio vita_pinge(fb: &mutabilis acies<u8, 48000>, a: &mutabilis acies<u8, 16000>, b: &mutabilis acies<u8, 16000>, semen: u32, t: mensura) -> u32 {
+    mutabilis x: u32 = semen;
+
+    si t eq 0 {
+        per i in 0..16000 {
+            x = alea(x);
+            mutabilis nata: u8 = 0;
+            si (x deorsum 30) eq 0 {
+                nata = 1;
+            }
+            (*a)[i] = nata;
+        }
+    }
+
+    firma t8: u8 = t sicut u8;
+    si ((t8 sursum 5) deorsum 5) eq 0 {
+        x = alea(x);
+        firma px: mensura = (((x deorsum 24) sicut mensura) * 158) deorsum 8;
+        firma py: mensura = (octo((x deorsum 16) sicut mensura) * 98) deorsum 8;
+        per dy in 0..3 {
+            per dx in 0..3 {
+                x = alea(x);
+                si (x deorsum 31) eq 1 {
+                    firma j: mensura = (py + dy) * 160 + px + dx;
+                    si (*a)[j] eq 0 {
+                        (*a)[j] = 1;
+                    }
+                }
+            }
+        }
+    }
+
+    per y in 0..100 {
+        mutabilis yu: mensura = 99;
+        si y gt 0 {
+            yu = y - 1;
+        }
+        mutabilis yd: mensura = 0;
+        si y lt 99 {
+            yd = y + 1;
+        }
+        firma ru: mensura = yu * 160;
+        firma r0: mensura = y * 160;
+        firma rd: mensura = yd * 160;
+        per i in 0..160 {
+            mutabilis xl: mensura = 159;
+            si i gt 0 {
+                xl = i - 1;
+            }
+            mutabilis xr: mensura = 0;
+            si i lt 159 {
+                xr = i + 1;
+            }
+            mutabilis n: mensura = 0;
+            si (*a)[ru + xl] gt 0 { n = n + 1; }
+            si (*a)[ru + i] gt 0 { n = n + 1; }
+            si (*a)[ru + xr] gt 0 { n = n + 1; }
+            si (*a)[r0 + xl] gt 0 { n = n + 1; }
+            si (*a)[r0 + xr] gt 0 { n = n + 1; }
+            si (*a)[rd + xl] gt 0 { n = n + 1; }
+            si (*a)[rd + i] gt 0 { n = n + 1; }
+            si (*a)[rd + xr] gt 0 { n = n + 1; }
+
+            firma cella: mensura = r0 + i;
+            firma aetas: u8 = (*a)[cella];
+            mutabilis nova: u8 = 0;
+            si aetas gt 0 {
+                si n eq 2 {
+                    nova = aetas;
+                }
+                si n eq 3 {
+                    nova = aetas;
+                }
+                si nova gt 0 {
+                    si nova lt 255 {
+                        nova = nova + 1;
+                    }
+                }
+            }
+            si aetas eq 0 {
+                si n eq 3 {
+                    nova = 1;
+                }
+            }
+            (*b)[cella] = nova;
+        }
+    }
+
+    per q in 0..16000 {
+        firma aevum: u8 = (*b)[q];
+        (*a)[q] = aevum;
+        firma k: mensura = q * 3;
+        si aevum eq 0 {
+            (*fb)[k] = (*fb)[k] deorsum 1;
+            (*fb)[k + 1] = (*fb)[k + 1] deorsum 1;
+            (*fb)[k + 2] = (*fb)[k + 2] deorsum 1;
+        }
+        si aevum gt 0 {
+            mutabilis e: u8 = aevum;
+            si e gt 63 {
+                e = 63;
+            }
+            (*fb)[k] = 255 - e * 3;
+            (*fb)[k + 1] = 255 - e * 2;
+            (*fb)[k + 2] = 255;
+        }
+    }
+    redde x;
+}

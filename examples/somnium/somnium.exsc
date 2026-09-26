@@ -1,0 +1,167 @@
+// examples/somnium/somnium.exsc
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 The Exsecutor authors.
+// ---------------------------------------------------------------------------
+// The screensaver engine's shared half: the frame geometry, the one table,
+// and the two scalar helpers every somnium ("dream") is written in.
+// docs/design/somnium.md is the design; prototypes/somnium_oracle.py is the
+// independent oracle every byte is held to.
+//
+// THE FRAME. 160 x 100, rgb24, row-major, no header: 48,000 bytes. Small on
+// purpose, and the reason is measured from the runtime, not taste: the only
+// way arbitrary bytes reach stdout is `Scriptor.scribe_octeto`, which is one
+// write(2) per byte (compiler/x86_64/prelude/prelude.asm, and
+// docs/design/runtime.md). A 320x200 frame is 192,000 syscalls; this one is
+// 48,000. The viewer scales it to the panel -- 16:10, which is the Framework
+// 16's own aspect -- and nearest-neighbour scaling is a look, not a defect.
+//
+// NOTHING HERE IS AMBIENT. There is no clock: time is the frame index the
+// engine counts. There is no entropy source: the one seed arrives in the
+// request on stdin. The same request therefore writes the same bytes on
+// every machine, forever -- which is what lets a test pin a screensaver.
+//
+// What the language lacks and how this file does without it: no `*%`, so
+// the generator is xorshift32 (xor and shifts only, no multiply); no
+// remainder and no bitwise and, so "mod 256" is `sicut u8` (spec §5.4:
+// narrowing is truncation) and "mod 8" is the shift-discard idiom; no sine,
+// so the sine is a frozen table.
+// ---------------------------------------------------------------------------
+
+// round(127.5 + 127.5 * sin(2 pi i / 256)) for i in 0..256, frozen. The
+// oracle holds the same literal and its `selftest` checks it against the
+// formula. A function returning a literal rather than a module `firma`:
+// module-scope array literals do not lower (spec §8.6; docs/design/modem.md
+// D4, the transmitter's table is written this way for the same reason).
+publica functio sinus() -> acies<u8, 256> {
+    redde [
+        128, 131, 134, 137, 140, 143, 146, 149, 152, 155, 158, 162, 165, 167, 170, 173,
+        176, 179, 182, 185, 188, 190, 193, 196, 198, 201, 203, 206, 208, 211, 213, 215,
+        218, 220, 222, 224, 226, 228, 230, 232, 234, 235, 237, 238, 240, 241, 243, 244,
+        245, 246, 248, 249, 250, 250, 251, 252, 253, 253, 254, 254, 254, 255, 255, 255,
+        255, 255, 255, 255, 254, 254, 254, 253, 253, 252, 251, 250, 250, 249, 248, 246,
+        245, 244, 243, 241, 240, 238, 237, 235, 234, 232, 230, 228, 226, 224, 222, 220,
+        218, 215, 213, 211, 208, 206, 203, 201, 198, 196, 193, 190, 188, 185, 182, 179,
+        176, 173, 170, 167, 165, 162, 158, 155, 152, 149, 146, 143, 140, 137, 134, 131,
+        128, 124, 121, 118, 115, 112, 109, 106, 103, 100, 97, 93, 90, 88, 85, 82,
+        79, 76, 73, 70, 67, 65, 62, 59, 57, 54, 52, 49, 47, 44, 42, 40,
+        37, 35, 33, 31, 29, 27, 25, 23, 21, 20, 18, 17, 15, 14, 12, 11,
+        10, 9, 7, 6, 5, 5, 4, 3, 2, 2, 1, 1, 1, 0, 0, 0,
+        0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 4, 5, 5, 6, 7, 9,
+        10, 11, 12, 14, 15, 17, 18, 20, 21, 23, 25, 27, 29, 31, 33, 35,
+        37, 40, 42, 44, 47, 49, 52, 54, 57, 59, 62, 65, 67, 70, 73, 76,
+        79, 82, 85, 88, 90, 93, 97, 100, 103, 106, 109, 112, 115, 118, 121, 124
+    ];
+}
+
+// `v mod 256` as an index: the low eight bits, back in `mensura`.
+publica functio octo(v: mensura) -> mensura {
+    firma b: u8 = v sicut u8;
+    redde b sicut mensura;
+}
+
+// |a - b| without a signed type.
+publica functio distantia(a: mensura, b: mensura) -> mensura {
+    si a gt b {
+        redde a - b;
+    }
+    redde b - a;
+}
+
+// One xorshift32 step (Marsaglia 2003, shifts 13/17/5). `sursum` discards
+// what passes bit 31 (spec §5.4), so no mask is needed; zero is its only
+// fixed point, which is why machina.exsc never seeds it with zero.
+publica functio alea(x: u32) -> u32 {
+    firma a: u32 = x aut (x sursum 13);
+    firma b: u32 = a aut (a deorsum 17);
+    redde b aut (b sursum 5);
+}
+
+// ---- tables for the later somnia -------------------------------------------
+
+// 8192 / (z + 1) for z in 0..256: the starfield's perspective divide as a
+// table, because the language has no integer division. Frozen, and checked
+// against its formula by the oracle's `selftest`.
+publica functio reciproca() -> acies<u16, 256> {
+    redde [
+        8192, 4096, 2730, 2048, 1638, 1365, 1170, 1024, 910, 819, 744, 682, 630, 585, 546, 512,
+        481, 455, 431, 409, 390, 372, 356, 341, 327, 315, 303, 292, 282, 273, 264, 256,
+        248, 240, 234, 227, 221, 215, 210, 204, 199, 195, 190, 186, 182, 178, 174, 170,
+        167, 163, 160, 157, 154, 151, 148, 146, 143, 141, 138, 136, 134, 132, 130, 128,
+        126, 124, 122, 120, 118, 117, 115, 113, 112, 110, 109, 107, 106, 105, 103, 102,
+        101, 99, 98, 97, 96, 95, 94, 93, 92, 91, 90, 89, 88, 87, 86, 85,
+        84, 83, 82, 81, 81, 80, 79, 78, 78, 77, 76, 75, 75, 74, 73, 73,
+        72, 71, 71, 70, 70, 69, 68, 68, 67, 67, 66, 66, 65, 65, 64, 64,
+        63, 63, 62, 62, 61, 61, 60, 60, 59, 59, 58, 58, 58, 57, 57, 56,
+        56, 56, 55, 55, 54, 54, 54, 53, 53, 53, 52, 52, 52, 51, 51, 51,
+        50, 50, 50, 49, 49, 49, 49, 48, 48, 48, 47, 47, 47, 47, 46, 46,
+        46, 46, 45, 45, 45, 45, 44, 44, 44, 44, 43, 43, 43, 43, 42, 42,
+        42, 42, 42, 41, 41, 41, 41, 40, 40, 40, 40, 40, 39, 39, 39, 39,
+        39, 39, 38, 38, 38, 38, 38, 37, 37, 37, 37, 37, 37, 36, 36, 36,
+        36, 36, 36, 35, 35, 35, 35, 35, 35, 35, 34, 34, 34, 34, 34, 34,
+        33, 33, 33, 33, 33, 33, 33, 33, 32, 32, 32, 32, 32, 32, 32, 32
+    ];
+}
+
+// round(65536 tan(a pi / 128)) for a in 0..33: one octant of the tunnel's
+// angle, found by multiplying instead of taking an arctangent.
+publica functio tangentes() -> acies<u32, 33> {
+    redde [
+        0, 1609, 3220, 4834, 6455, 8083, 9721, 11372,
+        13036, 14717, 16416, 18136, 19880, 21650, 23449, 25280,
+        27146, 29050, 30996, 32988, 35030, 37126, 39281, 41500,
+        43790, 46156, 48605, 51145, 53784, 56532, 59398, 62395,
+        65536
+    ];
+}
+
+// ---- the letters ------------------------------------------------------------
+
+// A 5x7 face, one byte a row, bit 4 the leftmost column: the eighteen
+// glyphs " ACEGHILMNOPRSTVXY", in that order. Only what the inscriptions
+// spell. The Latin is cut in the classical alphabet, so V stands for U.
+publica functio formae() -> acies<u8, 126> {
+    redde [
+        0, 0, 0, 0, 0, 0, 0,
+        14, 17, 17, 31, 17, 17, 17,
+        14, 17, 16, 16, 16, 17, 14,
+        31, 16, 16, 30, 16, 16, 31,
+        14, 17, 16, 23, 17, 17, 15,
+        17, 17, 17, 31, 17, 17, 17,
+        14, 4, 4, 4, 4, 4, 14,
+        16, 16, 16, 16, 16, 16, 31,
+        17, 27, 21, 21, 17, 17, 17,
+        17, 25, 21, 19, 17, 17, 17,
+        14, 17, 17, 17, 17, 17, 14,
+        30, 17, 17, 30, 16, 16, 16,
+        30, 17, 17, 30, 20, 18, 17,
+        15, 16, 16, 14, 1, 1, 30,
+        31, 4, 4, 4, 4, 4, 4,
+        17, 17, 17, 17, 17, 10, 4,
+        17, 17, 10, 4, 10, 17, 17,
+        17, 17, 10, 4, 4, 4, 4
+    ];
+}
+
+// OLIGARCHY, EXSECVTOR PINXIT ("Exsecutor painted it") and PVNCTIM
+// CECINIT ("Punctim sang it" -- HydraModem's melody profile is Punctim's),
+// as indices into formae().
+publica functio nomen() -> acies<u8, 9> {
+    redde [10, 7, 6, 4, 1, 12, 2, 5, 17];
+}
+
+publica functio versus_primus() -> acies<u8, 16> {
+    redde [3, 16, 13, 3, 2, 15, 14, 10, 12, 0, 11, 6, 9, 16, 6, 14];
+}
+
+publica functio versus_secundus() -> acies<u8, 15> {
+    redde [11, 15, 9, 2, 14, 6, 8, 0, 2, 3, 2, 6, 9, 6, 14];
+}
+
+// Is row r, column c of glyph g lit? Shift the column to the top of the
+// byte, then down to bit 0: the shift-discard idiom, there being no
+// bitwise and. 1 or 0.
+publica functio littera_lucet(f: acies<u8, 126>, g: u8, r: mensura, c: mensura) -> u8 {
+    firma v: u8 = f[(g sicut mensura) * 7 + r];
+    firma n: u8 = (3 + c) sicut u8;
+    redde (v sursum n) deorsum 7;
+}

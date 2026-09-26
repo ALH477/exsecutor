@@ -1,0 +1,76 @@
+// examples/somnium/abyssus.exsc
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 The Exsecutor authors.
+// ---------------------------------------------------------------------------
+// Somnium 6: a Mandelbrot deep zoom into the Seahorse Valley, at
+// -0.743643887037151 + 0.13182590420533 i, 1.5% closer every frame for 720
+// frames (a zoom of about 53,000x), then again from the top.
+//
+// The one somnium in floating point, on purpose: it puts spec §5.4's f64
+// path on screen. Every expression is one IEEE f64 operation at a time
+// under nearest-even (the prelude's MXCSR 0x1F80), in the order written,
+// and prototypes/somnium_oracle.py writes the same order -- Python floats
+// are the same doubles -- so identical order is identical bits, as it is
+// for examples/pictura/. The zoom's scale is a product of `ph` factors of
+// 0.985 rather than a power, because there is no pow: at most 719
+// multiplies a frame against the 16,000 pixels' iterations, nothing.
+//
+// The iteration budget grows with the zoom (96 + ph/4, at most 275), and
+// the escape loop is a `dum` with its bound declared (spec §8.5): 1024,
+// which it cannot reach. The colour's hue runs with the escape count and
+// drifts with the zoom; its brightness climbs with the count, so the far
+// field is dark and the filaments near the set glow. Inside is black.
+// ---------------------------------------------------------------------------
+
+publica functio abyssus_pinge(fb: &mutabilis acies<u8, 48000>, ph: mensura) -> u32 {
+    firma s: acies<u8, 256> = sinus();
+    mutabilis scala: f64 = 3.0;
+    per i in 0..ph {
+        scala = scala * 0.985;
+    }
+    firma passus: f64 = scala / 160.0;
+    firma maximum: mensura = 96 + (ph deorsum 2);
+
+    per y in 0..100 {
+        firma ci: f64 = 0.13182590420533 + (y sicut f64 - 49.5) * passus;
+        per x in 0..160 {
+            firma cr: f64 = (-0.743643887037151) + (x sicut f64 - 79.5) * passus;
+            mutabilis zr: f64 = 0.0;
+            mutabilis zi: f64 = 0.0;
+            mutabilis n: mensura = 0;
+            mutabilis vivus: u8 = 1;
+            dum vivus eq 1 terminus 1024 {
+                firma zr2: f64 = zr * zr;
+                firma zi2: f64 = zi * zi;
+                si zr2 + zi2 gt 4.0 {
+                    vivus = 0;
+                }
+                si vivus eq 1 {
+                    zi = 2.0 * zr * zi + ci;
+                    zr = zr2 - zi2 + cr;
+                    n = n + 1;
+                    si n ge maximum {
+                        vivus = 0;
+                    }
+                }
+            }
+            firma k: mensura = (y * 160 + x) * 3;
+            si n ge maximum {
+                (*fb)[k] = 0;
+                (*fb)[k + 1] = 0;
+                (*fb)[k + 2] = 0;
+            }
+            si n lt maximum {
+                firma c: mensura = octo(n * 7 + ph);
+                mutabilis m: mensura = n * 8;
+                si m gt 255 {
+                    m = 255;
+                }
+                (*fb)[k] = (((s[c] sicut mensura) * m) deorsum 8) sicut u8;
+                (*fb)[k + 1] = (((s[octo(c + 85)] sicut mensura) * m) deorsum 8) sicut u8;
+                (*fb)[k + 2] = (((s[octo(c + 170)] sicut mensura) * m) deorsum 8) sicut u8;
+            }
+        }
+    }
+    redde 0;
+}
