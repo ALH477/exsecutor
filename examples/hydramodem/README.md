@@ -26,6 +26,29 @@ bitwise and or or and no signed shift; what it costs is four **negative
 controls** — mutants that decode anyway — which `docs/design/receptor.md`
 section 6 names rather than hides.
 
+## The melody profile
+
+`melos*.exsc` is a second transmitter beside the first: HydraModem's MUSICAL
+`melody` profile. It is 8-FSK on a just-intonation major pentatonic drawn
+from the harmonic series of 25 Hz, Gray-mapped, over a 300 + 450 Hz drone,
+with a 10 ms attack and release. It writes the reference's 481,964-byte WAV
+byte for byte, and its symbol stream on all 137 basis words
+(`tests/programs/melos_{loopback,nihil,basis}/`, reference output in
+`vendor/hydramodem-melos/`, design in `docs/design/melos.md`):
+
+```sh
+build/exsc aedifica --hospes x86_64-linux \
+  examples/hydramodem/quantum.exsc examples/hydramodem/modulator.exsc \
+  examples/hydramodem/melos.exsc examples/hydramodem/melos_emitte.exsc \
+  examples/hydramodem/melos_loopback.exsc -o melos.asm
+fasmg melos.asm melos && chmod +x melos
+./melos > melody.wav
+cmp melody.wav vendor/hydramodem-melos/d310123400a1ffffdeadbeef0a1b2ca961.wav
+```
+
+Play `melody.wav`: five seconds of a tune over a drone, not a warble. It is
+the same seventeen bytes.
+
 ## Hear it first
 
 `loopback.wav` in this directory is what `loopback.exsc` writes: 0.396 s of
@@ -99,6 +122,10 @@ checked. `modulator.exsc` is in the unit because the receiver reuses its
 | `receptor.exsc` | the receiver: the Q7 oscillator table, the window energy, acquisition, the soft bits, the 64-state Viterbi, the residue | none: pure |
 | `recipe.exsc` | reads a WAV from standard input, verifies its header, builds the prefix sums, writes the 17 bytes | `Mundus`, from which `ambitus` (`Lector` and `Scriptor`) |
 | `circuitus.exsc` | the loopback certificate: 140 words out through `sona` and back through `receptor.exsc`, in one process | `Mundus`, from which `ambitus` (`Scriptor` only — it reads nothing) |
+| `melos.exsc` | the melody-profile transmitter: the quarter-wave table, one sample, the envelope, the Gray note table, the symbol stream | none: pure |
+| `melos_emitte.exsc` | walks the melody layout with its three phase counters and writes every byte to a `Scriptor` | whatever the `Scriptor` carries |
+| `melos_loopback.exsc`, `melos_nihil.exsc` | one `initium` each, one frame, melody profile | `Mundus`, from which `ambitus` |
+| `melos_basis.exsc` | the melody certificate driver: 124 notes (0–7) of each of the 137 basis words | `Mundus`, from which `ambitus` |
 
 Only a driver names `Mundus`. `modulator.exsc` and `receptor.exsc` declare no
 `poscit` and take no capability, so they are pure in spec §4.1 rule 6's sense:

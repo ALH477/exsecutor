@@ -350,6 +350,15 @@
       # excluded, LC_ALL=C pinned.
       rxVendorDigest = "4d8769c2a544057600d7271cfc75bac58dfe2801d97a9486eb6dbcddcc9ca05e"; # LC_ALL=C
 
+      # vendor/hydramodem-melos: the MUSICAL (melody-profile) transmitter's
+      # reference output -- two WAVs and the 137-word symbol basis, rendered by
+      # Punctim's hydramodem at 5c6a4e1 (PROVENANCE.md there has the recipe).
+      # Certifies examples/hydramodem/melos*.exsc (tests/programs/melos_*/).
+      # A separate tree and digest from hydramodem-tx: a different profile,
+      # re-vendored for different reasons. Same discipline: PROVENANCE.md
+      # excluded, LC_ALL=C pinned.
+      melosVendorDigest = "106744814f7cc21f7e331ca2e5473d42da001e0131d9a7c2871b3a9c7deefd34"; # LC_ALL=C
+
       # vendor/streamdb-v3: a 24-document StreamDB v3 container written by the
       # real upstream C writer, three mechanically-corrupted copies of it, the
       # 24 raw document payloads, and expectation.json -- a machine-readable
@@ -625,6 +634,35 @@
               echo "edit or a re-vendor; report it rather than updating this" >&2
               echo "digest to match -- the verdicts are attached to THESE" >&2
               echo "bytes and mean nothing attached to others." >&2
+              exit 1
+            fi
+            mkdir -p "$out"
+            echo "$actual" > "$out"/digest
+          '';
+        };
+
+        # Same check for vendor/hydramodem-melos (the melody-profile reference
+        # output, melosVendorDigest above).
+        melos-vendor-integrity = pkgs.stdenvNoCC.mkDerivation {
+          name = "check-vendor-hydramodem-melos-integrity";
+          nativeBuildInputs = [ pkgs.coreutils pkgs.findutils ];
+          dontUnpack = true;
+          buildCommand = ''
+            set -e
+            export LC_ALL=C
+            mkdir -p work/vendor
+            cp -r --no-preserve=mode -- ${./vendor/hydramodem-melos} work/vendor/hydramodem-melos
+            cd work
+            actual="$(find vendor/hydramodem-melos -type f ! -name PROVENANCE.md | sort | xargs sha256sum | sha256sum | cut -d' ' -f1)"
+            echo "expected (LC_ALL=C): ${melosVendorDigest}"
+            echo "actual   (LC_ALL=C): $actual"
+            if [ "$actual" != "${melosVendorDigest}" ]; then
+              echo "" >&2
+              echo "FAIL: vendor/hydramodem-melos content hash does not match." >&2
+              echo "These files are HydraModem's melody-profile reference output," >&2
+              echo "vendored verbatim and never edited here. A mismatch means a" >&2
+              echo "local edit or a re-vendor; report it rather than updating" >&2
+              echo "this digest to match." >&2
               exit 1
             fi
             mkdir -p "$out"
