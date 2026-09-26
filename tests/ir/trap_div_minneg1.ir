@@ -1,0 +1,39 @@
+; TEST: abort=1 c-emit-exit=4
+;
+; `div i8 -128 -1`: the ONE overflow case a division has. -128 / -1 is 128,
+; and no `i8` holds 128, so it traps -- kind 1, the shared `bfausr_trap`,
+; the same kind `add i8 127 1` gets (trap_add_i8.ir).
+;
+; T_MIN IS i8's OWN, WHICH IS THE WHOLE POINT OF THIS FIXTURE. The
+; canonical form (ssa-ir.md 2.2) holds -128 sign-extended in a 64-bit
+; slot, and the 64-bit `idiv` of -128 by -1 computes 128 without a murmur:
+; the hardware's own divide-error case is INT64_MIN / -1, which this is
+; not. A lowering that checked against INT64_MIN would let this through and
+; return 7. So the emitted check is
+;
+;       mov     rdx, -128
+;       xor     rdx, rax
+;       not     rcx
+;       or      rdx, rcx
+;       jz      bfausr_trap
+;
+; with -128 built from the operand type's own N (emit.inc's
+; __bfa_emit_divrem: `1 shl (N-1)`, negated).
+;
+; If nothing traps the function returns 7.
+;
+; Mutation (run): the T_MIN literal taken as INT64_MIN -> exit 7, nothing
+; trapped, 128 sitting in an `i8` slot.
+;
+; `c-emit-exit=4`: the C backend refuses `div` by name (c-backend.md D4
+; row 4).
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = iconst i8 -128
+%2 = iconst i8 -1
+%3 = div i8 %1 %2
+%4 = iconst u8 7
+ret %4
+}

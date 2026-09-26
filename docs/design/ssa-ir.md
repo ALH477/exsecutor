@@ -1,13 +1,20 @@
 # SSA IR — design plan
 
-Status: **partly built.** `compiler/x86_64/backend_fasmg/` (8632 lines, c659ad7)
-implements section 2.1's representation, 2.11's parser and printer (round-trip
-tested) and the naive emitter of spec §9.2 — its output assembled by real fasmg,
-run, and correct, against hand-written IR with no frontend. **Not built:** the
-verifier (section 3) and the AST → SSA construction (section 2.5, Stage 3); no
-lowering exists, so nothing here has yet run on IR a frontend produced. This
-line said "design only; no IR exists" until 2026-09-10, three commits after it
-stopped being true.
+Status: **built, with named gaps.** `compiler/x86_64/backend_fasmg/`
+(21,551 lines as of 2026-09-25) implements section 2.1's representation,
+2.11's parser and printer (round-trip tested), section 3's **verifier** — nine
+rules, under twenty `tests/unit/bfa_verify_*` fixtures — and
+the naive emitter of spec §9.2, whose output is assembled by real fasmg, run,
+and checked by `tests/ir/*.ir` and `tests/programs/`. A lowering exists
+(`compiler/x86_64/lower/`), so this IR runs on text a frontend produced as
+well as on hand-written text. **Named gaps** rather than a wholesale "not
+built": the opcodes listed as refused in section 2.3 and in
+`backend_fasmg/emit.inc`'s header, `faddr` (`[UNIMPLEMENTED]`), and the
+`[OPEN]` items of section 6.
+This line said "design only; no IR exists" until 2026-09-10, three commits
+after it stopped being true; it then said the verifier was "not built" until
+2026-09-25, long after `verify.inc` and its twenty fixtures existed — the
+same failure twice, recorded rather than quietly overwritten.
 `spec §N` cites `docs/spec/exsecutor-spec-v0.4.md`. Taken as given: spec §9.1's
 pipeline and construction method (Braun et al., CC 2013), spec §5.4/§5.5,
 spec §6, spec §9.2's two backends, `docs/design/phrase-grammar.md`. This is
@@ -123,7 +130,7 @@ is that type unless shown. Text form: `%n = op T operands`.
 
 | group | instructions | semantics |
 |---|---|---|
-| integer, trapping | `add sub mul div rem` | spec §5.4 `+`; overflow or zero divisor traps; **side-effecting**: never removed if unused, never reordered across another side effect |
+| integer, trapping | `add sub mul div rem` | spec §5.4 `+`; overflow or zero divisor traps; **side-effecting**: never removed if unused, never reordered across another side effect. `div`/`rem` (settled 2026-09-25; the matching spec §5.4 amendment is in flight beside this change, not in it — `docs/spec/` is not this file's tree): the quotient is **truncated toward zero** and the remainder's sign **follows the dividend**, so `a == (a/b)*b + (a rem b)` at every pair of signs; both trap on a zero divisor and, for a signed `T`, on `T_MIN / -1` — `rem` included, though its value would be 0, because it is the remainder of a division that does not exist. `T_MIN` is `T`'s own, not `INT64_MIN`: in `i8` the canonical form holds −128 sign-extended and the 64-bit divide computes 128 without complaint (`tests/ir/divrem.ir`, `rem_sign.ir`, `trap_div_zero.ir`, `trap_rem_zero.ir`, `trap_div_minneg1.ir`, `trap_rem_minneg1.ir`, `tests/unit/bfa_emit_divrem.asm`) |
 | integer, wrapping | `addw subw mulw` | `+%`, modulo 2^N |
 | integer, saturating | `adds subs muls` | `+\|`, clamped to `T` |
 | overflow predicate | `addov subov mulov → u1` | true iff the trapping form would trap; `+?` is `addov` + `addw` |
@@ -219,9 +226,74 @@ canonicalisation resolves every operand's chain, so no backend sees a `nop`.
   `ordinata` cannot be flattened into `arborea` or back, because a flattened
   form would have to read state the type system does not expose.
   `summa_ordinata`/`summa_arborea` and `contrahe … forma …` (spec §5.4, §8.5)
-  both lower to these three. The reference backend's lowering of `arborea w`
-  is the definition (ADR 0012); spec §5.4 leaves `n` not a multiple of `w`
-  undefined `[OPEN]`.
+  both lower to these three. `F` is a scalar integer or float type and `op` is
+  one of `fadd fsub fmul add sub mul addw subw adds subs`; any other spelling
+  is refused by name by each backend, the op word being an open vocabulary at
+  parse (`backend_fasmg/emit.inc`'s `__bfa_red_op`).
+
+  **The reference backend's lowering is the definition** (ADR 0012), and as of
+  2026-09-25 it is this, tail included — what spec §5.4 left undefined for `n`
+  not a multiple of `w` is now defined here, with the matching §5.4 amendment
+  in flight beside this change rather than in it:
+
+  - `ordinata`: one accumulator, started at the op's **identity** (0 / 0.0 for
+    the additive words, `sub` among them; 1 / 1.0 for `mul`). Each `contrib`
+    does `acc = op(acc, v)` in contribution order; `redfin` yields `acc`. No
+    contribution at all yields the identity.
+  - `arborea w`: state is `{acc, count, slots[w]}`, `acc` the identity and
+    `count` 0. `contrib` stores `v` into `slots[count++]`; when `count`
+    reaches `w`, the **group value** is a pairwise tree over `slots[0..w)` —
+    adjacent pairs combined left to right, an odd trailing element passing up
+    unchanged, repeated until one value remains — then `acc = op(acc, group)`
+    and `count` returns to 0. `redfin` computes the same tree over the
+    `k = count` cells still held (`k < w`, same odd-element rule), folds it
+    into `acc` the same way, and yields `acc`. At `w = 8` the group is
+    `((s0+s1)+(s2+s3))+((s4+s5)+(s6+s7))`; at `w = 5`,
+    `((s0+s1)+(s2+s3))+s4`. Groups fold into the accumulator left to right in
+    index order, and only `w` cells plus `acc` plus `count` are ever live.
+  - The first group's fold is `op(identity, group)`, **floats included**:
+    `0.0 + x` is not always `x` (it turns −0.0 into +0.0). That is the
+    definition rather than an oversight — the accumulator exists before any
+    contribution does, since an empty reduction must answer the identity, so
+    the one-contribution case cannot be special-cased without making the
+    answer depend on the count.
+  - Integer ops trap exactly as the standalone opcode would: `add` traps on
+    overflow **inside a group tree**, `addw` wraps, `adds` saturates. The
+    reference emitter gets this by construction rather than by re-deriving it
+    — every combine and every fold goes through the same `__bfa_emit_*_core`
+    routine the dispatcher's own `add`/`mul`/`adds` reach.
+  - `arborea 1` is therefore exactly `ordinata`, as a theorem and not a
+    coincidence (`tests/ir/red_w1.ir`).
+  - `w` is bounded: `1 ≤ w ≤ 64` (`BFA_RED_W_MAX`, `backend_fasmg/verify.inc`),
+    because `redfin` emits one unrolled tail tree per possible live count and
+    that is O(w²) emitted lines; `ordinata` takes `w = 0`. Both ends are a
+    verifier rule-1 refusal and an emitter refusal by name — no spec §13 code,
+    malformed IR being a compiler bug.
+
+  Fixtures: `tests/ir/red_ordinata_f32.ir` (the identity fold, −0.0 included),
+  `red_ordinata_i64.ir`, `red_arborea_f32.ir` (spec §5.4's own shape — twenty
+  f32 contributions at `w = 8`, groups `[0..8) [8..16) [16..20)`, whose two
+  shapes differ by 9 ulps: `ordinata` 0x3F800000, `arborea` 0x3F800009, the
+  expected bits computed from the definition by the reference script recorded
+  in that fixture's header), `red_arborea_int_trap.ir`, `red_empty.ir`,
+  `red_w1.ir`, `red_mul.ir`, `reject_verify_red_width.ir`, and
+  `tests/unit/bfa_emit_contrahe.asm`, which pins the emitted text for one
+  shape of each.
+
+  One edge this leaves `[OPEN]`, named rather than papered over: `redfin`
+  resets neither `count` nor `acc`, because the handle is dead after it —
+  rule 5b makes a `redfin` post-dominate every `contrib` of its handle. That
+  rule does not forbid a *loop* whose body holds both, and there a second
+  iteration would contribute into cells the first iteration's tail already
+  folded. What such a program means is the same `[OPEN]` as `rumpe` out of a
+  reduction loop (section 6); neither backend guesses at it.
+
+  What the accumulator's state costs: nothing for `ordinata`, whose whole
+  state is the accumulator and which lives in the `redinit`'s **own value
+  slot** — `red.F` admits no other reader (rule 7), so the slot the naive
+  layout already paid for is free real estate, the same trick a large `copy`
+  uses for its loop counter. `arborea` adds `8 × (1 + w)` bytes as a fourth
+  frame region.
 - **Vectors**: `vf32.N` and `vf64.N` are first-class value types (section
   2.2), and the four lane-wise ops `vadd`/`vsub`/`vmul`/`vdiv` lower in the
   reference backend to the SSE2 baseline — chunked `movups`/`movupd` around
@@ -458,8 +530,15 @@ type interning and is never iterated.
 
 ## 6. Unresolved
 
-`arborea w` when `n` is not a multiple of `w`; `/`, `rem`, `ftoi` edges
-(narrowing `sicut`'s spec text was on this list — the lowering emitted
+`ftoi` edges
+(`arborea w` when `n` is not a multiple of `w` was the head of this list and
+is settled in section 2.6, 2026-09-25: the tail is the same tree over the
+`k < w` cells still held, folded into the accumulator the same way, and
+`tests/ir/red_arborea_f32.ir` pins the bits. `/` and `rem` were next on it
+and are settled in section 2.3 the same day — truncated toward zero, the
+remainder's sign following the dividend, trapping on a zero divisor and on
+`T_MIN / -1`, `tests/ir/divrem.ir` and `rem_sign.ir`;
+narrowing `sicut`'s spec text was on this list — the lowering emitted
 `trunc` and `tests/programs/angusta/` ran one while spec §5.2 had only
 the widening sentence — and spec §5.4 now defines narrowing and the
 equal-width sign change as truncation, matching the implementation);
@@ -483,7 +562,106 @@ is proposed).
 1. Closed by spec §5.2 rule 2 the other way: widths above 8 that are not a
    multiple of 8 do not parse, so there is no packing to define. (Was:
    define packing for such widths under both byte orders.)
-2. Spec §5.4: define `arborea w` exactly, tail included; say whether the
-   accumulator is readable inside the body and what `rumpe` yields.
+2. Spec §5.4: define `arborea w` exactly, tail included — **section 2.6 now
+   does, and the matching §5.4 amendment is in flight beside it** (decided
+   2026-09-25, the reference lowering being the definition, ADR 0012). Still
+   owed by this item: whether the accumulator is readable inside the body,
+   and what `rumpe` out of a reduction loop yields.
 3. Spec §9.1: the SSA line should point here, as the amended spec §9.2 does.
-4. Spec §13: nothing required. Runtime traps are not diagnostics.
+4. Spec §13: nothing required. Runtime traps are not diagnostics — and the
+   two IR-level refusals added on 2026-09-25 (an `arborea w` past
+   `BFA_RED_W_MAX`, an op word no backend lowers) are a verifier verdict and
+   an emitter refusal by name, not codes.
+5. Spec §5.4: `/` and `rem` — quotient truncated toward zero, remainder's
+   sign following the dividend, trapping on a zero divisor and on
+   `T_MIN / -1` for a signed `T`. Decided 2026-09-25; section 2.3's row is
+   this design's copy of it, and the §5.4 text is in flight beside it.
+
+## 8. Findings
+
+Dated. Each entry is something implementing or running settled, recorded
+where prose alone had a hypothesis.
+
+**2026-09-25 — `div`/`rem` lowered; the check has to come first.** Both
+opcodes fell into the reference emitter's catch-all refusal until now. The
+lowering is x86 `idiv`/`div` unchanged, because truncation toward zero with
+the remainder following the dividend is exactly what that hardware computes;
+what needed designing was the trap. Two facts the implementation forced:
+
+1. **The `T_MIN / -1` test cannot be a normalise-and-compare after the
+   operation**, which is how every other narrow trapping op checks itself
+   (section 2.2). `rem`'s result at `T_MIN rem -1` is 0 — a perfectly good
+   value of `T` — so nothing in the result carries the overflow. The check
+   precedes the divide, and `div`/`rem` are the only trapping ops of which
+   that is true.
+2. **At width 64 the check also replaces a hardware fault.** `idiv` on
+   `INT64_MIN / -1` raises #DE: SIGFPE, not this tree's SIGILL-with-`abortus`
+   numeric trap. `tests/ir/trap_rem_minneg1.ir` compares the SIGNAL, so a
+   lowering that let the hardware do the trapping fails rather than passing
+   by accident.
+
+Consequence recorded against the habit: the emitted text carries **no**
+normalisation after a `div`/`rem`, and the proof is in `emit.inc`'s header —
+with the two trapping cases excluded, the quotient and remainder are already
+values of `T`, so IDIV's sign-extended and DIV's zero-extended result is the
+canonical form. Four dead instructions per division would otherwise have been
+pinned into every fixture.
+
+**2026-09-25 — the reduction group, and what the tail costs.** Section 2.6's
+definition is now emitted. Three things the implementation decided rather
+than the prose:
+
+1. **The accumulator is free.** It lives in the `redinit`'s own value slot, a
+   slot the naive layout already reserves for every instruction id and which
+   nothing else may read (rule 7). So an `ordinata` reduction adds nothing to
+   the frame and a function without an `arborea` handle emits a byte-identical
+   frame to the one it emitted before — the same bargain the vector region
+   struck in Stage 5.1.
+2. **The tail is a dispatch, and that is what bounds `w`.** The live count at
+   `redfin` is a runtime quantity and the tree over `k` cells is a different
+   unrolled sequence for each `k`, so `redfin` emits one tree per `k` in
+   `1..w-1` behind a `cmp`/`je` chain: O(w²) emitted lines. **Measured**, one
+   `redinit`/`contrib`/`redfin` over `u64 add` per row, counting the emitted
+   fasmg lines from the dispatch's first `mov` to its join label, and the
+   whole function beside it:
+
+   | `w` | tail dispatch | whole function |
+   |---|---|---|
+   | 2 | 11 | 44 |
+   | 4 | 39 | 80 |
+   | 5 | 59 | 104 |
+   | 8 | 143 | 200 |
+   | 16 | 543 | 632 |
+   | 32 | 2,111 | 2,264 |
+   | 64 | 8,319 | 8,600 |
+
+   Hence `BFA_RED_W_MAX = 64`: 8,600 lines is the scale of one large
+   function, and the next doubling is not. Refused in the verifier (rule 1)
+   and again in the emitter by name.
+3. **The tree wants a doubling stride, not a compaction pass.** Combining
+   `slots[i]` with `slots[i+stride]` into `slots[i]` and doubling the stride
+   is the same tree as "combine adjacent pairs, compact, repeat" — and the
+   odd trailing element needs no copy at all, because not writing it *is*
+   passing it up. Every combine is then one shape, `cell = op(cell, cell)`,
+   which is what let the whole group reuse the standalone opcodes' emission
+   instead of a second copy of the integer arithmetic.
+
+Refactor recorded because it is the risk in this change: `add`/`sub`/`mul`/
+`adds`/`subs` were split into a wrapper (read the instruction, load `a`,
+store the result) and a `_core` (the operation, the trap or clamp, result in
+rax), so the reduction folds through the same cores. The split point is where
+it already was, and the seven fixtures that pin emitted text —
+`bfa_emit_tier1/tier2/program/phi/bytes/narrow/bitwise`, plus
+`bfa_emit_narrow_addr`, which pins a refusal — still pass unchanged, so the
+text is byte-identical before and after. That is the requirement section 2.4
+states for a phi-free block ("must produce exactly the text it produced
+before"), generalised to a refactor: a diff in one of them would have been a
+defect in this change rather than a fixture to update.
+
+**Not settled by either.** The C backend still refuses `div`, `rem` and the
+three reduction opcodes by name (c-backend.md D4 rows 4, 5 and 36–38), so
+ADR 0012's differential test checks **refusal parity** for these fixtures and
+not agreement on values: thirteen of the fourteen new `tests/ir` fixtures
+carry `c-emit-exit=4`. Nothing here is cross-checked against a second
+implementation yet `[UNTESTED]`, which for a definition-by-reference-lowering
+is exactly the gap worth naming.

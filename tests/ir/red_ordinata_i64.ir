@@ -1,0 +1,105 @@
+; TEST: expect-exit=100 c-emit-exit=4
+;
+; `ordinata` over integers -- the same definition as the float case
+; (red_ordinata_f32.ir), with the integer group's identities and the integer
+; group's TRAPS.
+;
+;   1  add i64,  contributions [1, 2, 3, 4]      = 10    (identity 0)
+;   2  sub i64,  contributions [1, 2, 3]         = -6    ((0-1)-2)-3
+;   3  add i64,  contributions [-5, 5]           = 0     signs fold
+;   4  add u8,   contributions [100, 100, 55]    = 255   at the very top of
+;                                                        u8, and NOT trapping
+;   5  add i64,  no contribution at all          = 0     the identity
+;
+; CHECK 4 IS THE ONE THAT MATTERS FOR THE CANONICAL FORM. Each fold is the
+; standalone `add u8` -- emit.inc routes the accumulate step through
+; __bfa_emit_addsub_core, the same routine the dispatcher's `add` reaches --
+; so the running total is normalised and checked at u8 after EVERY
+; contribution, not once at the end. 100 + 100 = 200 and 200 + 55 = 255 both
+; fit; a fourth contribution of 1 would trap (red_arborea_int_trap.ir is
+; that case in the other shape). An accumulator held at 64 bits and
+; normalised only by `redfin` would also answer 255 here -- and would answer
+; 300 & 0xFF instead of trapping on overflow, which is why the trap fixture
+; exists beside this one.
+;
+; CHECK 2 fixes what `sub` means as a reduction: fold from the identity, so
+; ((0-1)-2)-3 = -6, the negated sum. See red_ordinata_f32.ir's header for the
+; argument that this is the definition rather than a choice of seed.
+;
+; Mutation (run): the accumulator seeded with the first contribution -> exit
+; 2 (`sub` gives 1-2-3 = -4). The per-fold normalisation dropped -> exit 4
+; survives but red_arborea_int_trap.ir stops trapping.
+;
+; `c-emit-exit=4`: the C backend refuses the reduction opcodes by name
+; (c-backend.md D4 rows 36-38).
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = iconst i64 1
+%2 = iconst i64 2
+%3 = iconst i64 3
+%4 = iconst i64 4
+%5 = redinit i64 add ordinata 0
+contrib %5 %1
+contrib %5 %2
+contrib %5 %3
+contrib %5 %4
+%6 = redfin i64 %5
+%7 = iconst i64 10
+%8 = cmp.eq i64 %6 %7
+br %8 b2 b1
+b1:
+%9 = iconst u8 1
+ret %9
+b2:
+%10 = redinit i64 sub ordinata 0
+contrib %10 %1
+contrib %10 %2
+contrib %10 %3
+%11 = redfin i64 %10
+%12 = iconst i64 -6
+%13 = cmp.eq i64 %11 %12
+br %13 b4 b3
+b3:
+%14 = iconst u8 2
+ret %14
+b4:
+%15 = iconst i64 -5
+%16 = iconst i64 5
+%17 = redinit i64 add ordinata 0
+contrib %17 %15
+contrib %17 %16
+%18 = redfin i64 %17
+%19 = iconst i64 0
+%20 = cmp.eq i64 %18 %19
+br %20 b6 b5
+b5:
+%21 = iconst u8 3
+ret %21
+b6:
+%22 = iconst u8 100
+%23 = iconst u8 55
+%24 = redinit u8 add ordinata 0
+contrib %24 %22
+contrib %24 %22
+contrib %24 %23
+%25 = redfin u8 %24
+%26 = iconst u8 255
+%27 = cmp.eq u8 %25 %26
+br %27 b8 b7
+b7:
+%28 = iconst u8 4
+ret %28
+b8:
+%29 = redinit i64 add ordinata 0
+%30 = redfin i64 %29
+%31 = cmp.eq i64 %30 %19
+br %31 b10 b9
+b9:
+%32 = iconst u8 5
+ret %32
+b10:
+%33 = iconst u8 100
+ret %33
+}

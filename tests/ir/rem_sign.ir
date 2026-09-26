@@ -1,0 +1,140 @@
+; TEST: expect-exit=100 c-emit-exit=4
+;
+; The two halves of spec 5.4's division decision (2026-09-25), checked as
+; PROPERTIES rather than as tabulated constants:
+;
+;   the identity   a == (a/b)*b + (a rem b)
+;   the sign rule  the remainder's sign follows the DIVIDEND
+;
+; The identity is computed in IR -- `div`, `rem`, `mul`, `add`, then
+; `cmp.eq` against `a` -- once per pair of signs, so a lowering that got
+; the quotient's rounding and the remainder's sign inconsistently right
+; (floor one, truncate the other) fails the identity even where each
+; separate value looked plausible.
+;
+;   check  a     b     div  rem  identity
+;    1, 2  -17    5     -3   -2   -3*5 + -2 = -17
+;    3, 4   17   -5     -3    2   -3*-5 + 2 = 17
+;    5, 6  -17   -5      3   -2    3*-5 + -2 = -17
+;    7, 8   17    5      3    2    3*5 + 2 = 17
+;    9     -18    6      -3   0   an exact division: no sign to follow
+;   10      -1    2 (i8)  0  -1   the same rule at a narrow width
+;
+; A FLOORING division would give -4 and 3 for check 1's pair and satisfy
+; the identity just as well -- floor division has its own consistent
+; remainder. What rules it out is the even-numbered checks, which pin the
+; remainder itself: -2, not 3. Both halves are needed and both are here.
+;
+; Check 10 is at i8 so the result crosses the canonical form (ssa-ir.md
+; 2.2): -1 rem 2 is -1, which must sit in the slot sign-extended, and the
+; 64-bit `cmp.eq` against `iconst i8 -1` sees all 64 bits.
+;
+; Mutation (run): the remainder taken from the quotient's sign (negating
+; rdx when the divisor is negative) -> exit 4. `rem` lowered as
+; `a - (a/b)*b` with a FLOOR division -> exit 2.
+;
+; `c-emit-exit=4`: the C backend refuses `div`/`rem` by name (c-backend.md
+; D4 rows 4 and 5), so the differential phase checks parity of the refusal.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = iconst i64 -17
+%2 = iconst i64 5
+%3 = div i64 %1 %2
+%4 = rem i64 %1 %2
+%5 = mul i64 %3 %2
+%6 = add i64 %5 %4
+%7 = cmp.eq i64 %6 %1
+br %7 b2 b1
+b1:
+%8 = iconst u8 1
+ret %8
+b2:
+%9 = iconst i64 -2
+%10 = cmp.eq i64 %4 %9
+br %10 b4 b3
+b3:
+%11 = iconst u8 2
+ret %11
+b4:
+%12 = iconst i64 17
+%13 = iconst i64 -5
+%14 = div i64 %12 %13
+%15 = rem i64 %12 %13
+%16 = mul i64 %14 %13
+%17 = add i64 %16 %15
+%18 = cmp.eq i64 %17 %12
+br %18 b6 b5
+b5:
+%19 = iconst u8 3
+ret %19
+b6:
+%20 = iconst i64 2
+%21 = cmp.eq i64 %15 %20
+br %21 b8 b7
+b7:
+%22 = iconst u8 4
+ret %22
+b8:
+%23 = iconst i64 -17
+%24 = iconst i64 -5
+%25 = div i64 %23 %24
+%26 = rem i64 %23 %24
+%27 = mul i64 %25 %24
+%28 = add i64 %27 %26
+%29 = cmp.eq i64 %28 %23
+br %29 b10 b9
+b9:
+%30 = iconst u8 5
+ret %30
+b10:
+%31 = iconst i64 -2
+%32 = cmp.eq i64 %26 %31
+br %32 b12 b11
+b11:
+%33 = iconst u8 6
+ret %33
+b12:
+%34 = iconst i64 17
+%35 = iconst i64 5
+%36 = div i64 %34 %35
+%37 = rem i64 %34 %35
+%38 = mul i64 %36 %35
+%39 = add i64 %38 %37
+%40 = cmp.eq i64 %39 %34
+br %40 b14 b13
+b13:
+%41 = iconst u8 7
+ret %41
+b14:
+%42 = iconst i64 2
+%43 = cmp.eq i64 %37 %42
+br %43 b16 b15
+b15:
+%44 = iconst u8 8
+ret %44
+b16:
+%45 = iconst i64 -18
+%46 = iconst i64 6
+%47 = rem i64 %45 %46
+%48 = iconst i64 0
+%49 = cmp.eq i64 %47 %48
+br %49 b18 b17
+b17:
+%50 = iconst u8 9
+ret %50
+b18:
+%51 = iconst i8 -1
+%52 = iconst i8 2
+%53 = rem i8 %51 %52
+%54 = iconst i8 -1
+%55 = cmp.eq i8 %53 %54
+br %55 b20 b19
+b19:
+%56 = iconst u8 10
+ret %56
+b20:
+%57 = iconst u8 100
+ret %57
+}

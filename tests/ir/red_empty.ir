@@ -1,0 +1,80 @@
+; TEST: expect-exit=100 c-emit-exit=4
+;
+; A reduction with NO CONTRIBUTION yields the op's identity -- in both
+; shapes, and that is the half of the definition which makes the rest
+; consistent (ssa-ir.md 2.6, as defined 2026-09-25). `redinit` immediately
+; followed by `redfin` is legal IR: rule 5 asks that every `contrib` be
+; dominated by its `redinit` and that `redfin` post-dominate every `contrib`
+; of its handle, and zero contributions satisfy both vacuously.
+;
+;   1  fadd f32,  ordinata     = +0.0   0x00000000
+;   2  mul  i64,  ordinata     = 1      (NOT 0 -- the multiplicative identity)
+;   3  add  u32,  arborea 8    = 0      count never reaches w, tail is empty
+;   4  fmul f64,  arborea 4    = 1.0    0x3FF0000000000000
+;
+; CHECKS 3 AND 4 ARE THE `arborea` TAIL AT k = 0. `redfin`'s tail dispatch
+; reads the live count, finds 0, and jumps straight to its join without
+; folding anything -- so the accumulator is still the identity it was given
+; by `redinit`. A lowering that folded slots[0] unconditionally would read a
+; cell nothing ever wrote (the frame's fourth region is not zeroed) and
+; answer garbage; this fixture is what makes that loud rather than
+; intermittent.
+;
+; Check 2 is why `mul`'s identity has to be a separate case in
+; __bfa_red_ident: 0 would make every product 0, and the bug would be
+; invisible in any fixture that happened to contribute a 0.
+;
+; Mutation (run): one identity table for every op (0) -> exit 2 and exit 4.
+; `redfin` folding the tail unconditionally -> exit 3 or 4, nondeterministically
+; (whatever the frame held).
+;
+; `c-emit-exit=4`: the C backend refuses the reduction opcodes by name
+; (c-backend.md D4 rows 36-38).
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = slot 8 8
+%2 = redinit f32 fadd ordinata 0
+%3 = redfin f32 %2
+store f32 %1 0 nativus %3
+%4 = load u32 %1 0 nativus
+%5 = iconst u32 0
+%6 = cmp.eq u32 %4 %5
+br %6 b2 b1
+b1:
+%7 = iconst u8 1
+ret %7
+b2:
+%8 = redinit i64 mul ordinata 0
+%9 = redfin i64 %8
+%10 = iconst i64 1
+%11 = cmp.eq i64 %9 %10
+br %11 b4 b3
+b3:
+%12 = iconst u8 2
+ret %12
+b4:
+%13 = redinit u32 add arborea 8
+%14 = redfin u32 %13
+%15 = iconst u32 0
+%16 = cmp.eq u32 %14 %15
+br %16 b6 b5
+b5:
+%17 = iconst u8 3
+ret %17
+b6:
+%18 = redinit f64 fmul arborea 4
+%19 = redfin f64 %18
+store f64 %1 0 nativus %19
+%20 = load u64 %1 0 nativus
+%21 = iconst u64 4607182418800017408
+%22 = cmp.eq u64 %20 %21
+br %22 b8 b7
+b7:
+%23 = iconst u8 4
+ret %23
+b8:
+%24 = iconst u8 100
+ret %24
+}

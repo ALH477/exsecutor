@@ -80,7 +80,7 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # wave's four: lex_float_literal.asm, lwr_float.asm, chk_ty_floatlit.asm,
 # chk_ty_floatops.asm. 176 -> 178 is Stage 5.2's pair: chk_ty_aciesops.asm
 # (the whole-acy admission gate) and lwr_aciesops.asm (the lowering it admits).
-UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-184}"
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-186}"
 
 # The same guarantee for the two run phases below: tests/ir/*.ir fixtures,
 # and tests/programs/*/ directories. Same rule -- `found < floor` fails --
@@ -112,10 +112,19 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-184}"
 # IR fixtures: 53 -> 64 is Stage 5.1's vector float group (sse-ir.md 2.2):
 # vec_arith and vec_mem positive, four rejections (parse lanes, verifier
 # x2 maior/minor, emitter vadd-on-scalar), all with C-backend parity.
+# 64 -> 78 is 2026-09-25's two settlements in the reference backend: `div`
+# and `rem` (divrem, rem_sign, trap_div_zero, trap_rem_zero,
+# trap_div_minneg1, trap_rem_minneg1) and the REDUCTIONS -- redinit/contrib/
+# redfin in both shapes (red_ordinata_f32, red_ordinata_i64, red_arborea_f32,
+# red_arborea_int_trap, red_empty, red_w1, red_mul, reject_verify_red_width).
+# Thirteen of the fourteen carry `c-emit-exit=4`: the C backend refuses both
+# opcode groups by name (c-backend.md D4 rows 4, 5 and 36-38), so they add
+# rejection-parity checks and no differential BUILDS -- DIFFERENTIAL_BUILD_FLOOR
+# below is unchanged on purpose, and rises when the C backend gains them.
 # Programs 104 -> 126: the musical HydraModem examples (transmitter melos/
 # bassus/bicinium, receiver auditus, streaming receiver auditus_fluxus), set to
 # the count measured with them in.
-IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-64}"
+IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-78}"
 PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-126}"
 
 # The differential phase (run_differential_tests, below), which compiles the

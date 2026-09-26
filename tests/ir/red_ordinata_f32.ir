@@ -1,0 +1,106 @@
+; TEST: expect-exit=100 c-emit-exit=4
+;
+; `ordinata` over floats: one accumulator started at the op's IDENTITY, each
+; `contrib` folding acc = op(acc, v) in contribution order, `redfin` handing
+; back acc (ssa-ir.md 2.6, as defined 2026-09-25). Checked as BIT PATTERNS
+; through `store f32` / `load u32` (float_mem.ir pins that path), because
+; two of the four checks are about a difference `fcmp.eq` cannot see.
+;
+;   1  fadd f32, contributions [-0.0]        = +0.0    0x00000000
+;   2  fsub f32, contributions [1.0, 2.0]    = -3.0    0xC0400000
+;   3  fadd f64, contributions [0.5, 0.25]   = 0.75    0x3FE8000000000000
+;   4  fmul f32, contributions [3.0, 7.0]    = 21.0    0x41A80000
+;
+; CHECK 1 IS THE DEFINITION'S SHARPEST EDGE. The identity for `fadd` is
+; +0.0, and IEEE says +0.0 + -0.0 is +0.0 -- so a single contribution of
+; -0.0 comes back as +0.0, and the SIGN IS GONE. That is the definition and
+; not an accident of this lowering: the accumulator exists before any
+; contribution does (an empty reduction must answer the identity --
+; red_empty.ir), so `redfin` cannot special-case "one contribution, hand it
+; back unchanged" without making the answer depend on the count. A lowering
+; that started the accumulator AT the first contribution instead of folding
+; it would return 0x80000000 here and pass every other check in this
+; directory.
+;
+; CHECK 2 IS WHY `sub` IS IN THE ADDITIVE GROUP. Its identity is 0.0 too, so
+; the fold chain is ((0.0 - 1.0) - 2.0) = -3.0, not 1.0 - 2.0 = -1.0. `sub`
+; reduces to "negate the sum", which is what folding from the identity
+; means; the alternative -- first contribution as the seed -- is a different
+; function and is not what spec 5.4's reduction is.
+;
+; Every figure above is a hand-checkable dyadic rational; the reference that
+; produced them is recorded in red_arborea_f32.ir's header (the same
+; `ordinata`/`tree`/`arborea` transcription of ssa-ir.md 2.6).
+;
+; Mutation (run): the accumulator seeded with the first contribution instead
+; of the identity -> exit 1 and exit 2 (`fsub` gives -1.0). `fsub`'s
+; identity taken as the first operand of a two-operand subtraction -> exit 2.
+;
+; `c-emit-exit=4`: the C backend refuses the reduction opcodes by name
+; (c-backend.md D4 rows 36-38).
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = slot 8 8
+%2 = fconst f32 2147483648
+%3 = redinit f32 fadd ordinata 0
+contrib %3 %2
+%4 = redfin f32 %3
+store f32 %1 0 nativus %4
+%5 = load u32 %1 0 nativus
+%6 = iconst u32 0
+%7 = cmp.eq u32 %5 %6
+br %7 b2 b1
+b1:
+%8 = iconst u8 1
+ret %8
+b2:
+%9 = fconst f32 1065353216
+%10 = fconst f32 1073741824
+%11 = redinit f32 fsub ordinata 0
+contrib %11 %9
+contrib %11 %10
+%12 = redfin f32 %11
+store f32 %1 0 nativus %12
+%13 = load u32 %1 0 nativus
+%14 = iconst u32 3225419776
+%15 = cmp.eq u32 %13 %14
+br %15 b4 b3
+b3:
+%16 = iconst u8 2
+ret %16
+b4:
+%17 = fconst f64 4602678819172646912
+%18 = fconst f64 4598175219545276416
+%19 = redinit f64 fadd ordinata 0
+contrib %19 %17
+contrib %19 %18
+%20 = redfin f64 %19
+store f64 %1 0 nativus %20
+%21 = load u64 %1 0 nativus
+%22 = iconst u64 4604930618986332160
+%23 = cmp.eq u64 %21 %22
+br %23 b6 b5
+b5:
+%24 = iconst u8 3
+ret %24
+b6:
+%25 = fconst f32 1077936128
+%26 = fconst f32 1088421888
+%27 = redinit f32 fmul ordinata 0
+contrib %27 %25
+contrib %27 %26
+%28 = redfin f32 %27
+store f32 %1 0 nativus %28
+%29 = load u32 %1 0 nativus
+%30 = iconst u32 1101529088
+%31 = cmp.eq u32 %29 %30
+br %31 b8 b7
+b7:
+%32 = iconst u8 4
+ret %32
+b8:
+%33 = iconst u8 100
+ret %33
+}

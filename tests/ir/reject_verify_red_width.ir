@@ -1,0 +1,49 @@
+; TEST: emit-exit=5
+;
+; `redinit u64 add arborea 65`: a group width past BFA_RED_W_MAX (64), which
+; the VERIFIER refuses as a rule 1 violation -- an operand that is not one
+; its op accepts, the same verdict an out-of-range `iconst` immediate and a
+; bad `loadbits` width take. Exit 5, the verifier's.
+;
+; WHY THE IR HAS A BOUND AT ALL. `w` is a parse-time literal that parse.inc
+; bounds at nothing, and the reference lowering of `arborea` -- which IS the
+; definition (ADR 0012) -- emits one unrolled tail tree per possible live
+; count in `redfin`, k = 1..w-1, behind a `cmp`/`je` chain: O(w^2) lines of
+; emitted text from a four-token instruction. At w = 8 that is about 90
+; lines, at w = 64 about 10,000, and unbounded above that. It is the same
+; failure `BFA_COPY_UNROLL_MAX` exists to remove (docs/design/receptor.md
+; finding 20: a `copy` sized from a type rather than from the source
+; exhausted the compilation arena and trapped with no message). The bound is
+; in verify.inc, above the rule ids, with the argument for 64.
+;
+; NO NEW ERROR CODE. Malformed IR is a compiler bug, not a diagnostic about
+; a program (verify.inc's header; CLAUDE.md, "Error codes are permanent"), so
+; this is a verifier verdict and nothing in spec 13.
+;
+; THE EMITTER REFUSES IT TOO, by name -- "`ordinata` takes w = 0, `arborea` a
+; w in 1..64" -- because `exsc` reaches the emitter without the verifier
+; (driver/run.inc goes lwr_module -> bfa_emit_program). Through this harness
+; the verifier gets there first, so the exit status pinned here is 5; the
+; emitter's refusal is the same bound one layer down, the way a straddling
+; `loadbits` is admitted by the verifier and refused by the emitter
+; (reject_emit_straddle.ir), only in the other order.
+;
+; `ordinata` with a non-zero `w` is the same rule's other half and the same
+; verdict: the shape has no group width, so text must not carry one.
+;
+; Mutation (run): the bound checked with `>=` instead of `>` -> w = 64, the
+; largest legal width, is refused and red_* fixtures at w = 8 still pass, so
+; only a fixture at exactly 64 would catch it; the comparison is `ja` against
+; BFA_RED_W_MAX in both layers, checked by reading, not by a fixture at 64
+; (that fixture would emit ~10,000 lines) [UNTESTED].
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = redinit u64 add arborea 65
+%2 = iconst u64 1
+contrib %1 %2
+%3 = redfin u64 %1
+%4 = iconst u8 0
+ret %4
+}
