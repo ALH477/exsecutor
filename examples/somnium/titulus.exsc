@@ -1,0 +1,199 @@
+// examples/somnium/titulus.exsc
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 The Exsecutor authors.
+// ---------------------------------------------------------------------------
+// Somnium 7: the title card. A 400-frame cycle (20 s at 20 fps):
+//
+//     0..40    rain: green blocks drift down scattered columns
+//    40..104   they fly, easing out, into OLIGARCHY at three times scale
+//   104..108   a white flash as the word locks
+//   108..330   the word shimmers crimson to gold on a sine wave; from 120
+//              EXSECVTOR PINXIT types itself in, four frames a letter, and
+//              from 190 PVNCTIM CECINIT under it
+//   330..394   the blocks scatter, easing in, and everything fades
+//   394..400   dark
+//
+// The Latin: "Exsecutor painted it", the painter's signature on a canvas,
+// and "Punctim sang it" -- the musical HydraModem profile these examples
+// transmit (examples/hydramodem/melos*.exsc) is Punctim's. Classical
+// letters, so V for U.
+//
+// A pure function of (ph, semen) except for the trails (the frame keeps
+// three quarters of itself), so every block's start and end come from the
+// seed and its own index: five xorshift rounds of semen ^ (i+1) << 20 ^ i+1
+// -- neighbouring seeds are correlated in the first rounds' high bits, which
+// the oracle showed as all the rain falling down four columns -- and a byte
+// scaled into range by multiply and shift. The easings are quadratic in
+// 64ths: out is 64 - (64-k)^2/64, in is k^2/64, and the lerp
+// (a (64-e) + b e) / 64 needs no signed arithmetic.
+// ---------------------------------------------------------------------------
+
+publica functio titulus_pinge(fb: &mutabilis acies<u8, 48000>, ph: mensura, semen: u32) -> u32 {
+    firma s: acies<u8, 256> = sinus();
+    firma f: acies<u8, 126> = formae();
+    firma nm: acies<u8, 9> = nomen();
+    firma v1: acies<u8, 16> = versus_primus();
+    firma v2: acies<u8, 15> = versus_secundus();
+
+    per k in 0..48000 {
+        firma v: u8 = (*fb)[k];
+        (*fb)[k] = v - (v deorsum 2);
+    }
+
+    // ---- OLIGARCHY: 15 x 21 glyphs, advance 17, 151 wide, from x = 4 -----
+    mutabilis i: u32 = 0;
+    per n in 0..9 {
+        firma g: u8 = nm[n];
+        per rr in 0..7 {
+            per cc in 0..5 {
+                si littera_lucet(f, g, rr, cc) eq 1 {
+                    firma tx: mensura = 4 + n * 17 + cc * 3;
+                    firma ty: mensura = 20 + rr * 3;
+                    mutabilis x: u32 = alea(semen aut ((i + 1) sursum 20) aut (i + 1));
+                    x = alea(x);
+                    x = alea(x);
+                    x = alea(x);
+                    x = alea(x);
+                    firma sx: mensura = (((x deorsum 24) sicut mensura) * 158) deorsum 8;
+                    firma sy: mensura = (octo((x deorsum 16) sicut mensura) * 98) deorsum 8;
+                    x = alea(x);
+                    firma ex: mensura = (((x deorsum 24) sicut mensura) * 158) deorsum 8;
+                    firma ey: mensura = (octo((x deorsum 16) sicut mensura) * 98) deorsum 8;
+                    i = i + 1;
+
+                    mutabilis lucet: u8 = 1;
+                    mutabilis px: mensura = 0;
+                    mutabilis py: mensura = 0;
+                    mutabilis lr: mensura = 0;
+                    mutabilis lg: mensura = 0;
+                    mutabilis lb: mensura = 0;
+                    si ph lt 40 {
+                        px = sx;
+                        mutabilis q: mensura = sy + ph;
+                        si q ge 98 {
+                            q = q - 98;
+                        }
+                        py = q;
+                        lr = 40;
+                        lg = 60 + ph * 4;
+                        lb = 40;
+                    }
+                    si ph ge 40 {
+                        si ph lt 104 {
+                            firma k: mensura = ph - 40;
+                            firma e: mensura = 64 - (((64 - k) * (64 - k)) deorsum 6);
+                            px = (sx * (64 - e) + tx * e) deorsum 6;
+                            py = (sy * (64 - e) + ty * e) deorsum 6;
+                            lr = 40 + k * 3;
+                            lg = 220;
+                            lb = 40 + k;
+                        }
+                    }
+                    si ph ge 104 {
+                        si ph lt 330 {
+                            px = tx;
+                            py = ty;
+                            si ph lt 108 {
+                                lr = 255;
+                                lg = 255;
+                                lb = 255;
+                            }
+                            si ph ge 108 {
+                                firma w: mensura = s[octo(tx * 3 + ph * 5)] sicut mensura;
+                                lr = 150 + ((w * 105) deorsum 8);
+                                lg = 20 + ((w * 150) deorsum 8);
+                                lb = 30 + (((255 - w) * 40) deorsum 8);
+                            }
+                        }
+                    }
+                    si ph ge 330 {
+                        si ph lt 394 {
+                            firma k: mensura = ph - 330;
+                            firma e: mensura = (k * k) deorsum 6;
+                            px = (tx * (64 - e) + ex * e) deorsum 6;
+                            py = (ty * (64 - e) + ey * e) deorsum 6;
+                            firma vv: mensura = (63 - k) * 4;
+                            lr = vv;
+                            lg = vv deorsum 2;
+                            lb = vv deorsum 1;
+                        }
+                    }
+                    si ph ge 394 {
+                        lucet = 0;
+                    }
+                    si lucet eq 1 {
+                        per by in 0..3 {
+                            per bx in 0..3 {
+                                firma qx: mensura = px + bx;
+                                firma qy: mensura = py + by;
+                                si qx lt 160 {
+                                    si qy lt 100 {
+                                        firma kk: mensura = (qy * 160 + qx) * 3;
+                                        (*fb)[kk] = lr sicut u8;
+                                        (*fb)[kk + 1] = lg sicut u8;
+                                        (*fb)[kk + 2] = lb sicut u8;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- the inscriptions, typed in ------------------------------------------
+    si ph ge 120 {
+        si ph lt 394 {
+            mutabilis vv: mensura = 255;
+            si ph ge 330 {
+                vv = (393 - ph) * 4;
+            }
+            firma visibiles: mensura = (ph - 120) deorsum 2;
+            firma lr: u8 = ((vv * 150) deorsum 8) sicut u8;
+            firma lg: u8 = ((vv * 180) deorsum 8) sicut u8;
+            firma lb: u8 = vv sicut u8;
+            per n in 0..16 {
+                si n lt visibiles {
+                    per rr in 0..7 {
+                        per cc in 0..5 {
+                            si littera_lucet(f, v1[n], rr, cc) eq 1 {
+                                firma kk: mensura = ((58 + rr) * 160 + 32 + n * 6 + cc) * 3;
+                                (*fb)[kk] = lr;
+                                (*fb)[kk + 1] = lg;
+                                (*fb)[kk + 2] = lb;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    si ph ge 190 {
+        si ph lt 394 {
+            mutabilis vv: mensura = 255;
+            si ph ge 330 {
+                vv = (393 - ph) * 4;
+            }
+            firma visibiles: mensura = (ph - 190) deorsum 2;
+            firma lr: u8 = vv sicut u8;
+            firma lg: u8 = ((vv * 200) deorsum 8) sicut u8;
+            firma lb: u8 = ((vv * 120) deorsum 8) sicut u8;
+            per n in 0..15 {
+                si n lt visibiles {
+                    per rr in 0..7 {
+                        per cc in 0..5 {
+                            si littera_lucet(f, v2[n], rr, cc) eq 1 {
+                                firma kk: mensura = ((70 + rr) * 160 + 35 + n * 6 + cc) * 3;
+                                (*fb)[kk] = lr;
+                                (*fb)[kk + 1] = lg;
+                                (*fb)[kk + 2] = lb;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    redde 0;
+}

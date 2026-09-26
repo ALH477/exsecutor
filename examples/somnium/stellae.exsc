@@ -1,0 +1,129 @@
+// examples/somnium/stellae.exsc
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 The Exsecutor authors.
+// ---------------------------------------------------------------------------
+// Somnium 4: warp-speed starfield. 256 stars, each an (x, y) offset from
+// the centre and a depth z, falling toward the viewer 3 units a frame. The
+// perspective divide is a TABLE -- reciproca()[z] = 8192 / (z + 1) -- since
+// the language has no integer division; one multiply and one shift a star.
+// The frame keeps three quarters of itself each frame, so a star leaves a
+// streak, and a near star is two pixels wide.
+//
+// The offsets are signed quantities in an unsigned language: a byte o
+// means o - 128, and the projection takes the magnitude and remembers the
+// side, which is also how the bounds check is written without a signed
+// comparison. A star that reaches the viewer or leaves the frame is reborn
+// at the far plane with two fresh draws.
+// ---------------------------------------------------------------------------
+
+publica structura Stellae {
+    x: acies<u8, 256>
+    y: acies<u8, 256>
+    z: acies<u8, 256>
+}
+
+publica functio stellae_pinge(fb: &mutabilis acies<u8, 48000>, st: &mutabilis Stellae, semen: u32, t: mensura) -> u32 {
+    firma rec: acies<u16, 256> = reciproca();
+    mutabilis x: u32 = semen;
+
+    si t eq 0 {
+        per i in 0..256 {
+            x = alea(x);
+            firma z0: mensura = 16 + ((((x deorsum 24) sicut mensura) * 239) deorsum 8);
+            x = alea(x);
+            (*st).x[i] = (x deorsum 24) sicut u8;
+            x = alea(x);
+            (*st).y[i] = (x deorsum 24) sicut u8;
+            (*st).z[i] = z0 sicut u8;
+        }
+    }
+
+    // The streaks: every channel keeps three quarters of itself.
+    per k in 0..48000 {
+        firma v: u8 = (*fb)[k];
+        (*fb)[k] = v - (v deorsum 2);
+    }
+
+    per i in 0..256 {
+        mutabilis renasci: u8 = 0;
+        firma z0: u8 = (*st).z[i];
+        si z0 le 3 {
+            renasci = 1;
+        }
+        si renasci eq 0 {
+            firma z: u8 = z0 - 3;
+            (*st).z[i] = z;
+            firma rx: mensura = rec[z sicut mensura] sicut mensura;
+            firma ox: mensura = (*st).x[i] sicut mensura;
+            firma oy: mensura = (*st).y[i] sicut mensura;
+            mutabilis mx: mensura = 0;
+            mutabilis dextra: u8 = 0;
+            si ox ge 128 {
+                mx = ox - 128;
+                dextra = 1;
+            }
+            si ox lt 128 {
+                mx = 128 - ox;
+            }
+            mutabilis my: mensura = 0;
+            mutabilis infra: u8 = 0;
+            si oy ge 128 {
+                my = oy - 128;
+                infra = 1;
+            }
+            si oy lt 128 {
+                my = 128 - oy;
+            }
+            firma px: mensura = (mx * rx) deorsum 8;
+            firma py: mensura = (my * rx) deorsum 9;
+            mutabilis visibilis: u8 = 1;
+            si dextra eq 1 {
+                si px ge 80 { visibilis = 0; }
+            }
+            si dextra eq 0 {
+                si px gt 80 { visibilis = 0; }
+            }
+            si infra eq 1 {
+                si py ge 50 { visibilis = 0; }
+            }
+            si infra eq 0 {
+                si py gt 50 { visibilis = 0; }
+            }
+            si visibilis eq 0 {
+                renasci = 1;
+            }
+            si visibilis eq 1 {
+                mutabilis scrx: mensura = 0;
+                si dextra eq 1 { scrx = 80 + px; }
+                si dextra eq 0 { scrx = 80 - px; }
+                mutabilis scry: mensura = 0;
+                si infra eq 1 { scry = 50 + py; }
+                si infra eq 0 { scry = 50 - py; }
+                firma lum: mensura = 255 - z sicut mensura;
+                mutabilis caer: mensura = lum + 64;
+                si caer gt 255 {
+                    caer = 255;
+                }
+                firma k: mensura = (scry * 160 + scrx) * 3;
+                (*fb)[k] = lum sicut u8;
+                (*fb)[k + 1] = lum sicut u8;
+                (*fb)[k + 2] = caer sicut u8;
+                si z lt 96 {
+                    si scrx lt 159 {
+                        (*fb)[k + 3] = lum sicut u8;
+                        (*fb)[k + 4] = lum sicut u8;
+                        (*fb)[k + 5] = caer sicut u8;
+                    }
+                }
+            }
+        }
+        si renasci eq 1 {
+            x = alea(x);
+            (*st).x[i] = (x deorsum 24) sicut u8;
+            x = alea(x);
+            (*st).y[i] = (x deorsum 24) sicut u8;
+            (*st).z[i] = 255;
+        }
+    }
+    redde x;
+}

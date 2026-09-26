@@ -12,10 +12,16 @@
 // THE REQUEST, 17 bytes and then end of input (docs/design/somnium.md §3):
 //
 //   0..4    "SOM1"                 magic and version
-//   4       somnium                0 plasma, 1 ignis, 2 vita
+//   4       somnium                0 plasma, 1 ignis, 2 vita, 3 pluvia,
+//                                  4 stellae, 5 cuniculus, 6 abyssus,
+//                                  7 titulus, 8 signum
 //   5..9    praetermitte, u32 LE   frames advanced but not written
 //   9..13   tabulae, u32 LE        frames written
 //   13..17  semen, u32 LE          the only entropy; 0 means 0x9E3779B9
+//
+// Somnium 8 alone carries more: the 3D engine's 44,801-byte EXSG model
+// (tests/data/signaculum_mesh.bin) follows the 17 bytes, and its magic and
+// counts are checked before a frame is rendered.
 //
 // A short request, a long one, a wrong magic or an unknown somnium writes
 // nothing and exits 1. Exit 0 is every frame written; exit 2 is a frame
@@ -43,7 +49,7 @@ functio scribe_tabulam(s: Scriptor, fb: acies<u8, 48000>) -> mensura {
 }
 
 functio machina(l: Lector, s: Scriptor) -> u8 {
-    // ---- the request: exactly 17 bytes, then end of input ----------------
+    // ---- the request: 17 bytes, the model for somnium 8, then the end ------
     mutabilis r: acies<u8, 17> = [0; 17];
     per i in 0..17 {
         firma o: u16 = l.lege_octeto();
@@ -52,16 +58,40 @@ functio machina(l: Lector, s: Scriptor) -> u8 {
         }
         r[i] = o sicut u8;
     }
-    firma finis: u16 = l.lege_octeto();
-    si finis ne 256 {
-        redde 1;
-    }
     si r[0] ne 0x53 { redde 1; }    // S
     si r[1] ne 0x4F { redde 1; }    // O
     si r[2] ne 0x4D { redde 1; }    // M
     si r[3] ne 0x31 { redde 1; }    // 1
     firma somnium: u8 = r[4];
-    si somnium gt 2 {
+    si somnium gt 8 {
+        redde 1;
+    }
+    mutabilis exsg: acies<u8, 44801> = [0; 44801];
+    si somnium eq 8 {
+        per i in 0..44801 {
+            firma o: u16 = l.lege_octeto();
+            si o ge 256 {
+                redde 1;
+            }
+            exsg[i] = o sicut u8;
+        }
+        // "EXSG", 1493 vertices, 2981 faces -- what signaculum_pingue
+        // would refuse with 1 or 2 -- refused here, before any frame.
+        si exsg[0] ne 69 { redde 1; }
+        si exsg[1] ne 88 { redde 1; }
+        si exsg[2] ne 83 { redde 1; }
+        si exsg[3] ne 71 { redde 1; }
+        si exsg[4] ne 0xD5 { redde 1; }
+        si exsg[5] ne 0x05 { redde 1; }
+        si exsg[6] ne 0 { redde 1; }
+        si exsg[7] ne 0 { redde 1; }
+        si exsg[8] ne 0xA5 { redde 1; }
+        si exsg[9] ne 0x0B { redde 1; }
+        si exsg[10] ne 0 { redde 1; }
+        si exsg[11] ne 0 { redde 1; }
+    }
+    firma finis: u16 = l.lege_octeto();
+    si finis ne 256 {
         redde 1;
     }
     firma praetermitte: mensura = verbum(r, 5) sicut mensura;
@@ -72,12 +102,30 @@ functio machina(l: Lector, s: Scriptor) -> u8 {
     }
 
     // ---- the storage every somnium advances ------------------------------
-    // ~96 KB of stack, all zero-filled by the repeat form (spec §8.6).
+    // All zero-filled by the repeat form (spec §8.6). About 3 MB, nearly
+    // all of it the 3D engine's 512 x 512 frame and f64 z-buffer: under the
+    // 8 MiB default stack, as signaculum.exsc's pump is.
     mutabilis fb: acies<u8, 48000> = [0; 48000];
     mutabilis calor: acies<u8, 16320> = [0; 16320];
     mutabilis vita_a: acies<u8, 16000> = [0; 16000];
     mutabilis vita_b: acies<u8, 16000> = [0; 16000];
+    mutabilis pluvia = Pluvia {
+        caput: [0; 40],
+        velocitas: [0; 40],
+        lux: [0; 800],
+        signum: [0; 800]
+    };
+    mutabilis stellae = Stellae {
+        x: [0; 256],
+        y: [0; 256],
+        z: [0; 256]
+    };
+    mutabilis magnum: acies<u8, 786432> = [0; 786432];
+    mutabilis zb: acies<f64, 262144> = [0.0; 262144];
     mutabilis x: u32 = semen;
+    mutabilis phasis: mensura = 0;
+    mutabilis nihil: u32 = 0;
+    mutabilis status: u8 = 0;
 
     per f in 0..(praetermitte + tabulae) {
         si somnium eq 0 {
@@ -90,6 +138,43 @@ functio machina(l: Lector, s: Scriptor) -> u8 {
         }
         si somnium eq 2 {
             x = vita_pinge(fb, vita_a, vita_b, x, f);
+        }
+        si somnium eq 3 {
+            x = pluvia_pinge(fb, pluvia, x, f);
+        }
+        si somnium eq 4 {
+            x = stellae_pinge(fb, stellae, x, f);
+        }
+        si somnium eq 5 {
+            // vita's two boards are the tunnel's two tables.
+            nihil = cuniculus_pinge(fb, vita_a, vita_b, f);
+        }
+        si somnium eq 6 {
+            si f ge praetermitte {
+                nihil = abyssus_pinge(fb, phasis);
+            }
+            phasis = phasis + 1;
+            si phasis ge 720 {
+                phasis = 0;
+            }
+        }
+        si somnium eq 7 {
+            si f ge praetermitte {
+                nihil = titulus_pinge(fb, phasis, semen);
+            }
+            phasis = phasis + 1;
+            si phasis ge 400 {
+                phasis = 0;
+            }
+        }
+        si somnium eq 8 {
+            x = stellae_pinge(fb, stellae, x, f);
+            si f ge praetermitte {
+                nihil = signum_rota(exsg, phasis);
+                status = signaculum_pingue(exsg, magnum, zb);
+                nihil = signum_compone(fb, magnum, phasis);
+            }
+            phasis = octo(phasis + 1);
         }
         si f ge praetermitte {
             si scribe_tabulam(s, fb) ne 48000 {

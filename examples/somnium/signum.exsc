@@ -1,0 +1,171 @@
+// examples/somnium/signum.exsc
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 The Exsecutor authors.
+// ---------------------------------------------------------------------------
+// Somnium 8: the Exsecutor logo, turning, rendered by the language's own 3D
+// engine -- examples/signaculum/forma.exsc's signaculum_pingue, compiled
+// into this unit UNMODIFIED -- over the starfield, with its captions.
+//
+// The engine takes its model as one 44,801-byte "EXSG" stream (1,493
+// vertices, 2,981 faces, the per-face colours baked by
+// prototypes/signaculum_mesh.py) and its rotation as nine words of that
+// stream, R = Rx(pitch) Ry(yaw) on the 2^-23 grid at bytes 20..56. So the
+// engine is animated without touching it: signum_rota rewrites those nine
+// words for this frame's yaw, machina.exsc calls signaculum_pingue into a
+// 512 x 512 frame and z-buffer it owns, and signum_compone reduces that to
+// the screen. The pitch terms cos p = R11 and sin p = R21 are read back out
+// of the stream, so the model keeps the tilt it was baked with; the yaw's
+// sine and cosine come off sinus(), in f64. The shading is baked for the
+// hero view and does not follow the turn, which reads as a lit texture.
+//
+// Why three functions and not one: a function holding a `&mutabilis`
+// parameter never passes it on here -- every borrow in this program is
+// taken from machina's own locals, one call deep, the shape signaculum.exsc
+// and streamdb/probatio.exsc already compile. And signaculum_pingue's
+// frame and z-buffer are 2.8 MB, which are machina's locals for the same
+// reason signaculum.exsc's are its pump's.
+// ---------------------------------------------------------------------------
+
+publica functio signum_rota(exsg: &mutabilis acies<u8, 44801>, ph: mensura) -> u32 {
+    firma s: acies<u8, 256> = sinus();
+    firma q: mensura = octo(ph + 7);
+    firma sin_i: i64 = s[q] sicut i64;
+    firma cos_i: i64 = s[octo(q + 64)] sicut i64;
+    firma sn: f64 = (sin_i sicut f64 - 127.5) / 127.5;
+    firma cs: f64 = (cos_i sicut f64 - 127.5) / 127.5;
+
+    // R11 and R21 as the stream holds them: signed i32, little-endian.
+    mutabilis q11: i64 = (*exsg)[36] sicut i64 + (*exsg)[37] sicut i64 * 256
+        + (*exsg)[38] sicut i64 * 65536 + (*exsg)[39] sicut i64 * 16777216;
+    si q11 ge 2147483648 {
+        q11 = q11 - 4294967296;
+    }
+    mutabilis q21: i64 = (*exsg)[48] sicut i64 + (*exsg)[49] sicut i64 * 256
+        + (*exsg)[50] sicut i64 * 65536 + (*exsg)[51] sicut i64 * 16777216;
+    si q21 ge 2147483648 {
+        q21 = q21 - 4294967296;
+    }
+    firma cp: f64 = q11 sicut f64 / 8388608.0;
+    firma sp: f64 = q21 sicut f64 / 8388608.0;
+
+    // R = Rx(p) Ry(y), row-major.
+    mutabilis m: acies<f64, 9> = [0.0; 9];
+    m[0] = cs;
+    m[1] = 0.0;
+    m[2] = sn;
+    m[3] = sp * sn;
+    m[4] = cp;
+    m[5] = 0.0 - sp * cs;
+    m[6] = 0.0 - cp * sn;
+    m[7] = sp;
+    m[8] = cp * cs;
+
+    // Back onto the grid: truncation toward zero (sicut i64 is cvttsd2si's
+    // rule, as forma.exsc's bounding boxes use it), then two's complement.
+    per n in 0..9 {
+        mutabilis w: i64 = (m[n] * 8388608.0) sicut i64;
+        si w lt 0 {
+            w = w + 4294967296;
+        }
+        firma u: u64 = w sicut u64;
+        firma p: mensura = 20 + n * 4;
+        (*exsg)[p] = u sicut u8;
+        (*exsg)[p + 1] = (u deorsum 8) sicut u8;
+        (*exsg)[p + 2] = (u deorsum 16) sicut u8;
+        (*exsg)[p + 3] = (u deorsum 24) sicut u8;
+    }
+    redde 0;
+}
+
+publica functio signum_compone(fb: &mutabilis acies<u8, 48000>, magnum: acies<u8, 786432>, ph: mensura) -> u32 {
+    firma f: acies<u8, 126> = formae();
+    firma nm: acies<u8, 9> = nomen();
+    firma v1: acies<u8, 16> = versus_primus();
+    firma v2: acies<u8, 15> = versus_secundus();
+
+    // The model fills rows 80..400 and columns 96..416 of the engine's
+    // frame; that square becomes an 80 x 80 box at (40, 2), each output
+    // pixel the mean of the 4 x 4 engine pixels under it -- an exact box
+    // filter, a shift and no division. A sample in the engine's ground
+    // colour (0x0f1216) takes the star behind it instead, so the logo sits
+    // in the sky rather than on a square.
+    per y in 0..80 {
+        firma sy0: mensura = 80 + y * 4;
+        per xx in 0..80 {
+            firma sx0: mensura = 96 + xx * 4;
+            firma k: mensura = ((y + 2) * 160 + xx + 40) * 3;
+            firma br: mensura = (*fb)[k] sicut mensura;
+            firma bg: mensura = (*fb)[k + 1] sicut mensura;
+            firma bb: mensura = (*fb)[k + 2] sicut mensura;
+            mutabilis ar: mensura = 0;
+            mutabilis ag: mensura = 0;
+            mutabilis ab: mensura = 0;
+            per jy in 0..4 {
+                per jx in 0..4 {
+                    firma kk: mensura = ((sy0 + jy) * 512 + sx0 + jx) * 3;
+                    mutabilis cr: mensura = magnum[kk] sicut mensura;
+                    mutabilis cg: mensura = magnum[kk + 1] sicut mensura;
+                    mutabilis cb: mensura = magnum[kk + 2] sicut mensura;
+                    si cr eq 15 {
+                        si cg eq 18 {
+                            si cb eq 22 {
+                                cr = br;
+                                cg = bg;
+                                cb = bb;
+                            }
+                        }
+                    }
+                    ar = ar + cr;
+                    ag = ag + cg;
+                    ab = ab + cb;
+                }
+            }
+            (*fb)[k] = (ar deorsum 4) sicut u8;
+            (*fb)[k + 1] = (ag deorsum 4) sicut u8;
+            (*fb)[k + 2] = (ab deorsum 4) sicut u8;
+        }
+    }
+
+    // ---- the captions: the name, then the two inscriptions in turn --------
+    per n in 0..9 {
+        per rr in 0..7 {
+            per cc in 0..5 {
+                si littera_lucet(f, nm[n], rr, cc) eq 1 {
+                    firma kk: mensura = ((84 + rr) * 160 + 53 + n * 6 + cc) * 3;
+                    (*fb)[kk] = 220;
+                    (*fb)[kk + 1] = 40;
+                    (*fb)[kk + 2] = 60;
+                }
+            }
+        }
+    }
+    si octo(ph) lt 128 {
+        per n in 0..16 {
+            per rr in 0..7 {
+                per cc in 0..5 {
+                    si littera_lucet(f, v1[n], rr, cc) eq 1 {
+                        firma kk: mensura = ((93 + rr) * 160 + 32 + n * 6 + cc) * 3;
+                        (*fb)[kk] = 150;
+                        (*fb)[kk + 1] = 180;
+                        (*fb)[kk + 2] = 255;
+                    }
+                }
+            }
+        }
+    }
+    si octo(ph) ge 128 {
+        per n in 0..15 {
+            per rr in 0..7 {
+                per cc in 0..5 {
+                    si littera_lucet(f, v2[n], rr, cc) eq 1 {
+                        firma kk: mensura = ((93 + rr) * 160 + 35 + n * 6 + cc) * 3;
+                        (*fb)[kk] = 255;
+                        (*fb)[kk + 1] = 200;
+                        (*fb)[kk + 2] = 120;
+                    }
+                }
+            }
+        }
+    }
+    redde 0;
+}

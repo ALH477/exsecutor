@@ -106,17 +106,23 @@ Exsecutor source, nine programs, all compiled and run by `tests/run.sh`:
 
 And one more that is **not** yet in the "all compiled and run" count above,
 because it has not been: **`somnium/`, the screensaver engine** — one
-program, three effects (a sine plasma, a heat-diffusion fire, Life on a
-torus coloured by age), reading a 17-byte request on stdin and writing raw
-160×100 rgb24 frames on stdout until the request is met or the pipe closes.
-No clock and no entropy source: time is the frame index and the one seed
-arrives in the request, so a screensaver's frames are pinned by golden files
-(`tests/programs/somnium_*/`, written by `prototypes/somnium_oracle.py`).
-It was written where no `fasmg` was available, so it is `[UNTESTED]` as
-Exsecutor until the first `tests/run.sh` that reaches it;
-`docs/design/somnium.md` is its design and says exactly what did and did not
-run. Oligarchy's `custom.screensaver` is its consumer, through
-`packages.somnium` in this repo's flake.
+program, nine effects: a sine plasma, a heat-diffusion fire, Life coloured
+by age, digital rain, a warp starfield, the demoscene tunnel, a Mandelbrot
+deep zoom in f64, a title card in which the rain flies together into
+OLIGARCHY and *EXSECVTOR PINXIT* / *PVNCTIM CECINIT* type in beneath, and
+the Exsecutor logo turning in the starfield — rendered by `signaculum/`'s
+`forma.exsc`, compiled into the unit unmodified, its rotation rewritten in
+its input stream every frame. It reads a request on stdin and writes raw
+160×100 rgb24 frames on stdout. No clock and no entropy source: time is the
+frame index and the one seed arrives in the request, so a screensaver's
+frames are pinned by golden files (`tests/programs/somnium_*/`, written by
+`prototypes/somnium_oracle.py`). Two builds of the one unit: the
+freestanding reference, and the C backend with the buffered host
+`somnium/hospes.c` (one `write(2)` a frame rather than one a byte). It was
+written where no `fasmg` was available, so it is `[UNTESTED]` as Exsecutor
+until the first `tests/run.sh` that reaches it; `docs/design/somnium.md` is
+its design and says exactly what did and did not run. Oligarchy's
+`custom.screensaver` is its consumer, through this repo's flake.
 
 This file said "nothing here compiles — there is no compiler" until
 2026-09-10, and then, until the hydramodem commit, that nothing here was

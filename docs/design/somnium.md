@@ -1,70 +1,98 @@
 # somnium — a screensaver engine in Exsecutor
 
 Status: **written, `[UNTESTED]` as Exsecutor.** `examples/somnium/` and
-`tests/programs/somnium_*/` were written in an environment that had no
-`fasmg` (the proxy refused `flatassembler.net`, and running an unvetted
-prebuilt binary was declined), so **no `exsc` has compiled these five files
-and no binary built from them has run.** What *has* run is the independent
-oracle, `prototypes/somnium_oracle.py`: it wrote every `expected.out` under
-`tests/programs/somnium_*/`, and its frames were looked at (section 6). The
-first `tests/run.sh` on a machine with the toolchain is the measurement this
-document is waiting for. Where the sources lean on a construct, section 5
-names the tree program that already exercises it, which is evidence that the
-construct compiles and says nothing about whether this program does.
+`tests/programs/somnium_*/` were written in an environment with no `fasmg`:
+the proxy refused `flatassembler.net`, and running an unvetted prebuilt
+binary was declined. So **no `exsc` has compiled these files, and no binary
+built from them has run** — not the reference build, not the C build.
 
-The consumer is Oligarchy's `custom.screensaver` (`modules/screensaver.nix`
-there), which pipes the engine into a fullscreen viewer when hypridle
-decides the session is idle.
+What *has* run:
+
+- **The independent oracle**, `prototypes/somnium_oracle.py`. It wrote every
+  `expected.out` under `tests/programs/somnium_*/`, and its frames were
+  looked at (section 7).
+- **The oracle's copy of the 3D engine.** It is byte-identical to
+  `tests/programs/signaculum/expected.out`, all 786,432 pixels' bytes, on the
+  stock model. That was checked before the logo was built on it.
+- **The C host, `examples/somnium/hospes.c`.** It compiles clean under gcc
+  and clang with `-Wall -Wextra -Wpedantic`, and was exercised against a
+  stand-in `exs_initium` written to the same ABI (section 6).
+
+The first `tests/run.sh` on a machine with the toolchain is the measurement
+this document is waiting for. Where the sources lean on a construct,
+section 8 names the tree program that already exercises it. That is evidence
+the construct compiles; it says nothing about whether this program does.
+
+The consumer is Oligarchy's `custom.screensaver` (`modules/screensaver/`
+there). It pipes the engine into a fullscreen viewer when hypridle decides
+the session is idle.
+
+![all nine somnia, one frame each, at 2x nearest-neighbour: the title card, the logo, rain, stars, tunnel, zoom, plasma, fire, Life](../images/somnium_tabulae.png)
 
 ## 1. What it is
 
-One program, `somnium`, holding three effects ("somnia"):
+One program, `somnium`, holding nine effects ("somnia"):
 
 | id | name | what | state across frames |
 |---|---|---|---|
-| 0 | `plasma` | four sine waves summed per pixel through a three-phase palette | none (a pure function of `t` and the seed) |
+| 0 | `plasma` | four sine waves summed per pixel through a three-phase palette | none (a function of `t` and the seed) |
 | 1 | `ignis` | heat-diffusion fire from two noise rows under the picture | the 160 × 102 heat field |
-| 2 | `vita` | Conway's Life on a 160 × 100 torus, coloured by age, with fading trails | two 16,000-cell boards and the frame buffer |
+| 2 | `vita` | Conway's Life on a 160 × 100 torus, coloured by age, fading trails | two 16,000-cell boards and the frame |
+| 3 | `pluvia` | digital rain: 40 × 20 cells of 3 × 4 glyphs, falling heads, trails | a `structura Pluvia` |
+| 4 | `stellae` | warp starfield: 256 stars, a perspective *table*, streaks | a `structura Stellae` and the frame |
+| 5 | `cuniculus` | the demoscene tunnel in the logo's crimson and navy | angle and depth tables, built at frame 0 |
+| 6 | `abyssus` | Mandelbrot deep zoom into the Seahorse Valley, f64, 720-frame cycle | a phase counter |
+| 7 | `titulus` | the title card: rain flies into **OLIGARCHY**, then **EXSECVTOR PINXIT** and **PVNCTIM CECINIT** type in; 400-frame cycle | a phase counter and the frame (trails) |
+| 8 | `signum` | the Exsecutor logo turning in the starfield, **rendered by `examples/signaculum/forma.exsc`, unmodified** | the stars, the model, the engine's 512² frame and z-buffer |
 
 It reads one request on stdin and writes frames on stdout: **raw rgb24,
 160 × 100, row-major, no header, 48,000 bytes a frame.** The host tells its
 viewer the geometry; mpv's `rawvideo` demuxer takes exactly this.
 
+**The Latin.**
+
+- *Exsecutor pinxit*: "Exsecutor painted it", the painter's signature on a
+  canvas.
+- *Punctim cecinit*: "Punctim sang it". HydraModem's melody profile, which
+  `examples/hydramodem/melos*.exsc` transmits byte for byte, is Punctim's.
+
+Both are cut in the classical alphabet, V for U. OLIGARCHY is the name and
+stays as spelled.
+
 ## 2. Why the engine is shaped like this
 
-**No ambient time, no ambient entropy (spec §1, §9.3).** A screensaver is a
-function of the clock and a random source in every other implementation.
-Here time is the frame index the engine counts and the only entropy is a
-32-bit seed in the request. So the same request writes the same bytes on
-every machine: a screensaver can be pinned by a golden file, and is
-(section 4). The host is free to seed from its clock; that is the host's
-ambient state, entering through the one declared door.
+**No ambient time, no ambient entropy (spec §1, §9.3).** In every other
+implementation, a screensaver is a function of the clock and a random
+source. Here time is the frame index the engine counts, and the only entropy
+is a 32-bit seed in the request. So the same request writes the same bytes
+on every machine, and a screensaver can be pinned by a golden file (section
+5). The host is free to seed from its clock; that is the host's ambient
+state, entering through the one declared door.
 
-**160 × 100, because of the runtime, measured from its source.** The only
-way arbitrary bytes reach stdout is `Scriptor.scribe_octeto`, and
-`compiler/x86_64/prelude/prelude.asm` implements it as one `write(2)` per
-byte. A 320 × 200 frame would be 192,000 syscalls; 160 × 100 is 48,000. The
-cost per frame at a given syscall latency is `[UNTESTED]` — no binary has
-run — and it is the number that decides the default frame rate on the Oligarchy
-side (20 fps there, a guess until measured). The fix is a prelude primitive
-that writes an `acies<u8, N>` in one call; that is the `lower` agent's tree
-(`compiler/x86_64/prelude/`) and a spec §4.6 surface change, and is
-**reported, not made** here. 16:10 is also the Framework 16's own aspect, and
-the viewer scales with nearest-neighbour, so the pixels are a look.
+**160 × 100, because of the runtime.** The only way arbitrary bytes reach
+stdout is `Scriptor.scribe_octeto`, and `compiler/x86_64/prelude/prelude.asm`
+makes it one `write(2)` per byte: 48,000 syscalls a frame. The C build's
+host (section 6) removes that cost without touching the source. 16:10 is
+also the Framework 16's own aspect.
 
-**Integers only.** Nothing here needs a float, and staying in integers
-removes the rounding-mode question from the oracle entirely: two integer
-programs either agree byte for byte or one of them changed a formula.
+**Integers, except where a float is the point.** Eight somnia are integer
+arithmetic, which takes the rounding-mode question away from the oracle
+entirely. `abyssus` (and `signum`'s rotation and the engine under it) are
+f64 on purpose, so that spec §5.4's float path is on screen. They keep the
+oracle exact the way `examples/pictura/` does: one IEEE operation at a time,
+in the order written, under nearest-even.
 
-**What the language lacks and how the program does without it:**
+**What the language lacks, and how the program does without it:**
 
 | missing (spec §5.4, `[OPEN]`) | used instead |
 |---|---|
-| `*%` (wrapping multiply) | xorshift32 as the generator: xor and shifts only |
-| remainder, bitwise and | `sicut u8` for mod 256 (narrowing is truncation); `(t8 sursum 5) deorsum 5` for mod 8 |
-| integer division | `deorsum 2` for the fire's four-cell mean; `(b * 158) deorsum 8` to scale a byte into a range |
-| sine, square root | a frozen 256-entry table; the plasma's rings are spaced by distance squared |
-| signed arithmetic | `distantia(a, b)` = \|a − b\| on `mensura`; `t * 252` for `−4t mod 256` |
+| `*%` (wrapping multiply) | xorshift32: xor and shifts only |
+| remainder, bitwise and | `sicut u8` for mod 256; the shift-discard idiom for a bit, e.g. `(t8 sursum 5) deorsum 5` for mod 8 |
+| integer division | shifts for powers of two; `(b * 158) deorsum 8` to scale a byte into a range; `reciproca()` = 8192 / (z + 1) as a **table** for the starfield's perspective; the tunnel's depth `2048 / r` found **bit by bit** (largest d with d²r² ≤ 2048²) |
+| sine, arctangent, square root | frozen tables: `sinus()` and `tangentes()` (one octant, searched by multiplication); the plasma's rings go by distance squared |
+| signed arithmetic | `distantia(a, b)` = \|a − b\|; a byte `o` meaning `o − 128`, projected as magnitude plus side; `t * 252` for `−4t mod 256` |
+| a seventh argument (the reference backend's limit, `backend_fasmg/emit.inc`) | state grouped into `structura Pluvia` and `Stellae`, borrowed once |
+| re-passing a `&mutabilis` parameter | not needed: every borrow is taken from `machina`'s own locals, one call deep. That is why `signum` is three calls (`signum_rota`, `signaculum_pingue`, `signum_compone`) and not one |
 
 ## 3. The request
 
@@ -73,94 +101,200 @@ programs either agree byte for byte or one of them changed a formula.
 | bytes | field | meaning |
 |---|---|---|
 | 0..4 | `"SOM1"` | magic, with the format version in its last byte |
-| 4 | `somnium` | 0, 1 or 2 |
-| 5..9 | `praetermitte`, u32 LE | frames advanced and not written (a warm fire, a board past its opening chaos) |
-| 9..13 | `tabulae`, u32 LE | frames written; `0xFFFFFFFF` is "until the pipe closes" (6.8 years at 20 fps) |
+| 4 | `somnium` | 0..8, the table in section 1 |
+| 5..9 | `praetermitte`, u32 LE | frames advanced and not written (a warm fire, a filled sky) |
+| 9..13 | `tabulae`, u32 LE | frames written; `0xFFFFFFFF` is "until the pipe closes" |
 | 13..17 | `semen`, u32 LE | the seed; 0 is xorshift32's fixed point and becomes `0x9E3779B9` |
 
-Exit status: **0** every requested frame written; **1** the request was
-refused (short, long, wrong magic, unknown somnium) and nothing was written;
-**2** a frame was not taken. 2 is reachable only with SIGPIPE ignored — by
-default a closed pipe kills the process at the write, which is how the host
-stops a screensaver. The runtime's SIGPIPE behaviour is already `[OPEN]` in
-`docs/design/runtime.md` and nothing here changes it.
+**Somnium 8 alone carries more.** The 3D engine's 44,801-byte EXSG model
+(`tests/data/signaculum_mesh.bin`, shipped by the flake at
+`share/somnium/signaculum_mesh.bin`) follows the 17 bytes. Its magic and its
+two counts are checked before any frame is rendered: they are exactly what
+`signaculum_pingue` would refuse with status 1 or 2.
+
+**Exit status:**
+
+- **0**: every requested frame was written.
+- **1**: the request was refused (short, long, wrong magic, unknown
+  somnium, bad model) and nothing was written.
+- **2**: a frame was not taken. This is reachable only with SIGPIPE
+  ignored. By default a closed pipe kills the process at the write, which is
+  how the host stops a screensaver. The runtime's SIGPIPE behaviour is
+  already `[OPEN]` in `docs/design/runtime.md`.
 
 The request is read whole, and checked for its end, **before a frame is
-rendered**: a refused request writes zero bytes, which the four refusal
-fixtures pin as "stdout empty".
+rendered**.
 
 Why a request on stdin rather than arguments: the engine's capability is
-`ambitus`, the standard streams, and nothing else (spec §4.6). The process
-arguments and environment are other authority, and this program declares
-none. The syscall surface is therefore `read(0)`, `write(1)`, `exit_group` —
-the same closure as `examples/signaculum/`.
+`ambitus`, the standard streams, and nothing else (spec §4.6). The syscall
+surface of the reference build is `read(0)`, `write(1)` and `exit_group`.
 
-## 4. The fixtures
+## 4. The 3D engine, animated without touching it
 
-All eight compile the same five files in the same order —
-`somnium.exsc plasma.exsc ignis.exsc vita.exsc machina.exsc` — which is also
-the order `flake.nix`'s `packages.somnium` compiles, so the unit tested is
-the unit shipped.
+`signaculum_pingue` takes its rotation as nine words of its input stream:
+R = Rx(pitch) · Ry(yaw), on the 2⁻²³ grid, at bytes 20..56. So:
+
+1. **`signum_rota`** rewrites those nine words for this frame's yaw. The
+   yaw's sine and cosine come off `sinus()` in f64. The pitch terms
+   cos p = R11 and sin p = R21 are read back out of the stream, so the model
+   keeps the tilt it was baked with. Back onto the grid, the value is
+   truncated toward zero (`sicut i64`, the rule forma.exsc's bounding boxes
+   use) and written as two's complement.
+2. **`machina`** calls `signaculum_pingue(exsg, magnum, zb)` into a
+   512 × 512 frame and f64 z-buffer it owns: 2.8 MB, under the 8 MiB stack,
+   as `signaculum.exsc`'s pump already is.
+3. **`signum_compone`** takes rows 80..400 and columns 96..416 of that
+   frame into an 80 × 80 box. Each output pixel is the mean of the 4 × 4
+   engine pixels under it: an exact box filter, a shift and no division. A
+   sample in the engine's ground colour takes the star behind it, so the
+   logo sits in the sky rather than on a square. The captions go under it.
+
+The per-face shading is baked for the hero view and does not follow the
+turn; it reads as a lit texture. One turn is 256 frames.
+
+**The oracle's engine is the engine's.** `prototypes/somnium_oracle.py`'s
+`signaculum_pingue` is `prototypes/signaculum_oracle.py`'s arithmetic, with
+the numpy lanes written out as scalars. Lane l of a whole-acy add is one f64
+add, so the bits are the same. On the stock model its output equals
+`tests/programs/signaculum/expected.out` byte for byte, all 786,432 bytes.
+That was checked before any `signum` golden was written.
+
+## 5. The fixtures
+
+All seventeen compile the same twelve files in the same order:
+
+```
+somnium plasma ignis vita pluvia stellae cuniculus abyssus titulus
+../signaculum/forma signum machina
+```
+
+That is also the order in which `flake.nix` compiles `packages.somnium` and
+`packages.somnium-c`, so the unit tested is the unit shipped.
 
 | directory | request | checks |
 |---|---|---|
-| `somnium_plasma` | plasma, skip 37, write 2, seed `0x0BADCAFE` | the effect; that skipping a stateless somnium lands on the same `t` |
-| `somnium_ignis` | ignis, skip 60, write 1, seed 1 | diffusion, cooling, column wrap, palette, 19,520 draws in order |
-| `somnium_vita` | vita, skip 23, write 2, seed `0x5EED` | the fill, four injections (t = 0, 8, 16, 24), torus, age palette, trails |
-| `somnium_semen_nihil` | plasma, frame 0, seed 0 | the zero-seed substitution |
-| `somnium_ignotum` | somnium 3 | refused, exit 1, no output |
-| `somnium_brevis` | 16 bytes | refused, exit 1, no output |
-| `somnium_longa` | 18 bytes | refused, exit 1, no output |
-| `somnium_magia` | `"SOM2"` | refused, exit 1, no output |
+| `somnium_plasma` | plasma, skip 37, write 2 | the effect; skipping a stateless somnium lands on the same `t` |
+| `somnium_ignis` | ignis, skip 60, write 1 | diffusion, cooling, wrap, palette, 19,520 draws in order |
+| `somnium_vita` | vita, skip 23, write 2 | fill, four injections, torus, age palette, trails |
+| `somnium_semen_nihil` | plasma, seed 0 | the zero-seed substitution |
+| `somnium_pluvia` | rain, skip 40 | heads, restarts, glyph bits, dimming |
+| `somnium_stellae` | stars, skip 30 | the reciprocal table, the signed-by-side projection and its bounds, rebirth, streaks |
+| `somnium_cuniculus` | tunnel, skip 3 | both frame-0 tables (every pixel depends on both) |
+| `somnium_abyssus` | zoom, frame 300 | the f64 path: 300 scale multiplies, a 171-iteration budget, `dum … terminus` |
+| `somnium_titulus` | title, frame 228 | the font, the locked word, the shimmer, one inscription whole and one half typed |
+| `somnium_titulus_volatus` | title, frame 62 | the blocks in flight: the five-round seeding, the easing |
+| `somnium_signum` | logo, frame 20, + model | `signum_rota`, the engine, the box filter over the stars, the captions |
+| `somnium_ignotum` | somnium 9 | refused, exit 1, no output |
+| `somnium_brevis`, `_longa`, `_magia` | 16 bytes, 18 bytes, `"SOM2"` | refused |
+| `somnium_signum_brevis`, `_magia` | model one byte short; model magic `EXSH` | refused |
 
-`tests/data/somnium_*.bin` are the requests (`prototypes/somnium_oracle.py
-petitio ID SKIP WRITE SEED` writes one). The goldens are 96,000, 48,000,
-96,000 and 48,000 bytes. None of these directories carries `cross=yes` or
-`c-differentia=`: they are in the differential phase by default and not in
-the cross phase. **The program-fixture floors in `tests/run.sh` were not
-raised**, because a floor is set to a measured count and nothing was
-measured; the eight directories only add to what the floor already demands.
+**The refusal fixture moved.** `somnium_ignotum` used somnium 3, which is
+now `pluvia`, so it uses 9. The four original effect goldens were
+regenerated after the dispatch was rewritten and are byte-identical to the
+committed ones.
 
-**One finding before any Exsecutor ran, from the oracle.** The first design
-of `vita`'s injection drew a spot as a raw byte and skipped it when the 3x3
-would cross the edge. The oracle showed that on the fixture's seed **none of
-the four attempts landed** — a raw byte is under 158 and under 98 about 24%
-of the time — so the fixture would have pinned an injection path that never
-ran. The spot is now the byte scaled into range by multiply and shift, and
-every attempt lands. Written down because it is the "green check that
-exercised nothing" shape this repository keeps meeting.
+None of these directories carries `cross=yes` or `c-differentia=`. They are
+in the differential phase by default: the C backend must agree with the
+reference on every one, the f64 ones included. **The program floors in
+`tests/run.sh` were not raised**, because a floor is set to a measured count
+and nothing was measured.
 
-## 5. Constructs, and where the tree already runs them
+## 6. Two builds, and the GPU
+
+**`packages.somnium`, the reference build.** exsc to fasmg: freestanding, no
+libc, syscall surface `read`/`write`/`exit_group`, auditable under
+`--potestates Mundus,ambitus`. This is the build the language's claims are
+about. Its cost is one `write(2)` per output byte.
+
+**`packages.somnium-c`, and `lib.buildExsecutorCProgram`.** The same unit
+goes through `exsc --emitte c` (library mode), with
+`examples/somnium/hospes.c` as its host. That host keeps the records, the
+abort line and MXCSR `0x1F80` of `tests/c/exsrt_shim.c`, and changes one
+thing: output collects in a buffer of exactly one frame and leaves in one
+`write(2)`. Input is buffered too, which matters for the 44,801-byte model.
+
+The build is the differential suite's `-std=c11 -O2`, plus
+`-ffp-contract=off -fno-fast-math` stated explicitly. Clang's default is
+`-ffp-contract=on`, and with an FMA-capable `-march` it would fuse `a*b+c`
+and move a float somnium's last bit. `cflags` carries the machine flags:
+Oligarchy defaults to `-march=x86-64-v3 -mtune=znver4` for the Framework 16's
+Ryzen 7040. The C unit is portable C11 for the §9.5 C rows
+(`x86_64-linux`, `riscv64-linux`); the N64 row's 32-bit `mensura` would trap
+a long-running frame counter, so it is not offered. This build links libc
+and is outside the syscall audit, and says so.
+
+**Measured about the host, with a stand-in program:**
+
+- 3 frames go out in 3 `write(2)` calls, against 144,000 the reference
+  would make.
+- A 70,000-byte input takes 3 `read(2)` calls.
+- The bytes are exact.
+- A consumer closing the pipe after one frame ends the process with
+  SIGPIPE (status 141).
+
+What the real program's frame rate is on either build is `[UNTESTED]`.
+Oligarchy's `.#screensaver-tests` prints it per effect per build.
+
+**The AMD GPU, stated exactly.** Exsecutor has no GPU code generation for a
+parallel loop yet. There is no `@nucleus` and no `apud machina`, and
+`quisque`, the declared-independent loop, lowers to the same CFG as `per`
+(`docs/design/lowering.md`). The one device path, `tools/amd-dispatch/`,
+runs a C unit as a **single workitem**. That makes it a same-bits
+certificate, not a speed path: octonaria's 1.5 MB took 0.95–1.7 s there. So
+the GPU's share today is the viewer's. mpv scales the 160 × 100 frame and
+presents it through its default `gpu-next` output, on the 780M iGPU the
+compositor already renders on (Oligarchy unsets `DRI_PRIME` for it). The
+per-pixel loops of `plasma`, `cuniculus`'s render pass, `abyssus` and
+`signum_compone` are independent by construction. They are the ones to
+declare `quisque` once a backend can dispatch it; not before, because no
+program in the tree compiles `quisque` today, and this one is already
+unmeasured enough.
+
+## 7. What the oracle found, before any Exsecutor ran
+
+Written down because each is the "green check that exercised nothing" shape,
+or its cousin, the wrong answer that would have looked plausible:
+
+- **vita's injection never landed.** A raw byte is under 158 and under 98
+  about 24% of the time, and on the fixture's seed none of four attempts
+  fitted. It now scales a byte into range, and every attempt lands.
+- **titulus's rain fell down four columns.** xorshift's first rounds from
+  neighbouring seeds share their high bits. It now takes five rounds before
+  the first draw.
+- **titulus's dissolve overflowed a byte.** The fade was `(64 − k) × 4`,
+  which is 256 at k = 0. In the program, `sicut u8` would have made that
+  frame's blocks black rather than trapping. The oracle, which builds a
+  `bytearray`, refused the value. It is `(63 − k) × 4`.
+
+Looking is not a test and is recorded as what it is.
+`prototypes/somnium_oracle.py png` and `apng` render any frame or run of
+frames at any nearest-neighbour zoom. `docs/images/somnium_tabulae.png` is
+the contact sheet above.
+
+## 8. Constructs, and where the tree already runs them
 
 | construct | used in | already exercised by |
 |---|---|---|
-| `&mutabilis acies<u8, N>` parameters, `(*p)[i]` read and write | every somnium | `examples/signaculum/forma.exsc`, `examples/hydramodem/auditus.exsc` |
-| a function returning an array literal as the table | `sinus()` | `examples/hydramodem/modulator.exsc` (`tabula_sinus`) |
-| `aut`, `sursum`, `deorsum` on `u32`/`u8` | `alea`, `vita` | `tests/programs/redundantia/`, `tests/ir/bitwise.ir` |
-| narrowing `sicut` to `u8` | `octo`, the palettes | `tests/programs/angusta/` (u16 → u8); `mensura`/`u32` → `u8` is the same `trunc` and is `[UNTESTED]` from source until this runs |
-| `per` with a runtime bound | `machina` | `examples/hydramodem/modulator.exsc` |
-| `Lector.lege_octeto` with the 256 end sentinel | `machina` | `examples/signaculum/signaculum.exsc` |
-| `Scriptor.scribe_octeto` in a loop | `scribe_tabulam` | `examples/pictura/pictura.exsc` |
-| `[0; N]` locals, ~96 KB of them | `machina` | `examples/signaculum/` (786,432 + 2 MiB) |
+| `&mutabilis acies` parameters, `(*p)[i]` | every somnium | `examples/signaculum/forma.exsc`, `examples/hydramodem/auditus.exsc` |
+| `&mutabilis structura` with array fields, `(*p).f[i]` | `pluvia`, `stellae` | `examples/streamdb/lector_streamdb.exsc` (`Arbor`) |
+| a function returning an array literal as a table | `sinus` `reciproca` `tangentes` `formae` … | `examples/hydramodem/modulator.exsc` |
+| `aut`, `sursum`, `deorsum` on `u8`/`u32`/`u64` | throughout | `tests/programs/redundantia/`, `tests/ir/bitwise.ir` |
+| narrowing `sicut` to `u8` | throughout | `tests/programs/angusta/`; from `mensura`/`u32`/`u64` the same `trunc`, `[UNTESTED]` from source until this runs |
+| f64 → i64 and i64 → f64 `sicut` | `signum_rota` | `examples/signaculum/forma.exsc` |
+| `dum … terminus` | `abyssus` | `examples/hydramodem/receptor.exsc` |
+| `per` with a runtime bound, and from 1 | `machina`, `abyssus`, `cuniculus` | `examples/hydramodem/modulator.exsc` (a runtime bound); a literal start other than 0 is `[UNTESTED]` |
+| ~3 MB of `[0; N]` locals | `machina` | `examples/signaculum/` (2.9 MB in its pump) |
+| `Lector.lege_octeto`, `Scriptor.scribe_octeto` | `machina` | `examples/signaculum/`, `examples/pictura/` |
 
-Two things that could still refuse, stated so the first run knows where to
-look: the same loop variable name in sibling `per` loops of one function
-(`i` in `ignis_pinge`; `examples/signaculum/signaculum.exsc` does the same
-with `i`), and a multi-line binary expression inside `redde`
-(`verbum`; `examples/hydramodem/receptor.exsc:455` does it in an assignment).
+Shadowing an ordinary name in an inner block is allowed
+(`docs/design/checker.md`), so the reused loop names are not a risk.
 
-## 6. What was looked at
-
-`prototypes/somnium_oracle.py png ID SKIP SEED out.png` writes one frame as a
-PNG. Plasma at frames 0, 40 and 120; fire at 20, 80 and 300 (at 80 the flame
-reaches about 60% of the height and holds there); Life at 1, 60 and 400 (the
-opening soup, then gliders and oscillators, with old cells blue and the
-newborn white). Looking is not a test and is recorded as what it is.
-
-## 7. Open
+## 9. Open
 
 - `[UNTESTED]`: everything in `examples/somnium/` as Exsecutor (the status line).
-- `[UNTESTED]`: frame time. It decides the default frame rate on the Oligarchy side.
-- `[OPEN]`: a bulk-write prelude primitive, reported to `compiler/x86_64/prelude/`'s owner.
-- `[OPEN]`: a fourth somnium that uses `acies<f32, 8>` would put the lane path
-  (`examples/pictura/octonaria.exsc`) on screen; not started.
+- `[UNTESTED]`: frame time on either build. Oligarchy's gate reports it.
+- `[OPEN]`: a bulk-write prelude primitive, which would give the reference
+  build what `hospes.c` gives the C one. Reported to
+  `compiler/x86_64/prelude/`'s owner.
+- `[OPEN]`: `quisque` on the independent pixel loops, when a backend can
+  dispatch it (section 6).

@@ -255,10 +255,11 @@
         , version
         , src
         , sources
+        , postInstall ? ""
         , meta ? { }
         }:
         pkgs.stdenvNoCC.mkDerivation {
-          inherit pname version src meta;
+          inherit pname version src meta postInstall;
           nativeBuildInputs = [ exscPkg fasmgPkg ];
           INCLUDE = "${fasmg-x86}";
           dontConfigure = true;
@@ -277,34 +278,123 @@
           '';
         };
 
+      # ----------------------------------------------------------------------
+      # lib.buildExsecutorCProgram -- the same sources through the C backend.
+      #
+      # `exsc --emitte c` writes a C11 translation unit in library mode
+      # (docs/design/c-backend.md): pure functions and the `exsrt_*` imports
+      # a host must define. `host` is that host, a C file relative to `src`
+      # (examples/somnium/hospes.c is one written to ship). The build is the
+      # differential suite's -std=c11 at -O2, plus two flags stated rather
+      # than inherited: -ffp-contract=off (GCC's default under -std=c11, but
+      # clang's default is `on`, and with an FMA-capable -march it would
+      # fuse a*b+c and move the last bit of a float program off the
+      # reference build's) and -fno-fast-math. Then `cflags` for the
+      # machine: `-march=znver4` on a Framework 16, `-march=x86-64-v3` for
+      # any recent x86-64, nothing for a binary that runs everywhere.
+      #
+      # NOT the freestanding build: this one links libc and is outside the
+      # syscall audit. It is the fast path, and `hospes` picks its §9.5 row
+      # (x86_64-linux or riscv64-linux; the C unit is otherwise target-
+      # neutral, which the suite's big-endian cross phase is what measures).
+      buildExsecutorCProgram =
+        { pname
+        , version
+        , src
+        , sources
+        , host
+        , hospes ? "x86_64-linux"
+        , cflags ? [ ]
+        , postInstall ? ""
+        , meta ? { }
+        }:
+        pkgs.stdenv.mkDerivation {
+          inherit pname version src meta postInstall;
+          nativeBuildInputs = [ exscPkg ];
+          dontConfigure = true;
+          buildPhase = ''
+            runHook preBuild
+            exsc aedifica --hospes ${nixpkgsLib.escapeShellArg hospes} --emitte c \
+              ${nixpkgsLib.escapeShellArgs sources} \
+              -o ${nixpkgsLib.escapeShellArg pname}.c
+            $CC -std=c11 -O2 -ffp-contract=off -fno-fast-math \
+              ${nixpkgsLib.escapeShellArgs cflags} \
+              ${nixpkgsLib.escapeShellArg pname}.c ${nixpkgsLib.escapeShellArg host} \
+              -o ${nixpkgsLib.escapeShellArg pname}
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            install -Dm0755 ${nixpkgsLib.escapeShellArg pname} "$out/bin/${pname}"
+            install -Dm0644 ${nixpkgsLib.escapeShellArg pname}.c "$out/share/${pname}/${pname}.c"
+            runHook postInstall
+          '';
+        };
+
       # examples/somnium/: the screensaver engine (docs/design/somnium.md).
       # Packaged because a consumer -- Oligarchy's custom.screensaver -- runs
       # it; tests/programs/somnium_*/ is what holds its bytes to the oracle.
-      # The source is the one directory, not the tree: a change to vendor/
-      # must not rebuild a screensaver.
+      # Its unit includes the 3D engine, examples/signaculum/forma.exsc,
+      # unmodified, and ships the model that engine draws: somnium 8 reads it
+      # after its request, from $out/share/somnium/signaculum_mesh.bin.
+      somniumSrc = nixpkgsLib.fileset.toSource {
+        root = ./.;
+        fileset = nixpkgsLib.fileset.unions [
+          ./examples/somnium
+          ./examples/signaculum/forma.exsc
+          ./tests/data/signaculum_mesh.bin
+        ];
+      };
+      # The order is the TEST lines' order (tests/programs/somnium_*/TEST):
+      # the unit that is tested is the unit that is shipped.
+      somniumSources = [
+        "examples/somnium/somnium.exsc"
+        "examples/somnium/plasma.exsc"
+        "examples/somnium/ignis.exsc"
+        "examples/somnium/vita.exsc"
+        "examples/somnium/pluvia.exsc"
+        "examples/somnium/stellae.exsc"
+        "examples/somnium/cuniculus.exsc"
+        "examples/somnium/abyssus.exsc"
+        "examples/somnium/titulus.exsc"
+        "examples/signaculum/forma.exsc"
+        "examples/somnium/signum.exsc"
+        "examples/somnium/machina.exsc"
+      ];
+      somniumModel = ''
+        install -Dm0644 tests/data/signaculum_mesh.bin "$out/share/somnium/signaculum_mesh.bin"
+      '';
       somniumPkg = buildExsecutorProgram {
         pname = "somnium";
-        version = "0.1.0";
-        src = nixpkgsLib.fileset.toSource {
-          root = ./.;
-          fileset = ./examples/somnium;
-        };
-        # The order is the TEST lines' order (tests/programs/somnium_*/TEST):
-        # the unit that is tested is the unit that is shipped.
-        sources = [
-          "examples/somnium/somnium.exsc"
-          "examples/somnium/plasma.exsc"
-          "examples/somnium/ignis.exsc"
-          "examples/somnium/vita.exsc"
-          "examples/somnium/machina.exsc"
-        ];
+        version = "0.2.0";
+        src = somniumSrc;
+        sources = somniumSources;
+        postInstall = somniumModel;
         meta = {
-          description = "somnium -- a screensaver engine written in Exsecutor: raw rgb24 160x100 frames on stdout from a 17-byte request on stdin";
+          description = "somnium -- a screensaver engine written in Exsecutor: raw rgb24 160x100 frames on stdout from a request on stdin (freestanding reference build)";
           license = nixpkgsLib.licenses.gpl3Plus;
           platforms = [ system ];
           mainProgram = "somnium";
         };
       };
+      # The fast path, same unit. A consumer that wants its own -march calls
+      #   lib.buildExsecutorCProgram (lib.somniumCArgs // { cflags = [ ... ]; })
+      # as Oligarchy does; packages.somnium-c is the portable build (no -march).
+      somniumCArgs = {
+        pname = "somnium";
+        version = "0.2.0";
+        src = somniumSrc;
+        sources = somniumSources;
+        host = "examples/somnium/hospes.c";
+        postInstall = somniumModel;
+        meta = {
+          description = "somnium through the C backend with a buffered host: one write(2) a frame instead of 48,000";
+          license = nixpkgsLib.licenses.gpl3Plus;
+          platforms = [ system ];
+          mainProgram = "somnium";
+        };
+      };
+      somniumCPkg = buildExsecutorCProgram somniumCArgs;
 
       # ----------------------------------------------------------------------
       # Fixtures shared by the checks below.
@@ -464,12 +554,13 @@
         fasmg = fasmgPkg;
         exsc = exscPkg;
         somnium = somniumPkg;
+        somnium-c = somniumCPkg;
         # exsc doesn't exist yet; fasmg-x86 is the most meaningful thing this
         # repo actually builds today (fasmg itself is just nixpkgs, unchanged).
         default = if compilerExists then exscPkg else fasmg-x86;
       };
 
-      lib = { inherit buildExsecutorPackage buildExsecutorProgram; };
+      lib = { inherit buildExsecutorPackage buildExsecutorProgram buildExsecutorCProgram somniumCArgs; };
 
       devShells.${system}.default = pkgs.mkShell {
         packages = [
