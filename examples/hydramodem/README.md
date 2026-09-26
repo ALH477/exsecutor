@@ -18,7 +18,9 @@ The two halves are certified differently, and `docs/decisions/0014-hydramodem-re
 says why. The transmitter is held to the reference's **bytes**, because a
 transmitter's output is bytes and the reference's happen to be integers. The
 receiver is held to its **verdicts** — the three vendored WAVs decode to their
-frames, and 140 words round-trip out through the transmitter and back — because
+frames, 140 words round-trip out through the transmitter and back, and on 70
+vendored impaired WAVs it decodes every one HydraModem's own receiver decodes
+(62) and never writes a wrong frame — because
 a receiver's internal state is one implementation's arithmetic (HydraModem's is
 `double` throughout) and two correct receivers disagree on it by construction.
 What that buys is an integer receiver with no floating point, no division, no
@@ -282,11 +284,13 @@ frame, so the CRC is exercised on every one, and the constant-0 CRC now
 fails, at the first word. Because every step from the frame's bits to the
 tones is an exclusive-or, a bit placement or a permutation, the tones of
 any word are those of the zero word with the differences of its set bits
-folded in; so agreeing on these 137 words is agreeing on every one of the
-2^136 possible inputs — and since each symbol's audio depends on its tone
-alone, which the three WAVs check, on every byte of every WAV. That
-"because" is read off the code, not measured; `docs/design/modem.md` D9
-says exactly what it rests on.
+folded in; so, if that holds, agreeing on these 137 words implies agreeing
+on every one of the 2^136 possible inputs — and since each symbol's audio
+depends on its tone alone, which the three WAVs check, on every byte of every
+WAV. That extension is an argument from structure, not a test: the
+"because" is read off the code, not measured, and only the 137 words and
+three WAVs are compared. `docs/design/modem.md` D9 and §13 say exactly what
+it rests on.
 
 ## What the receiver does
 
@@ -354,8 +358,17 @@ generator taps swapped, the interleaver's stride, the sync word complemented,
 both oscillators on one tone, the threshold raised past 40) all fail, each in
 the predicted way.
 
-What is **not** done is robustness — milestone R3 in `receptor.md`: no
-noise-, clock- or frequency-impaired WAV has been fed to this receiver, the
-reference's timing loop has no counterpart here, and the vendored impaired
-set with HydraModem's own verdicts (`vendor/hydramodem-rx/`) does not exist
-in this tree. The receiver above is certified on clean input only.
+**Robustness (R3, `receptor.md` D10, D11 and §13).** The receiver has the
+reference's timing loop, with an EMA weight of 1/4 in place of its 0.2, and
+is held to `vendor/hydramodem-rx/`: 70 impaired WAVs of the three frames —
+AWGN at six levels from +12 to −12 dB, clock offsets ±500 to ±3000 ppm,
+frequency offsets ±50 to ±300 Hz — each with `frame_rx`'s own verdict
+(`verdicta.tsv`), one `tests/programs/receptio_vec_*/` directory per file.
+"62 of 70" means: the reference decodes 62 of the 70 and refuses 8 (the six
+at −12 dB and the two at ±300 Hz); this receiver decodes all 62 to the
+input's frame, refuses 7 of the 8 and decodes the eighth (+300 Hz)
+correctly, and on none of the 70 writes a frame that is not the input's. Without the loop it
+decodes 55 of the 62, losing ±3000 ppm on all three frames and +2000 ppm on
+one. The figures are those §13 records at the commit that added the loop;
+the certificate is decode success against one reference build at one
+commit, over these 70 inputs, not a statement about any other channel.
