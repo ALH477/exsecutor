@@ -1,0 +1,6 @@
+# somnium 2, Life: frames 23 and 24 of seed 0x5EED. Covers the frame-0
+# fill (16,000 draws), three 3x3 injections (t = 0, 8, 16) and a fourth on the
+# written frame 24, the torus wrap, the age palette, and the trail that
+# halves a dead cell's colour each frame (fb is read as well as written).
+# Golden from prototypes/somnium_oracle.py.
+TEST: expect-exit=0 sources=examples/somnium/somnium.exsc,examples/somnium/plasma.exsc,examples/somnium/ignis.exsc,examples/somnium/vita.exsc,examples/somnium/machina.exsc stdin=tests/data/somnium_vita.bin

@@ -1,0 +1,77 @@
+// examples/somnium/somnium.exsc
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 The Exsecutor authors.
+// ---------------------------------------------------------------------------
+// The screensaver engine's shared half: the frame geometry, the one table,
+// and the two scalar helpers every somnium ("dream") is written in.
+// docs/design/somnium.md is the design; prototypes/somnium_oracle.py is the
+// independent oracle every byte is held to.
+//
+// THE FRAME. 160 x 100, rgb24, row-major, no header: 48,000 bytes. Small on
+// purpose, and the reason is measured from the runtime, not taste: the only
+// way arbitrary bytes reach stdout is `Scriptor.scribe_octeto`, which is one
+// write(2) per byte (compiler/x86_64/prelude/prelude.asm, and
+// docs/design/runtime.md). A 320x200 frame is 192,000 syscalls; this one is
+// 48,000. The viewer scales it to the panel -- 16:10, which is the Framework
+// 16's own aspect -- and nearest-neighbour scaling is a look, not a defect.
+//
+// NOTHING HERE IS AMBIENT. There is no clock: time is the frame index the
+// engine counts. There is no entropy source: the one seed arrives in the
+// request on stdin. The same request therefore writes the same bytes on
+// every machine, forever -- which is what lets a test pin a screensaver.
+//
+// What the language lacks and how this file does without it: no `*%`, so
+// the generator is xorshift32 (xor and shifts only, no multiply); no
+// remainder and no bitwise and, so "mod 256" is `sicut u8` (spec §5.4:
+// narrowing is truncation) and "mod 8" is the shift-discard idiom; no sine,
+// so the sine is a frozen table.
+// ---------------------------------------------------------------------------
+
+// round(127.5 + 127.5 * sin(2 pi i / 256)) for i in 0..256, frozen. The
+// oracle holds the same literal and its `selftest` checks it against the
+// formula. A function returning a literal rather than a module `firma`:
+// module-scope array literals do not lower (spec §8.6; docs/design/modem.md
+// D4, the transmitter's table is written this way for the same reason).
+publica functio sinus() -> acies<u8, 256> {
+    redde [
+        128, 131, 134, 137, 140, 143, 146, 149, 152, 155, 158, 162, 165, 167, 170, 173,
+        176, 179, 182, 185, 188, 190, 193, 196, 198, 201, 203, 206, 208, 211, 213, 215,
+        218, 220, 222, 224, 226, 228, 230, 232, 234, 235, 237, 238, 240, 241, 243, 244,
+        245, 246, 248, 249, 250, 250, 251, 252, 253, 253, 254, 254, 254, 255, 255, 255,
+        255, 255, 255, 255, 254, 254, 254, 253, 253, 252, 251, 250, 250, 249, 248, 246,
+        245, 244, 243, 241, 240, 238, 237, 235, 234, 232, 230, 228, 226, 224, 222, 220,
+        218, 215, 213, 211, 208, 206, 203, 201, 198, 196, 193, 190, 188, 185, 182, 179,
+        176, 173, 170, 167, 165, 162, 158, 155, 152, 149, 146, 143, 140, 137, 134, 131,
+        128, 124, 121, 118, 115, 112, 109, 106, 103, 100, 97, 93, 90, 88, 85, 82,
+        79, 76, 73, 70, 67, 65, 62, 59, 57, 54, 52, 49, 47, 44, 42, 40,
+        37, 35, 33, 31, 29, 27, 25, 23, 21, 20, 18, 17, 15, 14, 12, 11,
+        10, 9, 7, 6, 5, 5, 4, 3, 2, 2, 1, 1, 1, 0, 0, 0,
+        0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 4, 5, 5, 6, 7, 9,
+        10, 11, 12, 14, 15, 17, 18, 20, 21, 23, 25, 27, 29, 31, 33, 35,
+        37, 40, 42, 44, 47, 49, 52, 54, 57, 59, 62, 65, 67, 70, 73, 76,
+        79, 82, 85, 88, 90, 93, 97, 100, 103, 106, 109, 112, 115, 118, 121, 124
+    ];
+}
+
+// `v mod 256` as an index: the low eight bits, back in `mensura`.
+publica functio octo(v: mensura) -> mensura {
+    firma b: u8 = v sicut u8;
+    redde b sicut mensura;
+}
+
+// |a - b| without a signed type.
+publica functio distantia(a: mensura, b: mensura) -> mensura {
+    si a gt b {
+        redde a - b;
+    }
+    redde b - a;
+}
+
+// One xorshift32 step (Marsaglia 2003, shifts 13/17/5). `sursum` discards
+// what passes bit 31 (spec §5.4), so no mask is needed; zero is its only
+// fixed point, which is why machina.exsc never seeds it with zero.
+publica functio alea(x: u32) -> u32 {
+    firma a: u32 = x aut (x sursum 13);
+    firma b: u32 = a aut (a deorsum 17);
+    redde b aut (b sursum 5);
+}

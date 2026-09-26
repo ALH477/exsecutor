@@ -233,6 +233,80 @@
           };
 
       # ----------------------------------------------------------------------
+      # lib.buildExsecutorProgram -- compile .exsc sources to a binary.
+      #
+      # What buildExsecutorPackage above is scaffolding for, done the only
+      # way that is honest today: no `ego` file, no `fontes` resolution, no
+      # `potestates` audit -- just the two commands README.md's hello world
+      # runs, `exsc aedifica --hospes H SOURCES -o P.asm` then `fasmg P.asm P`,
+      # in the sandbox. `sources` are paths relative to `src`, in the order
+      # exsc is to read them (there is no module system; the unit is the
+      # list, as a tests/programs TEST line's `sources=` is).
+      #
+      # Build closure: exsc and fasmg, both of which are themselves built
+      # from fasmg alone (spec §18.1). No C compiler, no libc, no python.
+      # The emitted program is freestanding like exsc itself.
+      #
+      # Only x86_64-linux is emitted as an executable here: the other §9.5
+      # row (mips64-none-o64) is a C translation unit in library mode, which
+      # is not something this function can hand back as a bin/.
+      buildExsecutorProgram =
+        { pname
+        , version
+        , src
+        , sources
+        , meta ? { }
+        }:
+        pkgs.stdenvNoCC.mkDerivation {
+          inherit pname version src meta;
+          nativeBuildInputs = [ exscPkg fasmgPkg ];
+          INCLUDE = "${fasmg-x86}";
+          dontConfigure = true;
+          buildPhase = ''
+            runHook preBuild
+            exsc aedifica --hospes x86_64-linux \
+              ${nixpkgsLib.escapeShellArgs sources} \
+              -o ${nixpkgsLib.escapeShellArg pname}.asm
+            fasmg ${nixpkgsLib.escapeShellArg pname}.asm ${nixpkgsLib.escapeShellArg pname}
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            install -Dm0755 ${nixpkgsLib.escapeShellArg pname} "$out/bin/${pname}"
+            runHook postInstall
+          '';
+        };
+
+      # examples/somnium/: the screensaver engine (docs/design/somnium.md).
+      # Packaged because a consumer -- Oligarchy's custom.screensaver -- runs
+      # it; tests/programs/somnium_*/ is what holds its bytes to the oracle.
+      # The source is the one directory, not the tree: a change to vendor/
+      # must not rebuild a screensaver.
+      somniumPkg = buildExsecutorProgram {
+        pname = "somnium";
+        version = "0.1.0";
+        src = nixpkgsLib.fileset.toSource {
+          root = ./.;
+          fileset = ./examples/somnium;
+        };
+        # The order is the TEST lines' order (tests/programs/somnium_*/TEST):
+        # the unit that is tested is the unit that is shipped.
+        sources = [
+          "examples/somnium/somnium.exsc"
+          "examples/somnium/plasma.exsc"
+          "examples/somnium/ignis.exsc"
+          "examples/somnium/vita.exsc"
+          "examples/somnium/machina.exsc"
+        ];
+        meta = {
+          description = "somnium -- a screensaver engine written in Exsecutor: raw rgb24 160x100 frames on stdout from a 17-byte request on stdin";
+          license = nixpkgsLib.licenses.gpl3Plus;
+          platforms = [ system ];
+          mainProgram = "somnium";
+        };
+      };
+
+      # ----------------------------------------------------------------------
       # Fixtures shared by the checks below.
       smokeAsmSrc = pkgs.writeText "exsecutor-smoke.asm" ''
         include 'format/format.inc'
@@ -389,12 +463,13 @@
         inherit fasmg-x86;
         fasmg = fasmgPkg;
         exsc = exscPkg;
+        somnium = somniumPkg;
         # exsc doesn't exist yet; fasmg-x86 is the most meaningful thing this
         # repo actually builds today (fasmg itself is just nixpkgs, unchanged).
         default = if compilerExists then exscPkg else fasmg-x86;
       };
 
-      lib = { inherit buildExsecutorPackage; };
+      lib = { inherit buildExsecutorPackage buildExsecutorProgram; };
 
       devShells.${system}.default = pkgs.mkShell {
         packages = [

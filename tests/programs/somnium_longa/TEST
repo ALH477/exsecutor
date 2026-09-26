@@ -1,0 +1,4 @@
+# Refusal: the 17 bytes and then an 18th. The request is a whole message,
+# and a trailing byte means the host and the engine disagree about its
+# format -- exactly the case a version bump in the magic exists for.
+TEST: expect-exit=1 sources=examples/somnium/somnium.exsc,examples/somnium/plasma.exsc,examples/somnium/ignis.exsc,examples/somnium/vita.exsc,examples/somnium/machina.exsc stdin=tests/data/somnium_longa.bin

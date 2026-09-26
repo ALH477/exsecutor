@@ -1,0 +1,5 @@
+# A zero seed is xorshift32's one fixed point, so the engine replaces it
+# with 0x9E3779B9 (machina.exsc). Plasma, frame 0, semen 0: the golden is
+# the oracle's render with 0x9E3779B9, so a program that forgot the
+# substitution renders phase offsets of zero and fails here.
+TEST: expect-exit=0 sources=examples/somnium/somnium.exsc,examples/somnium/plasma.exsc,examples/somnium/ignis.exsc,examples/somnium/vita.exsc,examples/somnium/machina.exsc stdin=tests/data/somnium_semen_nihil.bin

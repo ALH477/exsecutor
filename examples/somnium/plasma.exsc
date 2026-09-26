@@ -1,0 +1,48 @@
+// examples/somnium/plasma.exsc
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 The Exsecutor authors.
+// ---------------------------------------------------------------------------
+// Somnium 0: the demoscene plasma. Four sine waves summed per pixel -- two
+// axial, one diagonal, and a ring field around a centre that itself drifts
+// on the table -- then pushed through a three-phase palette read off the
+// same table. A pure function of (t, semen): no state survives a frame, so
+// `praetermitte` costs this somnium nothing (machina.exsc skips the frames
+// instead of rendering them).
+//
+// Every index is `octo(...)`, the low eight bits, so every phase wraps the
+// way a byte does and no term can run off the table. `t * 252` is `-4 t`
+// mod 256 written without a signed type: the rings travel outward.
+// The ring term has no square root (the language has none, pointedly --
+// docs/design/ssa-ir.md), so its rings are spaced by distance squared, a
+// zone plate.
+// ---------------------------------------------------------------------------
+
+publica functio plasma_pinge(fb: &mutabilis acies<u8, 48000>, t: mensura, semen: u32) -> u32 {
+    firma s: acies<u8, 256> = sinus();
+    // The seed's four bytes are four phase offsets.
+    firma pa: mensura = octo(semen sicut mensura);
+    firma pb: mensura = octo((semen deorsum 8) sicut mensura);
+    firma pc: mensura = octo((semen deorsum 16) sicut mensura);
+    firma pd: mensura = octo((semen deorsum 24) sicut mensura);
+    // The ring centre, drifting: cx in 16..143, cy in 18..81.
+    firma cx: mensura = 16 + ((s[octo(t + pa)] sicut mensura) deorsum 1);
+    firma cy: mensura = 18 + ((s[octo(t * 2 + pb + 64)] sicut mensura) deorsum 2);
+
+    per y in 0..100 {
+        firma v2: mensura = s[octo(y * 4 + t * 2 + pd)] sicut mensura;
+        firma dy: mensura = distantia(y, cy);
+        firma linea: mensura = y * 160;
+        per x in 0..160 {
+            firma v1: mensura = s[octo(x * 3 + t + pc)] sicut mensura;
+            firma v3: mensura = s[octo((x + y) * 2 + t * 3)] sicut mensura;
+            firma dx: mensura = distantia(x, cx);
+            firma v4: mensura = s[octo(((dx * dx + dy * dy) deorsum 5) + t * 252)] sicut mensura;
+            firma p: mensura = octo(((v1 + v2 + v3 + v4) deorsum 1) + t);
+            firma k: mensura = (linea + x) * 3;
+            (*fb)[k] = s[p];
+            (*fb)[k + 1] = s[octo(p + 85)] deorsum 1;
+            (*fb)[k + 2] = s[octo(p + 170)];
+        }
+    }
+    redde semen;
+}
