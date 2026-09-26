@@ -39,7 +39,7 @@ lets its whole stream be certified byte-for-byte below.
 | 1 | `quotus`, `residuum`, `proportio` | Integer division by shift-and-subtract. The language has no integer `/` or remainder (§8.4, both `[OPEN]`). `proportio` computes `floor(n·a/b)` without forming `n·a`. |
 | 2 | `multiplica_modulo` | Wrapping 64-bit multiply. `*%` is `[OPEN]` too. |
 | 3 | `Metronomus` | The **fixed-step clock** (details below). |
-| 4 | `hora_civilis`, `tempus_ex_hora` | **Wall clock.** Unix milliseconds plus a zone offset in minutes (data, passed in) become year, month, day, time of day and weekday, and back again: `tempus_ex_hora` turns a date and time the user set into milliseconds, and refuses one that does not exist (29 February 2027, 31 September, 24:00, second 60). |
+| 4 | `hora_civilis`, `tempus_ex_hora` | **Wall clock.** Unix milliseconds plus a zone offset in minutes (data, passed in) become year, month, day, time of day and weekday, and back again: `tempus_ex_hora` turns a date and time the user set into milliseconds, and refuses one that does not exist (29 February 2027, 31 September, 24:00, second 60). The year is 16 bits: the range is the epoch through 65535-12-31, clamped at both ends, never trapping. |
 | 5 | `Horologia` | **Sixteen timers** counted in ticks, one-shot or periodic. Fired as a slot-ordered bitmask, so every peer handles them in the same order. Periodic timers keep their phase across stalls. `pulsus_ex_millesimis` rounds up, so a timer never fires early. |
 | 6 | `Mandatum`, `tempus24`, `revolve` | **Punctim's wire.** The DCF-Game INPUT body `tick u32 \| buttons u16` (big-endian, 6 bytes), the DeModFrame timestamp, and `unwrap_pid` generalised from 2¹¹ to any 2ᵏ (16 for `seq`, 24 for the timestamp). |
 | 7 | `Consonantia` | **Clock sync.** Offset and round trip from PING/PONG's four instants. The offset is taken from the minimum-delay exchange of the last eight. The round trip is smoothed with an integer EWMA at α = 1/8, Punctim's own `udp_node.py` value. `pulsus_remotus` gives the server's tick now. |
@@ -58,10 +58,17 @@ lets its whole stream be certified byte-for-byte below.
 
 **`Consessus`, the lockstep/rollback input buffer.** It holds 8 players × a 64-tick window.
 
-- `lege` hands back either the real input or a *recorded* repeat-last prediction.
+- `lege` hands back either the real input or a *recorded* repeat-last prediction,
+  or `nullus` when no answer can be right (no such player, a tick 64 or more
+  ahead, or a tick whose slot has been reused). `nullus` is a fault, never
+  buttons; `exemplum.c` exits on it.
 - `inscribe` confirms real inputs. It advances the watermark below which every tick is final, which is what lockstep needs.
 - When a real input contradicts the prediction that was already simulated, `inscribe` sets `revertendum`, the earliest tick to resimulate from. That is what rollback needs.
 - Two different real inputs for one tick are refused (verdict 6) rather than silently overwritten.
+- **The 64-tick rule.** A rollback must be collected with `revertendum_cape`
+  and resimulated before the window moves 64 ticks past the tick it names, or
+  the inputs it needs are gone and `lege` answers `nullus`. Collecting once
+  per frame, as the demo does, is always soon enough.
 
 ## Using it from Kiln
 
@@ -247,6 +254,10 @@ the final stream (byte positions are into the 2,616-byte stream):
   897, a flipped zone sign at 917, admitting second 60 at 1001. W4 forgot that
   September has 30 days; it survived until 31 September was added as a case,
   and now fails at byte 1033.
+- **The follow-up's guards (F1–F5), against the 2,714-byte stream:** removing
+  the year-65535 clamp, the zone-overflow guard, `revolve`'s width guard,
+  `imum`'s 64-bit case, and `lege`'s `nullus` for a tick beyond the window
+  each fail at a stated byte (the commit message lists them).
 
 ## Findings
 
@@ -266,6 +277,12 @@ publica functio f(n: u64) -> u64 {
 
 `exsc aedifica --hospes x86_64-linux --emitte c f.exsc -o f.c` exits 132. This
 library never writes that shape.
+
+**Limits stated, after the first review of PR #1:** `hora_civilis` clamps
+instead of wrapping the 16-bit year or trapping on a zone add near 2⁶⁴;
+`revolve` answers `nullus` for a width outside 1..63 and `imum` answers 0
+and `x` at the two ends; `lege` distinguishes "no answer can be right" from a
+prediction. Each has a case in the stream.
 
 **Language gaps met, and not worked around silently:**
 

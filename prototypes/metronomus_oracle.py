@@ -227,6 +227,40 @@ def sectio_metronomi(o):
 
 # ---- the wall clock -------------------------------------------------------------------
 
+FINIS_ANNORUM = 2005949145600000   # 65536-01-01T00:00:00 in ms
+
+
+def civil_slow(days):
+    """Days since 1970-01-01 to (y, m, d), by counting years and months one at
+    a time -- datetime stops at 9999 and this must reach 65535. A different
+    algorithm from the library's closed form on purpose."""
+    def leap(y):
+        return y % 4 == 0 and (y % 100 != 0 or y % 400 == 0)
+    y = 1970
+    while days >= (366 if leap(y) else 365):
+        days -= 366 if leap(y) else 365
+        y += 1
+    lengths = [31, 29 if leap(y) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    m = 1
+    while days >= lengths[m - 1]:
+        days -= lengths[m - 1]
+        m += 1
+    return y, m, days + 1
+
+
+def hora_far(o, ms, zone):
+    if zone >= 0 and zone * 60000 > M64 - 1 - ms:
+        local = FINIS_ANNORUM - 1
+    else:
+        local = min(max(ms + zone * 60000, 0), FINIS_ANNORUM - 1)
+    days, rem = divmod(local, 86400000)
+    y, m, d = civil_slow(days)
+    hh, rem = divmod(rem, 3600000)
+    mi, rem = divmod(rem, 60000)
+    ss, msec = divmod(rem, 1000)
+    o.raw(struct.pack(">HBBBBBBH", y, m, d, hh, mi, ss, (days + 4) % 7, msec))
+
+
 def sectio_horae(o):
     epoch = datetime.datetime(1970, 1, 1)
     cases = [(0, 0), (0, -300), (951782400000, 0), (1758844800123, 0),
@@ -240,6 +274,9 @@ def sectio_horae(o):
         weekday = (t.weekday() + 1) % 7      # Python: Monday 0; here Sunday 0
         o.raw(struct.pack(">HBBBBBBH", t.year, t.month, t.day, t.hour,
                           t.minute, t.second, weekday, t.microsecond // 1000))
+    for ms, zone in [(FINIS_ANNORUM - 1, 0), (FINIS_ANNORUM, 0), (FINIS_ANNORUM, -1),
+                     (M64 - 1, 0), (M64 - 1, 300)]:
+        hora_far(o, ms, zone)
     for ms, zone in cases:
         local = max(0, ms + zone * 60000)
         o.u64(local - zone * 60000)          # always >= 0 for these cases
@@ -330,6 +367,10 @@ def sectio_filorum(o):
     o.u64(unwrap(0, 1024, 1 << 11))
     o.u64(unwrap(65536, 32768, 1 << 16))
     o.u64(unwrap(1025, 0, 1 << 11))
+    o.u64(NULLUS)                      # revolve, 0 bits
+    o.u64(NULLUS)                      # revolve, 64 bits
+    for x, bits in [(0xFF, 0), (0xFF, 4), (0xFF, 64), (M64 - 1, 63)]:
+        o.u64(x % (1 << bits))
 
 
 # ---- clock offset -------------------------------------------------------------------------
@@ -458,11 +499,11 @@ class Session:
 
     def read(self, p, t):
         if p >= self.players:
-            return 0x10000
+            return NULLUS
         if t < self.conf:
-            return self.held[(p, t)][0] if self.real(p, t) else 0x10000
+            return self.held[(p, t)][0] if self.real(p, t) else NULLUS
         if t - self.conf >= self.W:
-            return 0x10000
+            return NULLUS
         cur = self.held.get((p, t))
         if cur is not None:
             return cur[0] + (0x10000 if cur[1] == "pred" else 0)

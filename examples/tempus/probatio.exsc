@@ -1,0 +1,215 @@
+// examples/tempus/probatio.exsc -- the driver for tempus.exsc, and the only
+// file of the unit that names `Mundus` or `Scriptor`. It reads nothing; it
+// runs a fixed scenario through the register and writes what it answered,
+// raw, to standard output.
+//
+// TWO CERTIFICATES, TWO KINDS.
+//   * EXTERNAL, checked here: two frames whose bytes are published by
+//     someone else. vendor/hydramesh-wire/golden_vectors.json's anchor
+//     `exampleFrame_full`, d31312340001ffffdeadbeefab12cd24c0, and the frame
+//     HydraModem's reference transmitter renders in
+//     vendor/hydramodem-tx/d310123400a1ffffdeadbeef0a1b2ca961.wav. The
+//     register must SEAL each from its fields; a mismatch is the exit
+//     status, 10 and 11. They are also in the stream.
+//   * INDEPENDENT, checked by `cmp`: tests/programs/tempus/expected.out is
+//     written by prototypes/tempus_oracle.py, which packs frames with
+//     struct.pack and a table-driven CRC and unwraps with Punctim's own
+//     formula, rather than transliterating this program.
+//
+// THE STREAM is big-endian u64 words, except where a section writes a
+// frame's own 17 bytes. The oracle's comments name every section in order.
+
+@transitus
+structura Octo {
+    valor: u64:maior
+}
+
+functio scribe_u64(s: Scriptor, v: u64) -> mensura {
+    firma t = Octo { valor: v } sicut acies<u8, 8>;
+    mutabilis n: mensura = 0;
+    per i in 0..8 {
+        n = n + s.scribe_octeto(t[i]);
+    }
+    redde n;
+}
+
+functio scribe_quantum(s: Scriptor, w: acies<u8, 17>) -> mensura {
+    mutabilis n: mensura = 0;
+    per i in 0..17 {
+        n = n + s.scribe_octeto(w[i]);
+    }
+    redde n;
+}
+
+functio scribe_registrum(s: Scriptor, r: &Registrum) -> mensura {
+    mutabilis n: mensura = scribe_u64(s, (*r).tenetur sicut u64);
+    n = n + scribe_u64(s, (*r).genus sicut u64);
+    n = n + scribe_u64(s, (*r).fons sicut u64);
+    n = n + scribe_u64(s, (*r).meta sicut u64);
+    n = n + scribe_u64(s, (*r).numerus sicut u64);
+    n = n + scribe_u64(s, (*r).tempus);
+    n = n + scribe_u64(s, tempus24(*r));
+    n = n + scribe_u64(s, aera(*r));
+    redde n;
+}
+
+functio scribe_receptum(s: Scriptor, x: Receptum) -> mensura {
+    mutabilis n: mensura = scribe_u64(s, x.verdictum sicut u64);
+    n = n + scribe_u64(s, x.genus sicut u64);
+    n = n + scribe_u64(s, x.numerus sicut u64);
+    n = n + scribe_u64(s, x.fons sicut u64);
+    n = n + scribe_u64(s, x.meta sicut u64);
+    n = n + scribe_u64(s, x.onus sicut u64);
+    n = n + scribe_u64(s, x.tempus);
+    redde n;
+}
+
+// 1 if the two frames differ.
+functio differt(a: acies<u8, 17>, b: acies<u8, 17>) -> u8 {
+    per i in 0..17 {
+        si a[i] ne b[i] {
+            redde 1;
+        }
+    }
+    redde 0;
+}
+
+// ---- section 1: the two published frames, sealed from their fields --------
+
+functio sectio_certa(s: Scriptor) -> u8 {
+    mutabilis verdictum: u8 = 0;
+
+    // golden_vectors.json anchor exampleFrame_full: CTRL (3), seq 0x1234,
+    // node 1, lobby, onus deadbeef, tempus ab12cd.
+    mutabilis a = para(0x0001, 0xffff, 3);
+    a.numerus = 0x1234;
+    firma a0 = adeo(a, 0xab12cd);
+    firma fa = signa(a, 0xdeadbeef);
+    firma ea: acies<u8, 17> = [
+        0xd3, 0x13, 0x12, 0x34, 0x00, 0x01, 0xff, 0xff,
+        0xde, 0xad, 0xbe, 0xef, 0xab, 0x12, 0xcd, 0x24, 0xc0
+    ];
+    si differt(fa, ea) eq 1 {
+        verdictum = 10;
+    }
+    mutabilis n: mensura = scribe_quantum(s, fa);
+    n = n + scribe_receptum(s, accipe(fa, 0));
+
+    // The frame HydraModem's transmitter renders: DATA, seq 0x1234, node
+    // 0xa1, lobby, onus deadbeef, tempus 0a1b2c.
+    mutabilis b = para(0x00a1, 0xffff, 0);
+    b.numerus = 0x1234;
+    firma b0 = adeo(b, 0x0a1b2c);
+    firma fb = signa(b, 0xdeadbeef);
+    firma eb: acies<u8, 17> = [
+        0xd3, 0x10, 0x12, 0x34, 0x00, 0xa1, 0xff, 0xff,
+        0xde, 0xad, 0xbe, 0xef, 0x0a, 0x1b, 0x2c, 0xa9, 0x61
+    ];
+    si differt(fb, eb) eq 1 {
+        si verdictum eq 0 {
+            verdictum = 11;
+        }
+    }
+    n = n + scribe_quantum(s, fb);
+    n = n + scribe_receptum(s, accipe(fb, 0));
+    redde verdictum;
+}
+
+// ---- section 2: the register, granted, released, moved, wrapped ------------
+
+functio sectio_registri(s: Scriptor) -> mensura {
+    mutabilis n: mensura = 0;
+    mutabilis r = para(7, 0x0104, 2);
+    n = n + scribe_registrum(s, r);
+    n = n + scribe_u64(s, adeo(r, 100000));
+    n = n + scribe_quantum(s, signa(r, 0));
+    n = n + scribe_u64(s, adeo(r, 50000));
+    n = n + scribe_quantum(s, signa(r, 0));
+    n = n + scribe_registrum(s, r);
+    // Released: the difference is discarded, the frame stands still, and
+    // only the sequence number moves.
+    n = n + scribe_u64(s, concede(r, 0) sicut u64);
+    n = n + scribe_u64(s, adeo(r, 100000));
+    n = n + scribe_quantum(s, signa(r, 0));
+    n = n + scribe_registrum(s, r);
+    // Granted again, moved to the lobby: the room changes, the time and the
+    // count do not.
+    n = n + scribe_u64(s, concede(r, 1) sicut u64);
+    n = n + scribe_u64(s, migra(r, 0xffff) sicut u64);
+    n = n + scribe_quantum(s, signa(r, 0x00c0ffee));
+    n = n + scribe_registrum(s, r);
+    // One modulus later the wire reads 000000 and the era is 1; the wire
+    // does not say so.
+    n = n + scribe_u64(s, adeo(r, 0x1000000 - 150000));
+    firma w = signa(r, 0);
+    n = n + scribe_quantum(s, w);
+    n = n + scribe_registrum(s, r);
+    // A disagreeing copy: verdict 3, nothing else read out of it.
+    firma v = vitia(w);
+    n = n + scribe_quantum(s, v);
+    n = n + scribe_receptum(s, accipe(v, 0));
+    n = n + scribe_receptum(s, accipe(w, 0));
+    // The refusals.
+    firma z0 = para(0x10000, 0, 2);
+    firma z1 = para(0, 0x10000, 2);
+    firma z2 = para(0, 0, 16);
+    n = n + scribe_u64(s, z0.tenetur sicut u64);
+    n = n + scribe_u64(s, z1.tenetur sicut u64);
+    n = n + scribe_u64(s, z2.tenetur sicut u64);
+    n = n + scribe_u64(s, concede(r, 2) sicut u64);
+    n = n + scribe_u64(s, migra(r, 0x10000) sicut u64);
+    n = n + scribe_u64(s, adeo(r, 0x100000000));
+    n = n + scribe_u64(s, adeo(r, 0xffffffff));
+    n = n + scribe_quantum(s, signa(r, 0x100000000));
+    n = n + scribe_registrum(s, r);
+    redde n;
+}
+
+// ---- section 3: reading a sender across wraps, and three bad frames -------
+
+functio sectio_lecturae(s: Scriptor) -> mensura {
+    mutabilis n: mensura = 0;
+    // A sender whose held time is `t`; the reader knows only what arrives.
+    // The last two sit exactly half a modulus apart: forward, by Punctim's
+    // `fwd <= MOD/2`, so 0x800003 and not a saturated 0.
+    firma t: acies<u64, 9> = [
+        5, 0xfffff0, 0x1000010, 0x1800000, 0x1800001, 0x0fffffff, 0x10000000, 3, 0x800003
+    ];
+    mutabilis prius: u64 = 0;
+    per i in 0..9 {
+        mutabilis r = para(9, 0xffff, 2);
+        firma a0 = adeo(r, imum32(t[i]));
+        firma hi = t[i] deorsum 32;
+        firma a1 = adeo(r, hi sursum 32);
+        firma w = signa(r, 0);
+        firma x = accipe(w, prius);
+        n = n + scribe_receptum(s, x);
+        prius = x.tempus;
+    }
+    // Bad sync, bad version, bad CRC: the verdicts, and nothing else.
+    mutabilis r = para(9, 0x0104, 2);
+    firma good = signa(r, 0x12345678);
+    mutabilis b1 = good;
+    b1[0] = 0x00;
+    mutabilis b2 = good;
+    b2[1] = 0x22;
+    mutabilis b3 = good;
+    b3[16] = b3[16] aut 0x80;
+    n = n + scribe_receptum(s, accipe(b1, 77));
+    n = n + scribe_receptum(s, accipe(b2, 77));
+    n = n + scribe_receptum(s, accipe(b3, 77));
+    n = n + scribe_receptum(s, accipe(good, 77));
+    redde n;
+}
+
+functio imum32(x: u64) -> u64 {
+    redde (x sursum 32) deorsum 32;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma s = Scriptor.ad_exitum(m.ambitus());
+    firma v = sectio_certa(s);
+    firma a = sectio_registri(s);
+    firma b = sectio_lecturae(s);
+    redde v;
+}

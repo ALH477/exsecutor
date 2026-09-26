@@ -63,6 +63,10 @@ publica firma nullus: u64 = 0xffffffffffffffff;
 publica firma lusores_maximi: u64 = 8;
 publica firma fenestra: u64 = 64;
 
+// The first millisecond of year 65536, local: where `Hora.annus` runs out.
+// days_from_civil(65536, 1, 1) = 23,217,004 days, times 86,400,000.
+publica firma finis_annorum: u64 = 2005949145600000;
+
 // ---- 1. integer division ---------------------------------------------------
 
 // Restoring division, one quotient bit per step, most significant first. `d`
@@ -280,13 +284,23 @@ publica structura Hora {
 
 // `ms` milliseconds since 1970-01-01T00:00:00Z, read by whoever holds
 // `horologium`, and a zone offset in minutes east of UTC -- data, passed in,
-// never looked up. A local time before the epoch clamps to the epoch.
+// never looked up. `annus` is 16 bits, so the range is the epoch through
+// 65535-12-31T23:59:59.999 local: a local time before the epoch clamps to
+// the epoch, one at or past year 65536 (`finis_annorum`, 2005949145600000 ms)
+// clamps to that last millisecond, and so does a `ms` so near 2^64 that the
+// zone would carry past it. Nothing traps and nothing wraps: a wrong clock
+// shows as 65535, not as year 3 of a silently narrowed count.
 // Days to a date is Hinnant's civil_from_days, unsigned throughout: the era
 // shift makes every intermediate non-negative for any date from 0000-03-01.
 publica functio hora_civilis(ms: u64, zona: i64) -> Hora {
     mutabilis t: u64 = ms;
     si zona ge 0 {
-        t = t + (zona sicut u64) * 60000;
+        firma w = (zona sicut u64) * 60000;
+        si w gt (nullus - t) {
+            t = finis_annorum - 1;
+        } aliter {
+            t = t + w;
+        }
     } aliter {
         firma w = ((0 - zona) sicut u64) * 60000;
         si w gt t {
@@ -294,6 +308,9 @@ publica functio hora_civilis(ms: u64, zona: i64) -> Hora {
         } aliter {
             t = t - w;
         }
+    }
+    si t ge finis_annorum {
+        t = finis_annorum - 1;
     }
     firma secunda = quotus(t, 1000);
     firma millesimum = t - secunda * 1000;
@@ -501,8 +518,16 @@ publica functio mandatum_lege(b: acies<u8, 6>) -> Mandatum {
     redde b sicut Mandatum;
 }
 
-// The low `bitus` bits of x, 1 <= bitus <= 63. No mask: the shift pair.
+// The low `bitus` bits of x. No mask: the shift pair, which is defined for
+// 1 <= bitus <= 63 only, so the two ends are answered directly: 0 bits is 0,
+// 64 or more is all of x.
 publica functio imum(x: u64, bitus: u64) -> u64 {
+    si bitus eq 0 {
+        redde 0;
+    }
+    si bitus ge 64 {
+        redde x;
+    }
     redde (x sursum (64 - bitus)) deorsum (64 - bitus);
 }
 
@@ -518,8 +543,12 @@ publica functio tempus24(us: u64) -> u64 {
 // forward distance is at most half the modulus, else step back, saturating at
 // 0. `bitus` 11 is DCF-Game's packet_id and DCF-Snake's pid, 16 a DeModFrame
 // seq, 24 its timestamp. Punctim's snake_vectors.json `unwrap` is its
-// certificate and probatio.exsc runs all eight.
+// certificate and probatio.exsc runs all eight. `bitus` outside 1..63 has no
+// modulus this can form and answers nullus.
 publica functio revolve(prius: u64, crudum: u64, bitus: u64) -> u64 {
+    si bitus eq 0 vel bitus ge 64 {
+        redde nullus;
+    }
     firma modulus = 1 sursum bitus;
     firma ante = imum(crudum -% imum(prius, bitus), bitus);
     si ante le (modulus deorsum 1) {
@@ -804,12 +833,18 @@ publica functio inscribe(c: &mutabilis Consessus, lusor: u64, pulsus: u64, clave
 // Otherwise the prediction is the most recent real input before `pulsus` that
 // the window still holds (players hold buttons far more often than they change
 // them), or 0; it is recorded, so the real input's arrival can be checked
-// against exactly what was simulated. A tick below confirmatum whose slot has
-// been reused, or one 64 or more ahead of it, answers 0 with bit 16 set and
-// records nothing.
+// against exactly what was simulated.
+//
+// nullus when NO answer can be right, and a host must treat that as a fault
+// rather than mask it to buttons: no such player; a tick 64 or more ahead of
+// confirmatum; or a tick below confirmatum whose slot has since been reused.
+// That last one is the 64-tick rule: a rollback must be collected
+// (revertendum_cape) and resimulated before the window moves 64 ticks past
+// the tick it names, or the inputs it needs are gone. Collecting once per
+// frame, as exemplum.c does, is always soon enough.
 publica functio lege(c: &mutabilis Consessus, lusor: u64, pulsus: u64) -> u64 {
     si lusor ge (*c).lusores {
-        redde 0x10000;
+        redde nullus;
     }
     firma s = sedes(lusor, pulsus);
     // Below the watermark every tick is final: its real input, if the slot
@@ -818,10 +853,10 @@ publica functio lege(c: &mutabilis Consessus, lusor: u64, pulsus: u64) -> u64 {
         si (*c).pulsus[s] eq pulsus et (*c).status[s] eq 1 {
             redde (*c).claves[s] sicut u64;
         }
-        redde 0x10000;
+        redde nullus;
     }
     si pulsus - (*c).confirmatum ge fenestra {
-        redde 0x10000;
+        redde nullus;
     }
     si (*c).pulsus[s] eq pulsus {
         si (*c).status[s] eq 1 {

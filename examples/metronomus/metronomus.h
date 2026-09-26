@@ -102,7 +102,9 @@ uint64_t exs_pulsus_ex_millesimis(uint64_t cadentia, uint64_t ms); // rounded up
 // ---- 4. the wall clock -----------------------------------------------------------
 
 // `ms` since the Unix epoch and a zone offset in minutes east (an int64_t
-// passed as its two's-complement bits) into the 10 bytes at `hora`.
+// passed as its two's-complement bits) into the 10 bytes at `hora`. Clamped
+// to the epoch below and to 65535-12-31T23:59:59.999 above (annus is u16);
+// never traps.
 void exs_hora_civilis(unsigned char *hora, uint64_t ms, uint64_t zona);
 // The inverse, for setting a watch: the local time in the 10 bytes at `hora`
 // (hebdomas ignored) and its zone, to Unix ms; METRONOMUS_NULLUS for a date
@@ -122,9 +124,9 @@ uint64_t exs_excita(unsigned char *h, uint64_t nunc);      // mask of timers fir
 
 void exs_mandatum_scribe(unsigned char *out6, uint64_t pulsus, uint64_t claves);
 void exs_mandatum_lege(unsigned char *out6, unsigned char *in6);
-uint64_t exs_imum(uint64_t x, uint64_t bitus);             // low bits, 1..63
+uint64_t exs_imum(uint64_t x, uint64_t bitus);             // low bits; 0 -> 0, >= 64 -> x
 uint64_t exs_tempus24(uint64_t us);                        // DeModFrame bytes 12..14
-uint64_t exs_revolve(uint64_t prius, uint64_t crudum, uint64_t bitus); // unwrap
+uint64_t exs_revolve(uint64_t prius, uint64_t crudum, uint64_t bitus); // unwrap; bitus 1..63 else NULLUS
 
 // ---- 7-8. clock offset, round trip, time dilation --------------------------------
 
@@ -150,7 +152,11 @@ uint64_t exs_paratus(unsigned char *c, uint64_t pulsus);   // 1: all inputs real
 // 0 new, 1 repeat, 2 contradicted a prediction (rollback), 3 too old,
 // 4 too far ahead, 5 no such player, 6 contradicts a real input.
 uint64_t exs_inscribe(unsigned char *c, uint64_t lusor, uint64_t pulsus, uint64_t claves);
-// Buttons in bits 0..15, METRONOMUS_PRAEDICTUM set if predicted.
+// Buttons in bits 0..15, METRONOMUS_PRAEDICTUM set if predicted. Or
+// METRONOMUS_NULLUS, which is a FAULT and must not be masked to buttons: no
+// such player, a tick >= 64 ahead of the watermark, or a tick below it whose
+// slot was reused -- the 64-tick rule: collect exs_revertendum_cape and
+// resimulate before the window moves 64 ticks past the tick it names.
 uint64_t exs_lege(unsigned char *c, uint64_t lusor, uint64_t pulsus);
 uint64_t exs_revertendum_cape(unsigned char *c);           // tick or METRONOMUS_NULLUS
 

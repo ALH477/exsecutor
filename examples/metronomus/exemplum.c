@@ -114,8 +114,17 @@ static void simulate_from(Peer *me, uint64_t from, uint64_t to)
 {
     for (uint64_t t = from; t < to && t < RUN_TICKS; t++) {
         uint16_t in[PEERS];
-        for (unsigned p = 0; p < PEERS; p++)
-            in[p] = (uint16_t)(exs_lege(me->inputs, p, t) & 0xFFFFu);
+        for (unsigned p = 0; p < PEERS; p++) {
+            uint64_t v = exs_lege(me->inputs, p, t);
+            if (v == METRONOMUS_NULLUS) {
+                // The 64-tick rule was broken: a rollback was collected too
+                // late and its inputs are gone. Never mask this to buttons.
+                fprintf(stderr, "exemplum: no input for player %u at tick %llu\n",
+                        p, (unsigned long long)t);
+                exit(4);
+            }
+            in[p] = (uint16_t)(v & 0xFFFFu);
+        }
         me->history[t + 1] = me->history[t];
         sim_step(&me->history[t + 1], t, in);
         me->hash_at[t] = me->history[t + 1].hash;

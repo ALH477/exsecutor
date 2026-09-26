@@ -242,6 +242,17 @@ functio sectio_horae(s: Scriptor) -> mensura {
     per i in 0..8 {
         n = n + scribe_horam(s, hora_civilis(ms[i], zona[i]));
     }
+    // The far end: the last millisecond annus can hold, the first it cannot,
+    // one minute before it in a zone one minute west, the u64 maximum, and
+    // the maximum with a zone that would carry past it.
+    firma longe: acies<u64, 5> = [
+        2005949145599999, 2005949145600000, 2005949145600000,
+        0xffffffffffffffff, 0xffffffffffffffff
+    ];
+    firma longe_zona: acies<i64, 5> = [0, 0, 0 - 1, 0, 300];
+    per i in 0..5 {
+        n = n + scribe_horam(s, hora_civilis(longe[i], longe_zona[i]));
+    }
     // Back again: setting the time. Each date above round-trips (the one
     // clamped to the epoch comes back as the epoch's local time in UTC-5).
     per i in 0..8 {
@@ -319,6 +330,13 @@ functio sectio_filorum(s: Scriptor) -> mensura {
     n = n + scribe_u64(s, revolve(0, 1024, 11));
     n = n + scribe_u64(s, revolve(65536, 32768, 16));
     n = n + scribe_u64(s, revolve(1025, 0, 11));
+    // Widths the shift pair cannot form: 0 and 64.
+    n = n + scribe_u64(s, revolve(5, 3, 0));
+    n = n + scribe_u64(s, revolve(5, 3, 64));
+    n = n + scribe_u64(s, imum(0xff, 0));
+    n = n + scribe_u64(s, imum(0xff, 4));
+    n = n + scribe_u64(s, imum(0xff, 64));
+    n = n + scribe_u64(s, imum(0xffffffffffffffff, 63));
     redde n;
 }
 

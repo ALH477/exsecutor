@@ -1,0 +1,195 @@
+// examples/tempus/tempus.exsc -- the time register: one DeModFrame that
+// carries a node's held time onto the Punctim wire, and the read of one that
+// arrives. PURE: no `poscit`, no `initium`, no allocation, no I/O.
+// `probatio.exsc` is the only file of the unit that names `Mundus`.
+//
+// THE UNIT. This file is compiled AFTER tests/conformance/entry23's fixture
+// and codex, in that order, so `DeModFrame` is spec §5.2's declaration
+// verbatim and `redundantia`, `obsigna`, `syndroma` and `lege` are the codec
+// §14 entry 23 certifies against every one of vendor/hydramesh-wire's 246
+// vectors. Nothing about the wire is restated here: not the CRC, not a byte
+// order, not a field width. A register that carried its own copy of the
+// codec would be certified by whatever it checked itself against; this one
+// is certified by what the codec is.
+//
+// THE REGISTER, and what a face shows as META:TEMPUS.
+//   tenetur   1 while `horologium` is granted. Time is a capability (spec
+//             §4.6, §11): the host that holds the clock passes `adeo` a
+//             microsecond difference, and while the register is released the
+//             difference is discarded -- the twenty-four bits stay put, and
+//             there is no ambient clock to catch up to when it is granted
+//             again.
+//   fons      the node, the frame's `fons`: data the host supplies, never a
+//             constant this file invents.
+//   meta      the room, the frame's `meta` -- Punctim's dst channel, where
+//             0xFFFF is the lobby (broadcast).
+//   genus     the frame type: 2 BEACON, Punctim's "clock sync / broadcast",
+//             for a clock; 0 DATA if the host says so.
+//   numerus   frames SEALED so far, wrapping at 2^16. That is what `seq`
+//             means on the wire -- one per frame sent -- not a second clock.
+//   tempus    microseconds held, all of them. The wire carries the low 24
+//             bits (`tempus24`); the rest is the era (`aera`), which a peer
+//             recovers by unwrapping (`accipe`), never by being told.
+publica structura Registrum {
+    tenetur: u8
+    genus: u8
+    fons: u16
+    meta: u16
+    numerus: u16
+    tempus: u64
+}
+
+// What a read of an arriving frame yields.
+//   verdictum  the codec's: 0 valid, 1 bad sync, 2 bad version, 3 bad CRC.
+//              Nothing below verdictum is meaningful unless it is 0.
+//   tempus     the sender's held time, ABSOLUTE: the frame's 24 bits
+//              unwrapped against the last absolute value read from that
+//              sender, so a face can show an era it was never sent.
+//   genus, numerus, fons, meta, onus  the frame's fields, as read.
+publica structura Receptum {
+    verdictum: u8
+    genus: u8
+    numerus: u16
+    fons: u16
+    meta: u16
+    onus: u32
+    tempus: u64
+}
+
+// A register for node `fons` in room `meta`, sending frames of type `genus`,
+// granted, at time zero. `genus` above 15 or a node or room above 65535 has
+// no place in the frame and answers a RELEASED register that `adeo` will
+// never advance and `signa` will seal as all zero fields.
+publica functio para(fons: u64, meta: u64, genus: u64) -> Registrum {
+    mutabilis r = Registrum { tenetur: 0, genus: 0, fons: 0, meta: 0, numerus: 0, tempus: 0 };
+    si fons gt 0xffff vel meta gt 0xffff vel genus gt 15 {
+        redde r;
+    }
+    r.tenetur = 1;
+    r.genus = genus sicut u8;
+    r.fons = fons sicut u16;
+    r.meta = meta sicut u16;
+    redde r;
+}
+
+// Grant (1) or release (0) the clock. Anything else is refused: 1.
+publica functio concede(r: &mutabilis Registrum, tenetur: u64) -> u8 {
+    si tenetur gt 1 {
+        redde 1;
+    }
+    (*r).tenetur = tenetur sicut u8;
+    redde 0;
+}
+
+// Move to room `meta`. It moves the room and nothing else: not `tempus`, not
+// `numerus`. 1 if there is no such room.
+publica functio migra(r: &mutabilis Registrum, meta: u64) -> u8 {
+    si meta gt 0xffff {
+        redde 1;
+    }
+    (*r).meta = meta sicut u16;
+    redde 0;
+}
+
+// Advance by `dt` microseconds if granted; answer the microseconds accepted,
+// which is `dt` or 0. `+` traps (spec §5.4): 2^64 microseconds is 584,000
+// years of holding, and a host that hands over more than 2^32 in one call
+// (71 minutes) has lost its clock, so the call is refused as 0 instead of
+// being believed.
+publica functio adeo(r: &mutabilis Registrum, dt: u64) -> u64 {
+    si (*r).tenetur eq 0 {
+        redde 0;
+    }
+    si dt gt 0xffffffff {
+        redde 0;
+    }
+    (*r).tempus = (*r).tempus + dt;
+    redde dt;
+}
+
+// The low `bitus` bits of x, 1 <= bitus <= 63: the shift pair, no mask.
+functio imum(x: u64, bitus: u64) -> u64 {
+    redde (x sursum (64 - bitus)) deorsum (64 - bitus);
+}
+
+// The wire's view of the held time: bytes 12..14, wrapping every 16.78 s.
+publica functio tempus24(r: &Registrum) -> u64 {
+    redde imum((*r).tempus, 24);
+}
+
+// How many times the wire's view has wrapped: what the wire does not carry.
+publica functio aera(r: &Registrum) -> u64 {
+    redde (*r).tempus deorsum 24;
+}
+
+// Seal and count one frame carrying `onus`. A frame has no room for a
+// verdict, so an `onus` above 2^32 - 1 is sealed as 0 -- the caller passed
+// it and can see it -- rather than trapped on or silently truncated.
+//
+// This is the whole of what the register writes: the six free fields into
+// a `DeModFrame` -- each store the byte order in the type, no shift chain --
+// then the codec's `obsigna` for the sync byte, the version and the CRC.
+// `numerus` is the frame's sequence number and is stepped AFTER the seal,
+// so the first frame a register sends is 0, the second 1.
+publica functio signa(r: &mutabilis Registrum, onus: u64) -> acies<u8, 17> {
+    mutabilis f = vacuum();
+    f.genus = (*r).genus sicut u4;
+    f.numerus = (*r).numerus;
+    f.fons = (*r).fons;
+    f.meta = (*r).meta;
+    si onus le 0xffffffff {
+        f.onus = onus sicut u32;
+    }
+    f.tempus = imum((*r).tempus, 24) sicut u24;
+    firma g = obsigna(f);
+    (*r).numerus = (*r).numerus +% 1;
+    redde g sicut acies<u8, 17>;
+}
+
+// A copy of `w` with the low bit of `onus` flipped and the CRC left as it
+// was: a frame that DISAGREES with its own cursus, for a face to show what a
+// bad frame looks like. A pure function of a sealed frame -- not a flag in
+// the register, which would let a "corrupt" register seal real traffic.
+publica functio vitia(w: acies<u8, 17>) -> acies<u8, 17> {
+    mutabilis v = w;
+    v[11] = v[11] aut 1;
+    redde v;
+}
+
+// Recover an absolute 24-bit-wrapping counter from its low bits, given the
+// last absolute value seen from the same sender: forward if the distance
+// forward is at most half the modulus, else back, saturating at 0 --
+// Punctim's unwrap_pid, at 24 bits. examples/metronomus has the general
+// form and its certificate; this unit has no room for metronomus's names.
+functio revolve24(prius: u64, crudum: u64) -> u64 {
+    firma ante = imum(crudum -% imum(prius, 24), 24);
+    si ante le 0x800000 {
+        redde prius + ante;
+    }
+    firma retro = 0x1000000 - ante;
+    si retro gt prius {
+        redde 0;
+    }
+    redde prius - retro;
+}
+
+// Read an arriving frame. `prius` is the absolute `tempus` last accepted
+// from this sender (0 for the first). The verdict is the codec's `lege`, in
+// its order; a frame that fails it yields verdict alone and every other
+// field 0, so nothing from a bad frame reaches a face.
+publica functio accipe(w: acies<u8, 17>, prius: u64) -> Receptum {
+    mutabilis x = Receptum { verdictum: 0, genus: 0, numerus: 0, fons: 0, meta: 0, onus: 0, tempus: 0 };
+    firma v = lege(w);
+    si v ne 0 {
+        x.verdictum = v;
+        redde x;
+    }
+    firma f = w sicut DeModFrame;
+    x.genus = f.genus sicut u8;
+    x.numerus = f.numerus;
+    x.fons = f.fons;
+    x.meta = f.meta;
+    x.onus = f.onus;
+    x.tempus = revolve24(prius, f.tempus sicut u64);
+    redde x;
+}
