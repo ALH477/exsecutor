@@ -32,6 +32,30 @@
 # fadds -- different last bits, ON PURPOSE, so the golden below is NEW and
 # was re-proven whole.
 #
+# THE BAKE: A FOOTPRINT AVERAGE IN LINEAR LIGHT. The per-face colours are
+# not a sample of the texture, they are a RESOLVE of it. The producer
+# averages every texel whose centre falls inside the face's UV triangle --
+# a median of 306 of the texture's 2048x2048 texels per face, where the
+# earlier bake read exactly one, nearest-neighbour, at the centroid UV --
+# and does the Lambert multiply, the rim add and the averaging itself in
+# linear light, decoding the sRGB PNG once and re-encoding at the single u8
+# quantise. Of the three shading constants only the ambient term changed,
+# and only to srgb_to_linear(0.30): it is a light intensity that had been
+# stated in the wrong space, while the diffuse and rim gains are
+# dimensionless and refit to within 3% of their old values. Screen luma,
+# weighted by visible pixels over 16 yaws of the turn, moves +0.6%.
+# Determinism, which a checked-in golden requires, comes from math.fsum for
+# the accumulation -- exactly rounded, so independent of numpy's
+# pairwise-summation blocking, SIMD width and version.
+#
+# WHAT THE RE-BAKE DID NOT TOUCH, asserted against the previous mesh rather
+# than assumed: the 56-byte header, all 1493 vertices and all 2981 faces'
+# vertex indices are byte-identical, and the stream is still exactly 44,801
+# bytes. In the rendered 512x512 frame the SILHOUETTE is identical -- the
+# same 55,519 covered pixels, and not one background pixel changed -- so
+# the projection, the backface cull and the z-buffer are demonstrably
+# untouched and only shading moved.
+#
 # THE RE-PROOF. expected.out (786,447 bytes: the 15-byte P6 header +
 # 786,432 pixel bytes; "P6\n512 512\n255\n") was produced from the
 # REFERENCE backend's own run and then re-proven byte-for-byte exactly as
@@ -69,12 +93,6 @@
 # 3, `grep -c divpd` is 0. `grep -c addpd` is 32: 8 whole-acy vadd vf64.8
 # sites (4 row-seed + 4 group-step), each lowered to 4 addpd over xmm
 # pairs. mulpd is 16: the 4 per-face lad*step offset vmuls, same fan-out.
-#
-# NOTE FOR THE DRIVER -- exit status: ascensus.exsc's self-check constant
-# is still the 256x256 byte count (196623); at 512x512 the pump returns
-# 786,447, so this row reports "got 'exit 1', expected 'exit 0'" until the
-# driver's one-constant ascensus.exsc update (196623 -> 786447) lands.
-# stdout byte-identity, stderr emptiness, and the audit all pass today.
 #
 # (No stdout= on purpose: expected.out IS the reference; naming both is
 # the run.sh failure for "which of the two governs?".)
