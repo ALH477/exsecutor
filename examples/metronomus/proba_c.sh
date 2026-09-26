@@ -52,8 +52,12 @@ for cc in "${ccs[@]}"; do
   else
     echo "  [FAIL] $cc: metronomus.h disagrees with the generated unit"; fail=1
   fi
+  # clang traps in place of linking a UBSan runtime it may not ship; detected
+  # by what the compiler says it is, not by its name (clang-18, a store path).
   san=(-fsanitize=undefined -fno-sanitize-recover=all)
-  [ "$cc" = clang ] && san=(-fsanitize=undefined -fsanitize-trap=undefined)
+  if "$cc" --version 2>/dev/null | head -1 | grep -qi clang; then
+    san=(-fsanitize=undefined -fsanitize-trap=undefined)
+  fi
   for opt in -O0 -O2; do
     bin="$work/horologium_${cc##*/}$opt"
     "$cc" -std=c11 "$opt" -Wall -Wextra -Werror -Wno-unused-function "${san[@]}" \
