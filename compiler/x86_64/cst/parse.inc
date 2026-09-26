@@ -119,6 +119,26 @@
 ; EXPRESSION form (constructing one) is still `[OPEN]` there, and a BARE
 ; `refero` in type position is still `EXS-E0201` at the word.
 ;
+; §8.6 WAS AMENDED AGAIN, for `residuum`, `atque` and `sive` (§5.4, settled
+; 2026-09-25): level 4 gained the contextual word `residuum` beside `*` and `/`,
+; and level 5b gained `atque` and `sive` beside `aut`. Both amendments are
+; carried entirely by the two recognisers below (`__cst_is_mulop`,
+; `__cst_bitop`) and cost the LL(1) grammar nothing -- an operator is still
+; whatever the ONE token in operator position spells, and in operand position
+; all three stay ordinary identifiers (§8.4 tier 2), which is what keeps
+; `examples/hydramodem/receptor.exsc`'s function named `residuum` a call.
+;
+; ONE LEVEL-5b WORD PER UNPARENTHESISED CHAIN, and that is a DEPARTURE from
+; how every other left-associative level here reads. §5.4 asks for it in those
+; words -- "mixing two different bitwise words without parentheses is
+; `EXS-E0201`" -- because C's `& ^ |` precedence order is a documented source
+; of bugs. `__cst_xor` therefore remembers WHICH word opened the chain and
+; loops only while the next one is the same; a different one ends the
+; production, no lower level wants an identifier, and the statement that asked
+; for `;` meets one -- `EXS-E0201` at the second word, by the same mechanism
+; that rejects `a sursum 1 sursum 2`. A parenthesised twin is accepted.
+; tests/unit/cst_bitand_or.asm is the evidence for both halves.
+;
 ; TRIVIA IS A GAP, NOT A TOKEN. lexer/lex.inc skips whitespace and comments
 ; without emitting anything, so this file reconstructs them: the bytes between
 ; the end of one token's span and the start of the next are, by construction,
@@ -193,7 +213,8 @@ CST_SYNC_CASUS  = 5	; `casus`, `aliter`
 ; comparisons and `et` are exactly two bytes. Written as explicit shifts
 ; because a two-character literal's byte order is an assembler convention,
 ; and this file should not depend on one. The words of any OTHER length --
-; `vel`, and since spec §8.6 gained levels 5a/5b `aut`, `sursum`, `deorsum` --
+; `vel`, and since spec §8.6 gained levels 5a/5b `aut`, `sursum`, `deorsum`,
+; and since §5.4's 2026-09-25 amendment `residuum`, `atque` and `sive` --
 ; go through `__cst_word` and the spellings in `cst_w_*` below. This comment
 ; used to say `vel` was "the only three-byte one", and `__cst_vel` hard-coded
 ; three bytes: true when written, and exactly the assumption a six- and a
@@ -423,7 +444,8 @@ endp
 
 ; The contextual operator words that are not two bytes long. Each is its bytes
 ; and nothing else; the length is taken from the label distance, so a spelling
-; and its length cannot disagree.
+; and its length cannot disagree. `residuum` is level 4 (§5.4), `sursum` and
+; `deorsum` 5a, `aut`/`atque`/`sive` 5b, `vel` 9; none of them is reserved.
 cst_w_vel:	db	'vel'
 CST_WL_VEL = $ - cst_w_vel
 cst_w_aut:	db	'aut'
@@ -432,6 +454,12 @@ cst_w_sursum:	db	'sursum'
 CST_WL_SURSUM = $ - cst_w_sursum
 cst_w_deorsum:	db	'deorsum'
 CST_WL_DEORSUM = $ - cst_w_deorsum
+cst_w_residuum:	db	'residuum'
+CST_WL_RESIDUUM = $ - cst_w_residuum
+cst_w_atque:	db	'atque'
+CST_WL_ATQUE = $ - cst_w_atque
+cst_w_sive:	db	'sive'
+CST_WL_SIVE = $ - cst_w_sive
 
 ; __cst_word(p, n, cwptr, cwlen) -> eax = 1 if the token `n` ahead is an
 ; IDENTIFIER whose bytes are exactly `cwptr[0..cwlen)`.
@@ -442,7 +470,7 @@ CST_WL_DEORSUM = $ - cst_w_deorsum
 ; `firma aut = 1;` binds a variable called `aut`, and `aut aut aut` is an
 ; exclusive or of it with itself. A byte compare, not an interner lookup,
 ; because the lexer's interner ids are the lexer's, and asking it to intern
-; four operator spellings up front would be a second place for the words to
+; the operator spellings up front would be a second place for the words to
 ; be listed.
 proc __cst_word, p, n, cwptr, cwlen
 	uses	rbx
@@ -491,15 +519,63 @@ proc __cst_vel, p
 	return
 endp
 
-; __cst_aut(p) -> eax = 1 if the current token is the identifier `aut`
-; (spec §8.6 level 5b, exclusive or).
-proc __cst_aut, p
+; __cst_bitop(p) -> eax = WHICH of spec §8.6 level 5b's three bitwise words the
+; current token is: 1 = `aut` (exclusive or), 2 = `atque` (and), 3 = `sive`
+; (or). 0 = none of them.
+;
+; THE IDENTITY OF THE WORD IS THE RETURN VALUE, not a boolean, and that is the
+; whole mechanism behind §5.4's "mixing two different bitwise words without
+; parentheses is `EXS-E0201`": `__cst_xor` keeps the first answer and compares
+; every later one against it. This routine was `__cst_aut` and answered yes or
+; no, which was all one word at the level needed.
+proc __cst_bitop, p
+	uses	rbx
+	locals
+	endl
+	mov	rbx, [p]
+	mov	rdi, rbx
+	xor	esi, esi
+	lea	rdx, [cst_w_aut]
+	mov	ecx, CST_WL_AUT
+	call	__cst_word
+	test	eax, eax
+	jnz	.aut
+	mov	rdi, rbx
+	xor	esi, esi
+	lea	rdx, [cst_w_atque]
+	mov	ecx, CST_WL_ATQUE
+	call	__cst_word
+	test	eax, eax
+	jnz	.atque
+	mov	rdi, rbx
+	xor	esi, esi
+	lea	rdx, [cst_w_sive]
+	mov	ecx, CST_WL_SIVE
+	call	__cst_word
+	test	eax, eax
+	jnz	.sive
+	xor	eax, eax
+	return
+  .aut:
+	mov	eax, 1
+	return
+  .atque:
+	mov	eax, 2
+	return
+  .sive:
+	mov	eax, 3
+	return
+endp
+
+; __cst_residuum(p) -> eax = 1 if the current token is the identifier
+; `residuum` (spec §8.6 level 4, the remainder of §5.4).
+proc __cst_residuum, p
 	locals
 	endl
 	mov	rdi, [p]
 	xor	esi, esi
-	lea	rdx, [cst_w_aut]
-	mov	ecx, CST_WL_AUT
+	lea	rdx, [cst_w_residuum]
+	mov	ecx, CST_WL_RESIDUUM
 	call	__cst_word
 	return
 endp
@@ -3241,15 +3317,21 @@ endp
 
 ; __cst_is_mulop(p) -> eax = 1 at a multiplicative operator.
 ;
-; `*` and, since the float wave, `/` -- §5.4's float-only quotient, the
-; token that used to be unproducible because a bare `/` was EXS-E0201.
+; `*`, then `/` (the float wave's quotient; §5.4 made it integer as well on
+; 2026-09-25) and, since that same amendment, the contextual word `residuum`.
 ; The CST node (CST_MUL_EXPR) stays flat and operator-agnostic on
 ; purpose: which operator each operand pair carries is a property of the
 ; TOKENS, preserved losslessly for ast/from_cst.inc to fold into
-; AST_OP_* nodes; the float-only admissibility of `/` is the checker's
+; AST_OP_* nodes; which operand TYPES each one admits is the checker's
 ; question (EXS-E0305 there), not the CST's -- the tree is lossless and
-; error-tolerant, so it must not refuse. Remainder and the `*%`/`*|`
-; overflow forms stay `[OPEN]` in §8.6 and are not invented here.
+; error-tolerant, so it must not refuse. The `*%`/`*|` overflow forms stay
+; `[OPEN]` in §8.6 and are not invented here.
+;
+; `residuum` IS THE ONLY WORD AT THIS LEVEL, so the level stays plainly
+; left-associative and mixes freely: `a / b residuum c * d` is one flat
+; `MUL_EXPR` with four operands, exactly as `a * b / c` already was. Level 5b
+; is where a chain of two DIFFERENT words is refused, and the reason there is
+; C's `& ^ |` order, which has no analogue among `* / residuum`.
 proc __cst_is_mulop, p
 	uses	rbx
 	locals
@@ -3263,6 +3345,10 @@ proc __cst_is_mulop, p
 	mov	rdi, rbx
 	mov	esi, PUN_SLASH
 	call	__cst_pun
+	test	eax, eax
+	jnz	.yes
+	mov	rdi, rbx
+	call	__cst_residuum
 	test	eax, eax
 	jnz	.yes
 	xor	eax, eax
@@ -3436,10 +3522,28 @@ proc __cst_shift, p
 	return
 endp
 
-; __cst_xor(p) -- level 5b: `Xor ::= Shift ('aut' Shift)*`, left-associative
-; and FLAT like every other repeated level here (cst/kinds.inc, departure 1):
-; `a aut b aut c` is one `XOR_EXPR` with three operands, and
-; ast/from_cst.inc's fold makes it `(a aut b) aut c`.
+; __cst_xor(p) -- level 5b: `Xor ::= Shift (BitOp Shift)*` where every `BitOp`
+; in one chain is the SAME word, left-associative and FLAT like every other
+; repeated level here (cst/kinds.inc, departure 1): `a aut b aut c` is one
+; `XOR_EXPR` with three operands, and ast/from_cst.inc's fold makes it
+; `(a aut b) aut c`. So is `a atque b atque c`, and so is `a sive b sive c`.
+;
+; `r13d` IS THE WORD, NOT A FLAG. Every other repeated level here carries a
+; plain "did an operator apply" boolean in this register; this one carries
+; `__cst_bitop`'s answer (1 `aut`, 2 `atque`, 3 `sive`), which is nonzero on
+; exactly the occasions the boolean was true AND is what makes §5.4's rule
+; expressible without a second variable: a word different from the one held
+; ends the production instead of extending it.
+;
+; WHAT ENDING THE PRODUCTION DOES, spelled out because nothing here raises a
+; diagnostic. `a aut b atque c` closes the `XOR_EXPR` at `atque`; level 6 does
+; not want an identifier, nor does 7 (`__cst_is_cmpop` requires two bytes), 8
+; or 9; the statement then asks for `;` and gets an identifier, so the
+; `EXS-E0201` lands AT THE SECOND WORD -- the identical path that rejects
+; `a sursum 1 sursum 2` and `a lt b lt c`. `(a atque b) sive c` is accepted,
+; because the inner chain closed at the `)`. tests/unit/cst_bitand_or.asm pins
+; both, and the parenthesised twin is what distinguishes this from a parser
+; that refused a second bitwise word for some other reason.
 proc __cst_xor, p
 	uses	rbx, r12, r13
 	locals
@@ -3448,19 +3552,24 @@ proc __cst_xor, p
 	mov	rdi, [rbx + CstParser.tree]
 	call	cst_open
 	mov	r12, rax
-	xor	r13d, r13d
+	xor	r13d, r13d		; the word this chain took; 0 = none yet
 	mov	rdi, rbx
 	call	__cst_shift
   .more:
 	mov	rdi, rbx
-	call	__cst_aut
+	call	__cst_bitop
 	test	eax, eax
 	jz	.done
+	test	r13d, r13d
+	jz	.take			; the first one opens the chain
+	cmp	eax, r13d
+	jne	.done			; a DIFFERENT bitwise word: not ours
+  .take:
+	mov	r13d, eax
 	mov	rdi, rbx
 	call	__cst_bump
 	mov	rdi, rbx
 	call	__cst_shift
-	mov	r13d, 1
 	jmp	.more
   .done:
 	test	r13d, r13d

@@ -80,7 +80,7 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # wave's four: lex_float_literal.asm, lwr_float.asm, chk_ty_floatlit.asm,
 # chk_ty_floatops.asm. 176 -> 178 is Stage 5.2's pair: chk_ty_aciesops.asm
 # (the whole-acy admission gate) and lwr_aciesops.asm (the lowering it admits).
-UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-186}"
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-189}"
 
 # The same guarantee for the two run phases below: tests/ir/*.ir fixtures,
 # and tests/programs/*/ directories. Same rule -- `found < floor` fails --

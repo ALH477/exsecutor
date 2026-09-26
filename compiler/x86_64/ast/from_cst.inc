@@ -140,26 +140,35 @@ AST_W_STAR	= 28
 AST_W_AUT	= 29	; spec §8.6 level 5b -- see the assert below
 AST_W_SURSUM	= 30	; level 5a
 AST_W_DEORSUM	= 31	; level 5a
-AST_W_SLASH	= 32	; `/`, the float-only quotient (this wave)
-AST_W_AMP	= 33
-AST_W_COLON	= 34
-AST_W_EQUALS	= 35
-AST_W_ARROW	= 36
-AST_W_ABI	= 37
-AST_W_COUNT	= 37
+AST_W_SLASH	= 32	; `/`, the quotient (the float wave; integer since §5.4's
+			; 2026-09-25 amendment)
+AST_W_RESIDUUM	= 33	; level 4, the remainder -- see the assert below
+AST_W_ATQUE	= 34	; level 5b, bitwise and
+AST_W_SIVE	= 35	; level 5b, bitwise or
+AST_W_AMP	= 36
+AST_W_COLON	= 37
+AST_W_EQUALS	= 38
+AST_W_ARROW	= 39
+AST_W_ABI	= 40
+AST_W_COUNT	= 40
 
 ; `__ast_w_op` maps a word to an operator by DISTANCE: the operator words run
-; `AST_W_VEL`..`AST_W_SLASH` in exactly the order `AST_OP_VEL`..
-; `AST_OP_DIV` do in ast/kinds.inc, and the n-th word is the n-th op. The
-; three spec §8.6 5a/5b words, and now `/`, were appended to BOTH lists
-; after `*` rather than interleaved at their precedence, so the ops already
-; numbered did not move. Two lists kept in step by hand are checked here,
-; not trusted.
+; `AST_W_VEL`..`AST_W_SIVE` in exactly the order `AST_OP_VEL`..
+; `AST_OP_BOR` do in ast/kinds.inc, and the n-th word is the n-th op. The
+; three spec §8.6 5a/5b words, then `/`, then §5.4's `residuum`, `atque` and
+; `sive`, were appended to BOTH lists after `*` rather than interleaved at
+; their precedence, so the ops already numbered did not move. Two lists kept
+; in step by hand are checked here, not trusted -- and the run below reads
+; `AST_W_SIVE` as its last word, so a spelling appended to the pool without a
+; line here is dead rather than misread.
 assert AST_W_STAR - AST_W_VEL = AST_OP_MUL - AST_OP_VEL
 assert AST_W_AUT - AST_W_VEL = AST_OP_AUT - AST_OP_VEL
 assert AST_W_SURSUM - AST_W_VEL = AST_OP_SURSUM - AST_OP_VEL
 assert AST_W_DEORSUM - AST_W_VEL = AST_OP_DEORSUM - AST_OP_VEL
 assert AST_W_SLASH - AST_W_VEL = AST_OP_DIV - AST_OP_VEL
+assert AST_W_RESIDUUM - AST_W_VEL = AST_OP_REM - AST_OP_VEL
+assert AST_W_ATQUE - AST_W_VEL = AST_OP_BAND - AST_OP_VEL
+assert AST_W_SIVE - AST_W_VEL = AST_OP_BOR - AST_OP_VEL
 
 ast_w_words:
 	db 7,'publica'
@@ -193,8 +202,11 @@ ast_w_words:
 	db 3,'aut'
 	db 6,'sursum'
 	db 7,'deorsum'
-	db 1,'/'			; the float quotient; word pool order MUST
+	db 1,'/'			; the quotient; word pool order MUST
 					; track the AST_W_* list above
+	db 8,'residuum'			; §5.4's level-4 remainder, and the two
+	db 5,'atque'			; level-5b bitwise words -- contextual,
+	db 4,'sive'			; so they arrive as TK_IDENT leaves
 	db 1,'&'
 	db 1,':'
 	db 1,'='
@@ -1138,9 +1150,11 @@ endp
 
 ; ---- operators -------------------------------------------------------------
 ; rax = the AST_OP_* for this operator leaf, or 0. Spec §8.6 spells comparison,
-; the two logical operators, exclusive or and the shifts as contextual WORDS,
-; so an operator is a `TK_IDENT` at five precedence levels and a `TK_PUNCT` at
-; the other three; this routine does not care which, it compares bytes.
+; the two logical operators, the shifts, the three bitwise operators and the
+; remainder as contextual WORDS, so a binary operator is a `TK_IDENT` at six of
+; the nine precedence levels and a `TK_PUNCT` at levels 4, 5 and 6 -- and at
+; level 4 it can be either, since `residuum` shares it with `*` and `/`. This
+; routine does not care which, it compares bytes.
 proc __ast_w_op, w, red
 	uses	rbx, r12, r13
 	locals
@@ -1157,7 +1171,7 @@ proc __ast_w_op, w, red
 	jnz	.hit
 	inc	r12
 	inc	r13
-	mov	rcx, AST_W_SLASH
+	mov	rcx, AST_W_SIVE
 	cmp	r12, rcx
 	jle	.try
 	xor	eax, eax

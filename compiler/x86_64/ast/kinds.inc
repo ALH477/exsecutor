@@ -221,15 +221,27 @@ AST_ABI_COUNT		= 3
 ; 4), then `Unary.aux`. `Contrahe.aux` is an `ArithOp`, which spec §8.6
 ; defines as a subset of these same binary numbers -- one numbering, not two.
 ;
-; EXCEPT THE LAST THREE. Spec §8.6's levels 5a (`sursum` `deorsum`) and 5b
-; (`aut`) sit between `..` and `+` by precedence, and are APPENDED here after
-; `*` rather than inserted there, so that no operator already numbered moves:
+; EXCEPT THE TAIL, WHICH IS IN ARRIVAL ORDER. Spec §8.6's levels 5a (`sursum`
+; `deorsum`) and 5b (`aut` `atque` `sive`) sit between `..` and `+` by
+; precedence, and `/` and `residuum` belong at level 4 beside `*`; every one of
+; them is APPENDED here rather than inserted at its level, so that no operator
+; already numbered moves:
 ; `AST_OP_RANGE`..`AST_OP_MUL` are compared by value in checker/types/ and
 ; lower/, and a renumbering would be a silent change to every one of those
 ; comparisons. So precedence order holds for 1..16 and not across the whole
 ; list; nothing reads precedence off these numbers (the CST already decided
 ; the grouping), and ast/from_cst.inc asserts the one ordering that IS read --
 ; the word table and this list advancing in step.
+;
+; APPENDING PAST `AST_OP_DIV` IS A LOUD FAILURE UNTIL THE CHECKER CATCHES UP,
+; deliberately: checker/types/types.inc's binary rule `rassert`s that what
+; reaches its integer-arithmetic arm is at most `AST_OP_MUL`, having peeled off
+; the bit operators and `/` by value first. So `AST_OP_REM`, `AST_OP_BAND` and
+; `AST_OP_BOR` trap there rather than being silently typed as `+`, and a source
+; program using them traps in the checker until that arm is widened. That is
+; the intended order of work, not an oversight: the CST and this list carry the
+; syntax first (tests/unit/cst_intdiv_rem.asm, cst_bitand_or.asm,
+; ast_from_cst_newops.asm), and no fixture of theirs runs the checker.
 AST_OP_VEL	= 1
 AST_OP_ET	= 2
 AST_OP_LT	= 3
@@ -249,10 +261,13 @@ AST_OP_MUL	= 16	; `*`
 AST_OP_AUT	= 17	; `aut`     -- exclusive or, level 5b (spec §5.4)
 AST_OP_SURSUM	= 18	; `sursum`  -- shift toward more significance, 5a
 AST_OP_DEORSUM	= 19	; `deorsum` -- shift toward less significance, 5a
-AST_OP_DIV	= 20	; `/`       -- float-only quotient, level 4 (this wave);
-			; appended for this list's recorded reason, and the
-			; checker refuses non-float operands with EXS-E0305
-AST_OP_MAX	= 20
+AST_OP_DIV	= 20	; `/`       -- quotient, level 4; float-only when it
+			; was appended here for this list's recorded reason,
+			; integer too since §5.4's 2026-09-25 amendment
+AST_OP_REM	= 21	; `residuum` -- remainder, level 4 (§5.4)
+AST_OP_BAND	= 22	; `atque`    -- bitwise and, level 5b (§5.4)
+AST_OP_BOR	= 23	; `sive`     -- bitwise or, level 5b (§5.4)
+AST_OP_MAX	= 23
 
 AST_U_NEG	= 1	; `-`
 AST_U_ADDR	= 2	; `&`
