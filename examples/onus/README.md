@@ -73,9 +73,12 @@ bitwise and or or, and no signed integer:
 
 ## Evidence, exactly
 
-On the reference backend, `tests/programs/onus_oligarchiae/` passes: the
-program compiles and assembles, exits 0, writes the golden file byte for
-byte, and stays within `{Mundus, ambitus}`.
+`tests/programs/onus_oligarchiae/` passes in CI (commit `84db83d`, the
+`check` job running `tests/run.sh`). On the reference backend the program
+compiles and assembles, exits 0, writes the golden file byte for byte, and
+stays within `{Mundus, ambitus}`. It is eligible for the C backend's
+differential phase, so the same job held its gcc and clang builds, at -O0
+and -O2, to the same bytes; the gcc pair was also run locally.
 
 The first draft was written without `fasmg` and did not compile. The
 compiler was right both times:
@@ -97,4 +100,4 @@ Also run:
   reaches, because its longest delta is 5,760 ticks. The mutants have not
   been re-run against the compiled program.
 
-`[UNTESTED]`: the C backend's differential builds of this directory.
+Not opted in: the big-endian `cross=yes` phase.
