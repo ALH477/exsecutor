@@ -1,0 +1,15 @@
+# HydraModem's MUSICAL transmitter, the melody profile (examples/hydramodem/
+# melos*.exsc), on dcf_loopback's frame d310123400a1ffffdeadbeef0a1b2ca961:
+# just-intonation 8-FSK on the harmonic series of 25 Hz, Gray-mapped, over a
+# 300 + 450 Hz drone, with a 10 ms raised-cosine attack and release. stdout
+# is the WAV, compared with `cmp`, byte for byte -- all 481,964 -- with what
+# HydraModem's own frame_tx --profile melody rendered for the same frame
+# (vendor/hydramodem-melos/PROVENANCE.md). Exit 1 means some write did not
+# write its byte. docs/design/melos.md is the design; its negative controls
+# say what this cannot see.
+#
+# Locating a failure: cmp's byte N (1-based) is sample (N - 45) / 2. Samples
+# 0-959 are silence, 960-1439 the attack, 1440 + 1920 s + i is sample i of
+# symbol s (0-11 preamble, 12-17 sync, 18-123 data), 239,520-239,999 the
+# release, then silence.
+TEST: expect-exit=0 stdout=vendor/hydramodem-melos/d310123400a1ffffdeadbeef0a1b2ca961.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/melos.exsc,examples/hydramodem/melos_emitte.exsc,examples/hydramodem/melos_loopback.exsc

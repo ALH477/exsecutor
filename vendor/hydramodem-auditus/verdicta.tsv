@@ -1,0 +1,9 @@
+file	reference (Punctim f86f5d5)	verdict
+melos-awgn-18.wav	frame_rx --profile melody	d310123400a1ffffdeadbeef0a1b2ca961
+melos-clock+3000.wav	frame_rx --profile melody	d310123400a1ffffdeadbeef0a1b2ca961
+melos-awgn-26.wav	frame_rx --profile melody	exit 1 (no frame)
+bicinium-awgn-18.wav	poly_rx	d310123400a1ffffdeadbeef0a1b2ca961 0000000000000000000000000000000000
+bicinium-clock+3000.wav	poly_rx	d310123400a1ffffdeadbeef0a1b2ca961 0000000000000000000000000000000000
+fluxus-contiguus.wav	none: frames transmitted, not a reference verdict (melos.md 10)	d310123400a1ffffdeadbeef0a1b2ca961 d310123400a1ffffdeadbeef0a1b2ca961 0000000000000000000000000000000000 0000000000000000000000000000000000
+fluxus-ictus.raw	none: frames transmitted, not a reference verdict (melos.md 10)	d310123400a1ffffdeadbeef0a1b2ca961
+fluxus-truncus.raw	none: frames transmitted, not a reference verdict (melos.md 10)	d310123400a1ffffdeadbeef0a1b2ca961

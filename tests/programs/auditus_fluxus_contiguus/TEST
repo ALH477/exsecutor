@@ -1,0 +1,8 @@
+# The STREAMING musical receiver (examples/hydramodem/ausculta_fluxus.exsc,
+# docs/design/melos.md section 10) on melody(A) || duet(A, Z) || melody(Z) played
+# back to back, 60 ms apart (vendor/hydramodem-auditus/fluxus.py). Every frame, in
+# order: A, then the duet's A and Z, then Z. A streaming window is longer than a
+# melody burst, so it holds the next burst's start; the receiver consumes only
+# through each decoded frame and replays the rest. Without that (the reference's
+# old discard-the-window behaviour) this stream yields 2 frames, measured.
+TEST: expect-exit=0 stdin=vendor/hydramodem-auditus/fluxus-contiguus.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/melos.exsc,examples/hydramodem/bassus.exsc,examples/hydramodem/receptor.exsc,examples/hydramodem/auditus.exsc,examples/hydramodem/ausculta_fluxus.exsc

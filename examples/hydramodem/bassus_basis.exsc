@@ -1,0 +1,59 @@
+// examples/hydramodem/bassus_basis.exsc -- the bass profile's certificate
+// driver, as melos_basis.exsc is the melody's, and the only file of its unit
+// that names `Mundus`. For each of the same 137 words it writes the note of each
+// of the frame's 178 symbols as bassus.exsc's `bassus_tonus` decides it, one
+// byte a symbol, 0 to 3: 137 x 178 = 24,386 bytes, which
+// tests/programs/bassus_basis/ compares byte for byte with
+// vendor/hydramodem-bicinium/symbola_bassus.bin -- hydra_frame_build's own
+// symbols for the words (PROVENANCE.md there prints the program). The affinity
+// argument is melos_basis.exsc's, two bits a symbol instead of three.
+//
+// Exit 0 when every one of the 24,386 calls wrote its byte, 1 otherwise.
+
+functio bassus_scribe_symbola(s: Scriptor, w: acies<u8, 17>) -> mensura {
+    firma c: u16 = redundantia(w, 17);
+    mutabilis n: mensura = 0;
+    per y in 0..bassus_symbola {
+        firma t: u8 = bassus_tonus(w, c, y) sicut u8;
+        n = n + s.scribe_octeto(t);
+    }
+    redde n;
+}
+
+functio bassus_ambula(s: Scriptor, nihil: acies<u8, 17>) -> mensura {
+    mutabilis w = nihil;
+    mutabilis n: mensura = 0;
+    per j in 0..17 {
+        mutabilis m: u8 = 0x80;
+        per k in 0..8 {
+            w[j] = w[j] aut m;
+            n = n + bassus_scribe_symbola(s, w);
+            w[j] = w[j] aut m;
+            m = m deorsum 1;
+        }
+    }
+    redde n;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma s = Scriptor.ad_exitum(a);
+    firma nihil = DeModFrame {
+        signum: 0,
+        versio: 0,
+        genus: 0,
+        numerus: 0,
+        fons: 0,
+        meta: 0,
+        onus: 0,
+        tempus: 0,
+        cursus: 0
+    } sicut acies<u8, 17>;
+    mutabilis n: mensura = bassus_scribe_symbola(s, nihil);   // word 0
+    n = n + bassus_ambula(s, nihil);                          // words 1..136
+    si n ne 24386 {
+        redde 1;
+    }
+    redde 0;
+}

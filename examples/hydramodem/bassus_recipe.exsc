@@ -1,0 +1,32 @@
+// examples/hydramodem/bassus_recipe.exsc -- the stdin driver for the BASS voice (hydra_profile_bass): a WAV
+// read from standard input, the 17-byte frame it carries written to standard
+// output. The only file of its unit that names `Mundus`, `Lector` and
+// `Scriptor`; auditus.exsc decides the frame.
+//
+// Exit 0 and seventeen bytes on success; 1 no sync, 2 CRC, 3 a WAV this program
+// will not read -- recipe.exsc's statuses. NOTHING IS WRITTEN ON ANY FAILURE:
+// the receiver never writes a frame it has not checked. The WAV may be the
+// voice alone or a duet: the other voice is orthogonal to this one's
+// correlators, so it is simply not heard.
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma l = Lector.ab_introitu(a);
+    firma s = Scriptor.ad_exitum(a);
+    mutabilis x: acies<f64, 351840> = [0.0; 351840];
+    firma n = auditus_lege(l, x);
+    si n eq 0 {
+        redde 3;
+    }
+    firma r = auditus_ausculta(x, n, 1);
+    si r[0] ne 0 {
+        redde r[0];
+    }
+    per i in 0..17 {
+        si s.scribe_octeto(r[i + 1]) ne 1 {
+            redde 4;
+        }
+    }
+    redde 0;
+}

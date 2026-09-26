@@ -1,0 +1,68 @@
+// examples/hydramodem/melos_basis.exsc -- the melody profile's certificate
+// driver, as basis.exsc is the default profile's, and the only file of its
+// unit that names `Mundus`. It writes no WAV. For each of 137 words it
+// writes the note of each of the frame's 124 symbols as melos.exsc's
+// `melos_tonus` decides it, one byte a symbol, 0 to 7: 137 x 124 = 16,988
+// bytes on standard output, which tests/programs/melos_basis/ compares byte
+// for byte with vendor/hydramodem-melos/symbola_basis.bin -- the streams
+// HydraModem's own hydra_frame_build emitted for the same words
+// (PROVENANCE.md there prints the program).
+//
+// The words are basis.exsc's: word 0 is seventeen zero bytes, word k =
+// 1..136 has exactly wire bit k - 1 set, MSB first. The argument is
+// basis.exsc's too, one step longer: each coded bit is affine over GF(2) in
+// the word, three bits make a symbol, and a symbol's three bits are its
+// value's bits, so S(f) = S(0) xor the xor of (S(e_i) xor S(0)) over the
+// bits set in f, symbol by symbol. Agreeing on these 137 words is agreeing
+// on all 2^136 -- given that affinity, argued from the code and not measured
+// (docs/design/melos.md).
+//
+// Exit 0 when every one of the 16,988 calls wrote its byte, 1 otherwise.
+
+functio melos_scribe_symbola(s: Scriptor, w: acies<u8, 17>) -> mensura {
+    firma c: u16 = redundantia(w, 17);
+    mutabilis n: mensura = 0;
+    per y in 0..melos_symbola {
+        firma t: u8 = melos_tonus(w, c, y) sicut u8;
+        n = n + s.scribe_octeto(t);
+    }
+    redde n;
+}
+
+functio melos_ambula(s: Scriptor, nihil: acies<u8, 17>) -> mensura {
+    mutabilis w = nihil;
+    mutabilis n: mensura = 0;
+    per j in 0..17 {
+        mutabilis m: u8 = 0x80;
+        per k in 0..8 {
+            w[j] = w[j] aut m;
+            n = n + melos_scribe_symbola(s, w);
+            w[j] = w[j] aut m;
+            m = m deorsum 1;
+        }
+    }
+    redde n;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma s = Scriptor.ad_exitum(a);
+    firma nihil = DeModFrame {
+        signum: 0,
+        versio: 0,
+        genus: 0,
+        numerus: 0,
+        fons: 0,
+        meta: 0,
+        onus: 0,
+        tempus: 0,
+        cursus: 0
+    } sicut acies<u8, 17>;
+    mutabilis n: mensura = melos_scribe_symbola(s, nihil);   // word 0
+    n = n + melos_ambula(s, nihil);                          // words 1..136
+    si n ne 16988 {
+        redde 1;
+    }
+    redde 0;
+}

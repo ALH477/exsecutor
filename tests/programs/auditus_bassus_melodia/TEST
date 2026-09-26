@@ -1,0 +1,3 @@
+# Negative: the bass receiver on a melody-only burst hears no bass. Exit 1 (no
+# sync) and nothing written.
+TEST: expect-exit=1 stdin=vendor/hydramodem-melos/d310123400a1ffffdeadbeef0a1b2ca961.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/melos.exsc,examples/hydramodem/bassus.exsc,examples/hydramodem/receptor.exsc,examples/hydramodem/auditus.exsc,examples/hydramodem/auditus_lege.exsc,examples/hydramodem/bassus_recipe.exsc

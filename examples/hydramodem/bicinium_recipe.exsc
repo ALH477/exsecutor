@@ -1,0 +1,40 @@
+// examples/hydramodem/bicinium_recipe.exsc -- the DUET's stdin driver: one WAV
+// read from standard input, BOTH frames it carries written to standard output,
+// the melody voice's first and the bass voice's second (34 bytes) -- the order
+// poly_rx prints them and hydra:profile=duet delivers them. The only file of its
+// unit that names `Mundus`, `Lector` and `Scriptor`.
+//
+// Each voice is decoded independently from the same samples (auditus.exsc):
+// the voices share a 25 Hz grid and a symbol grid, so each is invisible to the
+// other's correlators. Exit 0 and 34 bytes when both decode; otherwise the
+// first failing voice's status (1 no sync, 2 CRC; the melody's first), 3 for a
+// WAV this program will not read, and NOTHING WRITTEN: a lone frame would be
+// indistinguishable from a pair with one voice lost, so this driver writes
+// pairs only.
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma l = Lector.ab_introitu(a);
+    firma s = Scriptor.ad_exitum(a);
+    mutabilis x: acies<f64, 351840> = [0.0; 351840];
+    firma n = auditus_lege(l, x);
+    si n eq 0 {
+        redde 3;
+    }
+    firma ra = auditus_ausculta(x, n, 0);
+    si ra[0] ne 0 {
+        redde ra[0];
+    }
+    firma rb = auditus_ausculta(x, n, 1);
+    si rb[0] ne 0 {
+        redde rb[0];
+    }
+    per i in 0..17 {
+        si s.scribe_octeto(ra[i + 1]) ne 1 { redde 4; }
+    }
+    per i in 0..17 {
+        si s.scribe_octeto(rb[i + 1]) ne 1 { redde 4; }
+    }
+    redde 0;
+}

@@ -1,0 +1,79 @@
+// examples/hydramodem/bicinium_emitte.exsc -- the DUET's writer: two frames in
+// one burst, frame A on the melody voice (tx_gain 0.5, no drone) and frame B on
+// the bass voice (tx_gain 0.4), as `hydra_modem_tx_poly` with
+// `hydra_profile_duet` renders them. A bicinium is a two-voice piece.
+//
+// The bass is the longer voice (178 symbols against 124), so it sets the
+// layout (bassus_caput) and the melody enters 54 symbols later, by whole
+// symbols, so both end together: the reference right-aligns every voice. The
+// melody's 480-sample attack therefore sits in the last quarter of bass symbol
+// 53, its symbol y under bass symbol y + 54, and the two releases coincide.
+//
+// Each voice contributes (float)(e x g x sin(a)) from its own phase counter,
+// and a sample is their f32 sum. The reference renders the melody into zeros and
+// adds the bass, (0 + m) + b; `+` on two f32 is IEEE-754 single addition, which
+// is commutative, so writing m + b here is the same bits. Where only the bass
+// sounds the sample is the bass's contribution alone: 0 + b is b, since no
+// contribution is -0.0 (qsin's only zeros are +0.0).
+
+// Symbol 53 of the bass is the last before the melody's body; its last quarter
+// carries the melody's attack.
+publica firma bicinium_ingressus: mensura = 54;
+
+functio bicinium_modula(s: Scriptor, fa: acies<u8, 17>, fb: acies<u8, 17>) -> mensura {
+    firma q: acies<f64, 481> = melos_quadrans();
+    firma ca: u16 = redundantia(fa, 17);
+    firma cb: u16 = redundantia(fb, 17);
+    firma b = bassus_caput() sicut acies<u8, 44>;
+    mutabilis n: mensura = 0;
+    per i in 0..44 {
+        n = n + s.scribe_octeto(b[i]);
+    }
+    n = n + melos_scribe_silentium(s);
+    mutabilis ab: mensura = 0;                  // the bass's phase
+    mutabilis am: mensura = 0;                  // the melody's phase
+    mutabilis hb: mensura = bassus_harmonicus(bassus_tonus(fb, cb, 0));
+    mutabilis hm: mensura = melos_harmonicus(melos_tonus(fa, ca, 0));
+
+    // the bass's attack, alone
+    per i in 0..melos_rampa {
+        ab = melos_gradus(ab, hb);
+        n = n + melos_scribe_exemplum(s,
+                melos_scribibilis(melos_vox_simplex(q, 0.4, ab, melos_ascensus(q, i))));
+    }
+    // the bass's 178 symbols; from symbol 54 the melody's under them
+    per y in 0..bassus_symbola {
+        hb = bassus_harmonicus(bassus_tonus(fb, cb, y));
+        si y ge bicinium_ingressus {
+            hm = melos_harmonicus(melos_tonus(fa, ca, y - bicinium_ingressus));
+        }
+        per i in 0..melos_exempla_symboli {
+            ab = melos_gradus(ab, hb);
+            mutabilis v: f32 = melos_vox_simplex(q, 0.4, ab, 1.0);
+            si y ge bicinium_ingressus {
+                am = melos_gradus(am, hm);
+                v = melos_vox_simplex(q, 0.5, am, 1.0) + v;
+            } aliter {
+                si y eq bicinium_ingressus - 1 {
+                    si i ge melos_exempla_symboli - melos_rampa {
+                        // the melody's attack: symbol 0's note, rising
+                        am = melos_gradus(am, hm);
+                        firma j: mensura = i - (melos_exempla_symboli - melos_rampa);
+                        v = melos_vox_simplex(q, 0.5, am, melos_ascensus(q, j)) + v;
+                    }
+                }
+            }
+            n = n + melos_scribe_exemplum(s, melos_scribibilis(v));
+        }
+    }
+    // both releases, together: each voice's last note, falling
+    per j in 0..melos_rampa {
+        ab = melos_gradus(ab, hb);
+        am = melos_gradus(am, hm);
+        firma e: f64 = melos_descensus(q, j);
+        n = n + melos_scribe_exemplum(s, melos_scribibilis(
+                melos_vox_simplex(q, 0.5, am, e) + melos_vox_simplex(q, 0.4, ab, e)));
+    }
+    n = n + melos_scribe_silentium(s);
+    redde n;
+}

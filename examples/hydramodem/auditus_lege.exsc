@@ -1,0 +1,51 @@
+// examples/hydramodem/auditus_lege.exsc -- the musical receiver's WAV reader:
+// a WAV from a Lector into the caller's array of samples, through a mutable
+// borrow (ADR 0016; receptor.md finding 11's "a function cannot fill an array it
+// was handed" is what that closed). Its authority is the Lector's; it writes no
+// `poscit`, so its row is inferred (spec §4.1 rule 5), as emitte.exsc's are.
+//
+// THE HEADER IS VERIFIED, NOT TRUSTED, as recipe.exsc verifies it: 44 bytes
+// read through the transmitter's own `Caput`, every field compared with what
+// HydraModem's writer puts there. 48 kHz mono 16-bit PCM only. The data length
+// must be even, hold at least the shorter voice's symbols (124 x 1920 samples),
+// and fit this driver's cap, 344,640 samples (the duet's burst), which is below
+// auditus.exsc's capacity of 351,840 (the streaming receiver's window).
+//
+// Returns the sample count, or 0 for a WAV this program will not read (the
+// drivers' exit 3).
+
+functio auditus_lege(l: Lector, x: &mutabilis acies<f64, 351840>) -> mensura {
+    mutabilis hd: acies<u8, 44> = [0; 44];
+    per i in 0..44 {
+        firma b = l.lege_octeto();
+        si b ge 256 {
+            redde 0;
+        }
+        hd[i] = b sicut u8;
+    }
+    firma c = hd sicut Caput;
+    si c.riff ne 0x52494646 { redde 0; }
+    si c.wave ne 0x57415645 { redde 0; }
+    si c.fmt ne 0x666d7420 { redde 0; }
+    si c.fmt_longitudo ne 16 { redde 0; }
+    si c.codex ne 1 { redde 0; }
+    si c.canales ne 1 { redde 0; }
+    si c.frequentia ne 48000 { redde 0; }
+    si c.octeti_secundo ne 96000 { redde 0; }
+    si c.passus ne 2 { redde 0; }
+    si c.latitudo ne 16 { redde 0; }
+    si c.data ne 0x64617461 { redde 0; }
+    si c.longitudo lt 476160 { redde 0; }             // 2 x 124 x 1920
+    si c.longitudo gt 689280 { redde 0; }             // 2 x 344,640
+    si c.longitudo ne ((c.longitudo deorsum 1) sursum 1) { redde 0; }
+    si c.magnitudo ne (c.longitudo + 36) { redde 0; }
+    firma n: mensura = (c.longitudo deorsum 1) sicut mensura;
+    per i in 0..n {
+        firma b0 = l.lege_octeto();
+        firma b1 = l.lege_octeto();
+        si b0 ge 256 { redde 0; }
+        si b1 ge 256 { redde 0; }
+        (*x)[i] = signatum(b0 sicut u8, b1 sicut u8) sicut f64;
+    }
+    redde n;
+}

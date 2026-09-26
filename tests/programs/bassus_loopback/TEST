@@ -1,0 +1,7 @@
+# HydraModem's BASS voice (examples/hydramodem/bassus*.exsc), alone, on
+# dcf_loopback's frame: 4-FSK on D2 B2 D3 A3 (75-225 Hz) at 25 baud, 178 symbols.
+# stdout is the WAV, compared with `cmp`, all 689,324 bytes, with what HydraModem's
+# frame_tx --profile bass rendered (vendor/hydramodem-bicinium/PROVENANCE.md).
+# Samples 0-959 silence, 960-1439 attack, 1440 + 1920 s + i symbol s, then the
+# release and 960 zeros. docs/design/melos.md section 8.
+TEST: expect-exit=0 stdout=vendor/hydramodem-bicinium/bassus-d310123400a1ffffdeadbeef0a1b2ca961.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/melos.exsc,examples/hydramodem/melos_emitte.exsc,examples/hydramodem/bassus.exsc,examples/hydramodem/bassus_emitte.exsc,examples/hydramodem/bassus_loopback.exsc

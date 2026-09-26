@@ -1,0 +1,9 @@
+# The DUET (examples/hydramodem/bicinium_emitte.exsc): two frames in one burst,
+# dcf_loopback's frame on the melody voice and the zero word on the bass voice,
+# the melody entering 54 symbols in so both end together. stdout compared with
+# `cmp`, all 689,324 bytes, with HydraModem's own poly_tx render
+# (vendor/hydramodem-bicinium/). Samples as bassus_loopback/TEST; the melody's
+# attack is samples 104,640-105,119 (the last quarter of bass symbol 53, which is
+# samples 103,200-105,119), its
+# symbol y is under bass symbol y + 54. docs/design/melos.md section 8.
+TEST: expect-exit=0 stdout=vendor/hydramodem-bicinium/bicinium-d310123400a1ffffdeadbeef0a1b2ca961-0000000000000000000000000000000000.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/melos.exsc,examples/hydramodem/melos_emitte.exsc,examples/hydramodem/bassus.exsc,examples/hydramodem/bicinium_emitte.exsc,examples/hydramodem/bicinium_loopback.exsc

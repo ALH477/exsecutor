@@ -1,0 +1,2 @@
+# The duet at -18 dB: both voices, as the reference decodes them (verdicta.tsv).
+TEST: expect-exit=0 stdin=vendor/hydramodem-auditus/bicinium-awgn-18.wav sources=examples/hydramodem/quantum.exsc,examples/hydramodem/modulator.exsc,examples/hydramodem/melos.exsc,examples/hydramodem/bassus.exsc,examples/hydramodem/receptor.exsc,examples/hydramodem/auditus.exsc,examples/hydramodem/auditus_lege.exsc,examples/hydramodem/bicinium_recipe.exsc
