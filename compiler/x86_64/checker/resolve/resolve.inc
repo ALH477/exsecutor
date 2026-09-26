@@ -3043,11 +3043,31 @@ proc __chk_walk, chk_c, chk_n, chk_pos
   .for:
 	; `For.a` = the iterable, `For.b` = the body, `For.c` = the `ForHead`
 	; (`contrahe` accumulators and `forma`), `For.d` = the loop variable.
-	; The iterable is evaluated in the ENCLOSING scope; the loop variable and
-	; the accumulators are the body's, and get a frame of their own for the
-	; same reason the `sub` block form does.
+	; The iterable is evaluated in the ENCLOSING scope; the loop variable is
+	; the body's and gets a frame of its own for the same reason the `sub`
+	; block form does.
+	;
+	; THE HEAD IS WALKED IN THE ENCLOSING SCOPE, and the accumulators it
+	; declares are therefore bound THERE, not in the frame that dies with the
+	; body. Spec §5.4: "After the loop `acc` is an ordinary binding" -- a
+	; sentence with no meaning at all if the binding is gone by then, and
+	; every `contrahe` whose result was read was `EXS-E0301` until this line
+	; moved (`docs/design/checker.md` finding 27, defect C2). The head holds
+	; no expression -- `Contrahe ::= 'contrahe' IDENT ':' ArithOp` and
+	; `forma IDENT [INT]` (spec §8.6) -- so nothing in it can name the loop
+	; variable and the earlier position bought nothing.
+	;
+	; The accumulator is still invisible BEFORE the loop, because binding is
+	; a step of this walk and the statements above the `For` were walked
+	; already; and still visible INSIDE the body, because frames nest. What
+	; keeps it write-only in there is `EXS-E0341`, not the scope
+	; (checker/types/types.inc, `__chk_ty_path_expr`).
 	mov	rdi, rbx
 	mov	rsi, [chk_a]
+	xor	rdx, rdx
+	call	__chk_walk
+	mov	rdi, rbx
+	mov	rsi, [chk_cc]
 	xor	rdx, rdx
 	call	__chk_walk
 	mov	rdi, rbx
@@ -3057,10 +3077,6 @@ proc __chk_walk, chk_c, chk_n, chk_pos
 	mov	rdi, rbx
 	mov	rsi, [chk_dd]
 	call	__chk_bind
-	mov	rdi, rbx
-	mov	rsi, [chk_cc]
-	xor	rdx, rdx
-	call	__chk_walk
 	mov	rdi, rbx
 	mov	rsi, [chk_b]
 	xor	rdx, rdx

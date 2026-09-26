@@ -995,3 +995,25 @@ Numbered; each names the section and the sentence. Not edited here.
     `rassert`s (`__lwr_acc_f` finds no `Assign`). It is the same shape as
     finding 7's definite assignment — a class-C code is needed, and is not
     chosen here.
+
+23. **Finding 20's C1 and C2 are closed** -- every valid `contrahe` program had been refused by the checker
+    (2026-09-25), which is why this pass had none to lower: `s = v[i];`
+    inside the body was one `EXS-E0303` (the contribution was typed
+    against the accumulator's `red` handle, not against F, and F was
+    recorded nowhere), and the read after the loop was one `EXS-E0301`
+    (the accumulator was bound in the frame that dies with the body, so
+    spec §5.4's "After the loop `acc` is an ordinary binding" named a
+    binding that was gone). **Closed in the checker**, the spec being
+    right on both counts: `red` now carries `a` = the `ACCUM` declaration
+    and `b` = F, F is the first contribution's right-hand type, and when
+    the loop closes the declaration's type *becomes* F. So this pass reads
+    an accumulator's element type off `Decl.ty` exactly as it reads any
+    other binding's, and the operator off the `Contrahe` node's `aux`; no
+    `red` reaches it on a declaration in a program that checks clean. The
+    five shapes this pass's own fixture carries are accepted with
+    zero diagnostics and are pinned as rows of
+    `tests/unit/chk_ty_contrahe.asm`; `docs/design/checker.md` section 2.3
+    and finding 27 record the representation and the decisions around it.
+    The `rassert` at `lower/stmt.inc`'s `ForHead` — "this slice does not
+    build" — is now the only thing between a checked `contrahe` and an
+    emitted one.

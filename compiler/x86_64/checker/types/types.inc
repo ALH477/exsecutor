@@ -1302,10 +1302,31 @@ proc __chk_ty_path_expr, chkt_wA, chkt_nA
 	jne	.notacc
 	cmp	dword [rbx + ChkTyWork.wcon], 0
 	je	.notacc
+	; ... AND ONLY INSIDE ITS OWN ITERATION. `wcon` counts every enclosing
+	; `contrahe` loop, so on its own it makes a read of an INNER loop's
+	; finished accumulator -- the outer loop contributing the inner result,
+	; which is the whole point of nesting two of them -- a spurious
+	; `EXS-E0341`. The declaration's type is the discriminator:
+	; `__chk_ty_forfin` replaces the `red` handle with F the moment the
+	; accumulator's own loop closes, so `red` means "still open".
+	mov	rdi, rbx
+	mov	rsi, [chkt_yA]
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_RED
+	jne	.notacc
 	mov	rdi, rbx
 	mov	rsi, 341
 	mov	rdx, r12
 	call	__chk_ty_raise
+	; and the read ANSWERS THE ERROR TYPE, not the handle. `red` is not a
+	; type any operator admits, so answering it made one illegal read cascade
+	; into an `EXS-E0303` at every operand beside it and a third at whatever
+	; the enclosing statement wanted -- three codes for one edit, which
+	; spec §8.3's "one class each" argues against. Error in, silence after:
+	; typed-ast.md section 2.2's rule, which is why the error type is id 1.
+	mov	rdi, rbx
+	call	__chk_ty_err
+	mov	[chkt_yA], rax
   .notacc:
 	; `EXS-E0307`, definite assignment (spec §13's note): a binding declared
 	; without an initializer and read before any assignment.

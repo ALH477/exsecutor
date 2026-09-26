@@ -648,7 +648,7 @@ proc __chk_ty_lvalue, chkt_wLV, chkt_nLV
 	movzx	r14d, byte [rax + AstDecl.kind]
 	movzx	ecx, byte [rax + AstDecl.flags]
 	cmp	r14d, AST_D_ACCUM
-	je	.acc
+	je	.maybeacc
 	cmp	r14d, AST_D_BINDING
 	jne	.notplace
 	test	ecx, AST_F_MUTABILIS
@@ -659,9 +659,23 @@ proc __chk_ty_lvalue, chkt_wLV, chkt_nLV
 	call	vec_get
 	mov	byte [rax], CHK_TY_D_SET
 	jmp	.pathty
-  .acc:
+  .maybeacc:
 	; spec §5.4: "Writing to it is the contribution" -- the one statement
-	; that may name an accumulator inside its own iteration.
+	; that may name an accumulator inside its own iteration. AND ONLY INSIDE
+	; IT: after the loop the same declaration is "an ordinary binding", an
+	; immutable one (nothing declares it `mutabilis`), so a write there is
+	; `EXS-E0306` exactly as a write to a `firma` is. The two are told apart
+	; by the declaration's TYPE: `__chk_ty_forhead` gives it the `red` handle
+	; and `__chk_ty_forfin` replaces that with F the moment the loop's body
+	; has been walked, so `red` means "still inside".
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, r13
+	call	ast_decl_at
+	mov	esi, [rax + AstDecl.ty]
+	mov	rdi, rbx
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_RED
+	jne	.notplace
 	lea	rdi, [rbx + ChkTyWork.wdef]
 	mov	rsi, r13
 	call	vec_get
@@ -709,6 +723,14 @@ proc __chk_ty_lvalue, chkt_wLV, chkt_nLV
 endp
 
 ; __chk_ty_assign(w, n) -- `target = value;`
+;
+; ONE TARGET IS NOT TYPED AGAINST ITS OWN TYPE: an accumulator's. Spec §5.4,
+; "Writing to it is the contribution: inside the body, `acc = e;` contributes
+; `e` under the operator `contrahe` declared" -- so what `e` must match is F,
+; the ELEMENT type of the reduction, and not the `red` handle the accumulator
+; carries while the loop is open. Typing it against the handle made EVERY
+; valid `contrahe` program one `EXS-E0303` at its own contribution
+; (`docs/design/checker.md` finding 27, defect C1).
 proc __chk_ty_assign, chkt_wAS, chkt_nAS
 	uses	rbx, r12, r13
 	locals
@@ -729,9 +751,113 @@ proc __chk_ty_assign, chkt_wAS, chkt_nAS
 	call	__chk_ty_lvalue
 	mov	r13, rax
 	mov	rdi, rbx
+	mov	rsi, r13
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_RED
+	je	.contrib
+	mov	rdi, rbx
 	mov	rsi, [chkt_bAS]
 	mov	rdx, r13
 	call	__chk_ty_want
+	return
+  .contrib:
+	mov	rdi, rbx
+	mov	rsi, [chkt_aAS]
+	mov	rdx, [chkt_bAS]
+	mov	rcx, r13
+	call	__chk_ty_contrib
+	return
+endp
+
+; __chk_ty_contrib(w, lhs, rhs, rty) -> rax = F, the reduction's element type.
+;
+; `rty` is the target's type and is known to be `red`. WHERE F LIVES: in the
+; handle's own `AstType.b`. `red` takes `a` = the accumulator's declaration
+; (typed-ast.md section 2.5) and leaves every other field of the 16-byte
+; record 0; `b` is the ROW id on an `fn` or a `dyn` and means nothing on a
+; `red`, so recording F there costs no field, no struct change (`ast/` is not
+; this tree's to edit) and no second side table -- and, because `b` is part of
+; the interning key, `red(a=d, b=F)` and `red(a=d, b=0)` are simply two ids
+; and the one the declaration carries says which state it is in.
+;
+; F IS THE FIRST CONTRIBUTION'S RIGHT-HAND TYPE. Nothing in spec §5.4 or §8.5
+; annotates an accumulator, and the loop's element type is not it either --
+; `s = v[i] * 2` contributes a product, and `contrahe` over a `u8` array
+; accumulating into `u32` is not excluded by any sentence. So the first `acc =
+; e;` fixes F and every later one is typed against it, which makes a second
+; contribution of a different type the ORDINARY `EXS-E0303` at its own `e`
+; rather than a rule of its own. Deterministic: "first" is source order, which
+; is the order pass 2 walks statements in.
+;
+; A first contribution that did not settle is recorded AS THE ERROR TYPE, not
+; skipped: `__chk_ty_same` says nothing when either side is the error type, so
+; F = error makes every later contribution and every read after the loop
+; silent -- typed-ast.md section 2.2's cascade suppression, one code for the
+; one edit. Skipping it instead would leave the handle in place and turn one
+; bad contribution into a mismatch at every later use of the accumulator.
+proc __chk_ty_contrib, chkt_wCB, chkt_lCB, chkt_vCB, chkt_rCB
+	uses	rbx, r12, r13, r14
+	locals
+		slot chkt_tCB, 16
+	endl
+	mov	rbx, [chkt_wCB]
+	mov	rdi, rbx
+	mov	rsi, [chkt_rCB]
+	mov	rdx, AstType.b
+	call	__chk_ty_field
+	mov	r13, rax
+	test	r13, r13
+	jz	.first
+	mov	rdi, rbx
+	mov	rsi, [chkt_vCB]
+	mov	rdx, r13
+	call	__chk_ty_want
+	mov	rax, r13
+	return
+
+  .first:
+	mov	rdi, rbx
+	mov	rsi, [chkt_vCB]
+	call	__chk_ty_expr
+	mov	rdi, rbx
+	mov	rsi, rax
+	mov	rdx, [chkt_vCB]
+	call	__chk_ty_settled
+	mov	r13, rax
+	mov	rdi, rbx
+	mov	rsi, [chkt_rCB]
+	mov	rdx, AstType.a
+	call	__chk_ty_field
+	mov	r14, rax			; the accumulator's declaration
+	lea	rdi, [chkt_tCB]
+	call	ast_type_clear
+	mov	byte [chkt_tCB + AstType.kind], AST_TY_RED
+	mov	[chkt_tCB + AstType.a], r14d
+	mov	[chkt_tCB + AstType.b], r13d
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	lea	rsi, [chkt_tCB]
+	call	ast_type_intern
+	mov	r12, rax
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, r14
+	mov	rdx, r12
+	call	ast_decl_ty
+	; re-annotate the target, so that every contribution's `Path` and its
+	; first `Seg` carry ONE id -- the first one would otherwise keep the
+	; `b` = 0 handle and the rest the `b` = F one, and a reader downstream
+	; would have two type ids for one accumulator
+	mov	rdi, rbx
+	mov	rsi, [chkt_lCB]
+	mov	rdx, r12
+	call	__chk_ty_setty
+	mov	rdi, rbx
+	mov	rsi, [chkt_lCB]
+	call	__chk_ty_seg0
+	mov	rdi, rbx
+	mov	rsi, rax
+	mov	rdx, r12
+	call	__chk_ty_setty
+	mov	rax, r13
 	return
 endp
 
@@ -970,8 +1096,90 @@ proc __chk_ty_for, chkt_wFR, chkt_nFR
 	test	r14, r14
 	jz	.no_con2
 	dec	dword [rbx + ChkTyWork.wcon]
+	; spec §5.4: "After the loop `acc` is an ordinary binding." The handle
+	; becomes F here, which is both the type a read after the loop gets and
+	; the fact `__chk_ty_lvalue` and `__chk_ty_path_expr` read to tell
+	; "inside its own iteration" from "after it".
+	mov	rdi, rbx
+	mov	rsi, [chkt_cFR]
+	call	__chk_ty_forfin
   .no_con2:
 	dec	dword [rbx + ChkTyWork.wloop]
+	return
+endp
+
+; __chk_ty_forfin(w, headnode) -- close every accumulator the head declares.
+;
+; An accumulator's declaration carries the `red` handle for exactly as long as
+; its loop is open; here the loop has just closed, so each one becomes F, the
+; element type the contributions fixed (`__chk_ty_contrib`). Spec §5.4: "After
+; the loop `acc` is an ordinary binding" -- of F, because F is what was
+; contributed and what the reduction produces.
+;
+; A `contrahe` WHOSE BODY NEVER CONTRIBUTES has no F, and this routine leaves
+; the handle in place rather than invent one. Nothing in spec §5.4 or §8.5
+; says what such a loop means and §13 has no code that fits, so inventing one
+; here would be inventing a code (CLAUDE.md, "Error codes are permanent"). The
+; consequence is recorded rather than hidden: the declaration stays `red`, a
+; use of it after the loop is one `EXS-E0303` against a type no expression can
+; have, and the lowering still `rassert`s at the `ForHead`
+; (`lower/stmt.inc`). Deciding it is a spec amendment, not a checker change.
+proc __chk_ty_forfin, chkt_wFZ, chkt_nFZ
+	uses	rbx, r12, r13, r14
+	locals
+		slot chkt_aFZ, dq
+		slot chkt_bFZ, dq
+		slot chkt_iFZ, dq
+	endl
+	mov	rbx, [chkt_wFZ]
+	cmp	qword [chkt_nFZ], 0
+	je	.out
+	mov	rdi, rbx
+	mov	rsi, [chkt_nFZ]
+	call	__chk_ty_node
+	mov	ecx, [rax + AstNode.a]
+	mov	[chkt_aFZ], rcx			; the `Contrahe` list
+	mov	ecx, [rax + AstNode.b]
+	mov	[chkt_bFZ], rcx			; how many
+	mov	qword [chkt_iFZ], 0
+  .acc:
+	mov	rax, [chkt_iFZ]
+	cmp	rax, [chkt_bFZ]
+	jae	.out
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_aFZ]
+	add	rsi, [chkt_iFZ]
+	call	ast_extra_at
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	__chk_ty_node
+	mov	r12d, [rax + AstNode.d]		; the accumulator's declaration
+	test	r12, r12
+	jz	.next
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, r12
+	call	ast_decl_at
+	mov	r13d, [rax + AstDecl.ty]
+	mov	rdi, rbx
+	mov	rsi, r13
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_RED
+	jne	.next
+	mov	rdi, rbx
+	mov	rsi, r13
+	mov	rdx, AstType.b
+	call	__chk_ty_field
+	mov	r14, rax
+	test	r14, r14
+	jz	.next				; never contributed -- see above
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, r12
+	mov	rdx, r14
+	call	ast_decl_ty
+  .next:
+	inc	qword [chkt_iFZ]
+	jmp	.acc
+  .out:
 	return
 endp
 

@@ -19,7 +19,7 @@
 // `positio<'t>`, is `[OPEN]` in §8.6 -- no grammar exists for a lifetime-
 // style brand parameter. EXS-E0332 itself is implemented, but unreachable
 // through this fixture's shape until the brand syntax parses
-// (`docs/design/checker.md` §2.6).
+// (`docs/design/checker.md` section 2.6).
 
 publica functio corrige(via: textus) -> textus poscit alloc {
     firma abassus = via.plica_unicode();

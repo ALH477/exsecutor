@@ -238,9 +238,60 @@ iterates the list, never the tree.
   partner. A literal with no expected type is an error `[OPEN]` until spec
   §8.4's literal grammar supplies widths; a literal that does not fit is an
   error (no code). `konst[node]` holds the value once the width is known.
+- **A `contrahe` accumulator's element type F.** Nothing annotates one
+  (`Contrahe ::= 'contrahe' IDENT ':' ArithOp`, spec §8.6), and the loop's
+  element type is not it either — `s = v[i] * 2;` contributes a product, and
+  no sentence forbids folding a `u8` array into a `u32`. So **F is the first
+  contribution's right-hand type**, in source order, and every later
+  contribution in that loop is typed against it: a disagreement is then the
+  ordinary `EXS-E0303` at its own right-hand side rather than a rule of its
+  own. See "The accumulator's two states", below.
 - **Nothing else.** No unification variables, no inference across items,
   none across modules (spec §4.5). Expected types flow *down* into literals
   and lambdas only.
+
+**The accumulator's two states** (2026-09-25, spec §5.4). An `ACCUM`
+declaration's type is the `red` **handle** while its loop is open and **F**
+after it closes — spec §5.4's "After the loop `acc` is an ordinary binding",
+read literally. `red` takes `a` = the accumulator's own declaration and
+records F in `AstType.b`, the field that is a row id on an `fn` and means
+nothing on a `red`: no new field, no change to `ast/`, no second side table,
+and — because all sixteen bytes are the interning key — `red(a, b=0)` and
+`red(a, b=F)` are simply two ids, so the id the declaration carries *is* the
+state. Nothing else in the tree distinguishes the two, and three rules read
+it:
+
+- `acc = e;` is the **contribution** only while the handle is on the
+  declaration; `e` is typed against F, never against the handle. After the
+  loop the same write is `EXS-E0306`, exactly as a write to a `firma` is —
+  "an ordinary binding" and nothing declares it `mutabilis`.
+- `EXS-E0341` fires on a read only while the handle is on the declaration.
+  The nesting counter alone is wrong: two nested reductions, the outer
+  contributing the inner's result, is a read made with two `contrahe` loops
+  open and is exactly what §5.4's "after the loop" sentence permits.
+- What the lowering is handed: F on `Decl.ty` like any other binding's type,
+  and the operator on the `Contrahe` node's `aux`. No `red` survives on a
+  declaration in a program that checks clean — measured by
+  `chk_ty_contrahe.asm`'s last two checks, which read the tree. Whether that
+  is what `lower/` wants is `[UNTESTED]`: its `ForHead` still `rassert`s.
+
+**A `contrahe` whose body never contributes** has no F and keeps the handle.
+Neither §5.4 nor §8.5 says what such a loop means and §13 has no code that
+fits, so the checker invents neither (CLAUDE.md, "Error codes are
+permanent"): the program is accepted, a use of the accumulator afterwards is
+one `EXS-E0303` against a type no expression can have, and the lowering still
+`rassert`s at the `ForHead` (`lower/stmt.inc`). Deciding it is a spec
+amendment. `tests/unit/chk_ty_contrahe.asm` pins the decision as a row so
+that changing it is a visible edit.
+
+**Cascade suppression around a bad contribution.** A read that raised
+`EXS-E0341` answers the **error** type, and a first contribution that did not
+settle records the error type as F. Both are typed-ast.md section 2.2's rule
+applied where it had not been: before them, one illegal read was three codes
+(the `E0341`, an `E0303` at the operand beside it, and a third at whatever
+the enclosing statement wanted), against spec §8.3's "one class each, never
+one per message". Every rejected row of `chk_ty_contrahe.asm` is now exactly
+one diagnostic.
 
 **Row computation, precisely** (pass 3). For each function `F`:
 
@@ -312,7 +363,7 @@ the parser has already diagnosed `EXS-E0201` (finding 23).
 
 `E0500` and `E0501` are **alternatives**, never both: one binding, one code,
 chosen by capability-bearing. That is why `E0500`'s pass column reads 3 and not
-1 (finding 24).
+1 (finding 28).
 | `E0510` | mark exceeds ceiling or `dyn` bound | §4.4 | 3 | the impl head / the cast |
 | `E0520` | non-atomic `refero` in an `externus` signature | §5.3, §6.4 | 2 | the type node |
 | `E0601` `E0602` `E0603` `E0610` | lexicon | §3.1, §3.4, §3.5, §3.8 | 5 | the declaring name |
@@ -388,8 +439,8 @@ After Stage 2 with **no diagnostic** the lowering may assume:
 - `Decl.ty` ≠ 0 on `FN` `EXTERNFN` `MEMBER` `LAMBDA` (an `fn` type whose `b`
   is the **final** row — declared or inferred; "the row is in the type" is
   literally where the lowering reads carriers), `PARAM` `GENPARAM` `FIELD`
-  `BINDING` `LOOPVAR` `SUB` (the atom type), `ACCUM` (`red.F`), `STRUCT`
-  `TYPUS` `IFACE`; 0 on `IMPL` `POTESTAS` `EXTERNUS`.
+  `BINDING` `LOOPVAR` `SUB` (the atom type), `ACCUM` (**F** — see below),
+  `STRUCT` `TYPUS` `IFACE`; 0 on `IMPL` `POTESTAS` `EXTERNUS`.
 - `Ast.rows` holds every row any type names; `Ast.layout` has an entry for
   every `STRUCT` and `FIELD` decl (AST 2.8); `ast_side_alloc` has run
   (`Ast.sides` ≠ 0): `own[node]` on every reference-typed expression,
@@ -493,7 +544,9 @@ lambda is a closure-environment slot, Stage 3's.
 `rassert` (a malformed annotation is a compiler bug, not an `EXS-E` code):
 AST section 3's Stage 2 list verbatim — `ty` ≠ 0 and ≠ 1 on every expression
 and type node; `d` ≠ 0 on every `Seg` `Member` `RowItem`; every ordinal <
-its `Sig`'s parameter count; `red` only on `ACCUM` decls; every `transitus`
+its `Sig`'s parameter count; `red` only on `ACCUM` decls — and, since
+2026-09-25, on none of them in a program that checks clean, because section
+2.3 replaces the handle with F when the loop closes; every `transitus`
 field's `Layout.order` ≠ `nativus` — plus: every `fn` type's row id names a
 row in `Ast.rows`; every row's items are strictly ascending (kind, id);
 every `brand.a` is a `BINDING`/`PARAM` decl or 0; `Ast.sides` ≠ 0. The two
@@ -590,8 +643,11 @@ tree).
 Literal typing without §8.4's grammar; brand syntax and a prelude that
 produces one; new-type `typus` (the ego's `publica typus textus` has no
 source form); generic impl heads; multiple bounds; receiver syntax and
-`Self`; the contribution syntax for a `contrahe` accumulator (section 9,
-finding 9); `@nucleus` enforcement (narrowing `sicut` was on this list and is
+`Self`; what a `contrahe` whose body never contributes means (section 2.3;
+the contribution syntax itself — finding 9 — is closed: spec §5.4 now carries
+"Writing to it is the contribution", and section 2.3 and
+`tests/unit/chk_ty_contrahe.asm` implement it); `@nucleus` enforcement
+(narrowing `sicut` was on this list and is
 settled as truncation in spec §5.4 — the checker already admitted it and
 needs nothing); `numeri` coercion
 between modules (there are no modules yet); `sub` in loop bodies; what
@@ -632,6 +688,12 @@ Numbered; each names the section and the sentence. Not edited here.
 9. **Spec §5.4 / §8.5 give no syntax for contributing to a `contrahe`
    accumulator**, so `E0341` (any read) has no complement. Section 2.3
    treats `acc = e;` inside the body as the contribution; needs the owner.
+   **Closed 2026-09-25**: spec §5.4 now says it — "Writing to it is the
+   contribution: inside the body, `acc = e;` contributes `e` under the
+   operator `contrahe` declared, and is the only statement that may name
+   `acc`" — which is this section's reading, adopted. What the sentence
+   left open (what `e` is typed against, and how long `acc` lives) is
+   finding 23.
 10. **Spec §4.1 rules 5 and 6 conflict** on a private function with no
     `poscit`: rule 5 infers, rule 6 declares it pure. Section 2.3 reads rule
     6 as the meaning of an explicitly empty *declared* row.
@@ -810,3 +872,36 @@ stated in each.
     rise by three (178 → 181) in the commit that lands them; that file is not
     this agent's tree, and adding fixtures never *trips* the floor (the test
     is `found < floor`), so nothing fails until someone raises it.
+
+27. **Every valid `contrahe` program was refused** (2026-09-25; raised by
+    the lowering pass, which could not get one past the checker to lower).
+    Two defects, both measured with `build/exsc aedifica --hospes
+    x86_64-linux --diagnostica json` on a `per i in 0..8 contrahe s: +
+    forma ordinata { s = v[i]; } redde s;` and both now fixed, in the
+    checker and not in the spec — the spec was right and the code was
+    wrong at both:
+    - **C1**, one `EXS-E0303` at the contribution. `__chk_ty_assign` typed
+      the right-hand side against the target's own type, which for an
+      accumulator is the `red` handle; spec §5.4 makes it F. F was
+      recorded nowhere: `__chk_ty_forhead` interned `red` with `a` = the
+      accumulator's declaration and left every other field 0. Fixed by
+      recording F in the handle's `b` and typing the contribution against
+      it (`__chk_ty_contrib`, section 2.3).
+    - **C2**, one `EXS-E0301` on a read after the loop. `resolve.inc`'s
+      `.for` arm walked the `ForHead` *inside* the frame it pushes for the
+      loop variable, so the accumulator died with the body and spec §5.4's
+      "After the loop `acc` is an ordinary binding" named a binding that
+      was gone. Fixed by walking the head in the enclosing scope, which
+      the head's grammar permits: it holds no expression.
+    Not defects but consequences settled at the same time and recorded in
+    section 2.3: the accumulator's two states, the never-contributing
+    loop, and the cascade suppression that makes each rejected row one
+    code. `tests/unit/chk_ty_contrahe.asm` is the fixture; the five shapes
+    the lowering fixture carries are its accepted rows.
+28. **typed-ast.md section 2.5's `red` row says "`a` = F"**, and the
+    implementation has always used `a` = the accumulator's *declaration* —
+    `__chk_ty_forhead` says so in its own comment, and it must, because two
+    accumulators in one head have to be two distinct handles and F cannot
+    distinguish them. Finding 27 adds `b` = F. The row should read "`a` =
+    the `ACCUM` declaration, `b` = F (0 until the first contribution)".
+    (ast agent; this document does not edit that tree.)
