@@ -1,0 +1,37 @@
+; TEST: abort=1 c-emit-exit=4
+;
+; `div u8 5 0`: a zero divisor traps at every width and both signs (spec
+; 5.4, "trapping `+ - * /`, zero divisor" -- prelude/README.md's abort kind
+; 1, the shared `bfausr_trap`). The check is the first two lines of the
+; emitted sequence, before anything is divided:
+;
+;       mov     rcx, [rbp-24]
+;       test    rcx, rcx
+;       jz      bfausr_trap
+;
+; and it is a RUNTIME check even here, where the divisor is a constant 0:
+; nothing in this backend folds, and whether a constant-folded trapping op
+; should instead be a compile-time diagnostic is still `[OPEN]` (ssa-ir.md
+; 6 -- it would need a spec 13 code, and none is proposed).
+;
+; Without it the hardware would raise #DE: SIGFPE, exit 136, not this
+; tree's numeric trap. So the mutation is loud in the right way.
+;
+; Mutation (run): the `test`/`jz` pair dropped -> exit 136 (SIGFPE) instead
+; of 132 (SIGILL), i.e. abort kind detection fails rather than the exit
+; status silently matching.
+;
+; If nothing traps the function returns 7.
+;
+; `c-emit-exit=4`: the C backend refuses `div` by name (c-backend.md D4 row
+; 4), so the differential phase checks parity of that refusal.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = iconst u8 5
+%2 = iconst u8 0
+%3 = div u8 %1 %2
+%4 = iconst u8 7
+ret %4
+}

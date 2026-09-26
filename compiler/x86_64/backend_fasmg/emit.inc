@@ -49,7 +49,10 @@
 ; `param`, `iconst` (any 64-bit constant; `mov rax, imm64` past a simm32),
 ; `add`/`sub`/`mul` (trapping -- at 64 bits signed overflow via OF,
 ; unsigned via CF, exactly as x86 ADD/SUB/IMUL/MUL already distinguish;
-; below 64 through the canonical form), `addw`/`subw`/`mulw` (wrapping),
+; below 64 through the canonical form), `div`/`rem` (trapping: a zero
+; divisor at every width and, for a signed T, T_MIN / -1 -- truncated
+; toward zero, the remainder's sign following the dividend, spec 5.4 as
+; decided 2026-09-25), `addw`/`subw`/`mulw` (wrapping),
 ; `adds`/`subs` (saturating), `and`/`or`/`xor`, `shl`/`shr` (a count >= N
 ; traps), `cmp.*` (signed vs unsigned SETcc chosen from the type's kind),
 ; `zext`/`sext`/`trunc`, every integer width from 1 to 64 (see "The
@@ -64,9 +67,12 @@
 ; `fconst`, `fadd`/`fsub`/`fmul`/`fdiv`, `fneg`, the six ordered `fcmp`
 ; forms, `fext`/`ftrunc`, `itof`/`ftoi`, and F32/F64 parameters, arguments
 ; and results crossing the SysV registers by class (asm-conventions.md
-; section 1.1: xmm0..xmm7 beside rdi..r9, xmm0 beside rax). Every other
-; opcode -- `fma` and `bitcast` among the float ones, `div`/`rem`, `muls`,
-; the `*ov` predicates, `callind`, the reduction ops -- and a bit field
+; section 1.1: xmm0..xmm7 beside rdi..r9, xmm0 beside rax), and the
+; REDUCTION group -- `redinit`/`contrib`/`redfin` over an integer or float
+; `F`, in both shapes ("Reductions", below: the reference lowering of
+; `arborea w` IS the definition, ADR 0012). Every other
+; opcode -- `fma` and `bitcast` among the float ones, `muls`,
+; the `*ov` predicates, `callind` -- and a bit field
 ; that straddles a byte, this file's own `__bfa_emit_die` refuses by name
 ; rather than emitting something wrong.
 ; ADR 0012 already prices "a naive backend still needs an instruction
@@ -123,8 +129,12 @@ proc __bfa_emit_die, msg_ptr, msg_len
 	call	sys_exit_group
 endp
 
-; __bfa_slot(ctx, valueid) -- prints "[rbp-N]" for this value's stack slot.
-proc __bfa_slot, ctx, valueid
+; __bfa_emit_cell(ctx, byteoff) -- prints "[rbp-N]" for a frame BYTE offset.
+; Every frame reference this file emits goes through here: a value's own
+; slot (__bfa_slot, just below, is this at 8 x the value id), a `slot`
+; instruction's storage, a vector's 16-aligned home, a reduction's
+; accumulator or one of its `arborea` cells. One spelling, one place.
+proc __bfa_emit_cell, ctx, byteoff
 	locals
 	endl
 	mov	rdi, [ctx]
@@ -134,14 +144,26 @@ proc __bfa_slot, ctx, valueid
 	lea	rsi, [.lit_open]
 	mov	rdx, .after_open - .lit_open
 	call	__bfa_out_lit
-	mov	eax, [valueid]
-	shl	eax, 3			; * 8
 	mov	rdi, [ctx]
-	mov	esi, eax
+	mov	esi, [byteoff]
 	call	__bfa_out_u64
 	mov	rdi, [ctx]
 	mov	esi, ']'
 	call	__bfa_out_byte
+	return
+endp
+
+; __bfa_slot(ctx, valueid) -- prints "[rbp-N]" for this value's stack slot,
+; which is the cell at byte offset 8 x the value id (this file's header,
+; SLOT LAYOUT).
+proc __bfa_slot, ctx, valueid
+	locals
+	endl
+	mov	eax, [valueid]
+	shl	eax, 3			; * 8
+	mov	rdi, [ctx]
+	mov	esi, eax
+	call	__bfa_emit_cell
 	return
 endp
 
@@ -157,7 +179,10 @@ endp
 ; __bfa_emit_line3(ctx, mnem, valueid) -- "MNEM [rbp-N]\n" (e.g. "mov rax, ").
 ; A tiny handful of shared textual patterns, factored out because every
 ; per-opcode lowering below is built from them.
-proc __bfa_out_movq_rax_slot, ctx, valueid
+; __bfa_out_movq_rax_cell / __bfa_out_movq_cell_rax(ctx, byteoff) -- the
+; load-and-store pair around every lowering, addressed by BYTE OFFSET; the
+; `_slot_` forms below are these at 8 x a value id.
+proc __bfa_out_movq_rax_cell, ctx, byteoff
 	locals
 	endl
 	mov	rdi, [ctx]
@@ -168,14 +193,14 @@ proc __bfa_out_movq_rax_slot, ctx, valueid
 	mov	rdx, .after_lit - .lit
 	call	__bfa_out_lit
 	mov	rdi, [ctx]
-	mov	esi, [valueid]
-	call	__bfa_slot
+	mov	esi, [byteoff]
+	call	__bfa_emit_cell
 	mov	rdi, [ctx]
 	call	__bfa_emit_nl
 	return
 endp
 
-proc __bfa_out_movq_slot_rax, ctx, valueid
+proc __bfa_out_movq_cell_rax, ctx, byteoff
 	locals
 	endl
 	mov	rdi, [ctx]
@@ -186,8 +211,8 @@ proc __bfa_out_movq_slot_rax, ctx, valueid
 	mov	rdx, .after_lit - .lit
 	call	__bfa_out_lit
 	mov	rdi, [ctx]
-	mov	esi, [valueid]
-	call	__bfa_slot
+	mov	esi, [byteoff]
+	call	__bfa_emit_cell
 	mov	rdi, [ctx]
 	jmp	.after_lit2
   .lit2 db ", rax", 10
@@ -195,6 +220,28 @@ proc __bfa_out_movq_slot_rax, ctx, valueid
 	lea	rsi, [.lit2]
 	mov	rdx, .after_lit2 - .lit2
 	call	__bfa_out_lit
+	return
+endp
+
+proc __bfa_out_movq_rax_slot, ctx, valueid
+	locals
+	endl
+	mov	eax, [valueid]
+	shl	eax, 3
+	mov	rdi, [ctx]
+	mov	esi, eax
+	call	__bfa_out_movq_rax_cell
+	return
+endp
+
+proc __bfa_out_movq_slot_rax, ctx, valueid
+	locals
+	endl
+	mov	eax, [valueid]
+	shl	eax, 3
+	mov	rdi, [ctx]
+	mov	esi, eax
+	call	__bfa_out_movq_cell_rax
 	return
 endp
 
@@ -284,6 +331,57 @@ proc __bfa_emit_operand_text, ctx, raw, isimm
 	mov	rdi, [ctx]
 	movsxd	rsi, dword [raw]
 	call	__bfa_out_i64
+	return
+endp
+
+; ---- the b operand of a binary integer lowering, in three spellings -------
+;
+; The integer cores below (__bfa_emit_addsub_core and its two siblings) take
+; their SECOND operand as a (source, kind) pair rather than reading it off
+; the instruction, because they serve two callers: the standalone opcode,
+; whose b is a value slot or an inline immediate, and the reduction group
+; ("Reductions", below), whose b is a frame CELL that belongs to no value.
+; One core, three spellings of one operand -- not two copies of the
+; arithmetic.
+BFA_BK_SLOT = 0		; bsrc = a value id       -> [rbp-8v]
+BFA_BK_IMM  = 1		; bsrc = parse.inc's sign-extended 32-bit immediate
+BFA_BK_CELL = 2		; bsrc = a frame byte offset -> [rbp-N]
+
+; __bfa_emit_bopnd(ctx, bsrc, bkind) -- that operand's text, nothing else.
+proc __bfa_emit_bopnd, ctx, bsrc, bkind
+	locals
+	endl
+	cmp	dword [bkind], BFA_BK_IMM
+	je	.imm
+	cmp	dword [bkind], BFA_BK_CELL
+	je	.cell
+	mov	rdi, [ctx]
+	mov	esi, [bsrc]
+	call	__bfa_slot
+	return
+  .cell:
+	mov	rdi, [ctx]
+	mov	esi, [bsrc]
+	call	__bfa_emit_cell
+	return
+  .imm:
+	mov	rdi, [ctx]
+	movsxd	rsi, dword [bsrc]
+	call	__bfa_out_i64
+	return
+endp
+
+; __bfa_bkind_of(auxv) -> eax = BFA_BK_IMM if aux's 0x200 bit says the b
+; operand is an inline immediate, else BFA_BK_SLOT. The one place the
+; parser's bit becomes a kind.
+proc __bfa_bkind_of, auxv
+	locals
+	endl
+	xor	eax, eax
+	test	dword [auxv], 0x200
+	jz	.done
+	mov	eax, BFA_BK_IMM
+  .done:
 	return
 endp
 
@@ -527,24 +625,9 @@ proc __bfa_emit_addsub, ctx, module, func, instid
 		slot bv, dd
 		slot auxv, dd
 		slot tyv, dd
-		slot issub, dd
-		slot issigned, dd
-		slot trap, dd
-		slot nbits, dd
+		slot opc, dd
+		slot bkind, dd
 	endl
-	mov	rdi, [func]
-	mov	esi, [instid]
-	call	bfa_inst_ptr
-	movzx	ecx, word [rax + BfaInst.op]
-	cmp	ecx, BFA_OP_ADD
-	je	.istrap
-	cmp	ecx, BFA_OP_SUB
-	je	.istrap
-	mov	dword [trap], 0
-	jmp	.trapdone
-  .istrap:
-	mov	dword [trap], 1
-  .trapdone:
 	mov	rdi, [func]
 	mov	esi, [instid]
 	call	bfa_inst_ptr
@@ -557,6 +640,69 @@ proc __bfa_emit_addsub, ctx, module, func, instid
 	mov	ecx, [rax + BfaInst.ty]
 	mov	[tyv], ecx
 	movzx	ecx, word [rax + BfaInst.op]
+	mov	[opc], ecx
+
+	; called for its refusal, not its result: the core recomputes the
+	; width, and an unsupported type must die HERE, before the immediate
+	; check, exactly as it did when this was one routine.
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfa_int_width
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	mov	edx, [av]
+	mov	ecx, [bv]
+	mov	r8d, [auxv]
+	call	__bfa_check_opimms
+
+	mov	rdi, [ctx]
+	mov	esi, [av]
+	mov	edx, [auxv]
+	and	edx, 0x100
+	call	__bfa_emit_load_rax
+
+	mov	edi, [auxv]
+	call	__bfa_bkind_of
+	mov	[bkind], eax
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	edx, [opc]
+	mov	ecx, [tyv]
+	mov	r8d, [bv]
+	mov	r9d, [bkind]
+	call	__bfa_emit_addsub_core
+
+	mov	rdi, [ctx]
+	mov	esi, [instid]
+	call	__bfa_out_movq_slot_rax
+	return
+endp
+
+; __bfa_emit_addsub_core(ctx, module, opc, tyv, bsrc, bkind) -- the operand
+; `a` is ALREADY in rax; emits the add or subtract against `b` and the trap
+; check or normalisation, and leaves the result in rax for the caller to
+; store. Split out of __bfa_emit_addsub so the reduction group's accumulate
+; step ("Reductions", below) is the same arithmetic and the same trap rather
+; than a second copy of it. The split point is exactly where it was: load,
+; core, store.
+proc __bfa_emit_addsub_core, ctx, module, opc, tyv, bsrc, bkind
+	locals
+		slot issub, dd
+		slot issigned, dd
+		slot trap, dd
+		slot nbits, dd
+	endl
+	mov	ecx, [opc]
+	cmp	ecx, BFA_OP_ADD
+	je	.istrap
+	cmp	ecx, BFA_OP_SUB
+	je	.istrap
+	mov	dword [trap], 0
+	jmp	.trapdone
+  .istrap:
+	mov	dword [trap], 1
+  .trapdone:
+	mov	ecx, [opc]
 	cmp	ecx, BFA_OP_SUB
 	je	.yessub
 	cmp	ecx, BFA_OP_SUBW
@@ -571,18 +717,6 @@ proc __bfa_emit_addsub, ctx, module, func, instid
 	mov	esi, [tyv]
 	call	__bfa_int_width
 	mov	[nbits], eax
-	mov	rdi, [module]
-	mov	esi, [tyv]
-	mov	edx, [av]
-	mov	ecx, [bv]
-	mov	r8d, [auxv]
-	call	__bfa_check_opimms
-
-	mov	rdi, [ctx]
-	mov	esi, [av]
-	mov	edx, [auxv]
-	and	edx, 0x100
-	call	__bfa_emit_load_rax
 
 	cmp	dword [issub], 0
 	jne	.emitsub
@@ -604,10 +738,9 @@ proc __bfa_emit_addsub, ctx, module, func, instid
 	call	__bfa_out_lit
   .opdone:
 	mov	rdi, [ctx]
-	mov	esi, [bv]
-	mov	edx, [auxv]
-	and	edx, 0x200
-	call	__bfa_emit_operand_text
+	mov	esi, [bsrc]
+	mov	edx, [bkind]
+	call	__bfa_emit_bopnd
 	mov	rdi, [ctx]
 	call	__bfa_emit_nl
 
@@ -657,10 +790,6 @@ proc __bfa_emit_addsub, ctx, module, func, instid
 	xor	ecx, ecx
 	call	__bfa_emit_norm
   .notrap:
-
-	mov	rdi, [ctx]
-	mov	esi, [instid]
-	call	__bfa_out_movq_slot_rax
 	return
 endp
 
@@ -682,22 +811,9 @@ proc __bfa_emit_mul, ctx, module, func, instid
 		slot bv, dd
 		slot auxv, dd
 		slot tyv, dd
-		slot trap, dd
-		slot issigned, dd
-		slot bisimm, dd
-		slot nbits, dd
+		slot opc, dd
+		slot bkind, dd
 	endl
-	mov	rdi, [func]
-	mov	esi, [instid]
-	call	bfa_inst_ptr
-	movzx	ecx, word [rax + BfaInst.op]
-	cmp	ecx, BFA_OP_MUL
-	je	.istrap
-	mov	dword [trap], 0
-	jmp	.trapdone
-  .istrap:
-	mov	dword [trap], 1
-  .trapdone:
 	mov	rdi, [func]
 	mov	esi, [instid]
 	call	bfa_inst_ptr
@@ -709,14 +825,12 @@ proc __bfa_emit_mul, ctx, module, func, instid
 	mov	[auxv], ecx
 	mov	ecx, [rax + BfaInst.ty]
 	mov	[tyv], ecx
-	mov	ecx, [auxv]
-	and	ecx, 0x200
-	mov	[bisimm], ecx
+	movzx	ecx, word [rax + BfaInst.op]
+	mov	[opc], ecx
 
 	mov	rdi, [module]
 	mov	esi, [tyv]
-	call	__bfa_int_width
-	mov	[nbits], eax
+	call	__bfa_int_width		; for its refusal -- see __bfa_emit_addsub
 	mov	rdi, [module]
 	mov	esi, [tyv]
 	mov	edx, [av]
@@ -729,6 +843,51 @@ proc __bfa_emit_mul, ctx, module, func, instid
 	mov	edx, [auxv]
 	and	edx, 0x100
 	call	__bfa_emit_load_rax
+
+	mov	edi, [auxv]
+	call	__bfa_bkind_of
+	mov	[bkind], eax
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	edx, [opc]
+	mov	ecx, [tyv]
+	mov	r8d, [bv]
+	mov	r9d, [bkind]
+	call	__bfa_emit_mul_core
+
+	mov	rdi, [ctx]
+	mov	esi, [instid]
+	call	__bfa_out_movq_slot_rax
+	return
+endp
+
+; __bfa_emit_mul_core(ctx, module, opc, tyv, bsrc, bkind) -- `a` already in
+; rax, the product and its overflow check emitted, the result left in rax.
+; The same split as __bfa_emit_addsub_core, for the same reason.
+proc __bfa_emit_mul_core, ctx, module, opc, tyv, bsrc, bkind
+	locals
+		slot trap, dd
+		slot issigned, dd
+		slot bisimm, dd
+		slot nbits, dd
+	endl
+	mov	ecx, [opc]
+	cmp	ecx, BFA_OP_MUL
+	je	.istrap
+	mov	dword [trap], 0
+	jmp	.trapdone
+  .istrap:
+	mov	dword [trap], 1
+  .trapdone:
+	xor	ecx, ecx
+	cmp	dword [bkind], BFA_BK_IMM
+	sete	cl
+	mov	[bisimm], ecx
+
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfa_int_width
+	mov	[nbits], eax
 
 	cmp	dword [trap], 0
 	je	.wrapmul
@@ -751,8 +910,9 @@ proc __bfa_emit_mul, ctx, module, func, instid
 	mov	rdx, .after_imulmem - .lit_imulmem
 	call	__bfa_out_lit
 	mov	rdi, [ctx]
-	mov	esi, [bv]
-	call	__bfa_slot
+	mov	esi, [bsrc]
+	mov	edx, [bkind]
+	call	__bfa_emit_bopnd
 	mov	rdi, [ctx]
 	call	__bfa_emit_nl
 	jmp	.mulopdone
@@ -765,8 +925,9 @@ proc __bfa_emit_mul, ctx, module, func, instid
 	mov	rdx, .after_imulimm - .lit_imulimm
 	call	__bfa_out_lit
 	mov	rdi, [ctx]
-	movsxd	rsi, dword [bv]
-	call	__bfa_out_i64
+	mov	esi, [bsrc]
+	mov	edx, [bkind]
+	call	__bfa_emit_bopnd
 	mov	rdi, [ctx]
 	call	__bfa_emit_nl
   .mulopdone:
@@ -799,8 +960,9 @@ proc __bfa_emit_mul, ctx, module, func, instid
 	mov	rdx, .after_mulmem - .lit_mulmem
 	call	__bfa_out_lit
 	mov	rdi, [ctx]
-	mov	esi, [bv]
-	call	__bfa_slot
+	mov	esi, [bsrc]
+	mov	edx, [bkind]
+	call	__bfa_emit_bopnd
 	mov	rdi, [ctx]
 	call	__bfa_emit_nl
 	jmp	.uafterop
@@ -813,8 +975,9 @@ proc __bfa_emit_mul, ctx, module, func, instid
 	mov	rdx, .after_movrcx - .lit_movrcx
 	call	__bfa_out_lit
 	mov	rdi, [ctx]
-	movsxd	rsi, dword [bv]
-	call	__bfa_out_i64
+	mov	esi, [bsrc]
+	mov	edx, [bkind]
+	call	__bfa_emit_bopnd
 	mov	rdi, [ctx]
 	call	__bfa_emit_nl
 	jmp	.after_mulrcx
@@ -852,6 +1015,154 @@ proc __bfa_emit_mul, ctx, module, func, instid
 	xor	ecx, ecx
 	call	__bfa_emit_norm
   .mulstore:
+	return
+endp
+
+; __bfa_emit_divrem(ctx, module, func, instid) -- `div`/`rem` (spec 5.4's
+; trapping `/` and its remainder; ssa-ir.md 2.3's trapping group).
+;
+; THE DEFINITION this lowers (spec 5.4, decided 2026-09-25): the quotient is
+; TRUNCATED TOWARD ZERO and the remainder's sign FOLLOWS THE DIVIDEND, so
+; `a == (a/b)*b + (a rem b)` holds at every pair of signs. That is exactly
+; what x86 IDIV/DIV already compute, so the lowering is the hardware's own
+; division and no correction term:
+;
+;       mov     rax, <a>
+;       mov     rcx, <b>
+;       test    rcx, rcx
+;       jz      bfausr_trap             ; a zero divisor traps, kind 1
+;       ; iN only -- the T_MIN / -1 check:
+;       mov     rdx, <T_MIN>
+;       xor     rdx, rax                ; 0 iff a == T_MIN
+;       not     rcx                     ; 0 iff b == -1
+;       or      rdx, rcx
+;       jz      bfausr_trap             ; both zero -> the one overflow case
+;       not     rcx                     ; put the divisor back
+;       cqo
+;       idiv    rcx                     ; uN: `xor edx, edx` / `div rcx`
+;       mov     rax, rdx                ; `rem` only
+;
+; T_MIN IS T'S OWN, NOT INT64_MIN. In `i8`, -128 / -1 is 128, which no `i8`
+; holds, and the raw 64-bit division computes it happily -- the canonical
+; form (ssa-ir.md 2.2) holds -128 as a sign-extended 64-bit -128, so nothing
+; about the 64-bit divide notices. The check therefore compares against
+; -2^(N-1) for the operand type's own N. At N = 64 the same check also
+; stands in for the hardware's #DE: INT64_MIN / -1 would raise a DIVIDE
+; ERROR (SIGFPE), and this backend's numeric trap is `bfausr_trap` (SIGILL,
+; kind 1) -- one trap kind for one trapping opcode, not two signals
+; depending on width.
+;
+; `rem` TRAPS ON T_MIN / -1 TOO, even though its mathematical value is 0.
+; Reason: the decision above makes `rem` the remainder OF THAT DIVISION, and
+; that division does not exist. And the pair must agree -- a `rem` that
+; answered 0 where its `div` traps would make the identity above false at
+; the one pair of operands where two instructions can check it.
+;
+; BRANCHLESS, no local label. The overflow test is two conditions ANDed, and
+; `or rdx, rcx` / `jz` is that with the three scratch registers this file
+; already has (`not` twice rather than spending a fourth register on
+; `b + 1`). A forward-jumped label would work as well and would need a
+; per-instruction name; this needs none.
+;
+; NO NORMALISATION, and the proof rather than the habit. Every other narrow
+; trapping op normalises its result and compares (__bfa_emit_normcheck);
+; `div`/`rem` need neither, because with the zero divisor and T_MIN / -1
+; excluded the result is ALREADY a value of T: |a/b| <= |a| for |b| >= 1, so
+; the only out-of-range quotient is -T_MIN = T_MAX + 1, which is precisely
+; T_MIN / -1; and |a rem b| < |b| <= 2^(N-1), in range at every sign. IDIV
+; leaves such a value sign-extended in rax and DIV leaves one zero-extended,
+; which is the canonical form. So the check has to PRECEDE the operation
+; here, where every other trapping op checks after -- and it has to, because
+; `rem`'s own result carries no trace of the overflow (T_MIN rem -1 = 0, a
+; perfectly good value of T).
+proc __bfa_emit_divrem, ctx, module, func, instid
+	locals
+		slot av, dd
+		slot bv, dd
+		slot auxv, dd
+		slot tyv, dd
+		slot isrem, dd
+		slot issigned, dd
+		slot nbits, dd
+		slot tmin, dq
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[av], ecx
+	mov	ecx, [rax + BfaInst.b]
+	mov	[bv], ecx
+	movzx	ecx, word [rax + BfaInst.aux]
+	mov	[auxv], ecx
+	mov	ecx, [rax + BfaInst.ty]
+	mov	[tyv], ecx
+	movzx	ecx, word [rax + BfaInst.op]
+	xor	edx, edx
+	cmp	ecx, BFA_OP_REM
+	sete	dl
+	mov	[isrem], edx
+
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfa_int_width
+	mov	[nbits], eax
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfa_ty_is_signed
+	mov	[issigned], eax
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	mov	edx, [av]
+	mov	ecx, [bv]
+	mov	r8d, [auxv]
+	call	__bfa_check_opimms
+
+	mov	rdi, [ctx]
+	mov	esi, [av]
+	mov	edx, [auxv]
+	and	edx, 0x100
+	call	__bfa_emit_load_rax
+
+	; the divisor in rcx, always: DIV/IDIV take one r/m64 operand and rdx
+	; is the dividend's high half, so rcx is the only scratch left.
+	__bfa_emtxt 9, "mov", 9, "rcx, "
+	mov	rdi, [ctx]
+	mov	esi, [bv]
+	mov	edx, [auxv]
+	and	edx, 0x200
+	call	__bfa_emit_operand_text
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	__bfa_emtxt 9, "test", 9, "rcx, rcx", 10, 9, "jz", 9, "bfausr_trap", 10
+
+	cmp	dword [issigned], 0
+	je	.unsigned
+
+	mov	ecx, [nbits]
+	dec	ecx
+	mov	eax, 1
+	shl	rax, cl				; 2^(N-1)
+	neg	rax				; T_MIN
+	mov	[tmin], rax
+	__bfa_emtxt 9, "mov", 9, "rdx, "
+	mov	rdi, [ctx]
+	mov	rsi, [tmin]
+	call	__bfa_out_i64
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	__bfa_emtxt 9, "xor", 9, "rdx, rax", 10, 9, "not", 9, "rcx", 10
+	__bfa_emtxt 9, "or", 9, "rdx, rcx", 10, 9, "jz", 9, "bfausr_trap", 10
+	__bfa_emtxt 9, "not", 9, "rcx", 10
+	__bfa_emtxt 9, "cqo", 10, 9, "idiv", 9, "rcx", 10
+	jmp	.divided
+  .unsigned:
+	__bfa_emtxt 9, "xor", 9, "edx, edx", 10, 9, "div", 9, "rcx", 10
+  .divided:
+	cmp	dword [isrem], 0
+	je	.store
+	__bfa_emtxt 9, "mov", 9, "rax, rdx", 10
+  .store:
 	mov	rdi, [ctx]
 	mov	esi, [instid]
 	call	__bfa_out_movq_slot_rax
@@ -1179,6 +1490,22 @@ endp
 proc __bfa_emit_fload, ctx, xreg, width, valueid
 	locals
 	endl
+	mov	eax, [valueid]
+	shl	eax, 3
+	mov	rdi, [ctx]
+	mov	esi, [xreg]
+	mov	edx, [width]
+	mov	ecx, eax
+	call	__bfa_emit_fload_cell
+	return
+endp
+
+; __bfa_emit_fload_cell(ctx, xreg, width, byteoff) -- the same load from an
+; arbitrary frame BYTE offset; a reduction's accumulator and its `arborea`
+; cells are not value slots ("Reductions", below).
+proc __bfa_emit_fload_cell, ctx, xreg, width, byteoff
+	locals
+	endl
 	cmp	dword [width], 8
 	je	.sd
 	__bfa_emtxt 9, "movss", 9, "xmm"
@@ -1186,17 +1513,17 @@ proc __bfa_emit_fload, ctx, xreg, width, valueid
 	mov	esi, [xreg]
 	call	__bfa_out_u64
 	__bfa_emtxt ", dword "
-	jmp	.slot
+	jmp	.cell
   .sd:
 	__bfa_emtxt 9, "movsd", 9, "xmm"
 	mov	rdi, [ctx]
 	mov	esi, [xreg]
 	call	__bfa_out_u64
 	__bfa_emtxt ", qword "
-  .slot:
+  .cell:
 	mov	rdi, [ctx]
-	mov	esi, [valueid]
-	call	__bfa_slot
+	mov	esi, [byteoff]
+	call	__bfa_emit_cell
 	mov	rdi, [ctx]
 	call	__bfa_emit_nl
 	return
@@ -1213,6 +1540,21 @@ endp
 proc __bfa_emit_fstore, ctx, width, valueid
 	locals
 	endl
+	mov	eax, [valueid]
+	shl	eax, 3
+	mov	rdi, [ctx]
+	mov	esi, [width]
+	mov	edx, eax
+	call	__bfa_emit_fstore_cell
+	return
+endp
+
+; __bfa_emit_fstore_cell(ctx, width, byteoff) -- xmm0 into an arbitrary
+; frame BYTE offset, through rax exactly as the slot form does (see above:
+; an f32 must reach its cell zero-extended).
+proc __bfa_emit_fstore_cell, ctx, width, byteoff
+	locals
+	endl
 	cmp	dword [width], 8
 	je	.sd
 	__bfa_emtxt 9, "movd", 9, "eax, xmm0", 10
@@ -1221,8 +1563,8 @@ proc __bfa_emit_fstore, ctx, width, valueid
 	__bfa_emtxt 9, "movq", 9, "rax, xmm0", 10
   .tostore:
 	mov	rdi, [ctx]
-	mov	esi, [valueid]
-	call	__bfa_out_movq_slot_rax
+	mov	esi, [byteoff]
+	call	__bfa_out_movq_cell_rax
 	return
 endp
 
@@ -1364,6 +1706,26 @@ proc __bfa_emit_farith, ctx, module, func, instid
 	mov	ecx, [bv]
 	call	__bfa_emit_fload
 
+	mov	rdi, [ctx]
+	mov	esi, [op]
+	mov	edx, [width]
+	call	__bfa_emit_farith_op
+
+	mov	rdi, [ctx]
+	mov	esi, [width]
+	mov	edx, [instid]
+	call	__bfa_emit_fstore
+	return
+endp
+
+; __bfa_emit_farith_op(ctx, op, width) -- the one arithmetic line,
+; `addsd xmm0, xmm1` and its seven siblings, with the operands already in
+; xmm0/xmm1 and the result left in xmm0. Split out of __bfa_emit_farith so
+; a float reduction's accumulate step is the same instruction rather than a
+; second table of mnemonics ("Reductions", below).
+proc __bfa_emit_farith_op, ctx, op, width
+	locals
+	endl
 	cmp	dword [width], 8
 	jne	.ss
 	cmp	dword [op], BFA_OP_FADD
@@ -1401,10 +1763,6 @@ proc __bfa_emit_farith, ctx, module, func, instid
   .m3:
 	__bfa_emtxt 9, "divss", 9, "xmm0, xmm1", 10
   .tostore:
-	mov	rdi, [ctx]
-	mov	esi, [width]
-	mov	edx, [instid]
-	call	__bfa_emit_fstore
 	return
 endp
 
@@ -3250,6 +3608,11 @@ endp
 ;                              (its value's type is vf32.N / vf64.N):
 ;                              lanes x element bytes, 16-aligned, in
 ;                              instruction-id order
+;       ---- the reduction region, likewise ----------------------------
+;       ...                    each `redinit ... arborea w` instruction's
+;                              group state: `count` then slots[0..w),
+;                              8 x (1 + w) bytes, 8-aligned, in
+;                              instruction-id order ("Reductions", below)
 ;       ---- align16(total) = the frame size ------
 ;
 ; The vector region contributes NOTHING to a function with no vector-typed
@@ -3257,7 +3620,18 @@ endp
 ; regions alone computed. Every pinned non-vector fixture's frame text is
 ; thus unchanged byte for byte -- the same requirement ssa-ir.md 2.4
 ; states for a phi-free block ("must produce exactly the text it produced
-; before"), generalised: no vector instruction, no text change.
+; before"), generalised: no vector instruction, no text change. The
+; reduction region is the same bargain one region further down, and it is
+; narrower still: an `ordinata` reduction adds nothing either, because its
+; whole state is one accumulator and that lives in the `redinit`'s OWN
+; value slot -- the slot region already paid for it, exactly as a large
+; `copy` borrows its own slot for a loop counter. Only `arborea` needs
+; cells no value owns, and only `arborea` grows the frame.
+;
+; 8-ALIGNED, not 16. Every reduction cell is one 8-byte word holding a
+; canonical slot value (ssa-ir.md 2.2) and is read and written with
+; ordinary `mov`/`movsd`; 16 is the vector region's SSE requirement, which
+; these have not got.
 ;
 ; `rbp` is 16-byte aligned inside every emitted function (`rsp` is 8 mod 16
 ; at entry, `push rbp` makes it 0 mod 16), so an offset that is a multiple
@@ -3323,9 +3697,13 @@ endp
 ;                vf32.N/vf64.N type): the byte offset from `rbp` of its
 ;                vector-result storage -- lanes x element bytes, 16-aligned,
 ;                after the slot region (the diagram above).
-; A `slot`-or-vector distinction this walk never reaches is a caller bug
-; and returns the frame size -- callers only ever pass a `slot`'s or a
-; vector producer's own id.
+;   instid != 0, a `redinit ... arborea w`: the byte offset from `rbp` of
+;                its group state's FIRST word, `count`; slots[i] follows at
+;                that offset minus 8 x (1 + i) (offsets grow downward from
+;                `rbp`, so a later cell has a SMALLER offset).
+; A `slot`/vector/reduction distinction this walk never reaches is a caller
+; bug and returns the frame size -- callers only ever pass a `slot`'s, a
+; vector producer's, or an `arborea` handle's own id.
 proc __bfa_frame_layout, module, func, instid
 	uses	rbx
 	locals
@@ -3428,7 +3806,45 @@ proc __bfa_frame_layout, module, func, instid
 	inc	eax
 	mov	[v], eax
 	jmp	.vloop
+
+	; ---- fourth region: one group-state block per `arborea` redinit -----
+	; `count` plus w cells, 8 x (1 + w) bytes, 8-aligned, in instruction-id
+	; order. An `ordinata` redinit is skipped entirely: its accumulator is
+	; its own value slot (this file's frame-layout header).
   .vdone:
+	mov	dword [v], 1
+  .rloop:
+	mov	eax, [v]
+	cmp	eax, [ninsts]
+	jg	.rdone
+	mov	rdi, [func]
+	mov	esi, [v]
+	call	bfa_inst_ptr
+	movzx	ecx, word [rax + BfaInst.op]
+	cmp	ecx, BFA_OP_REDINIT
+	jne	.rnext
+	mov	ecx, [rax + BfaInst.a]		; shape
+	cmp	ecx, BFA_RSHAPE_ARBOREA
+	jne	.rnext
+	mov	eax, [rax + BfaInst.b]		; w
+	inc	eax
+	shl	eax, 3				; 8 * (1 + w)
+	mov	rdi, [cur]
+	add	rdi, rax
+	mov	esi, 8
+	call	__bfa_align_up
+	mov	[cur], rax
+	mov	eax, [v]
+	cmp	eax, [instid]
+	jne	.rnext
+	mov	rax, [cur]
+	return
+  .rnext:
+	mov	eax, [v]
+	inc	eax
+	mov	[v], eax
+	jmp	.rloop
+  .rdone:
 	mov	rax, [cur]
 	add	rax, 15
 	and	rax, -16
@@ -4873,10 +5289,8 @@ proc __bfa_emit_sat, ctx, module, func, instid
 		slot bv, dd
 		slot auxv, dd
 		slot tyv, dd
-		slot issub, dd
-		slot issigned, dd
-		slot nbits, dd
-		slot lim, dq
+		slot opc, dd
+		slot bkind, dd
 	endl
 	mov	rdi, [func]
 	mov	esi, [instid]
@@ -4890,6 +5304,53 @@ proc __bfa_emit_sat, ctx, module, func, instid
 	mov	ecx, [rax + BfaInst.ty]
 	mov	[tyv], ecx
 	movzx	ecx, word [rax + BfaInst.op]
+	mov	[opc], ecx
+
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfa_int_width		; for its refusal -- see __bfa_emit_addsub
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	mov	edx, [av]
+	mov	ecx, [bv]
+	mov	r8d, [auxv]
+	call	__bfa_check_opimms
+
+	mov	rdi, [ctx]
+	mov	esi, [av]
+	mov	edx, [auxv]
+	and	edx, 0x100
+	call	__bfa_emit_load_rax
+
+	mov	edi, [auxv]
+	call	__bfa_bkind_of
+	mov	[bkind], eax
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	edx, [opc]
+	mov	ecx, [tyv]
+	mov	r8d, [bv]
+	mov	r9d, [bkind]
+	call	__bfa_emit_sat_core
+
+	mov	rdi, [ctx]
+	mov	esi, [instid]
+	call	__bfa_out_movq_slot_rax
+	return
+endp
+
+; __bfa_emit_sat_core(ctx, module, opc, tyv, bsrc, bkind) -- `a` already in
+; rax, the clamped sum or difference left in rax. The same split as
+; __bfa_emit_addsub_core, for the same reason (a saturating reduction folds
+; through here).
+proc __bfa_emit_sat_core, ctx, module, opc, tyv, bsrc, bkind
+	locals
+		slot issub, dd
+		slot issigned, dd
+		slot nbits, dd
+		slot lim, dq
+	endl
+	mov	ecx, [opc]
 	xor	edx, edx
 	cmp	ecx, BFA_OP_SUBS
 	sete	dl
@@ -4903,18 +5364,6 @@ proc __bfa_emit_sat, ctx, module, func, instid
 	mov	esi, [tyv]
 	call	__bfa_ty_is_signed
 	mov	[issigned], eax
-	mov	rdi, [module]
-	mov	esi, [tyv]
-	mov	edx, [av]
-	mov	ecx, [bv]
-	mov	r8d, [auxv]
-	call	__bfa_check_opimms
-
-	mov	rdi, [ctx]
-	mov	esi, [av]
-	mov	edx, [auxv]
-	and	edx, 0x100
-	call	__bfa_emit_load_rax
 
 	cmp	dword [nbits], 64
 	jne	.noprep
@@ -4932,10 +5381,9 @@ proc __bfa_emit_sat, ctx, module, func, instid
 	__bfa_emtxt 9, "sub", 9, "rax, "
   .opnd:
 	mov	rdi, [ctx]
-	mov	esi, [bv]
-	mov	edx, [auxv]
-	and	edx, 0x200
-	call	__bfa_emit_operand_text
+	mov	esi, [bsrc]
+	mov	edx, [bkind]
+	call	__bfa_emit_bopnd
 	mov	rdi, [ctx]
 	call	__bfa_emit_nl
 
@@ -4999,9 +5447,6 @@ proc __bfa_emit_sat, ctx, module, func, instid
 	call	__bfa_emit_nl
 	__bfa_emtxt 9, "cmp", 9, "rax, rcx", 10, 9, "cmovl", 9, "rax, rcx", 10
   .tostore:
-	mov	rdi, [ctx]
-	mov	esi, [instid]
-	call	__bfa_out_movq_slot_rax
 	return
 endp
 
@@ -5714,6 +6159,904 @@ endp
 ; set once per function by `__bfa_emit_function` rather than as extra
 ; parameters (`proc` tops out at six, and this dispatcher already needs
 ; four).
+; ============================================================================
+; Reductions -- `redinit` / `contrib` / `redfin` (ssa-ir.md 2.6; spec 5.4)
+; ============================================================================
+;
+; THE REFERENCE LOWERING IS THE DEFINITION (ADR 0012), so what follows is
+; normative about the LANGUAGE and not an implementation detail: spec 5.4
+; fixes that `ordinata` sums in contribution order and `arborea w` in a
+; pairwise tree, and left the tail -- a contribution count that is not a
+; multiple of `w` -- undefined. This is the definition, decided 2026-09-25:
+;
+;   ordinata      one accumulator, started at the op's IDENTITY (0 / 0.0 for
+;                 the additive words, `sub` included; 1 / 1.0 for `mul`).
+;                 Each `contrib` does acc = op(acc, v) in contribution
+;                 order. `redfin` yields acc. No contribution at all yields
+;                 the identity.
+;   arborea w     state is {acc, count, slots[0..w)}, acc the identity and
+;                 count 0. `contrib` stores v into slots[count++]; when
+;                 count reaches w the GROUP VALUE is a pairwise tree over
+;                 slots[0..w) -- adjacent pairs combined left to right, an
+;                 odd trailing element passing up unchanged, repeated until
+;                 one value remains -- then acc = op(acc, group) and count
+;                 goes back to 0. `redfin` does the same tree over the k =
+;                 count cells still held (k < w, same odd-element rule),
+;                 folds it into acc the same way, and yields acc.
+;
+; At w = 8 the group is ((s0+s1)+(s2+s3))+((s4+s5)+(s6+s7)); at w = 5 it is
+; ((s0+s1)+(s2+s3))+s4. Groups fold into the accumulator LEFT TO RIGHT in
+; index order, and only w cells plus acc plus count are ever live -- which
+; is the whole point of the shape: a fixed working set, and a rounding tree
+; whose shape does not depend on how many contributions arrive.
+;
+; THE FIRST GROUP'S FOLD IS op(identity, group), floats included. `0.0 + x`
+; is not always `x` (it turns -0.0 into +0.0), and that is the definition
+; rather than an accident: the accumulator exists before any contribution
+; does, so `redfin` on an empty reduction has to answer the identity, and
+; the one-group case cannot then be special-cased without making the answer
+; depend on the count.
+;
+; HOW THE TREE IS EMITTED. In place, over the slots themselves, with a
+; DOUBLING STRIDE:
+;
+;       stride = 1
+;       while stride < k:
+;           i = 0
+;           while i + stride < k:  slots[i] = op(slots[i], slots[i+stride])
+;                                  i += 2*stride
+;           stride *= 2
+;
+; which is exactly the tree above: at stride 1 adjacent pairs, at stride 2
+; pairs of pairs, and an element with no partner at some level is simply
+; never written, so it "passes up unchanged" with no copy at all. The
+; destination is always the LEFT operand's own cell, so every combine is the
+; one shape `__bfa_emit_redop` emits: cell(a) = op(cell(a), cell(b)).
+;
+; WHERE THE STATE LIVES. acc is the `redinit`'s OWN VALUE SLOT -- byte offset
+; 8 x the handle's value id. Nothing else can read it (`red.F` admits only
+; these three opcodes, ssa-ir.md 2.6, and the verifier's rule 7 enforces it),
+; the slot region already paid for it, and an `ordinata` reduction therefore
+; adds NOTHING to the frame -- the same trick a large `copy` uses for its
+; loop counter. `count` and the w cells are the frame's fourth region
+; (__bfa_frame_layout), `arborea` only.
+;
+; INTEGER OPS TRAP EXACTLY AS THE STANDALONE OPCODE WOULD, because they ARE
+; the standalone opcode: every combine and every fold goes through
+; __bfa_emit_addsub_core / __bfa_emit_mul_core / __bfa_emit_sat_core, the
+; same routines the dispatcher's `add`/`mul`/`adds` reach. So `add` traps on
+; overflow mid-tree, `addw` wraps, `adds` saturates, and none of it is
+; written twice.
+;
+; WHAT A `redfin` DOES NOT DO, recorded because it is a real edge and not a
+; settled one: it does not reset `count`, and it does not reset `acc`. In
+; straight-line code and in every shape a `contrahe` lowering would produce
+; that is invisible -- the handle is dead after its `redfin` (rule 5b makes
+; the `redfin` post-dominate every `contrib` of that handle). But rule 5b
+; does NOT forbid a loop whose body holds both a `contrib` and its
+; `redfin`, and there a second iteration would contribute into cells the
+; first iteration's tail already folded. What such a program MEANS is
+; `[OPEN]`, the same `[OPEN]` ssa-ir.md 6 carries for `rumpe` out of a
+; reduction loop; this file does not guess at it by adding a reset, because
+; the reset that would make the cells right (count = 0) would still leave
+; `acc` carrying, and which of those two is the language's answer is not the
+; emitter's to decide.
+;
+; WHAT THIS REFUSES BY NAME (the emitter is reached without the verifier, so
+; each of these is checked here too):
+;   an op word outside the ten spec 5.4 admits for a reduction
+;   `fadd` on an integer F, or `add` on a float F -- the families must agree
+;   an F that is neither uN/iN nor f32/f64 (a `red.ptr`, say)
+;   `ordinata` with w != 0, `arborea` with w = 0 or w > BFA_RED_W_MAX
+;   an identity that is not a value of F (`mul` over `i1`: 1 is not an `i1`)
+; The width bound is also a verifier rule (verify.inc, rule 1), so through
+; `emit_ir` an over-wide `w` is verdict 5 and through `exsc` it is this
+; refusal, exit 4 -- the two layers disagreeing on purpose, as with a
+; straddling `loadbits`.
+
+; BFA_RED_W_MAX -- the largest `arborea` width admitted, defined in
+; verify.inc (the file below this one on the include chain) because the
+; verifier refuses an over-wide `w` as well and the two layers must refuse
+; the same number. Its header there has the argument for 64; the cost it
+; bounds is THIS file's: `redfin` emits one unrolled tail tree per possible
+; live count, which is O(w^2) lines of fasmg.
+
+; __bfa_red_case? -- one row of the op-word table (the shape print.inc's
+; __bfa_opname_case? has, inverted: text in, opcode out). Inside a proc with
+; `oname`/`olen` locals only.
+macro __bfa_red_case? lit, opc
+	local skip, s, e
+	mov	rdi, [oname]
+	mov	rsi, [olen]
+	jmp	e
+	s db	lit
+	e:
+	lea	rdx, [s]
+	mov	rcx, e - s
+	call	__bfa_streq
+	test	eax, eax
+	jz	skip
+	mov	eax, opc
+	return
+  skip:
+end macro
+
+; __bfa_red_op(module, opid) -> eax = the BFA_OP_* the reduction folds with.
+;
+; `redinit`'s op is an INTERNED WORD, not an opcode (parse.inc's
+; __bfa_ps_redinit: "an OPEN vocabulary... interned so any spelling
+; round-trips"), so the admission decision is the emitter's. The ten below
+; are spec 5.4's reduction-capable operators; anything else -- `fdiv`,
+; `mulw`, `muls`, a misspelling -- is refused by name rather than folded
+; with a guessed instruction.
+proc __bfa_red_op, module, opid
+	locals
+		slot oname, dq
+		slot olen, dq
+	endl
+	mov	rdi, [module]
+	mov	rdi, [rdi + BfaModule.names]
+	mov	esi, [opid]
+	call	intern_bytes
+	mov	[oname], rax
+	mov	[olen], rdx
+
+	__bfa_red_case 'fadd', BFA_OP_FADD
+	__bfa_red_case 'fsub', BFA_OP_FSUB
+	__bfa_red_case 'fmul', BFA_OP_FMUL
+	__bfa_red_case 'add',  BFA_OP_ADD
+	__bfa_red_case 'sub',  BFA_OP_SUB
+	__bfa_red_case 'mul',  BFA_OP_MUL
+	__bfa_red_case 'addw', BFA_OP_ADDW
+	__bfa_red_case 'subw', BFA_OP_SUBW
+	__bfa_red_case 'adds', BFA_OP_ADDS
+	__bfa_red_case 'subs', BFA_OP_SUBS
+
+	jmp	.after_msg
+  .msg db "redinit: the op must be one of fadd fsub fmul add sub mul addw subw adds subs (spec 5.4's reduction operators)"
+  .after_msg:
+	lea	rdi, [.msg]
+	mov	rsi, .after_msg - .msg
+	call	__bfa_emit_die
+endp
+
+; __bfa_red_isfloat(module, fty, opc) -> eax = 1 if this reduction is a
+; FLOAT one, 0 if an integer one; dies by name when the op and `F` disagree
+; about which, or when `F` is neither.
+proc __bfa_red_isfloat, module, fty, opc
+	locals
+		slot isflop, dd
+		slot isflty, dd
+	endl
+	mov	dword [isflop], 0
+	mov	ecx, [opc]
+	cmp	ecx, BFA_OP_FADD
+	je	.opfloat
+	cmp	ecx, BFA_OP_FSUB
+	je	.opfloat
+	cmp	ecx, BFA_OP_FMUL
+	jne	.opdone
+  .opfloat:
+	mov	dword [isflop], 1
+  .opdone:
+	mov	rdi, [module]
+	mov	esi, [fty]
+	call	__bfa_ty_info
+	mov	dword [isflty], 0
+	cmp	edx, BFA_TK_U
+	je	.tydone
+	cmp	edx, BFA_TK_I
+	je	.tydone
+	cmp	edx, BFA_TK_F32
+	je	.tyfloat
+	cmp	edx, BFA_TK_F64
+	je	.tyfloat
+	jmp	.after_badty
+  .badty db "redinit: F must be a scalar integer (uN/iN) or float (f32/f64) type (ssa-ir.md 2.6)"
+  .after_badty:
+	lea	rdi, [.badty]
+	mov	rsi, .after_badty - .badty
+	call	__bfa_emit_die
+  .tyfloat:
+	mov	dword [isflty], 1
+  .tydone:
+	mov	eax, [isflop]
+	cmp	eax, [isflty]
+	je	.agree
+	jmp	.after_mismatch
+  .mismatch db "redinit: the op and F disagree -- fadd/fsub/fmul reduce a float, add/sub/mul/addw/subw/adds/subs an integer"
+  .after_mismatch:
+	lea	rdi, [.mismatch]
+	mov	rsi, .after_mismatch - .mismatch
+	call	__bfa_emit_die
+  .agree:
+	mov	eax, [isflty]
+	return
+endp
+
+; __bfa_red_ident(module, fty, opc) -> rax = the accumulator's starting
+; 64-bit SLOT IMAGE: 0 for the additive words (`sub` included -- an
+; `ordinata` `sub` reduction is ((0-a)-b)-c, which is what "acc starts at
+; the identity and every contribution folds" means), 1 for `mul`, and the
+; IEEE bit pattern of 0.0 or 1.0 for the float three. Dies by name if the
+; value is not a value of F -- `mul` over `i1`, whose values are 0 and -1.
+proc __bfa_red_ident, module, fty, opc
+	locals
+		slot ident, dq
+		slot fw, dd
+	endl
+	mov	qword [ident], 0
+	mov	ecx, [opc]
+	cmp	ecx, BFA_OP_MUL
+	je	.intone
+	cmp	ecx, BFA_OP_FMUL
+	je	.fltone
+	jmp	.check
+  .intone:
+	mov	qword [ident], 1
+	jmp	.check
+  .fltone:
+	mov	rdi, [module]
+	mov	esi, [fty]
+	call	__bfa_emit_fwidth
+	mov	[fw], eax
+	cmp	eax, 8
+	je	.f64one
+	mov	qword [ident], 0x3F800000		; 1.0f
+	jmp	.check
+  .f64one:
+	mov	rax, 0x3FF0000000000000			; 1.0
+	mov	[ident], rax
+  .check:
+	mov	rdi, [module]
+	mov	esi, [fty]
+	mov	rdx, [ident]
+	call	bfa_type_canon
+	cmp	rax, [ident]
+	je	.ok
+	jmp	.after_msg
+  .msg db "redinit: this op's identity is not a value of F (`mul` over `i1`: 1 is not an `i1`)"
+  .after_msg:
+	lea	rdi, [.msg]
+	mov	rsi, .after_msg - .msg
+	call	__bfa_emit_die
+  .ok:
+	mov	rax, [ident]
+	return
+endp
+
+; __bfa_red_shape(func, h) -> eax = shape, edx = w, ecx = the interned op
+; word -- the three fields of a `redinit` every other routine here reads.
+; A handle that is not a `redinit` is refused by name: only `redinit`
+; produces a `red.F` value (verifier rule 7), and `exsc` reaches the emitter
+; without the verifier, so reading `a`/`b` off some other opcode would be
+; reading an unrelated instruction's operands as a shape and a width.
+proc __bfa_red_shape, func, h
+	locals
+	endl
+	mov	rdi, [func]
+	mov	esi, [h]
+	call	bfa_inst_ptr
+	movzx	ecx, word [rax + BfaInst.op]
+	cmp	ecx, BFA_OP_REDINIT
+	jne	.bad
+	movzx	ecx, word [rax + BfaInst.aux]
+	mov	edx, [rax + BfaInst.b]
+	mov	eax, [rax + BfaInst.a]
+	return
+  .bad:
+	jmp	.after_msg
+  .msg db "contrib/redfin: the handle operand is not a `redinit` (only `redinit` produces a `red.F`)"
+  .after_msg:
+	lea	rdi, [.msg]
+	mov	rsi, .after_msg - .msg
+	call	__bfa_emit_die
+endp
+
+; __bfa_emit_redlabel(ctx, lblptr, lbllen, instid) -- `<prefix>r<instid>`,
+; no newline. `r` is not a digit and not `c`/`e`, so this collides with
+; neither a block label (`<prefix><n>`), an edge stub (`<prefix><n>e<k>`)
+; nor a `copy` loop (`<prefix>c<n>`); `instid` is unique in the function.
+; `contrib` uses the bare form as its group-skip target; `redfin` appends
+; `t<k>` per tail size and `z` for its own join.
+proc __bfa_emit_redlabel, ctx, lblptr, lbllen, instid
+	locals
+	endl
+	mov	rdi, [ctx]
+	mov	rsi, [lblptr]
+	mov	rdx, [lbllen]
+	call	__bfa_out_lit
+	__bfa_emtxt "r"
+	mov	rdi, [ctx]
+	mov	esi, [instid]
+	call	__bfa_out_u64
+	return
+endp
+
+; __bfa_emit_redop(ctx, module, func, h, aoff, boff) -- ONE reduction step:
+;
+;       cell(aoff) = op(cell(aoff), cell(boff))
+;
+; with `op` and `F` read from the `redinit` at `h`. Both operands are frame
+; BYTE OFFSETS, which is what lets the accumulator (8 x h, the handle's own
+; slot), a contributed value (8 x its value id) and an `arborea` group cell
+; (the fourth region) all be the same case. The integer path is the
+; standalone opcode's own core, so the trap or the wrap or the clamp is the
+; same code; the float path is `__bfa_emit_farith_op`, one IEEE rounding in
+; the program's MXCSR image.
+proc __bfa_emit_redop, ctx, module, func, h, aoff, boff
+	locals
+		slot opid, dd
+		slot hty, dd
+		slot fty, dd
+		slot opc, dd
+		slot width, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [h]
+	call	bfa_inst_ptr
+	movzx	ecx, word [rax + BfaInst.aux]
+	mov	[opid], ecx
+	mov	ecx, [rax + BfaInst.ty]
+	mov	[hty], ecx
+	mov	rdi, [module]
+	mov	esi, [hty]
+	call	bfa_type_ptr
+	mov	ecx, [rax + BfaType.ref]		; red.F -> F
+	mov	[fty], ecx
+	mov	rdi, [module]
+	mov	esi, [opid]
+	call	__bfa_red_op
+	mov	[opc], eax
+	mov	rdi, [module]
+	mov	esi, [fty]
+	mov	edx, [opc]
+	call	__bfa_red_isfloat
+	test	eax, eax
+	jnz	.isfloat
+
+	mov	rdi, [ctx]
+	mov	esi, [aoff]
+	call	__bfa_out_movq_rax_cell
+	mov	ecx, [opc]
+	cmp	ecx, BFA_OP_MUL
+	je	.domul
+	cmp	ecx, BFA_OP_ADDS
+	je	.dosat
+	cmp	ecx, BFA_OP_SUBS
+	je	.dosat
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	edx, [opc]
+	mov	ecx, [fty]
+	mov	r8d, [boff]
+	mov	r9d, BFA_BK_CELL
+	call	__bfa_emit_addsub_core
+	jmp	.intstore
+  .domul:
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	edx, [opc]
+	mov	ecx, [fty]
+	mov	r8d, [boff]
+	mov	r9d, BFA_BK_CELL
+	call	__bfa_emit_mul_core
+	jmp	.intstore
+  .dosat:
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	edx, [opc]
+	mov	ecx, [fty]
+	mov	r8d, [boff]
+	mov	r9d, BFA_BK_CELL
+	call	__bfa_emit_sat_core
+  .intstore:
+	mov	rdi, [ctx]
+	mov	esi, [aoff]
+	call	__bfa_out_movq_cell_rax
+	return
+
+  .isfloat:
+	mov	rdi, [module]
+	mov	esi, [fty]
+	call	__bfa_emit_fwidth
+	mov	[width], eax
+	mov	rdi, [ctx]
+	xor	esi, esi
+	mov	edx, [width]
+	mov	ecx, [aoff]
+	call	__bfa_emit_fload_cell
+	mov	rdi, [ctx]
+	mov	esi, 1
+	mov	edx, [width]
+	mov	ecx, [boff]
+	call	__bfa_emit_fload_cell
+	mov	rdi, [ctx]
+	mov	esi, [opc]
+	mov	edx, [width]
+	call	__bfa_emit_farith_op
+	mov	rdi, [ctx]
+	mov	esi, [width]
+	mov	edx, [aoff]
+	call	__bfa_emit_fstore_cell
+	return
+endp
+
+; __bfa_emit_redtree(ctx, module, func, h, k) -- the pairwise tree over the
+; first `k` cells of the `arborea` handle `h`, in place, leaving the group
+; value in slots[0]. `k` >= 1; `k` = 1 emits nothing at all (one element IS
+; its own tree). The doubling-stride loop is this section's header.
+proc __bfa_emit_redtree, ctx, module, func, h, k
+	locals
+		slot cnt0, dd
+		slot stride, dd
+		slot i, dd
+		slot aoff, dd
+	endl
+	mov	rdi, [module]
+	mov	rsi, [func]
+	mov	edx, [h]
+	call	__bfa_frame_layout
+	mov	[cnt0], eax
+	mov	dword [stride], 1
+  .level:
+	mov	eax, [stride]
+	cmp	eax, [k]
+	jae	.done
+	mov	dword [i], 0
+  .pair:
+	mov	eax, [i]
+	add	eax, [stride]
+	cmp	eax, [k]
+	jae	.nextlevel
+	; slots[j] is at cnt0 - 8*(1+j) -- offsets grow DOWNWARD from rbp
+	mov	eax, [i]
+	inc	eax
+	shl	eax, 3
+	mov	ecx, [cnt0]
+	sub	ecx, eax
+	mov	[aoff], ecx
+	mov	eax, [i]
+	add	eax, [stride]
+	inc	eax
+	shl	eax, 3
+	mov	ecx, [cnt0]
+	sub	ecx, eax			; boff
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	r8d, [aoff]
+	mov	r9d, ecx
+	mov	ecx, [h]
+	call	__bfa_emit_redop
+	mov	eax, [stride]
+	add	eax, eax
+	add	eax, [i]
+	mov	[i], eax
+	jmp	.pair
+  .nextlevel:
+	mov	eax, [stride]
+	add	eax, eax
+	mov	[stride], eax
+	jmp	.level
+  .done:
+	return
+endp
+
+; __bfa_emit_redgroup(ctx, module, func, h, k) -- the tree over `k` cells,
+; then the one fold that delivers it: acc = op(acc, group). `k` >= 1.
+proc __bfa_emit_redgroup, ctx, module, func, h, k
+	locals
+		slot cnt0, dd
+		slot accoff, dd
+	endl
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [h]
+	mov	r8d, [k]
+	call	__bfa_emit_redtree
+
+	mov	rdi, [module]
+	mov	rsi, [func]
+	mov	edx, [h]
+	call	__bfa_frame_layout
+	mov	[cnt0], eax
+	mov	eax, [h]
+	shl	eax, 3				; the accumulator: the handle's own slot
+	mov	[accoff], eax
+	mov	eax, [cnt0]
+	sub	eax, 8				; slots[0]
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [h]
+	mov	r8d, [accoff]
+	mov	r9d, eax
+	call	__bfa_emit_redop
+	return
+endp
+
+; __bfa_emit_redinit(ctx, module, func, instid) -- `%h = redinit F op shape w`:
+; the accumulator to the identity, and for `arborea` the count to 0. Nothing
+; else; the handle is not a value any other opcode can read.
+proc __bfa_emit_redinit, ctx, module, func, instid
+	locals
+		slot opid, dd
+		slot hty, dd
+		slot fty, dd
+		slot opc, dd
+		slot shape, dd
+		slot w, dd
+		slot cnt0, dd
+		slot ident, dq
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	movzx	ecx, word [rax + BfaInst.aux]
+	mov	[opid], ecx
+	mov	ecx, [rax + BfaInst.ty]
+	mov	[hty], ecx
+	mov	ecx, [rax + BfaInst.a]
+	mov	[shape], ecx
+	mov	ecx, [rax + BfaInst.b]
+	mov	[w], ecx
+
+	mov	rdi, [module]
+	mov	esi, [hty]
+	call	bfa_type_ptr
+	movzx	ecx, byte [rax + BfaType.kind]
+	cmp	ecx, BFA_TK_RED
+	jne	.badhandle
+	mov	ecx, [rax + BfaType.ref]
+	mov	[fty], ecx
+
+	mov	rdi, [module]
+	mov	esi, [opid]
+	call	__bfa_red_op
+	mov	[opc], eax
+	mov	rdi, [module]
+	mov	esi, [fty]
+	mov	edx, [opc]
+	call	__bfa_red_isfloat
+
+	cmp	dword [shape], BFA_RSHAPE_ARBOREA
+	je	.arborea
+	cmp	dword [w], 0
+	jne	.badw
+	jmp	.wok
+  .arborea:
+	cmp	dword [w], 0
+	je	.badw
+	cmp	dword [w], BFA_RED_W_MAX
+	ja	.badw
+  .wok:
+
+	mov	rdi, [module]
+	mov	esi, [fty]
+	mov	edx, [opc]
+	call	__bfa_red_ident
+	mov	[ident], rax
+
+	__bfa_emtxt 9, "mov", 9, "rax, "
+	mov	rdi, [ctx]
+	mov	rsi, [ident]
+	call	__bfa_out_u64
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	mov	rdi, [ctx]
+	mov	esi, [instid]
+	call	__bfa_out_movq_slot_rax
+
+	cmp	dword [shape], BFA_RSHAPE_ARBOREA
+	jne	.done
+	; `count` is a plain 0, storable as a simm32 immediate with no
+	; sign-extension question (unlike an `iconst`'s value: see
+	; __bfa_emit_iconst's wide path).
+	mov	rdi, [module]
+	mov	rsi, [func]
+	mov	edx, [instid]
+	call	__bfa_frame_layout
+	mov	[cnt0], eax
+	__bfa_emtxt 9, "mov", 9, "qword "
+	mov	rdi, [ctx]
+	mov	esi, [cnt0]
+	call	__bfa_emit_cell
+	__bfa_emtxt ", 0", 10
+  .done:
+	return
+  .badhandle:
+	jmp	.after_hmsg
+  .hmsg db "redinit: the result type is not a `red.F` handle"
+  .after_hmsg:
+	lea	rdi, [.hmsg]
+	mov	rsi, .after_hmsg - .hmsg
+	call	__bfa_emit_die
+  .badw:
+	jmp	.after_wmsg
+  .wmsg db "redinit: `ordinata` takes w = 0, `arborea` a w in 1..64 (BFA_RED_W_MAX -- the tail dispatch is O(w^2) emitted lines)"
+  .after_wmsg:
+	lea	rdi, [.wmsg]
+	mov	rsi, .after_wmsg - .wmsg
+	call	__bfa_emit_die
+endp
+
+; __bfa_emit_contrib(ctx, module, func, instid, lblptr, lbllen) --
+; `contrib %h %v`, one contribution.
+;
+;   ordinata   acc = op(acc, v), and that is all.
+;   arborea w  the value into slots[count], count bumped, and when the group
+;              is full the tree, the fold and count back to 0:
+;
+;       mov     rax, [count]
+;       mov     rcx, <v>
+;       mov     qword [rbp+rax*8-<slots0>], rcx
+;       add     rax, 1
+;       mov     qword [count], rax
+;       cmp     rax, w
+;       jne     <prefix>r<instid>
+;       ... the tree over w cells, then acc = op(acc, group) ...
+;       mov     qword [count], 0
+;     <prefix>r<instid>:
+;
+; The indexed store is the one place this file computes a frame address at
+; RUNTIME: `count` is a runtime quantity, so slots[count] cannot be a
+; literal offset. `[rbp+rax*8-<slots0>]` is `rbp - (cnt0 - 8) + 8*count`,
+; which is slots[count] by the layout in __bfa_frame_layout's header.
+proc __bfa_emit_contrib, ctx, module, func, instid, lblptr, lbllen
+	locals
+		slot h, dd
+		slot v, dd
+		slot shape, dd
+		slot w, dd
+		slot cnt0, dd
+		slot accoff, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[h], ecx
+	mov	ecx, [rax + BfaInst.b]
+	mov	[v], ecx
+
+	mov	rdi, [func]
+	mov	esi, [h]
+	call	__bfa_red_shape
+	mov	[shape], eax
+	mov	[w], edx
+
+	cmp	dword [shape], BFA_RSHAPE_ARBOREA
+	je	.arborea
+	mov	eax, [h]
+	shl	eax, 3
+	mov	[accoff], eax
+	mov	eax, [v]
+	shl	eax, 3
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [h]
+	mov	r8d, [accoff]
+	mov	r9d, eax
+	call	__bfa_emit_redop
+	return
+
+  .arborea:
+	mov	rdi, [module]
+	mov	rsi, [func]
+	mov	edx, [h]
+	call	__bfa_frame_layout
+	mov	[cnt0], eax
+
+	__bfa_emtxt 9, "mov", 9, "rax, "
+	mov	rdi, [ctx]
+	mov	esi, [cnt0]
+	call	__bfa_emit_cell
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	__bfa_emtxt 9, "mov", 9, "rcx, "
+	mov	rdi, [ctx]
+	mov	esi, [v]
+	call	__bfa_slot
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	__bfa_emtxt 9, "mov", 9, "qword [rbp+rax*8-"
+	mov	rdi, [ctx]
+	mov	eax, [cnt0]
+	sub	eax, 8
+	mov	esi, eax
+	call	__bfa_out_u64
+	__bfa_emtxt "], rcx", 10
+	__bfa_emtxt 9, "add", 9, "rax, 1", 10
+	__bfa_emtxt 9, "mov", 9, "qword "
+	mov	rdi, [ctx]
+	mov	esi, [cnt0]
+	call	__bfa_emit_cell
+	__bfa_emtxt ", rax", 10
+	__bfa_emtxt 9, "cmp", 9, "rax, "
+	mov	rdi, [ctx]
+	mov	esi, [w]
+	call	__bfa_out_u64
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	__bfa_emtxt 9, "jne", 9
+	mov	rdi, [ctx]
+	mov	rsi, [lblptr]
+	mov	rdx, [lbllen]
+	mov	ecx, [instid]
+	call	__bfa_emit_redlabel
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [h]
+	mov	r8d, [w]
+	call	__bfa_emit_redgroup
+
+	__bfa_emtxt 9, "mov", 9, "qword "
+	mov	rdi, [ctx]
+	mov	esi, [cnt0]
+	call	__bfa_emit_cell
+	__bfa_emtxt ", 0", 10
+
+	mov	rdi, [ctx]
+	mov	rsi, [lblptr]
+	mov	rdx, [lbllen]
+	mov	ecx, [instid]
+	call	__bfa_emit_redlabel
+	__bfa_emtxt ":", 10
+	return
+endp
+
+; __bfa_emit_redfin(ctx, module, func, instid, lblptr, lbllen) --
+; `%r = redfin F %h`: the tail, then the accumulator into this
+; instruction's own slot.
+;
+;   ordinata   a copy: acc IS the answer.
+;   arborea w  the live count is 0..w-1 at this point (a full group folded
+;              itself), and the tree over k cells is a DIFFERENT unrolled
+;              sequence for each k, so the tail is a dispatch:
+;
+;       mov     rax, [count]
+;       cmp     rax, 1
+;       je      <prefix>r<instid>t1
+;       ...                                     ; k = 1 .. w-1
+;       jmp     <prefix>r<instid>z              ; count 0: nothing to fold
+;     <prefix>r<instid>t1:
+;       ... tree over 1 cell, then the fold ...
+;       jmp     <prefix>r<instid>z
+;       ...
+;     <prefix>r<instid>z:
+;       mov     rax, [acc]
+;       mov     qword [<this instruction's slot>], rax
+;
+;   At w = 1 there is no partial group possible -- every contribution fills
+;   the group and resets the count -- so the dispatch is not emitted at all
+;   and `arborea 1` is exactly `ordinata` (tests/ir/red_w1.ir).
+proc __bfa_emit_redfin, ctx, module, func, instid, lblptr, lbllen
+	locals
+		slot h, dd
+		slot shape, dd
+		slot w, dd
+		slot cnt0, dd
+		slot k, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[h], ecx
+
+	mov	rdi, [func]
+	mov	esi, [h]
+	call	__bfa_red_shape
+	mov	[shape], eax
+	mov	[w], edx
+
+	cmp	dword [shape], BFA_RSHAPE_ARBOREA
+	jne	.copy
+	cmp	dword [w], 2
+	jb	.copy
+
+	mov	rdi, [module]
+	mov	rsi, [func]
+	mov	edx, [h]
+	call	__bfa_frame_layout
+	mov	[cnt0], eax
+
+	__bfa_emtxt 9, "mov", 9, "rax, "
+	mov	rdi, [ctx]
+	mov	esi, [cnt0]
+	call	__bfa_emit_cell
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+
+	mov	dword [k], 1
+  .chain:
+	mov	eax, [k]
+	cmp	eax, [w]
+	jae	.chaindone
+	__bfa_emtxt 9, "cmp", 9, "rax, "
+	mov	rdi, [ctx]
+	mov	esi, [k]
+	call	__bfa_out_u64
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	__bfa_emtxt 9, "je", 9
+	mov	rdi, [ctx]
+	mov	rsi, [lblptr]
+	mov	rdx, [lbllen]
+	mov	ecx, [instid]
+	call	__bfa_emit_redlabel
+	__bfa_emtxt "t"
+	mov	rdi, [ctx]
+	mov	esi, [k]
+	call	__bfa_out_u64
+	mov	rdi, [ctx]
+	call	__bfa_emit_nl
+	inc	dword [k]
+	jmp	.chain
+  .chaindone:
+	__bfa_emtxt 9, "jmp", 9
+	mov	rdi, [ctx]
+	mov	rsi, [lblptr]
+	mov	rdx, [lbllen]
+	mov	ecx, [instid]
+	call	__bfa_emit_redlabel
+	__bfa_emtxt "z", 10
+
+	mov	dword [k], 1
+  .tails:
+	mov	eax, [k]
+	cmp	eax, [w]
+	jae	.tailsdone
+	mov	rdi, [ctx]
+	mov	rsi, [lblptr]
+	mov	rdx, [lbllen]
+	mov	ecx, [instid]
+	call	__bfa_emit_redlabel
+	__bfa_emtxt "t"
+	mov	rdi, [ctx]
+	mov	esi, [k]
+	call	__bfa_out_u64
+	__bfa_emtxt ":", 10
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [h]
+	mov	r8d, [k]
+	call	__bfa_emit_redgroup
+	__bfa_emtxt 9, "jmp", 9
+	mov	rdi, [ctx]
+	mov	rsi, [lblptr]
+	mov	rdx, [lbllen]
+	mov	ecx, [instid]
+	call	__bfa_emit_redlabel
+	__bfa_emtxt "z", 10
+	inc	dword [k]
+	jmp	.tails
+  .tailsdone:
+	mov	rdi, [ctx]
+	mov	rsi, [lblptr]
+	mov	rdx, [lbllen]
+	mov	ecx, [instid]
+	call	__bfa_emit_redlabel
+	__bfa_emtxt "z:", 10
+
+  .copy:
+	mov	rdi, [ctx]
+	mov	esi, [h]
+	call	__bfa_out_movq_rax_slot
+	mov	rdi, [ctx]
+	mov	esi, [instid]
+	call	__bfa_out_movq_slot_rax
+	return
+endp
+
 proc __bfa_emit_inst, ctx, module, func, instid, lblptr, lbllen
 	locals
 		slot op, dd
@@ -5772,6 +7115,19 @@ proc __bfa_emit_inst, ctx, module, func, instid, lblptr, lbllen
 	call	__bfa_emit_mul
 	return
   .notmul:
+	cmp	dword [op], BFA_OP_DIV
+	je	.dodivrem
+	cmp	dword [op], BFA_OP_REM
+	je	.dodivrem
+	jmp	.notdivrem
+  .dodivrem:
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfa_emit_divrem
+	return
+  .notdivrem:
 	cmp	dword [op], BFA_OP_CMP
 	je	.docmp
 	jmp	.notcmp
@@ -6093,6 +7449,37 @@ proc __bfa_emit_inst, ctx, module, func, instid, lblptr, lbllen
 	call	__bfa_emit_addr
 	return
   .notaddr:
+	cmp	dword [op], BFA_OP_REDINIT
+	jne	.notredinit
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfa_emit_redinit
+	return
+  .notredinit:
+	cmp	dword [op], BFA_OP_CONTRIB
+	jne	.notcontrib
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	mov	r8, [lblptr]
+	mov	r9, [lbllen]
+	call	__bfa_emit_contrib
+	return
+  .notcontrib:
+	cmp	dword [op], BFA_OP_REDFIN
+	jne	.notredfin
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	mov	r8, [lblptr]
+	mov	r9, [lbllen]
+	call	__bfa_emit_redfin
+	return
+  .notredfin:
 	jmp	.after_msg
   .msg db "opcode not implemented in the Tier-1/Tier-2 emitter"
   .after_msg:

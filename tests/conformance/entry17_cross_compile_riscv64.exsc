@@ -16,22 +16,11 @@
 // bytes a native riscv64 CI runner would produce for it -- so this is
 // deliberately the same ordinary, already-valid file as entry 16.
 //
-// DEFERRED: needs a real cross-compiling backend AND a second (native
-// riscv64, or equivalent CI) build to compare against -- neither exists.
-// `exsc aedifica --hospes riscv64-linux -o OUT`, run directly against this
-// file, reaches the same "code generation is not implemented... Spec 16
-// Stage 3" (exit 4) `--hospes x86_64-linux` does; front-end-only lexing is
-// host-independent by construction (§8.1-§8.4 have no target concept at
-// all), so there is nothing target-specific to check yet even before
-// codegen. `tools/reproduce.sh` covers entry 16's SAME-host divergence but
-// not this entry's CROSS-host comparison -- confirmed by reading it, it
-// varies cwd/TZ/locale/umask/hostname within one `--hospes`, never
-// `--hospes` itself -- so wiring entry 17 up is additional work for
-// whichever future change lands a second real target, not a rename of
-// entry 16's mechanism.
+// DEFERRED, current blocker: no riscv64 reference backend exists, and
+// there is no native riscv64 (or equivalent CI) build to compare against.
 
 publica functio saluta() -> textus {
-    redde "Ave, mundus."
+    redde "Ave, mundus.";
 }
 
 // TEST: entry=17 shape=bytes status=deferred needs=backend,cross_compile

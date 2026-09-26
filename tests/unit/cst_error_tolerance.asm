@@ -383,7 +383,8 @@ segment readable
   ; §14 entry 22 ITSELF, read from tests/conformance/ at assembly time rather
   ; than paraphrased -- the paraphrase is case 4 above, and this is the file
   ; the suite actually runs. Its directive says
-  ; `expect-code=EXS-E0201 status=deferred needs=parser`, and this row is the
+  ; `expect-code=EXS-E0201 status=run` (it said `status=deferred needs=parser`
+  ; when this row was written), and this row is the
   ; evidence that the parser it was waiting for produces exactly that code on
   ; exactly those bytes. What is still missing is the WIRING: `exsc` does not
   ; call cst_parse yet (compiler/x86_64/exsc.asm includes lexer/lexer.inc, not
@@ -465,9 +466,11 @@ segment readable
 	; the conformance entry itself: one diagnostic, EXS-E0201, at the
 	; `:maior` that §5.2 rule 3 forbids on a sub-byte field. The span start is
 	; a byte offset into that file, so it moves whenever the file's comment
-	; header changes length: 2124 until 2f21338 rewrote the header, 2503 since.
+	; header changes length: 2124 until 2f21338 rewrote the header, 2503 from
+	; then, and 1297 since the Stage 7 wave flipped the entry to status=run
+	; and rewrote the header again (the directive no longer says deferred).
 	dq	case_e22, case_e22_LEN
-	dd	1, 201, 2503, 6, 0, 0
+	dd	1, 201, 1297, 6, 0, 0
   case_end:
   CASE_N = (case_end - case_tab) / CT_ROW
   assert CASE_N = 16

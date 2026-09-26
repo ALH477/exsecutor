@@ -28,14 +28,14 @@
 // new is an open implementation question, not something this fixture can
 // settle by construction.
 //
-// DEFERRED: needs a capability checker (§4), which is outside this
-// project's current Stage 1 (compiler/x86_64/ast/ and cst/ are both still
-// empty; `exsc aedifica` -- confirmed by actually running it -- says of
-// itself "only aedifica does anything today: it reads a source file,
-// applies spec 8.1 and lexes it").
+// DEFERRED, current blocker: the runner has no `nocap` shape implemented,
+// and §5.1's `textus` methods (`plica_sermone` among them) have no
+// declaration site (`docs/design/checker.md` finding 14) -- so running
+// this fixture today draws a spurious EXS-E0305 (unknown method) rather
+// than the capability-absence this entry is actually about.
 
 publica functio normaliza(s: textus) -> textus {
-    redde s.plica_sermone(sermo)
+    redde s.plica_sermone(sermo);
 }
 
 // TEST: entry=1 shape=nocap status=deferred needs=capability_checker

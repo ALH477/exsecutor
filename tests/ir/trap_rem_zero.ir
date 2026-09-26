@@ -1,0 +1,28 @@
+; TEST: abort=1 c-emit-exit=4
+;
+; `rem u32 %x 0` with the divisor an INLINE IMMEDIATE: the zero-divisor
+; check is the same two lines for `rem` as for `div` (trap_div_zero.ir),
+; and it has to be, because the remainder of a division that does not
+; happen is not a number either. Kind 1, the shared `bfausr_trap`.
+;
+; The immediate spelling is the point of having this fixture beside
+; trap_div_zero.ir: the divisor reaches rcx through
+; __bfa_emit_operand_text's literal arm rather than a slot, and a lowering
+; that only emitted the check on the slot path would pass one of the two.
+;
+; If nothing traps the function returns 7.
+;
+; Mutation (run): the `test`/`jz` pair dropped -> SIGFPE (signal 8), which
+; is neither this tree's numeric trap nor the expected SIGILL.
+;
+; `c-emit-exit=4`: the C backend refuses `rem` by name (c-backend.md D4
+; row 5).
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = iconst u32 4000000000
+%2 = rem u32 %1 0
+%3 = iconst u8 7
+ret %3
+}

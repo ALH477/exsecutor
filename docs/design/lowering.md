@@ -1,11 +1,17 @@
 # Lowering — design plan (Stage 3, AST → SSA)
 
-Status: **design only; nothing implemented** — still true: no lowering exists
-(the builders it asked of `ir.inc` landed in 612b0c9, with `bfa_edge_push`'s
-argument order corrected here to match). No IR
-in the tree was produced by one: `backend_fasmg/` has run only on
-hand-written text. Every sentence below that describes emitted IR is what
-this design *obliges*, `[UNTESTED]` until `compiler/x86_64/lower/` runs.
+Status: **implemented.** `compiler/x86_64/lower/` exists, the driver calls it
+after the checker, and every program under `tests/programs/` is compiled
+through it. This line said "design only; nothing implemented — still true: no
+lowering exists" until 2026-09-25, which had stopped being true several waves
+earlier; the builders it asked of `ir.inc` landed in 612b0c9, with
+`bfa_edge_push`'s argument order corrected here to match. **Section 2.5's
+`contrahe` clause is the newest part: implemented 2026-09-25, pinned by
+`tests/unit/lwr_contrahe.asm`, with two divergences from the text below
+recorded as findings 20 and 21 — and it cannot yet be reached from source,
+because Stage 2 refuses a valid `contrahe` program (finding 20's C1 and C2).**
+A sentence below that describes emitted IR is pinned by a fixture wherever
+`tests/unit/lwr_*.asm` names one and is `[UNTESTED]` where none does.
 `spec §N` cites `docs/spec/exsecutor-spec-v0.4.md`; `IR n.m`
 `docs/design/ssa-ir.md`; `AST n.m` `docs/design/typed-ast.md`; `CHK n.m`
 `docs/design/checker.md`; `RT n.m` `docs/design/runtime.md`. Taken as
@@ -306,25 +312,55 @@ which §8.5 says must be labelled as such rather than quietly downgraded
 `Contrahe` list, `c` the `forma` name id, `d` the width; `Contrahe.aux`
 the `ArithOp`, `Contrahe.d` the accumulator decl of type `red.F`).
 
+**Implemented, `tests/unit/lwr_contrahe.asm`** — five functions from source
+through the checker, the lowering, the verifier (rule 5 is the one that
+matters) and `bfa_print_module`, compared byte for byte: `ordinata` on `u64`
+with a read after the loop, `ordinata` on `f32`, `arborea 8` with `+%` on
+`i64` under `quisque`, two accumulators in one head, and nested reductions.
+
 Before `jmp header`, one `%h = redinit F op shape w` per `Contrahe` in list
-order, `F` = `types[acc.ty].a`; the handle goes in the loop-stack record
-`{acc decl → %h}`, never in `vars`. In the body, **`acc = e;` is the
+order; the handle goes in the loop-stack record `{acc decl → %h}`, never in
+`vars` (`LwrState.accs`, one stack of `{decl, %h, F}` keyed by declaration,
+with `__lwr_for` recording the base on entry and truncating to it at the exit
+— an accumulator declaration belongs to exactly one clause of exactly one
+loop, so the declaration alone identifies the loop and a nested reduction's
+records simply sit above the outer's). In the body, **`acc = e;` is the
 contribution** (spec §5.4's amended rule): an `Assign` whose lhs `Path.d`
-is an `AST_D_ACCUM` decl lowers to `contrib %h <e>`; any other use of
+is an `AST_D_ACCUM` decl lowers to `contrib %h <e>` — tested *before* the
+left-hand side's type is read at all, since that type is `red.F`, which is
+not a place and has no IR type of its own; any other use of
 `acc` inside the body is `EXS-E0341`, the checker's, so the loop stack is
 the only place the lowering looks it up. At `exit`, after `seal(exit)`, one
 `%r = redfin F %h` per accumulator in the same order and
 `writeVariable(acc, exit, %r)`: after the loop `acc` is "an ordinary
-binding" (spec §5.4) of type `F`, and reads after the loop find `%r`. The
-op word: `+` `-` `*` on a float `F` → `fadd` `fsub` `fmul`; on an integer →
+binding" (spec §5.4) of type `F`, and reads after the loop find `%r`. That
+placement is what `verify.inc` rule 5 checks — the `redinit`'s block
+dominates every `contrib`'s, the `redfin`'s post-dominates every `contrib`'s
+— and both hold by construction for `per` and `quisque` alike, the exit
+post-dominating the body because `rumpe` out of a reduction is `E0342`.
+
+**`F` is not `types[acc.ty].a`.** This section said it was; the checker
+interns the accumulator's `red` type with `a` = **the accumulator's own
+declaration id** and says so in its own comment ("F has no other
+representation in this tree"), so nothing in the typed tree records `F`. The
+lowering takes `F` from **the contribution** — the `Node.ty` of the right-hand
+side of the `Assign` that names the accumulator, found by one deterministic
+scan of `Ast.nodes` — which is the type `contrib` must carry anyway
+(`verify.inc` compares the contributed value's type against the handle's
+inner `F`) and the type §5.4 gives `acc` after the loop. Finding 20.
+
+The op word: `+` `-` `*` on a float `F` → `fadd` `fsub` `fmul`; on an integer →
 `add` `sub` `mul` (trapping), `+%` `-%` → `addw` `subw`, `+|` `-|` → `adds`
 `subs` — the IR mnemonic, interned into `Module.names` as `redinit`'s
 `aux` (`parse.inc` does the same). Shape from `ForHead.c` (`ordinata` → 0,
 `arborea` → 1), width from `ForHead.d`, 0 for `ordinata` (`E0343` is the
-checker's). `-` as a reduction operator is admitted by spec §8.6's
+checker's); `ForHead.c` = 0 — `contrahe` with no `forma` clause, which §8.6's
+grammar admits and §5.4 leaves unnamed — is lowered as `ordinata`, finding 21.
+`-` as a reduction operator is admitted by spec §8.6's
 `ArithOp` and is not associative under any shape; passed through, and
-recorded (section 8, finding 4). `rumpe` inside such a loop is `E0342`,
-the checker's; a tree that has one never reaches here.
+recorded (section 8, finding 4) — today unreachable from source, since the
+checker's `E0343` refuses every non-associative operator. `rumpe` inside such
+a loop is `E0342`, the checker's; a tree that has one never reaches here.
 
 **`discerne s { casus p1 B1 … [aliter Bn] }`** (`Discerne`: `a` scrutinee,
 `b/c` `Casus` list, `d` `aliter` or 0; `Casus`: `a` pattern `Lit` or
@@ -709,6 +745,7 @@ reference-typed decls.
 | `incomplete` | ≤ `D_ssa × (unsealed blocks at once)` ≤ `D_ssa × (2L + 1)` | |
 | `vars` | `D + synth` × 12 B | |
 | scopes / loops | lexical depth × frame (≈ 60 B with `cap[11]`) | |
+| accumulators (`accs`) | `contrahe` clauses of the enclosing loops × 16 B | a stack: popped at each reduction's exit (section 2.5) |
 
 `vec_push` doubles into a fresh block without freeing the old, so every
 vec above consumes about twice its final size until the reset (kinds.inc's
@@ -800,7 +837,9 @@ and dispatch on `param` receivers; `Try`/`eventus`; `dyn` values; element
 stride of sub-byte scalars in `acies`; `externus` in the textual IR;
 `numeri` words; definite assignment; name mangling; the `fontes` order;
 release of aggregates with reference fields; H5's aliasing; every figure
-in section 4.
+in section 4; and, for `contrahe` (findings 20–22): where `F` is recorded,
+the two Stage 2 rules that keep a valid reduction from compiling, the shape
+of an omitted `forma`, and a reduction with no contribution.
 
 ## 8. Findings against the spec and the other designs
 
@@ -907,3 +946,74 @@ Numbered; each names the section and the sentence. Not edited here.
     fixture cannot be written entirely as text; section 5's fixture sets
     the side tables in assembly. A `k`/`o` section is a request to the
     ast agent, not a blocker.
+
+*Added 2026-09-25, implementing section 2.5's `contrahe`.*
+
+20. **Nothing in the typed tree records `F`, and Stage 2 refuses a valid
+    `contrahe` program.** Three separate requests to the checker, all found
+    by building this clause and running it, none of them this tree's to fix
+    (CLAUDE.md, Scope):
+    - **F.** `checker/types/stmt.inc`'s `__chk_ty_forhead` interns the
+      accumulator's type as `red` with `a` = *the accumulator's own
+      declaration id*, so section 2.5's `F = types[acc.ty].a` reads a
+      declaration as a type. The lowering takes `F` from the contribution
+      instead (section 2.5). What belongs in the checker is `F` itself:
+      `red.F` with `a` = the type id, computed from the contribution it
+      already types, at which point this pass reads one field and the
+      scan goes away.
+    - **C1, `EXS-E0303` on every contribution.** `__chk_ty_assign` types the
+      right-hand side against the left-hand side's type, and the left-hand
+      side of a contribution is the accumulator, whose type is `red.F` — so
+      `s = v[i]` is reported as `f32` against `red`. Spec §5.4 says "Writing
+      to it is the contribution", which is not an assignment and must not be
+      typed as one; the rule the checker wants is *the contribution's type is
+      `F`*, which is also where `F` comes from.
+    - **C2, `EXS-E0301` on a read after the loop.** `checker/resolve/
+      resolve.inc`'s `.for` arm binds the accumulator in the loop's own frame
+      and pops it with the body, so `redde s` after the loop does not resolve
+      at all — against §5.4's "After the loop `acc` is an ordinary binding".
+      The accumulator belongs in the *enclosing* scope, visible in the body
+      (where every read is `E0341`) and a binding after it.
+    Until C1 and C2 land, `exsc aedifica` refuses every `contrahe` program at
+    Stage 2 and the lowering is reachable only from a fixture:
+    `tests/unit/lwr_contrahe.asm` accepts those two codes and no others, and
+    patches C2's two fields on the one node that needs them. No `contrahe`
+    program can run end to end, and none is claimed to.
+21. **Spec §8.6 admits `contrahe` with no `forma`, and §5.4 does not say what
+    shape that is.** `['forma' IDENT [INT]]` is optional in the grammar while
+    §5.4 makes the shape "part of the operation"; a `ForHead` with
+    accumulators and `ForHead.c` = 0 is therefore a program whose reduction
+    shape no section names. This pass emits `ordinata`, on the ground that
+    strict left-to-right is the one shape that is not a reassociation and so
+    the only default that cannot change what a program computes. The spec
+    should either name the default or make `forma` mandatory wherever
+    `contrahe` appears (a checker rule under `E0343`, which already owns the
+    shape/width pairing).
+22. **A `contrahe` with no contribution has no `F` and no spec §13 code.**
+    Nothing requires a body to write its accumulator, and a reduction that
+    never contributes is a declared operation with no operand type: this pass
+    `rassert`s (`__lwr_acc_f` finds no `Assign`). It is the same shape as
+    finding 7's definite assignment — a class-C code is needed, and is not
+    chosen here.
+
+23. **Finding 20's C1 and C2 are closed** -- every valid `contrahe` program had been refused by the checker
+    (2026-09-25), which is why this pass had none to lower: `s = v[i];`
+    inside the body was one `EXS-E0303` (the contribution was typed
+    against the accumulator's `red` handle, not against F, and F was
+    recorded nowhere), and the read after the loop was one `EXS-E0301`
+    (the accumulator was bound in the frame that dies with the body, so
+    spec §5.4's "After the loop `acc` is an ordinary binding" named a
+    binding that was gone). **Closed in the checker**, the spec being
+    right on both counts: `red` now carries `a` = the `ACCUM` declaration
+    and `b` = F, F is the first contribution's right-hand type, and when
+    the loop closes the declaration's type *becomes* F. So this pass reads
+    an accumulator's element type off `Decl.ty` exactly as it reads any
+    other binding's, and the operator off the `Contrahe` node's `aux`; no
+    `red` reaches it on a declaration in a program that checks clean. The
+    five shapes this pass's own fixture carries are accepted with
+    zero diagnostics and are pinned as rows of
+    `tests/unit/chk_ty_contrahe.asm`; `docs/design/checker.md` section 2.3
+    and finding 27 record the representation and the decisions around it.
+    The `rassert` at `lower/stmt.inc`'s `ForHead` — "this slice does not
+    build" — is now the only thing between a checked `contrahe` and an
+    emitted one.

@@ -167,8 +167,23 @@ CST_TYPE_ARG        = 82
 CST_ORDER_SUFFIX    = 83
 CST_PLACE_SUFFIX    = 84
 CST_PATH            = 85
-CST_ERROR           = 86
-CST_KIND_COUNT = 86
+
+; Spec §8.6's `refero<T>` type form, the one `CoreType` alternative that is
+; keyword-led and whose keyword IS the type's name. Its own kind rather than a
+; `CST_PATH` holding a `TK_KEYWORD` leaf, for two reasons: `refero` is a tier-1
+; reserved word (§8.4) and a green leaf's kind is the lexer's class plus one
+; (cst/parse.inc's `__cst_bump`), so classifying it as `TK_IDENT` would be a
+; lexical lie a formatter reads; and a distinct production gets a distinct kind
+; here the way `dyn` and `functio` types do. The node holds the `TK_KEYWORD`
+; leaf and a `GENERIC_ARGS`, and ast/from_cst.inc turns it into the
+; `TyPath -> Path -> Seg` shape the checker's spelling table needs
+; (tests/unit/cst_refero_type.asm, tests/unit/chk_ty_e0520_refero_source.asm).
+; Inserted here beside the other type kinds, which moves `CST_ERROR` to 87 --
+; this file's header sanctions exactly that: kinds are internal and renumbering
+; them is a local edit.
+CST_REFERO_TYPE     = 86
+CST_ERROR           = 87
+CST_KIND_COUNT = 87
 
 ; ---- kind names ------------------------------------------------------------
 ; For `cst_dump` (cst/red.inc) and for fixtures. Not output: no rendered
@@ -262,7 +277,8 @@ cst_kind_text:
   cst_kn_83:	db	'ORDER_SUFFIX'
   cst_kn_84:	db	'PLACE_SUFFIX'
   cst_kn_85:	db	'PATH'
-  cst_kn_86:	db	'ERROR'
+  cst_kn_86:	db	'REFERO_TYPE'
+  cst_kn_87:	db	'ERROR'
   cst_kn_end:
 
 cst_kind_off:
@@ -352,6 +368,7 @@ cst_kind_off:
 	dd	cst_kn_84 - cst_kind_text
 	dd	cst_kn_85 - cst_kind_text
 	dd	cst_kn_86 - cst_kind_text
+	dd	cst_kn_87 - cst_kind_text
 	dd	cst_kn_end - cst_kind_text
 
 ; cst_kind_name(kind) -> rax = pointer to the name's bytes, rdx = its length.

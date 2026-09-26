@@ -44,7 +44,11 @@
 ; section 3 lists nine checks in prose, in this order, and the numbers here
 ; follow that order 1:1 so a fixture's expected verdict is legible against
 ; the spec text without a lookup table:
-;   1 operand resolves, with the type its op requires
+;   1 operand resolves, with the type its op requires -- and, where an
+;     operand is a LITERAL rather than a value, that the literal is one its
+;     op accepts: `iconst`'s immediate a value of its type, `loadbits`'
+;     width and offset in range, and (2026-09-25) `redinit`'s shape/width
+;     pair, `ordinata` with w = 0 and `arborea` with 1 <= w <= BFA_RED_W_MAX
 ;   2 exactly one terminator per block, last
 ;   3 phis first, one operand per predecessor, in predecessor order
 ;   4 every use dominated by its definition
@@ -277,6 +281,32 @@ BFA_VERIFY_R8_NUMERI       = 8
 BFA_VERIFY_R9_NONOP        = 9
 
 BFA_VERIFY_NOPOS = 0xFFFFFFFF	; rpo_index/prpo_index sentinel: unreached
+
+; BFA_RED_W_MAX -- the largest `arborea` width the IR admits. Defined here
+; rather than in emit.inc, which includes this file, so that the verifier's
+; refusal and the emitter's refuse THE SAME NUMBER instead of two literals
+; that could drift apart.
+;
+; WHY THERE IS A BOUND AT ALL, and why 64. `w` is a parse-time literal that
+; parse.inc bounds at nothing, and the reference lowering of `arborea` --
+; which IS the definition (ADR 0012) -- emits ONE UNROLLED TREE PER POSSIBLE
+; TAIL SIZE in `redfin`, k = 1..w-1, behind a `cmp`/`je` chain on the live
+; count: O(w^2) lines of emitted fasmg. MEASURED, one reduction per row: the
+; tail dispatch is 11 lines at w = 2, 39 at w = 4, 143 at w = 8, 543 at 16,
+; 2,111 at 32 and 8,319 at 64 (whole function 8,600 there); at a w the parser
+; would otherwise admit it is unbounded emitted text from a four-token
+; instruction -- the same failure
+; `BFA_COPY_UNROLL_MAX` exists to remove (emit.inc; docs/design/receptor.md
+; finding 20, where a `copy` sized from a type rather than from the source
+; exhausted the compilation arena). 64 is far past any reduction a source
+; program plausibly writes -- spec 5.4's own worked example is 8 -- and
+; holds the worst case to the scale of one large function.
+;
+; It is a RULE 1 refusal (an operand that is not a value its op accepts, the
+; verdict `iconst`'s out-of-range immediate and `loadbits`' bad width already
+; take), NOT a spec 13 diagnostic: malformed IR is a compiler bug, and no
+; error code is invented for one (CLAUDE.md, "Error codes are permanent").
+BFA_RED_W_MAX = 64
 
 ; ============================================================================
 ; BfaVerifyCtx -- one per bfa_verify_func call, allocated from `varena`.
@@ -828,6 +858,53 @@ proc __bfa_verify_pa_fma, ctx, instid
 	mov	[r], eax
   .ret:
 	mov	eax, [r]
+	return
+endp
+
+; __bfa_verify_pa_redinit(ctx, instid) -> eax = 0 or rule 1. `redinit`'s
+; operands are two LITERALS, not values, so rule 1's job here is that each
+; is one its op accepts:
+;
+;   ordinata   w = 0 (ssa-ir.md 2.6: "w is the width literal, 0 for
+;              ordinata") -- a shape with no group width must not carry one,
+;              or text would round-trip a number no lowering reads
+;   arborea    1 <= w <= BFA_RED_W_MAX (this file's header, above, for both
+;              ends: 0 is not a group, and the upper bound is what keeps a
+;              four-token instruction from emitting unbounded text)
+;
+; The op WORD is deliberately not checked here: parse.inc interns it as an
+; open vocabulary, and which spellings have a lowering is each backend's to
+; refuse by name (emit.inc's __bfa_red_op). Same two-layer split as a
+; straddling `loadbits`, admitted here and refused there.
+proc __bfa_verify_pa_redinit, ctx, instid
+	locals
+		slot shape, dd
+		slot w, dd
+	endl
+	mov	rdi, [ctx]
+	mov	rdi, [rdi + BfaVerifyCtx.func]
+	mov	rsi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[shape], ecx
+	mov	ecx, [rax + BfaInst.b]
+	mov	[w], ecx
+
+	cmp	dword [shape], BFA_RSHAPE_ARBOREA
+	je	.arborea
+	cmp	dword [w], 0
+	jne	.bad
+	mov	eax, 0
+	return
+  .arborea:
+	cmp	dword [w], 0
+	je	.bad
+	cmp	dword [w], BFA_RED_W_MAX
+	ja	.bad
+	mov	eax, 0
+	return
+  .bad:
+	mov	eax, BFA_VERIFY_R1_OPERAND
 	return
 endp
 
@@ -1958,7 +2035,7 @@ proc __bfa_verify_passA_inst, ctx, instid
 	cmp	eax, BFA_SH_FMA
 	je	.d_fma
 	cmp	eax, BFA_SH_REDINIT
-	je	.d_trivial
+	je	.d_redinit
 	cmp	eax, BFA_SH_CONTRIB
 	je	.d_contrib
 	cmp	eax, BFA_SH_REDFIN
@@ -2029,6 +2106,11 @@ proc __bfa_verify_passA_inst, ctx, instid
 	mov	rdi, [ctx]
 	mov	rsi, [instid]
 	call	__bfa_verify_pa_fma
+	return
+  .d_redinit:
+	mov	rdi, [ctx]
+	mov	rsi, [instid]
+	call	__bfa_verify_pa_redinit
 	return
   .d_contrib:
 	mov	rdi, [ctx]

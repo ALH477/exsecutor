@@ -1,0 +1,162 @@
+; TEST: expect-exit=100 c-emit-exit=4
+;
+; THE FIXTURE THAT MAKES THE SHAPES DIFFERENT. Twenty f32 contributions, the
+; same twenty in the same order, reduced twice -- `ordinata` and
+; `arborea 8` -- and the two answers are compared as BIT PATTERNS, not as
+; floats. They differ, which is the entire reason spec 5.4 has two shapes
+; and ADR 0012 makes the reference lowering their definition: a reduction's
+; rounding tree is observable, so it must be specified, and the way to
+; specify it is to pin the bits.
+;
+; THE VALUES: 1.0f once, then nineteen copies of 2**-24 (half an ulp of
+; 1.0f), so groups are [0..8), [8..16) and the tail [16..20) -- spec 5.4's
+; own worked shape, with 20 not a multiple of 8 on purpose: the tail is
+; exactly what the spec left undefined and this defines.
+;
+;   ordinata    acc = 0.0; +1.0 -> 1.0; then each +2**-24 is a TIE rounded
+;               to even, back to 1.0, nineteen times over
+;                                                 = 1.0      0x3F800000
+;   arborea 8   group1 = tree[1.0, e,e,e,e,e,e,e]
+;                      = ((1.0+e) + (e+e)) + ((e+e) + (e+e))
+;                      = (1.0 + 2**-23) + 2**-22 = 1 + 3 ulp   0x3F800003
+;               acc = 0.0 + group1                = 1 + 3 ulp
+;               group2 = tree[e x 8] = 8e = 2**-21 = 4 ulp     0x35000000
+;               acc                               = 1 + 7 ulp
+;               group3 = tree[e x 4] = 4e = 2**-22 = 2 ulp     0x34800000
+;                        (the TAIL, folded by redfin)
+;               acc                               = 1 + 9 ulp  0x3F800009
+;
+; Every pairwise sum above is exact in f32 except the first, `1.0 + e`,
+; which is the tie; that is why the shapes diverge at all, and why the
+; divergence is 9 ulps rather than luck.
+;
+; The two expected bit patterns were COMPUTED by this reference, which is
+; ssa-ir.md 2.6's definition transcribed and nothing else:
+;
+;     import struct
+;     def f32(x): return struct.unpack("f", struct.pack("f", x))[0]
+;     def bits32(x): return struct.unpack("I", struct.pack("f", x))[0]
+;     def ordinata(vals, ident=0.0):
+;         acc = ident
+;         for v in vals: acc = f32(acc + v)
+;         return acc
+;     def tree(cells):                  # adjacent pairs, odd trailing up
+;         k = len(cells); s = list(cells); stride = 1
+;         while stride < k:
+;             i = 0
+;             while i + stride < k:
+;                 s[i] = f32(s[i] + s[i + stride]); i += 2 * stride
+;             stride *= 2
+;         return s[0]
+;     def arborea(vals, w, ident=0.0):
+;         acc, held = ident, []
+;         for v in vals:
+;             held.append(v)
+;             if len(held) == w:
+;                 acc = f32(acc + tree(held)); held = []
+;         if held: acc = f32(acc + tree(held))
+;         return acc
+;     VALS = [1.0] + [2.0 ** -24] * 19
+;     bits32(ordinata(VALS))  -> 0x3F800000 = 1065353216
+;     bits32(arborea(VALS, 8)) -> 0x3F800009 = 1065353225
+;
+; HOW THE BITS ARE READ. `store f32` then `load u32` from the same slot --
+; a float in memory is its raw IEEE bit pattern and the path is mov-shaped
+; (ssa-ir.md 2.7; tests/ir/float_mem.ir pins that settlement), so the
+; `cmp.eq u32` sees the pattern itself. `fcmp.eq` would not do: it cannot
+; tell 1.0 from 1.0 + 9 ulp being wrong by 9 ulp rather than by nothing,
+; and it cannot see a sign at all.
+;
+;   check 1  ordinata over the twenty  = 0x3F800000
+;   check 2  arborea 8 over the twenty = 0x3F800009
+;
+; Mutation (run): the tail folded as a LEFT-TO-RIGHT sum into the
+; accumulator instead of a tree -> check 2 fails (four copies of e added one
+; at a time to a 1+7ulp accumulator round away, giving 0x3F800007). The group
+; folded into acc right to left, or the groups folded in reverse index order
+; -> check 2 fails.
+;
+; One mutation these twenty values do NOT catch, named rather than implied:
+; padding the tail out to w with the identity and running the full w-tree
+; gives the same answer HERE, because the four tail cells are equal and
+; positive (tree[e,e,e,e,0,0,0,0] = 4e = tree[e,e,e,e]). It is observable
+; when a tail cell is -0.0, since 0.0 + -0.0 is +0.0 -- the same edge
+; red_ordinata_f32.ir's check 1 pins for the identity fold -- and no fixture
+; here puts a -0.0 in a tail `[UNTESTED]`.
+;
+; `c-emit-exit=4`: the C backend refuses the three reduction opcodes by name
+; (c-backend.md D4 rows 36-38), so the differential phase checks parity of
+; that refusal. When it gains them, this fixture is the cross-check that the
+; two backends agree bit for bit on both shapes.
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = slot 8 8
+%2 = fconst f32 1065353216
+%3 = fconst f32 864026624
+%4 = redinit f32 fadd ordinata 0
+contrib %4 %2
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+%5 = redfin f32 %4
+store f32 %1 0 nativus %5
+%6 = load u32 %1 0 nativus
+%7 = iconst u32 1065353216
+%8 = cmp.eq u32 %6 %7
+br %8 b2 b1
+b1:
+%9 = iconst u8 1
+ret %9
+b2:
+%10 = redinit f32 fadd arborea 8
+contrib %10 %2
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+%11 = redfin f32 %10
+store f32 %1 0 nativus %11
+%12 = load u32 %1 0 nativus
+%13 = iconst u32 1065353225
+%14 = cmp.eq u32 %12 %13
+br %14 b4 b3
+b3:
+%15 = iconst u8 2
+ret %15
+b4:
+%16 = iconst u8 100
+ret %16
+}

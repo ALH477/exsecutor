@@ -1,0 +1,235 @@
+; TEST: expect-exit=100 c-emit-exit=4
+;
+; `div`/`rem` at u8, i8, u32, i64, u64 and u1 -- spec 5.4 as decided
+; 2026-09-25 and lowered by backend_fasmg/emit.inc's __bfa_emit_divrem:
+; the quotient is TRUNCATED TOWARD ZERO and the remainder's sign FOLLOWS
+; THE DIVIDEND, so `a == (a/b)*b + (a rem b)` at every pair of signs
+; (rem_sign.ir computes that identity in IR; checks 3..8 here are its four
+; sign combinations read off directly).
+;
+;    1  div u8  200 7                    = 28
+;    2  rem u8  200 7                    = 4      (inline immediate)
+;    3  div i8  -7 2                     = -3     (not -4: toward zero)
+;    4  rem i8  -7 2                     = -1     (dividend's sign)
+;    5  div i8  7 -2                     = -3
+;    6  rem i8  7 -2                     = 1      (dividend's sign)
+;    7  div i8  -7 -2                    = 3
+;    8  rem i8  -7 -2                    = -1     (dividend's sign)
+;    9  div i8  -128 2                   = -64    (T_MIN divides fine)
+;   10  rem i8  -128 3                   = -2
+;   11  div u32 4294967295 65537         = 65535  (2^32-1 = 65537*65535)
+;   12  rem u32 4294967295 65537         = 0
+;   13  div i64 -1000000000000 7         = -142857142857
+;   14  rem i64 -1000000000000 7         = -1
+;   15  div u64 18446744073709551615 3   = 6148914691236517205
+;   16  div u8  0 5                      = 0
+;   17  div u1  1 1                      = 1      (the boolean width divides)
+;
+; Every expected value above was COMPUTED by this reference, not typed in --
+; Python's own `//` and `%` floor, which is a different function:
+;
+;     def tdiv(a, b):
+;         q = abs(a) // abs(b)
+;         return q if (a < 0) == (b < 0) else -q
+;     def trem(a, b):
+;         return a - tdiv(a, b) * b
+;
+; (`tdiv(-7, 2)` is -3 where `-7 // 2` is -4; `trem(-7, 2)` is -1 where
+; `-7 % 2` is 1. The difference is the whole content of the decision.)
+;
+; WHY THERE IS NO NORMALISATION IN THE EMITTED TEXT. With a zero divisor and
+; T_MIN / -1 excluded (both trap -- trap_div_zero, trap_rem_zero,
+; trap_div_minneg1, trap_rem_minneg1), the quotient and the remainder are
+; already values of T, so IDIV's sign-extended and DIV's zero-extended
+; result IS the canonical form (ssa-ir.md 2.2). Checks 9, 10, 13 and 14 are
+; the narrow signed cases where a stray `shl`/`sar` pair or a missing one
+; would show: the 64-bit `cmp.eq` sees the whole register.
+;
+; THE DIFFERENTIAL PHASE DOES NOT BUILD THIS ONE. `c-emit-exit=4`: the C
+; backend refuses `div`/`rem` by name (c-backend.md D4 rows 4 and 5), so
+; parity here is parity of the REFUSAL, checked by that exit status. When
+; the C backend gains the two opcodes, drop the key and this fixture starts
+; being built four ways.
+;
+; Mutation (run): `idiv` emitted as `div` -> exit 3 (i8 -7 / 2 as an
+; unsigned division of 2^64-7). `mov rax, rdx` dropped from the `rem` arm
+; -> exit 2.
+;
+; A CHECK CHAIN, as tests/ir/bitwise.ir: check k computes one value,
+; compares it with `cmp.eq` at its own type, and returns k on a mismatch.
+; All 17 right: exit 100.
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = iconst u8 200
+%2 = iconst u8 7
+%3 = div u8 %1 %2
+%4 = iconst u8 28
+%5 = cmp.eq u8 %3 %4
+br %5 b2 b1
+b1:
+%6 = iconst u8 1
+ret %6
+b2:
+%7 = iconst u8 200
+%8 = rem u8 %7 7
+%9 = iconst u8 4
+%10 = cmp.eq u8 %8 %9
+br %10 b4 b3
+b3:
+%11 = iconst u8 2
+ret %11
+b4:
+%12 = iconst i8 -7
+%13 = iconst i8 2
+%14 = div i8 %12 %13
+%15 = iconst i8 -3
+%16 = cmp.eq i8 %14 %15
+br %16 b6 b5
+b5:
+%17 = iconst u8 3
+ret %17
+b6:
+%18 = iconst i8 -7
+%19 = iconst i8 2
+%20 = rem i8 %18 %19
+%21 = iconst i8 -1
+%22 = cmp.eq i8 %20 %21
+br %22 b8 b7
+b7:
+%23 = iconst u8 4
+ret %23
+b8:
+%24 = iconst i8 7
+%25 = iconst i8 -2
+%26 = div i8 %24 %25
+%27 = iconst i8 -3
+%28 = cmp.eq i8 %26 %27
+br %28 b10 b9
+b9:
+%29 = iconst u8 5
+ret %29
+b10:
+%30 = iconst i8 7
+%31 = iconst i8 -2
+%32 = rem i8 %30 %31
+%33 = iconst i8 1
+%34 = cmp.eq i8 %32 %33
+br %34 b12 b11
+b11:
+%35 = iconst u8 6
+ret %35
+b12:
+%36 = iconst i8 -7
+%37 = iconst i8 -2
+%38 = div i8 %36 %37
+%39 = iconst i8 3
+%40 = cmp.eq i8 %38 %39
+br %40 b14 b13
+b13:
+%41 = iconst u8 7
+ret %41
+b14:
+%42 = iconst i8 -7
+%43 = iconst i8 -2
+%44 = rem i8 %42 %43
+%45 = iconst i8 -1
+%46 = cmp.eq i8 %44 %45
+br %46 b16 b15
+b15:
+%47 = iconst u8 8
+ret %47
+b16:
+%48 = iconst i8 -128
+%49 = iconst i8 2
+%50 = div i8 %48 %49
+%51 = iconst i8 -64
+%52 = cmp.eq i8 %50 %51
+br %52 b18 b17
+b17:
+%53 = iconst u8 9
+ret %53
+b18:
+%54 = iconst i8 -128
+%55 = iconst i8 3
+%56 = rem i8 %54 %55
+%57 = iconst i8 -2
+%58 = cmp.eq i8 %56 %57
+br %58 b20 b19
+b19:
+%59 = iconst u8 10
+ret %59
+b20:
+%60 = iconst u32 4294967295
+%61 = iconst u32 65537
+%62 = div u32 %60 %61
+%63 = iconst u32 65535
+%64 = cmp.eq u32 %62 %63
+br %64 b22 b21
+b21:
+%65 = iconst u8 11
+ret %65
+b22:
+%66 = iconst u32 4294967295
+%67 = iconst u32 65537
+%68 = rem u32 %66 %67
+%69 = iconst u32 0
+%70 = cmp.eq u32 %68 %69
+br %70 b24 b23
+b23:
+%71 = iconst u8 12
+ret %71
+b24:
+%72 = iconst i64 -1000000000000
+%73 = iconst i64 7
+%74 = div i64 %72 %73
+%75 = iconst i64 -142857142857
+%76 = cmp.eq i64 %74 %75
+br %76 b26 b25
+b25:
+%77 = iconst u8 13
+ret %77
+b26:
+%78 = iconst i64 -1000000000000
+%79 = iconst i64 7
+%80 = rem i64 %78 %79
+%81 = iconst i64 -1
+%82 = cmp.eq i64 %80 %81
+br %82 b28 b27
+b27:
+%83 = iconst u8 14
+ret %83
+b28:
+%84 = iconst u64 18446744073709551615
+%85 = iconst u64 3
+%86 = div u64 %84 %85
+%87 = iconst u64 6148914691236517205
+%88 = cmp.eq u64 %86 %87
+br %88 b30 b29
+b29:
+%89 = iconst u8 15
+ret %89
+b30:
+%90 = iconst u8 0
+%91 = iconst u8 5
+%92 = div u8 %90 %91
+%93 = iconst u8 0
+%94 = cmp.eq u8 %92 %93
+br %94 b32 b31
+b31:
+%95 = iconst u8 16
+ret %95
+b32:
+%96 = iconst u1 1
+%97 = iconst u1 1
+%98 = div u1 %96 %97
+%99 = iconst u1 1
+%100 = cmp.eq u1 %98 %99
+br %100 b34 b33
+b33:
+%101 = iconst u8 17
+ret %101
+b34:
+%102 = iconst u8 100
+ret %102
+}

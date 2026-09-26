@@ -19,7 +19,8 @@
 // "paypal homoglyph" row uses, verified against the same probe to raise
 // NEITHER E0104 nor anything else by itself.
 //
-// DEFERRED: needs the `ego` reader and whole-import-closure checking.
+// DEFERRED, current blocker: no import closure / `ego` reader exists yet;
+// this is blocked on the `HASH` token (§8.4 / §8.6, "Not settled here").
 // compiler/x86_64/lexer/ident.inc's own header says this is out of a
 // single-file lexer's reach BY CONSTRUCTION ("NOT HERE: EXS-E0105 ... A
 // single-file lexer cannot see a closure ... it lands with the `ego`
@@ -37,12 +38,12 @@
 // not mixed-script: it is confusable with Latin "cape", not internally
 // mixed the way `аdd` was.
 publica functio саре(x: mensura, y: mensura) -> mensura {
-    redde x + y
+    redde x + y;
 }
 
 // ---- "module B": imports and calls the Latin-spelled name --------------
 publica functio combina(x: mensura, y: mensura) -> mensura {
-    redde cape(x, y)   // Latin `cape` -- no such name exists in THIS file,
+    redde cape(x, y);   // Latin `cape` -- no such name exists in THIS file,
                         // but is confusable with module A's export once
                         // both are in one import closure: EXS-E0105
 }

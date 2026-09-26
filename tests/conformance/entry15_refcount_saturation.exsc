@@ -21,15 +21,10 @@
 // this value" for readability; it is explicitly NOT how the real
 // conformance check would be driven once one exists.
 //
-// DEFERRED: needs an executable binary (Stage 3 backend) AND a runtime
-// refcount implementation with a saturation test hook, neither of which
-// exists. `exsc aedifica -o OUT`, run directly, says of itself: "the front
-// end accepts this source, but code generation is not implemented... Spec
-// 16 Stage 3" (exit 4) -- confirmed, not assumed. This is a RUNTIME check
-// (§14: "needs a built and executed binary, not just a compiler exit
-// code"), so it additionally cannot be satisfied by any front-end-only
-// diagnostic even after Stage 3 lands; it needs Stage 3 AND something to
-// execute the result.
+// DEFERRED, current blocker: no ARC runtime exists yet, and the runner has
+// no `abort` shape implemented -- there is nothing to build a saturating
+// refcount into and nothing in tests/run.sh that would recognize the
+// SIGILL/`abortus N` shape if it fired.
 
 // `dum COND { ... }` is §8.5's own attested shape (`dum COND terminus N`);
 // the condition spelling and an unbounded `dum` with no `terminus` are
@@ -39,7 +34,7 @@
 // literal; none exists in any spec section read for this suite.
 publica functio satura(n: refero<mensura>) poscit alloc {
     dum verum {
-        n.retine()
+        n.retine();
     }
 }
 

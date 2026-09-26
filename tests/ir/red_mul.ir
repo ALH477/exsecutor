@@ -1,0 +1,121 @@
+; TEST: expect-exit=100 c-emit-exit=4
+;
+; The op words beyond `fadd`/`add`: `mul` (whose identity is 1, not 0) and
+; the wrapping and saturating pair, in both shapes. Each fold and each tree
+; combine is the STANDALONE opcode -- emit.inc routes them through
+; __bfa_emit_mul_core and __bfa_emit_sat_core, the same routines the
+; dispatcher's `mul`/`adds` reach -- so the overflow behaviour of a reduction
+; is the overflow behaviour of its operator, with nothing extra and nothing
+; lost (ssa-ir.md 2.6, as defined 2026-09-25).
+;
+;   1  mul  i64, ordinata,  [2, 3, 7]        = 42    (1*2*3*7; identity 1)
+;   2  mul  i64, arborea 4, [2, 3, 7, 1]     = 42    ((2*3)*(7*1)) folded
+;                                                     into acc = 1
+;   3  addw u8,  ordinata,  [200, 100]       = 44    300 mod 256 -- WRAPS,
+;                                                     does not trap
+;   4  adds u8,  ordinata,  [200, 100]       = 255   saturates at the top
+;   5  subs u8,  ordinata,  [200]            = 0     0 -| 200 clamps at 0,
+;                                                     the identity-first fold
+;   6  addw u8,  arborea 2, [200, 100]       = 44    the WRAP happens inside
+;                                                     the group tree
+;
+; CHECK 2 is the same product by a different tree: integer multiplication is
+; associative, so the value cannot distinguish the shapes -- what it checks
+; is that the tree is built and folded at all, and that `mul`'s identity
+; seeds the accumulator (a 0 would make it 0). The shapes are distinguished
+; where it is observable, over floats: red_arborea_f32.ir.
+;
+; CHECK 5 is `subs` read off the definition: acc starts at the identity 0 and
+; every contribution folds, so one contribution of 200 gives 0 -| 200, which
+; a saturating unsigned subtract clamps to 0 rather than wrapping to 56.
+;
+; CHECK 6 puts a wrapping op inside a group, where a trapping one would
+; abort (red_arborea_int_trap.ir): the tree combine is `addw`, so 200 + 100
+; is 44 in the cell and the fold adds it to an accumulator of 0.
+;
+; Mutation (run): `mul`'s identity taken as 0 -> exit 1 and 2. `adds`/`subs`
+; folded without their clamp -> exit 4 (300 normalised to 44) and exit 5
+; (0 - 200 wrapped to 56). The tree combine using a trapping `add` where the
+; op word says `addw` -> check 6 aborts instead of returning 100.
+;
+; `c-emit-exit=4`: the C backend refuses the reduction opcodes by name
+; (c-backend.md D4 rows 36-38).
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = iconst i64 2
+%2 = iconst i64 3
+%3 = iconst i64 7
+%4 = iconst i64 1
+%5 = redinit i64 mul ordinata 0
+contrib %5 %1
+contrib %5 %2
+contrib %5 %3
+%6 = redfin i64 %5
+%7 = iconst i64 42
+%8 = cmp.eq i64 %6 %7
+br %8 b2 b1
+b1:
+%9 = iconst u8 1
+ret %9
+b2:
+%10 = redinit i64 mul arborea 4
+contrib %10 %1
+contrib %10 %2
+contrib %10 %3
+contrib %10 %4
+%11 = redfin i64 %10
+%12 = cmp.eq i64 %11 %7
+br %12 b4 b3
+b3:
+%13 = iconst u8 2
+ret %13
+b4:
+%14 = iconst u8 200
+%15 = iconst u8 100
+%16 = redinit u8 addw ordinata 0
+contrib %16 %14
+contrib %16 %15
+%17 = redfin u8 %16
+%18 = iconst u8 44
+%19 = cmp.eq u8 %17 %18
+br %19 b6 b5
+b5:
+%20 = iconst u8 3
+ret %20
+b6:
+%21 = redinit u8 adds ordinata 0
+contrib %21 %14
+contrib %21 %15
+%22 = redfin u8 %21
+%23 = iconst u8 255
+%24 = cmp.eq u8 %22 %23
+br %24 b8 b7
+b7:
+%25 = iconst u8 4
+ret %25
+b8:
+%26 = redinit u8 subs ordinata 0
+contrib %26 %14
+%27 = redfin u8 %26
+%28 = iconst u8 0
+%29 = cmp.eq u8 %27 %28
+br %29 b10 b9
+b9:
+%30 = iconst u8 5
+ret %30
+b10:
+%31 = redinit u8 addw arborea 2
+contrib %31 %14
+contrib %31 %15
+%32 = redfin u8 %31
+%33 = cmp.eq u8 %32 %18
+br %33 b12 b11
+b11:
+%34 = iconst u8 6
+ret %34
+b12:
+%35 = iconst u8 100
+ret %35
+}

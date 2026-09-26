@@ -138,9 +138,9 @@ visit.
 | # | pass | file | shape | fills | raises |
 |---|---|---|---|---|---|
 | 0 | atoms | `resolve.inc` | push 11 decls | `Ast.decls` N+1..N+11 in §4.6 order | — |
-| 1 | resolve | `resolve.inc` | one walk | `Seg.d` `Path.d` `RowItem.d` `Sub` frames, `Decl.flags` `address_taken` | `E0500`; shadowing, unresolved, duplicate (no code) |
+| 1 | resolve | `resolve.inc` | one walk | `Seg.d` `Path.d` `RowItem.d` `Sub` frames, `Decl.flags` `address_taken` | shadowing, unresolved, duplicate (no code) — **not `E0500`**, see below |
 | 2 | types | `types.inc` | signatures loop, then one walk | `Ast.types`, `Node.ty`, `Decl.ty`, `Member.d`, `konst`, `own`, `memory_resident` | `E0311` `E0332` `E0341` `E0342` `E0520`; mismatch etc. (no code) |
-| 3 | rows | `rows.inc` | intern API (used by 2); one walk building a use list; **fixpoint over the list**; one check loop | `Ast.rows`, fn/dyn `TypeNode.b`, `Decl.flags` `capability_bearing` | `E0421` `E0501` `E0510` |
+| 3 | rows | `rows.inc` | intern API (used by 2); one walk building a use list; **fixpoint over the list**; one check loop | `Ast.rows`, fn/dyn `TypeNode.b`, `Decl.flags` `capability_bearing` | `E0421` `E0500` `E0501` `E0510` |
 | 4 | layout | `layout.inc` | loop over struct decls in decl order | `Ast.layout` | `E0321` `E0322` |
 | 5 | lexicon | `lexicon.inc` | loop over public decls in decl order | — | `E0601` `E0602` `E0603` `E0610` |
 | 6 | verify | `verify.inc` | AST section 3's Stage 2 list | — | `rassert` only |
@@ -176,6 +176,21 @@ error; an inner block shadowing an ordinary name is allowed (names resolve
 by name, so nearest-wins is unambiguous — only capabilities resolve by type
 and only they forbid shadowing). `Member.d` is *not* resolved here: a
 member needs the receiver's type. `&x` on a `Path` sets `address_taken`.
+
+**`E0500` is not pass 1's**, and this document said it was until 2026-09-25.
+Spec §4.1 rule 7 reads *"No module-level mutable state. (`EXS-E0500`; with a
+capability, `EXS-E0501`.)"* — **one** code per offending binding, chosen by
+whether the binding's type is capability-bearing (§4.3). Pass 1 cannot choose:
+capability-bearing is pass 3's fixpoint over `Decl.ty`, which is pass 2's. So
+pass 1 raised `E0500` unconditionally and pass 3 added `E0501`, and
+`mutabilis retis_globalis: rete;` — §14 entry 11, which expects exactly
+`{EXS-E0501}` — got both. **Decision: the whole of rule 7 is pass 3's**, and
+pass 1 says nothing; the two facts pass 3 needs are already on the declaration
+(`AST_F_MUTABILIS`, and `AstDecl.parent == 0` for module level), so no ninth
+`Decl.flags` bit is spent (hazard H4). `E0500` keeps its span — moved onto the
+declaration — and its required fix (`mutabilis` → `firma`), which is why the
+fix text stays in `resolve.inc` beside the other `E05xx` literals while the
+code that raises it lives in `rows/compute.inc`. Finding 24.
 
 **Pass 2** interns declared types first, in decl order, so bodies may call
 functions declared later: for every `Fn`/`ExternFn`/`Member`/`Struct`/
@@ -223,9 +238,60 @@ iterates the list, never the tree.
   partner. A literal with no expected type is an error `[OPEN]` until spec
   §8.4's literal grammar supplies widths; a literal that does not fit is an
   error (no code). `konst[node]` holds the value once the width is known.
+- **A `contrahe` accumulator's element type F.** Nothing annotates one
+  (`Contrahe ::= 'contrahe' IDENT ':' ArithOp`, spec §8.6), and the loop's
+  element type is not it either — `s = v[i] * 2;` contributes a product, and
+  no sentence forbids folding a `u8` array into a `u32`. So **F is the first
+  contribution's right-hand type**, in source order, and every later
+  contribution in that loop is typed against it: a disagreement is then the
+  ordinary `EXS-E0303` at its own right-hand side rather than a rule of its
+  own. See "The accumulator's two states", below.
 - **Nothing else.** No unification variables, no inference across items,
   none across modules (spec §4.5). Expected types flow *down* into literals
   and lambdas only.
+
+**The accumulator's two states** (2026-09-25, spec §5.4). An `ACCUM`
+declaration's type is the `red` **handle** while its loop is open and **F**
+after it closes — spec §5.4's "After the loop `acc` is an ordinary binding",
+read literally. `red` takes `a` = the accumulator's own declaration and
+records F in `AstType.b`, the field that is a row id on an `fn` and means
+nothing on a `red`: no new field, no change to `ast/`, no second side table,
+and — because all sixteen bytes are the interning key — `red(a, b=0)` and
+`red(a, b=F)` are simply two ids, so the id the declaration carries *is* the
+state. Nothing else in the tree distinguishes the two, and three rules read
+it:
+
+- `acc = e;` is the **contribution** only while the handle is on the
+  declaration; `e` is typed against F, never against the handle. After the
+  loop the same write is `EXS-E0306`, exactly as a write to a `firma` is —
+  "an ordinary binding" and nothing declares it `mutabilis`.
+- `EXS-E0341` fires on a read only while the handle is on the declaration.
+  The nesting counter alone is wrong: two nested reductions, the outer
+  contributing the inner's result, is a read made with two `contrahe` loops
+  open and is exactly what §5.4's "after the loop" sentence permits.
+- What the lowering is handed: F on `Decl.ty` like any other binding's type,
+  and the operator on the `Contrahe` node's `aux`. No `red` survives on a
+  declaration in a program that checks clean — measured by
+  `chk_ty_contrahe.asm`'s last two checks, which read the tree. Whether that
+  is what `lower/` wants is `[UNTESTED]`: its `ForHead` still `rassert`s.
+
+**A `contrahe` whose body never contributes** has no F and keeps the handle.
+Neither §5.4 nor §8.5 says what such a loop means and §13 has no code that
+fits, so the checker invents neither (CLAUDE.md, "Error codes are
+permanent"): the program is accepted, a use of the accumulator afterwards is
+one `EXS-E0303` against a type no expression can have, and the lowering still
+`rassert`s at the `ForHead` (`lower/stmt.inc`). Deciding it is a spec
+amendment. `tests/unit/chk_ty_contrahe.asm` pins the decision as a row so
+that changing it is a visible edit.
+
+**Cascade suppression around a bad contribution.** A read that raised
+`EXS-E0341` answers the **error** type, and a first contribution that did not
+settle records the error type as F. Both are typed-ast.md section 2.2's rule
+applied where it had not been: before them, one illegal read was three codes
+(the `E0341`, an `E0303` at the operand beside it, and a third at whatever
+the enclosing statement wanted), against spec §8.3's "one class each, never
+one per message". Every rejected row of `chk_ty_contrahe.asm` is now exactly
+one diagnostic.
 
 **Row computation, precisely** (pass 3). For each function `F`:
 
@@ -270,7 +336,9 @@ the rows of any `fn`/`dyn` it contains; the result sets `AST_F_CAPBEAR`.
 The spec's "must be declared so" has no syntax (finding 7); the flag is
 computed and the ego emitter reads it. A module-level binding, `firma` or
 `mutabilis`, whose type bears anything is `EXS-E0501`
-(`cases/bad_capability_module_state.exsc`, §14 entry 11).
+(`cases/bad_capability_module_state.exsc`, §14 entry 11); one that bears
+nothing is `EXS-E0500` if it is `mutabilis` and nothing if it is `firma`. Both
+codes, one per binding, in this pass — the roster above says why.
 
 ### 2.4 Diagnostics: what §13 has, what it lacks, and a proposal
 
@@ -281,12 +349,21 @@ computed and the ego emitter reads it. A module-level binding, `firma` or
 | `E0311` | integer index on `textus` | §5.1 | 2 | the `Index` node |
 | `E0321` | `:nativus` (or unannotated multi-byte) field in `@transitus` | §5.2 r.3 | 4 | the field |
 | `E0322` | implicit padding in `@transitus`: partial trailing byte, or a >8-bit field off a byte boundary | §5.2 r.2, r.4 | 4 | the field / the struct |
+
+Pass 4 raises neither `E0321`, `E0309` nor `E0322` for a `@transitus` struct
+one of whose fields is an integer of width < 8 carrying an explicit byte order:
+that shape cannot be written (§5.2 r.3) and is therefore parser recovery, which
+the parser has already diagnosed `EXS-E0201` (finding 23).
 | `E0332` | branded offset applied to another buffer | §5.1 | 2 | the argument |
 | `E0341` | accumulator read in its own body | §5.4 | 2 | the `Path` |
 | `E0342` | `rumpe` in an iteration carrying `contrahe` | §5.4 | 2 | the `Rumpe` |
 | `E0421` | a draw with no provider in a declared function | §4.1–§4.2 | 3 | the drawing node |
-| `E0500` | module-level `mutabilis` | §4.1 r.7 | 1 | the `Binding` |
+| `E0500` | module-level `mutabilis` of a type bearing no capability | §4.1 r.7 | 3 | the `Binding` |
 | `E0501` | module-level binding of a capability-bearing type | §4.1 r.7, §4.3 | 3 | the `Binding` |
+
+`E0500` and `E0501` are **alternatives**, never both: one binding, one code,
+chosen by capability-bearing. That is why `E0500`'s pass column reads 3 and not
+1 (finding 28).
 | `E0510` | mark exceeds ceiling or `dyn` bound | §4.4 | 3 | the impl head / the cast |
 | `E0520` | non-atomic `refero` in an `externus` signature | §5.3, §6.4 | 2 | the type node |
 | `E0601` `E0602` `E0603` `E0610` | lexicon | §3.1, §3.4, §3.5, §3.8 | 5 | the declaring name |
@@ -362,8 +439,8 @@ After Stage 2 with **no diagnostic** the lowering may assume:
 - `Decl.ty` ≠ 0 on `FN` `EXTERNFN` `MEMBER` `LAMBDA` (an `fn` type whose `b`
   is the **final** row — declared or inferred; "the row is in the type" is
   literally where the lowering reads carriers), `PARAM` `GENPARAM` `FIELD`
-  `BINDING` `LOOPVAR` `SUB` (the atom type), `ACCUM` (`red.F`), `STRUCT`
-  `TYPUS` `IFACE`; 0 on `IMPL` `POTESTAS` `EXTERNUS`.
+  `BINDING` `LOOPVAR` `SUB` (the atom type), `ACCUM` (**F** — see below),
+  `STRUCT` `TYPUS` `IFACE`; 0 on `IMPL` `POTESTAS` `EXTERNUS`.
 - `Ast.rows` holds every row any type names; `Ast.layout` has an entry for
   every `STRUCT` and `FIELD` decl (AST 2.8); `ast_side_alloc` has run
   (`Ast.sides` ≠ 0): `own[node]` on every reference-typed expression,
@@ -467,7 +544,9 @@ lambda is a closure-environment slot, Stage 3's.
 `rassert` (a malformed annotation is a compiler bug, not an `EXS-E` code):
 AST section 3's Stage 2 list verbatim — `ty` ≠ 0 and ≠ 1 on every expression
 and type node; `d` ≠ 0 on every `Seg` `Member` `RowItem`; every ordinal <
-its `Sig`'s parameter count; `red` only on `ACCUM` decls; every `transitus`
+its `Sig`'s parameter count; `red` only on `ACCUM` decls — and, since
+2026-09-25, on none of them in a program that checks clean, because section
+2.3 replaces the handle with F when the loop closes; every `transitus`
 field's `Layout.order` ≠ `nativus` — plus: every `fn` type's row id names a
 row in `Ast.rows`; every row's items are strictly ascending (kind, id);
 every `brand.a` is a `BINDING`/`PARAM` decl or 0; `Ast.sides` ≠ 0. The two
@@ -564,8 +643,11 @@ tree).
 Literal typing without §8.4's grammar; brand syntax and a prelude that
 produces one; new-type `typus` (the ego's `publica typus textus` has no
 source form); generic impl heads; multiple bounds; receiver syntax and
-`Self`; the contribution syntax for a `contrahe` accumulator (section 9,
-finding 9); `@nucleus` enforcement (narrowing `sicut` was on this list and is
+`Self`; what a `contrahe` whose body never contributes means (section 2.3;
+the contribution syntax itself — finding 9 — is closed: spec §5.4 now carries
+"Writing to it is the contribution", and section 2.3 and
+`tests/unit/chk_ty_contrahe.asm` implement it); `@nucleus` enforcement
+(narrowing `sicut` was on this list and is
 settled as truncation in spec §5.4 — the checker already admitted it and
 needs nothing); `numeri` coercion
 between modules (there are no modules yet); `sub` in loop bodies; what
@@ -606,6 +688,12 @@ Numbered; each names the section and the sentence. Not edited here.
 9. **Spec §5.4 / §8.5 give no syntax for contributing to a `contrahe`
    accumulator**, so `E0341` (any read) has no complement. Section 2.3
    treats `acc = e;` inside the body as the contribution; needs the owner.
+   **Closed 2026-09-25**: spec §5.4 now says it — "Writing to it is the
+   contribution: inside the body, `acc = e;` contributes `e` under the
+   operator `contrahe` declared, and is the only statement that may name
+   `acc`" — which is this section's reading, adopted. What the sentence
+   left open (what `e` is typed against, and how long `acc` lives) is
+   finding 23.
 10. **Spec §4.1 rules 5 and 6 conflict** on a private function with no
     `poscit`: rule 5 infers, rule 6 declares it pure. Section 2.3 reads rule
     6 as the meaning of an explicitly empty *declared* row.
@@ -671,3 +759,149 @@ Numbered; each names the section and the sentence. Not edited here.
 22. **AST 2.1 status line** says "the checker that fills them is
     `docs/design/checker.md`"; this is that document, and AST section 7's
     item 3 (spec §9.1 should point here) is still owed.
+
+Findings 23–26 were added 2026-09-25, from the cascade-diagnostic wave that
+made §14 entries 22, 11 and 10 emit their expected code and nothing else.
+Every code set below was measured with
+`build/exsc aedifica --hospes x86_64-linux --diagnostica json FILE`, on a
+scratch copy where the fixture is missing a `;`, and the before/after pair is
+stated in each.
+
+23. **Spec §5.2 rule 3 fires once; pass 4 fired twice, and the cause is not
+    hazard H3.** §14 entry 22 (`campus: u4:maior` in a `@transitus` struct)
+    emitted `{EXS-E0201, EXS-E0322}` where rule 3's own text — *"`u4:maior`
+    does not parse, so it is `EXS-E0201`. Neither needs a new code"* —
+    presumes one. H3 says an `Error` node has type id 1 and pass 4 should say
+    nothing about it, so the expected fix was to test for that id. **There is
+    no `Error` node.** `cst/parse.inc`'s `.order` arm raises `EXS-E0201` and
+    *keeps* the suffix in the tree — "the token is still put in the tree —
+    losing it would cost the round trip, and the diagnostic is the
+    deliverable, not the shape," which is that file's rule for the whole
+    bit-width family — so `--emitte cst` shows `BIT_TYPE` + `ORDER_SUFFIX`
+    with no `CST_ERROR`, and `--emitte ast` shows a fully formed
+    `t 15 int 0 1 0 4 0 0`: an `AST_TY_INT` of width 4 carrying
+    `AST_ORD_MAIOR`. Pass 4 was reading a well-formed tree, not debris it
+    could recognise as debris.
+    **Decision: the unwritable *shape* is the detection.** A `@transitus`
+    field whose type is an integer of width < 8 with an explicit byte order
+    cannot be written under rule 3, so it came from recovery; pass 4 lays the
+    struct out and raises none of `E0321`, `E0309`, `E0322` for it
+    (`__chk_lay_debris`, layout.inc). Width < 8 exactly, not ≤ 8, because that
+    is the condition `__cst_core_type` raises `EXS-E0201` on; a wider test
+    would silence a struct the parser said nothing about. Entry 22 now
+    measures `{EXS-E0201}` and entry 21 still measures `{EXS-E0322}`.
+    **Two things this finding leaves open.** (a) `u8:maior` — rule 3's "at or
+    below" covers it and the parser admits it, so nothing rejects it today;
+    reported to the cst agent, not widened here. (b) Whether a `Field` whose
+    type is genuinely an `AST_ERROR` node is reachable at all: nothing
+    measured produces one. Testing for it was the first version of
+    `__chk_lay_debris` and `tests/unit/chk_row_layout_src.asm` case c22
+    refuted it — `@transitus structura T<X> { x: X }` asserts
+    `{EXS-E0301, EXS-E0321}` deliberately, because `E0301` is a *resolution*
+    diagnostic and suppressing `E0321` behind it withholds a rule the program
+    really does break. H3 is about the parser's codes, not every code.
+    `[UNTESTED]` for the `Error`-node case.
+
+24. **Spec §4.1 rule 7 is one code and the checker raised two.** *"No
+    module-level mutable state. (`EXS-E0500`; with a capability,
+    `EXS-E0501`.)"* — a parenthesis that *chooses*. Pass 1 raised `E0500` for
+    every module-level `mutabilis` and pass 3 added `E0501` when the type bore
+    a capability, so §14 entry 11 (`mutabilis retis_globalis: rete;`) measured
+    `{EXS-E0500, EXS-E0501}` against an expectation of `{EXS-E0501}`.
+    **Decision: the whole of rule 7 moves to pass 3**, the only pass that
+    knows capability-bearing; pass 1 says nothing. No new `Decl.flags` bit is
+    needed (hazard H4: there is none to spend) because both facts are already
+    on the declaration — `AST_F_MUTABILIS` from Stage 1, and
+    `AstDecl.parent == 0` for module level. `E0500` keeps its span (moved onto
+    the declaration) and its §8.3 required fix, so `resolve.inc` still owns
+    the fix *text* while `rows/compute.inc` owns the *choice*. Measured after:
+    entry 11 `{EXS-E0501}`; `mutabilis c: i32 = 0;` `{EXS-E0500}` with the
+    same span and fix as before; `firma c: i32 = 0;` clean; and
+    `firma x: rete;` `{EXS-E0501}` — the case that shows the two codes do not
+    nest, since `firma` is not mutable state. Section 2.4's table now reads
+    pass 3 for `E0500`.
+    **Answering the grammar question this raised:** a module-level
+    `mutabilis x: rete;` with no initialiser **does** parse — `BindingDecl`'s
+    `= Expr` is optional, confirmed by running — so entry 11 reaches Stage 2
+    on its own terms. Without the `;` it also gets `EXS-E0203` ("unexpected
+    end of input… it wants `;`"), which is that fixture's own defect and
+    `tests/conformance/`'s to fix.
+
+25. **`sicut` was never consulted at a call site, and function types do not
+    intern canonically.** Section 2.1 rule 3 is two claims; only the second
+    was built. §14 entry 10 — `applica(v: f32, f: functio(f32) -> f32) -> f32
+    poscit alloc, sicut f`, §4.2's own worked example of a HOF written
+    *correctly* — measured `{EXS-E0303, EXS-E0421}`: the argument compare
+    reached `__chk_ty_same` with `nocens`'s `{rete}`-rowed type against the
+    parameter's empty-rowed one and reported a mismatch, on top of the
+    `E0421` `exterior` has coming. **Decision: at an argument whose parameter
+    the callee's declared row names by ordinal, compare everything but the
+    row** (`__chk_ty_issicut`, `__chk_ty_fneqnorow`, `__chk_ty_wantsicut`, all
+    in types/types.inc, reached from `__chk_ty_call`'s argument loop). The
+    argument's row is not compared against anything here — it *travels*, into
+    pass 3's substitution, which is where the authority becomes visible to the
+    caller's own declared row. Entry 10 now measures `{EXS-E0421}` and entry 9
+    — the bare parameter — still measures `{EXS-E0303}`, which is what makes
+    the pair non-vacuous.
+    **And a second defect found while building it, wider than `sicut` and not
+    fixed here.** `ast_type_intern`'s key is all sixteen bytes of `AstType`;
+    an `fn` type's `a` is an `Ast.extra` *offset*; `ast_list_emit` appends a
+    fresh run for every list it emits and never dedupes. So two structurally
+    identical function types written in two places get two ids, and
+    "compatibility is equality of interned type ids" (section 1.5) is false
+    for every `fn` type. Measured: a bare `functio(f32) -> f32` parameter
+    handed an ordinary `publica functio purus(x: f32) -> f32` with no `poscit`
+    — both the empty row — is `EXS-E0303` today, and should not be. That is
+    why `__chk_ty_fneqnorow` compares element by element instead of
+    re-interning with the other's row: substituting a row and comparing ids
+    would answer "different" for every pair. The fix belongs either in
+    `ast/types.inc` (key an `fn` type on its element ids rather than on an
+    offset) or in `ast/build.inc` (dedupe emitted runs), both the ast agent's
+    tree, and it is the reason no fixture here asserts that two separately
+    written identical function types are one type. `[OPEN]`.
+
+26. **A unit fixture could not assert a code set spanning the parser and the
+    checker**, which is what findings 23 and 24 both turn on.
+    `tests/unit/chk_row_layout_src.asm`'s harness bails out with −1 the moment
+    the lexer or the parser has said anything, so "exactly `{EXS-E0201}`, and
+    nothing from pass 4" was unassertable in it. The three fixtures this wave
+    adds — `chk_row_layout_debris.asm`, `chk_e0501_supersedes_e0500.asm`,
+    `chk_ty_sicut_row.asm` — reuse that harness with the gate removed and
+    return the whole diagnostic vector's length, so each row asserts a count
+    and then each code by number. `tests/run.sh`'s `UNIT_FIXTURE_FLOOR` should
+    rise by three (178 → 181) in the commit that lands them; that file is not
+    this agent's tree, and adding fixtures never *trips* the floor (the test
+    is `found < floor`), so nothing fails until someone raises it.
+
+27. **Every valid `contrahe` program was refused** (2026-09-25; raised by
+    the lowering pass, which could not get one past the checker to lower).
+    Two defects, both measured with `build/exsc aedifica --hospes
+    x86_64-linux --diagnostica json` on a `per i in 0..8 contrahe s: +
+    forma ordinata { s = v[i]; } redde s;` and both now fixed, in the
+    checker and not in the spec — the spec was right and the code was
+    wrong at both:
+    - **C1**, one `EXS-E0303` at the contribution. `__chk_ty_assign` typed
+      the right-hand side against the target's own type, which for an
+      accumulator is the `red` handle; spec §5.4 makes it F. F was
+      recorded nowhere: `__chk_ty_forhead` interned `red` with `a` = the
+      accumulator's declaration and left every other field 0. Fixed by
+      recording F in the handle's `b` and typing the contribution against
+      it (`__chk_ty_contrib`, section 2.3).
+    - **C2**, one `EXS-E0301` on a read after the loop. `resolve.inc`'s
+      `.for` arm walked the `ForHead` *inside* the frame it pushes for the
+      loop variable, so the accumulator died with the body and spec §5.4's
+      "After the loop `acc` is an ordinary binding" named a binding that
+      was gone. Fixed by walking the head in the enclosing scope, which
+      the head's grammar permits: it holds no expression.
+    Not defects but consequences settled at the same time and recorded in
+    section 2.3: the accumulator's two states, the never-contributing
+    loop, and the cascade suppression that makes each rejected row one
+    code. `tests/unit/chk_ty_contrahe.asm` is the fixture; the five shapes
+    the lowering fixture carries are its accepted rows.
+28. **typed-ast.md section 2.5's `red` row says "`a` = F"**, and the
+    implementation has always used `a` = the accumulator's *declaration* —
+    `__chk_ty_forhead` says so in its own comment, and it must, because two
+    accumulators in one head have to be two distinct handles and F cannot
+    distinguish them. Finding 27 adds `b` = F. The row should read "`a` =
+    the `ACCUM` declaration, `b` = F (0 until the first contribution)".
+    (ast agent; this document does not edit that tree.)

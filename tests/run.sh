@@ -9,7 +9,8 @@
 #      This is the only phase that can do anything today -- there is no
 #      compiler's own modules and the toolchain; exsc exists and the
 #      driver_* fixtures drive it.
-#   2. run_conformance_tests: tests/conformance/ (spec §14, 24 entries),
+#   2. run_conformance_tests: tests/conformance/ (spec §14: 28 entries, 26
+#      with a fixture file here -- 27 and 28 live in tests/programs/),
 #      driven by build/exsc; entries the built stages can decide are
 #      status=run, the rest DEFERRED and never counted as passing. This
 #      comment once said "a deliberate no-op until exsc.asm exists"; it
@@ -80,7 +81,7 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # wave's four: lex_float_literal.asm, lwr_float.asm, chk_ty_floatlit.asm,
 # chk_ty_floatops.asm. 176 -> 178 is Stage 5.2's pair: chk_ty_aciesops.asm
 # (the whole-acy admission gate) and lwr_aciesops.asm (the lowering it admits).
-UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-178}"
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-190}"
 
 # The same guarantee for the two run phases below: tests/ir/*.ir fixtures,
 # and tests/programs/*/ directories. Same rule -- `found < floor` fails --
@@ -112,10 +113,19 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-178}"
 # IR fixtures: 53 -> 64 is Stage 5.1's vector float group (sse-ir.md 2.2):
 # vec_arith and vec_mem positive, four rejections (parse lanes, verifier
 # x2 maior/minor, emitter vadd-on-scalar), all with C-backend parity.
+# 64 -> 78 is 2026-09-25's two settlements in the reference backend: `div`
+# and `rem` (divrem, rem_sign, trap_div_zero, trap_rem_zero,
+# trap_div_minneg1, trap_rem_minneg1) and the REDUCTIONS -- redinit/contrib/
+# redfin in both shapes (red_ordinata_f32, red_ordinata_i64, red_arborea_f32,
+# red_arborea_int_trap, red_empty, red_w1, red_mul, reject_verify_red_width).
+# Thirteen of the fourteen carry `c-emit-exit=4`: the C backend refuses both
+# opcode groups by name (c-backend.md D4 rows 4, 5 and 36-38), so they add
+# rejection-parity checks and no differential BUILDS -- DIFFERENTIAL_BUILD_FLOOR
+# below is unchanged on purpose, and rises when the C backend gains them.
 # Programs 104 -> 126: the musical HydraModem examples (transmitter melos/
 # bassus/bicinium, receiver auditus, streaming receiver auditus_fluxus), set to
 # the count measured with them in.
-IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-64}"
+IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-78}"
 PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-126}"
 
 # The differential phase (run_differential_tests, below), which compiles the
@@ -306,8 +316,11 @@ run_unit_tests() {
 
 run_conformance_tests() {
   # ---------------------------------------------------------------------
-  # spec §14, 26 entries (was 24 when this header was written; 25 appended
-  # with the mips64 cross row, 26 with the float wave's RGB triangle), FIVE
+  # spec §14, 28 entries, 26 with a fixture file here (was 24 when this
+  # header was written; 25 appended with the mips64 cross row, 26 with the
+  # float wave's RGB triangle; 27 and 28 -- the lane rasterizer and the
+  # reduction shapes -- are carried by tests/programs/pictura_octonaria/
+  # and tests/programs/contractio/ and have no file here), FIVE
   # rule shapes (tests/README.md, "entries, five rule shapes" -- a runner
   # that assumes one shape quietly mishandles four):
   #
@@ -336,7 +349,7 @@ run_conformance_tests() {
   # anywhere in the fixture, `//`-commented, space-separated key=value
   # tokens, mirroring directive_of's own format one section up:
   #
-  #   // TEST: entry=<1-25> shape=<code|bytes|cert|abort|nocap>
+  #   // TEST: entry=<1-26> shape=<code|bytes|cert|abort|nocap>
   #            [expect-code=EXS-E0XXX] status=<run|deferred> [needs=<token>]
   #            [sources=A,B]
   #
@@ -428,30 +441,28 @@ run_conformance_tests() {
   # (this project has produced four green checks that saw nothing; a
   # conformance suite silently running zero entries -- or silently losing
   # fixtures -- would be the fifth):
-  #   fixture_floor -- §14 has exactly 24 entries; fewer *.exsc files than
-  #                    that means fixtures went missing, not that §14 shrank.
-  #   run_floor     -- entries 3, 5, 18, 20 are lexically checkable, entries
-  #                    6, 7, 9, 19, 21 are checkable by the wire-codec
-  #                    branch's @transitus layout checker, type checker and
-  #                    lexer identifier classification, and entry 23 runs
-  #                    its certificate -- all ten verified passing under the
-  #                    exact-code-set check below (see this suite's own
-  #                    report). Entry 22 (`u4:maior`) is DEFERRED, not run:
-  #                    tightening the check from a substring match to an
-  #                    exact set found it was never really passing --
-  #                    exsc emits EXS-E0201 (the entry's own expectation)
-  #                    AND EXS-E0322 (implicit padding), the second raised
-  #                    by the wire-layout checker over whatever partial
-  #                    parse the E0201 recovery leaves behind -- a real
-  #                    second diagnostic, not a fixture bug (§5.2 rule 3:
-  #                    "`u4:maior` does not parse, so it is EXS-E0201.
-  #                    Neither needs a new code" -- one code, not two). If
-  #                    the number that actually RUN ever drops below the
-  #                    floor, something silently stopped working.
+  #   fixture_floor -- 26 entries have a fixture file; fewer *.exsc files
+  #                    than that means fixtures went missing, not that §14
+  #                    shrank.
+  #   run_floor     -- 17 as of 2026-09-25: entries 3, 5, 18, 20 (lexically
+  #                    checkable), 6, 7, 9, 19, 21 (the @transitus layout
+  #                    checker, type checker and identifier classification),
+  #                    23 (its certificate), 25 and 26 (the bytes shape), and
+  #                    the five that moved in the Stage 7 wave -- 8, 10, 11,
+  #                    13, 22 -- each measured to emit exactly its expected
+  #                    code and nothing else after 6f6cd8c and b86b080 (see
+  #                    each fixture's header). Entry 22 had once been
+  #                    DEFERRED by this very check: tightening it from a
+  #                    substring match to an exact set found a second real
+  #                    diagnostic (EXS-E0322 over parser recovery debris),
+  #                    which the floor then kept honest until the checker
+  #                    was fixed. If the number that actually RUN ever
+  #                    drops below the floor, something silently stopped
+  #                    working.
   echo "== conformance suite (tests/conformance/, spec §14) =="
   local dir="$REPO_ROOT/tests/conformance"
   local fixture_floor=26
-  local run_floor=12
+  local run_floor=17
 
   if [[ ! -d "$dir" ]]; then
     bad "tests/conformance/ does not exist"

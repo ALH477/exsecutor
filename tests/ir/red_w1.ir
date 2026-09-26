@@ -1,0 +1,99 @@
+; TEST: expect-exit=100 c-emit-exit=4
+;
+; `arborea 1` IS `ordinata`, and the definition makes that a theorem rather
+; than a coincidence: with w = 1 every contribution fills the group at once,
+; the "tree" over one cell is that cell, so acc = op(acc, v) per contribution
+; in contribution order -- which is `ordinata`'s rule verbatim. The count is
+; reset by every contribution, so no tail can ever exist, and `redfin` emits
+; no tail dispatch at all (emit.inc's __bfa_emit_redfin skips it below w = 2).
+;
+; Checked on the values that make the two shapes DIFFER at w = 8 --
+; red_arborea_f32.ir's twenty (1.0f then nineteen halves-of-an-ulp, whose
+; `arborea 8` answer is 0x3F800009) -- so this is not a fixture that would
+; pass for any lowering: the same inputs, w = 1, must give the ORDINATA bits.
+;
+;   1  arborea 1 over the twenty  = 1.0  0x3F800000  (= ordinata)
+;   2  ordinata over the twenty   = 1.0  0x3F800000  (the same run, again,
+;                                        so the equality is checked here and
+;                                        not across two fixtures)
+;
+; Mutation (run): the group tree taken over w cells regardless of how many
+; are live, reading slots[1..w) of an uninitialised region -> exit 1 with
+; whatever the frame held. The count not reset after a full group -> the
+; second contribution writes slots[1] of a one-cell region, which is the
+; `count` word itself, and the run never terminates the way it should:
+; exit 1.
+;
+; `c-emit-exit=4`: the C backend refuses the reduction opcodes by name
+; (c-backend.md D4 rows 36-38).
+
+functio @initium (ptr) -> u8 {
+b0:
+%0 = param ptr 0
+%1 = slot 8 8
+%2 = fconst f32 1065353216
+%3 = fconst f32 864026624
+%4 = redinit f32 fadd arborea 1
+contrib %4 %2
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+contrib %4 %3
+%5 = redfin f32 %4
+store f32 %1 0 nativus %5
+%6 = load u32 %1 0 nativus
+%7 = iconst u32 1065353216
+%8 = cmp.eq u32 %6 %7
+br %8 b2 b1
+b1:
+%9 = iconst u8 1
+ret %9
+b2:
+%10 = redinit f32 fadd ordinata 0
+contrib %10 %2
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+contrib %10 %3
+%11 = redfin f32 %10
+store f32 %1 0 nativus %11
+%12 = load u32 %1 0 nativus
+%13 = cmp.eq u32 %12 %6
+br %13 b4 b3
+b3:
+%14 = iconst u8 2
+ret %14
+b4:
+%15 = iconst u8 100
+ret %15
+}

@@ -13,7 +13,16 @@
 // value at all -- which is not a reason to accept the declaration; the
 // VIOLATION is the module-level `mutabilis` binding of capability type
 // existing, independent of what (if anything) could ever initialize it.
+//
+// RUNS since b86b080 (2026-09-25). Before it, exsc emitted {EXS-E0500,
+// EXS-E0501}: pass 1 raised the general E0500 at every module-level
+// `mutabilis` before pass 3 knew the type was capability-bearing. Rule 7
+// is one code chosen by the capability; b86b080 moves the decision to
+// pass 3, which raises exactly one of the two (`mutabilis c: i32 = 0;` is
+// still {EXS-E0500}; tests/unit/chk_e0501_supersedes_e0500.asm). The
+// missing `;` was a fixture defect (spec 8.6) and is fixed here. Measured
+// on the main tree at fe24fe5: exactly {EXS-E0501}, exit 1.
 
-mutabilis retis_globalis: rete
+mutabilis retis_globalis: rete;
 
-// TEST: entry=11 shape=code expect-code=EXS-E0501 status=deferred needs=capability_checker
+// TEST: entry=11 shape=code expect-code=EXS-E0501 status=run

@@ -1014,6 +1014,211 @@ proc __chk_ty_same, chkt_wY, chkt_gY, chkt_tY, chkt_nY
 	return
 endp
 
+; =============================================================================
+; spec §4.2: `sicut` is the only row polymorphism
+; =============================================================================
+; checker.md section 2.1 rule 3 is TWO claims, and only the second was built:
+; *"A parameter named by `sicut f` accepts an argument of any row and
+; substitutes it (spec §4.2, positionally: `RowItem.d` = ordinal); every other
+; parameter's row must be EQUAL."* `__chk_ty_same` above is the second claim --
+; equality of interned ids, rows included, which is what makes a row part of the
+; calling convention with no adapter thunk (checker.md section 1.5). These three
+; routines are the first, and they are reached from exactly one place:
+; `__chk_ty_call`'s argument loop, for an argument whose parameter the callee's
+; own declared row names with `sicut`.
+;
+; §14 entry 10 is the case. `applica(v: f32, f: functio(f32) -> f32) -> f32
+; poscit alloc, sicut f` is §4.2's own worked example of a HOF written
+; CORRECTLY; `exterior` forwarding `nocens` (which needs `rete`) into it is the
+; violation, and it is `EXS-E0421` at `exterior`, raised by pass 3 after
+; substitution. Before this, the call ALSO got `EXS-E0303` here, because
+; `nocens`'s type carries the row `{rete}` and `f`'s parameter type carries the
+; empty one. Two codes for one fault; measured.
+;
+; NOT A SUBSET TEST, AND NOT A COERCION. The argument's row is not compared
+; against anything at this call site -- it TRAVELS, into pass 3's substitution
+; of ordinal `i` by argument `i`'s row (checker.md section 2.3), which is where
+; the authority becomes visible to `exterior`'s own declared row. What is
+; compared here is everything else about the two function types: parameter
+; count, parameter type ids, result type id.
+
+; __chk_ty_issicut(w, fnty, ord) -> rax = 1 when `fnty` is a function type
+; whose declared row names parameter `ord` with `sicut`.
+;
+; The row is `AstType.b`; `__chk_row_masks` (checker/rows/intern.inc) turns a
+; row id into an eleven-bit atom mask and a 64-bit ORDINAL mask, and an ordinal
+; item is exactly a `sicut` item (`chk_row_of_node`'s `.sicut` arm sets
+; `CHK_ROW_ORD`). A forward call into `rows/` from `types/`, like the
+; `chk_row_of_node` and `chk_row_empty` calls sig.inc already makes.
+proc __chk_ty_issicut, chkt_wSC, chkt_tSC, chkt_oSC
+	uses	rbx
+	locals
+	endl
+	mov	rbx, [chkt_wSC]
+	mov	rdi, rbx
+	mov	rsi, [chkt_tSC]
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_FN
+	jne	.no
+	mov	rax, [chkt_oSC]
+	mov	rcx, CHK_ROW_ORD_MAX
+	cmp	rax, rcx
+	jae	.no			; `bt` on a register takes the shift
+					; modulo 64, so an ordinal this pass
+					; could never have interned must not
+					; reach it
+	mov	rdi, rbx
+	mov	rsi, [chkt_tSC]
+	mov	rdx, AstType.b
+	call	__chk_ty_field
+	test	rax, rax
+	jz	.no			; row 0 reads as the empty row
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	__chk_row_masks		; rdx = the ordinal mask
+	mov	rcx, [chkt_oSC]
+	bt	rdx, rcx
+	jnc	.no
+	mov	eax, 1
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
+; __chk_ty_fneqnorow(w, got, want) -> rax = 1 when both are function types with
+; the same parameter count, the same parameter type ids and the same result
+; type id -- whatever their rows.
+;
+; ELEMENT BY ELEMENT, NOT BY RE-INTERNING WITH THE OTHER'S ROW, and that is
+; forced rather than chosen: `ast_type_intern`'s key is all sixteen bytes of
+; `AstType`, `AstType.a` of an `fn` type is an `Ast.extra` OFFSET, and
+; `ast_list_emit` appends a fresh run for every list it emits. Two structurally
+; identical function types written in two places therefore already have two
+; ids, so substituting a row and comparing ids would answer "different" for
+; every pair. That is a defect of its own, wider than `sicut` -- see
+; checker.md's findings -- and this routine is written so as not to depend on
+; the answer to it.
+proc __chk_ty_fneqnorow, chkt_wFQ, chkt_gFQ, chkt_tFQ
+	uses	rbx, r12
+	locals
+		slot chkt_nFQ, dq
+		slot chkt_iFQ, dq
+		slot chkt_aFQ, dq
+		slot chkt_bFQ, dq
+	endl
+	mov	rbx, [chkt_wFQ]
+	mov	rdi, rbx
+	mov	rsi, [chkt_gFQ]
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_FN
+	jne	.no
+	mov	rdi, rbx
+	mov	rsi, [chkt_tFQ]
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_FN
+	jne	.no
+	mov	rdi, rbx
+	mov	rsi, [chkt_gFQ]
+	mov	rdx, AstType.width
+	call	__chk_ty_field
+	mov	[chkt_nFQ], rax
+	mov	rdi, rbx
+	mov	rsi, [chkt_tFQ]
+	mov	rdx, AstType.width
+	call	__chk_ty_field
+	cmp	rax, [chkt_nFQ]
+	jne	.no
+	mov	rdi, rbx
+	mov	rsi, [chkt_gFQ]
+	mov	rdx, AstType.a
+	call	__chk_ty_field
+	mov	[chkt_aFQ], rax
+	mov	rdi, rbx
+	mov	rsi, [chkt_tFQ]
+	mov	rdx, AstType.a
+	call	__chk_ty_field
+	mov	[chkt_bFQ], rax
+	mov	qword [chkt_iFQ], 0
+  .item:
+	mov	rax, [chkt_iFQ]
+	cmp	rax, [chkt_nFQ]		; the parameters, then the RESULT, which
+	ja	.yes			; `chk_ty_sigs` pushes at index n
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_aFQ]
+	add	rsi, [chkt_iFQ]
+	call	ast_extra_at
+	mov	r12, rax
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_bFQ]
+	add	rsi, [chkt_iFQ]
+	call	ast_extra_at
+	cmp	rax, r12
+	jne	.no
+	inc	qword [chkt_iFQ]
+	jmp	.item
+  .yes:
+	mov	eax, 1
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
+; __chk_ty_wantsicut(w, n, t) -> rax = `n`'s type. `__chk_ty_want`, except that
+; a function type equal to `t` apart from its row is accepted.
+;
+; An ARRAY LITERAL argument goes through `__chk_ty_want` unchanged: it needs the
+; expectation before it is typed (that routine's header), it can never be a
+; function value, and so the ordinary diagnostic is the right one for it.
+proc __chk_ty_wantsicut, chkt_wSW, chkt_nSW, chkt_tSW
+	uses	rbx, r12, r13
+	locals
+	endl
+	mov	rbx, [chkt_wSW]
+	mov	r12, [chkt_nSW]
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_arraykind
+	test	eax, eax
+	jz	.plain
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, [chkt_tSW]
+	call	__chk_ty_want
+	return
+  .plain:
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_expr
+	test	rax, rax
+	jnz	.have
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, [chkt_tSW]
+	call	__chk_ty_expect
+  .have:
+	mov	rdi, rbx
+	mov	rsi, rax
+	mov	rdx, r12
+	call	__chk_ty_settled
+	mov	r13, rax
+	mov	rdi, rbx
+	mov	rsi, r13
+	mov	rdx, [chkt_tSW]
+	call	__chk_ty_fneqnorow
+	test	eax, eax
+	jnz	.out
+	mov	rdi, rbx
+	mov	rsi, r13
+	mov	rdx, [chkt_tSW]
+	mov	rcx, r12
+	call	__chk_ty_same
+  .out:
+	mov	rax, r13
+	return
+endp
+
 ; __chk_ty_path_expr(w, n) -> rax = the type a `Path` in EXPRESSION position
 ; denotes. `Path.d` is pass 1's answer, or -- for a prelude name -- this pass's
 ; tagged one.
@@ -1097,10 +1302,31 @@ proc __chk_ty_path_expr, chkt_wA, chkt_nA
 	jne	.notacc
 	cmp	dword [rbx + ChkTyWork.wcon], 0
 	je	.notacc
+	; ... AND ONLY INSIDE ITS OWN ITERATION. `wcon` counts every enclosing
+	; `contrahe` loop, so on its own it makes a read of an INNER loop's
+	; finished accumulator -- the outer loop contributing the inner result,
+	; which is the whole point of nesting two of them -- a spurious
+	; `EXS-E0341`. The declaration's type is the discriminator:
+	; `__chk_ty_forfin` replaces the `red` handle with F the moment the
+	; accumulator's own loop closes, so `red` means "still open".
+	mov	rdi, rbx
+	mov	rsi, [chkt_yA]
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_RED
+	jne	.notacc
 	mov	rdi, rbx
 	mov	rsi, 341
 	mov	rdx, r12
 	call	__chk_ty_raise
+	; and the read ANSWERS THE ERROR TYPE, not the handle. `red` is not a
+	; type any operator admits, so answering it made one illegal read cascade
+	; into an `EXS-E0303` at every operand beside it and a third at whatever
+	; the enclosing statement wanted -- three codes for one edit, which
+	; spec §8.3's "one class each" argues against. Error in, silence after:
+	; typed-ast.md section 2.2's rule, which is why the error type is id 1.
+	mov	rdi, rbx
+	call	__chk_ty_err
+	mov	[chkt_yA], rax
   .notacc:
 	; `EXS-E0307`, definite assignment (spec §13's note): a binding declared
 	; without an initializer and read before any assignment.
