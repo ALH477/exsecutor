@@ -703,12 +703,15 @@ grep -cE "FLOOR:-(202|78|147|236|77|308|15|6)\}" tests/run.sh
 id: code-count
 kind: file_contains
 path: compiler/x86_64/diag/codes.inc
-pattern: DIAG_CODE_COUNT = 51
+pattern: DIAG_CODE_COUNT = 52
 -->
-  `tools/spec-check.sh`: PASS, and the 51 error codes of `§13` are in sync
+  `tools/spec-check.sh`: PASS, and the 52 error codes of `§13` are in sync
   with the generated `compiler/x86_64/diag/codes.inc`, which is what check 1
   compares. (This line said 49 until 2026-09-26 -- wrong when there were 50 and
-  wrong again at 51 -- so it is bound now rather than trusted.)
+  wrong again at 51 -- so it is bound now rather than trusted. It went to 52
+  on 2026-09-27 with `EXS-E0312`, and the binding is why: the code was minted
+  in §13, codes.inc was regenerated, and this sentence went red until it was
+  told. Nobody had to remember.)
 <!-- truth:end -->
   `tools/syscall-audit.sh --self-test`: PASS, including the prelude's own
   reader binary accepted under `Mundus,ambitus` and rejected under `Mundus`.

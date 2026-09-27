@@ -2845,6 +2845,7 @@ Scratch work without ambient authority: `exsc curre --potestates omnes scratch.e
 | `EXS-E0309` | type expression or annotation not applicable |
 | `EXS-E0310` | aliased mutable argument |
 | `EXS-E0311` | integer index applied to `textus` |
+| `EXS-E0312` | bulk length argument exceeds the array's extent |
 | `EXS-E0321` | `:nativus` in a `@transitus` type |
 | `EXS-E0322` | implicit padding in a `@transitus` type |
 | `EXS-E0332` | branded offset applied to the wrong buffer |
@@ -2896,6 +2897,27 @@ had a code to be reported with. Both are `03xx` because they are semantic
 rules about a §5.x construct, alongside `EXS-E0311`'s `textus` index and
 `EXS-E0332`'s branded offsets. Neither carries a machine-applicable fix: the
 edit in both cases is a restructure that changes what the program computes.
+
+`EXS-E0312` is §4.6's bulk pair, and it is `03xx` for `EXS-E0311`'s reason:
+a semantic rule about a §5.x construct, here an `acies`. `scribe_octetos`
+and `lege_octetos` take the buffer as a **length-polymorphic borrow** —
+`&acies<u8, 0>` in the prelude's own signature, admitted against an
+argument of any extent — because an `acies`'s length is part of its type
+and a literal in it, so one prelude row could otherwise serve exactly one
+buffer size. The length then travels as a separate `mensura`, and nothing
+in the type system relates the two.
+
+**So state the hole rather than imply it is closed.** When `n` is a literal
+the checker compares it against the argument's extent and raises
+`EXS-E0312`; when `n` is any other expression it is **unchecked**, and a
+caller passing more than the buffer holds writes or reads past it. That is
+the price of the polymorphism and it is paid knowingly: the alternative is
+`octeti` as a real byte view (§11), which is the general fix and is not
+this amendment. The rule is admitted **only when the callee is a prelude
+row** — a user-written `&acies<u8, 0>` parameter keeps going through the
+ordinary borrow check and accepts nothing — so the polymorphism cannot leak
+into source. No machine-applicable fix: the edit is a length the compiler
+cannot choose.
 
 `EXS-E0351` closes a gap §8.5 opened and is `03xx` on the same reasoning as
 `EXS-E0341` above: a semantic rule about a §8.x construct. §8.5 has said since
