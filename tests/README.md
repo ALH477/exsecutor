@@ -13,9 +13,9 @@ calls):
    four fixtures.
 2. **`tests/conformance/`** — spec §14's suite: 28 entries, 26 with a
    fixture file here (27 and 28 are carried by `tests/programs/`
-   directories, below). **19 of the 26 fixtures run, and 7 are `DEFERRED`;
+   directories, below). **20 of the 26 fixtures run, and 6 are `DEFERRED`;
    with entries 27 and 28, which have no fixture and are carried by
-   `tests/programs/`, 21 of the spec's 28 entries run.** This said "17 run,
+   `tests/programs/`, 22 of the spec's 28 entries run.** This said "17 run,
    9 `DEFERRED`" until 2026-09-27 — stale from 80b9390 and 8e746f3, which
    moved entries 12 and 24 to run without this paragraph following them, and
    `tests/run.sh`'s `run_floor` sat at 17 with it, so neither document would
@@ -92,7 +92,7 @@ calls):
    the same correction, and marks that entry's backend parity and
    big-endian run `[UNTESTED]`.
 
-   The other 7 — 1, 2, 4, 14, 15, 16, 17 — report **`DEFERRED`**
+   The other 6 — 1, 2, 4, 14, 15, 17 — report **`DEFERRED`**
    with what they wait on, each fixture's header naming the current
    blocker: a `nocap` runner shape (1 — `textus`'s methods now have a
    declaration site, and that fixture measurably draws exactly
@@ -101,10 +101,20 @@ calls):
    (14); no way for a source program to construct a `refero` value (15 —
    the ARC runtime exists and `tests/unit/prelude_arc.asm` exercises its
    saturation, so this entry's header stopped claiming otherwise on
-   2026-09-27); `tools/reproduce.sh` never compiling that fixture, and a
-   stub `proba-reproducibilitatem` (16); no riscv64 reference backend to
-   compare against (17). They are **never counted as passing**. A suite
-   reporting 26/26 while running 19 would be worse than no suite.
+   2026-09-27); no riscv64 reference backend to compare against (17). They
+   are **never counted as passing**. A suite reporting 26/26 while running
+   20 would be worse than no suite.
+
+   **Entry 16 moved to run on 2026-09-27**, and not by gaining a backend,
+   which is what its `needs=` had named: `tools/reproduce.sh` now compiles
+   entry 16's own fixture, plus `examples/imprime.exsc` and
+   `examples/initium.exsc`, as a fourth `--emitte c` unit in both of its
+   divergent condition sets — 21,539 bytes, byte-identical, measured before
+   the directive was flipped. Until then the script diffed units chosen
+   inside itself, so a pass would have been the harness reporting on the
+   harness. `exsc proba-reproducibilitatem` is still a stub (exit 4); this
+   script is what §9.3's subcommand stands in for, and the day the
+   subcommand exists the two should be compared.
 
    Five rule shapes, and a runner assuming one will quietly mishandle four:
    reject-with-exact-code (most), byte-identical output (16, 17, 25–28),
@@ -242,9 +252,9 @@ a shipped artifact, and is checked every time it is built instead.
 ## What is deliberately absent
 
 - **`tests/conformance/` entries that run.** See above: 28 entries, 26 with
-  a fixture file, **19 of those running and 7 `DEFERRED`** on a named
-  component, plus entries 27 and 28 carried by `tests/programs/` — 21 of 28.
-  (This bullet said 17 and 9 until 2026-09-27, and 18 until 2026-09-26;
+  a fixture file, **20 of those running and 6 `DEFERRED`** on a named
+  component, plus entries 27 and 28 carried by `tests/programs/` — 22 of 28.
+  (This bullet said 17 and 9 earlier on 2026-09-27, and 18 until 2026-09-26;
   corrected with the paragraph above, and for the same reason.) (This item was written
   when `exsc` did not exist and said what each of the 24 rows would need: a
   source fixture plus an expectation — a diagnostic code for most; byte-

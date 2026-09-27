@@ -89,12 +89,18 @@ mkdir -p "$DIR_A" "$DIR_B"
 # `examples/` comes along for the --emitte c half below: each build
 # directory gets its own copy, at its own absolute path and its own depth,
 # which is precisely the divergence D5 says the emitted text must not carry.
+# `tests/conformance/` comes along for the same reason and one more: §14 entry
+# 16 IS this property, and until 2026-09-27 this script never compiled entry
+# 16's own fixture -- it diffed units chosen here, which is evidence about
+# those units and not about that entry's source. The fixture is now the fourth
+# unit below, so the entry is graded on itself.
 # Nothing from vendor/ is needed -- the StreamDB reader's container is read
 # at RUN time and this script never runs an emitted program.
 REL="${SRC#"$REPO_ROOT/"}"
 for d in "$DIR_A" "$DIR_B"; do
   cp -r "$REPO_ROOT/compiler" "$d/compiler"
   mkdir -p "$d/tests" && cp -r "$REPO_ROOT/tests/unit" "$d/tests/unit"
+  cp -r "$REPO_ROOT/tests/conformance" "$d/tests/conformance"
   cp -r "$REPO_ROOT/examples" "$d/examples"
 done
 SRC_A="$DIR_A/$REL"
@@ -168,6 +174,16 @@ cmp_pair "the exsc binary" "$OUT_A" "$OUT_B" || RC=1
 #             record, `acies` slots up to 65,536 bytes, and the only unit in
 #             the tree big enough for an ordering that depended on an address
 #             or a hash bucket to have somewhere to hide.
+#   entry16   tests/conformance/entry16_reproducibility_conditions.exsc plus
+#             examples/{imprime,initium}.exsc -- §14 ENTRY 16'S OWN FIXTURE,
+#             compiled here so that entry can be graded on its own source
+#             rather than on whatever this script happened to build. The
+#             fixture declares `saluta() -> textus` with the same signature
+#             examples/saluta.exsc does, which is what `initium` calls, so
+#             substituting it for saluta.exsc makes a complete unit and the
+#             two units differ in exactly one file. It is deliberately
+#             ordinary source: reproducibility is a property of the
+#             COMPILER's build process, and that is the fixture's own point.
 #
 # Each is emitted in BOTH build directories, so the two runs differ in cwd,
 # in the absolute path of every source file, in TZ, locale,
@@ -207,7 +223,8 @@ TZ='$tz' LC_ALL='$locale' LANG='$locale' SOURCE_DATE_EPOCH='$epoch' \
   for unit in \
     "saluta:x86_64-linux:examples/saluta.exsc examples/imprime.exsc examples/initium.exsc" \
     "streamdb:x86_64-linux:examples/streamdb/lector_streamdb.exsc examples/streamdb/probatio.exsc" \
-    "streamdb-o64:mips64-none-o64:examples/streamdb/lector_streamdb.exsc examples/streamdb/probatio.exsc"
+    "streamdb-o64:mips64-none-o64:examples/streamdb/lector_streamdb.exsc examples/streamdb/probatio.exsc" \
+    "entry16:x86_64-linux:tests/conformance/entry16_reproducibility_conditions.exsc examples/imprime.exsc examples/initium.exsc"
   do
     uname_="${unit%%:*}"
     uhospes="${unit#*:}"; uhospes="${uhospes%%:*}"

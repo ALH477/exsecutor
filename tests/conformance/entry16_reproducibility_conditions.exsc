@@ -18,13 +18,31 @@
 // program -- so this is deliberately an ordinary, already-valid file
 // (`saluta`'s own shape: pure, no `poscit`, per examples/saluta.exsc).
 //
-// DEFERRED, current blocker: `exsc proba-reproducibilitatem` is a stub
-// (exit 4), and `tools/reproduce.sh` never compiles THIS fixture -- it
-// diffs its own toolchain-fixture fallback, which is proof the harness can
-// tell bytes apart, never evidence that entry 16 holds for this source.
+// RUNS, as of 2026-09-27. The blocker was never the backend that
+// `needs=backend` named: it was that `tools/reproduce.sh` did not compile
+// THIS file. It diffed units chosen inside that script, which is evidence
+// about those units and not about this entry's source, so a pass here would
+// have been the harness reporting on itself.
+//
+// This fixture is now the script's FOURTH unit: it plus
+// examples/imprime.exsc and examples/initium.exsc, emitted with
+// `--emitte c --hospes x86_64-linux` in both of the script's divergent
+// condition sets and `cmp`ed. `saluta() -> textus` below is the signature
+// examples/saluta.exsc declares and `initium` calls, so the substitution
+// makes a complete unit that differs from the `saluta` unit in exactly one
+// file. Measured on the working tree before this directive was flipped:
+// 21,539 bytes, byte-identical across divergent cwd, TZ, LC_ALL/LANG,
+// SOURCE_DATE_EPOCH, umask and hostname.
+//
+// STILL OPEN, and not what this entry is graded on: `exsc
+// proba-reproducibilitatem` is a stub (exit 4). §9.3 says that subcommand
+// ships in v1 and runs in CI; what runs today is the script the subcommand
+// is specified to become, called from `run_conformance_tests`'s `bytes`
+// shape. The day the subcommand exists, this entry should be re-pointed at
+// it and the two compared.
 
 publica functio saluta() -> textus {
     redde "Ave, mundus.";
 }
 
-// TEST: entry=16 shape=bytes status=deferred needs=backend
+// TEST: entry=16 shape=bytes status=run

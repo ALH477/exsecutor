@@ -629,7 +629,7 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   corpus — `docs/design/diagnostics-review.md`, final section, and
   `tests/diagnostics/`. Stage 2's (`sub` resolution needing a search) does not
   fire, argued first in `docs/design/checker.md` §2.1.
-- `tests/run.sh`: **2,263 checks, 0 fail**, measured on this commit's tree. (It
+- `tests/run.sh`: **2,264 checks, 0 fail**, measured on this commit's tree. (It
   read "2,203 … at `af354b0`" until a fixture was added above that floor; the
   hash is dropped rather than left to go stale, because the tree a total belongs
   to is the commit the line is read from.) Each count below is
@@ -655,10 +655,11 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   the lane rasterizers too (the soft `vector_size` lowering keeps every
   lane's bits), and the thing
   that finally tests §9.5's standing claim that the emitted text assumes
-  nothing about byte order. 19 of the 26 conformance FIXTURES run, each
-  required to emit exactly its expected code and nothing else, and 7 report
+  nothing about byte order. 20 of the 26 conformance FIXTURES run, each
+  required to emit exactly its expected code and nothing else -- or, for the
+  four byte-shape entries, to emit byte-identical output -- and 6 report
   `DEFERRED` and are never counted as passing; with entries 27 and 28, which
-  have no fixture and are carried by program directories, 21 of the spec's 28
+  have no fixture and are carried by program directories, 22 of the spec's 28
   entries run. 0 program directories deferred.
 
   This bullet read "1564 pass — 178 unit fixtures; 64 IR fixtures and 104

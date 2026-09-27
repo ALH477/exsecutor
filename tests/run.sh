@@ -422,7 +422,8 @@ run_conformance_tests() {
   #             (entries 2-14, 18-22, 24)
   #   bytes  -- byte-identical output across conditions/hosts (16, 17, 25,
   #             26) -- tools/reproduce.sh already knows how to check this;
-  #             called from below, never reimplemented
+  #             called from below, never reimplemented, and since 2026-09-27
+  #             compiling entry 16's own fixture as one of its units
   #   cert   -- an EXTERNAL certificate, vendor/hydramesh-wire's 246 golden
   #             vectors, not a case this project wrote for itself (23 only)
   #   abort  -- a RUNTIME abort, not a compile failure -- needs a built and
@@ -464,8 +465,8 @@ run_conformance_tests() {
   #                 than one): what it is waiting on. The tokens in use are
   #                 capability_checker (1), type_checker (2),
   #                 import_closure (4), lexicon_checker (14),
-  #                 refero_construction (15), backend (16) and
-  #                 backend,cross_compile (17). Free text, not a closed
+  #                 refero_construction (15) and backend,cross_compile (17).
+  #                 Free text, not a closed
   #                 set -- the check below is only that a deferred fixture
   #                 names SOMETHING. Entry 15's token was `runtime,backend`
   #                 until 2026-09-27, which named the wrong blocker: the
@@ -560,6 +561,11 @@ run_conformance_tests() {
   #                    tree and would not have noticed losing either of
   #                    them -- which is the one thing a floor is for. No
   #                    fixture's directive was flipped to reach 19.
+  #                    19 -> 20 on 2026-09-27 IS a flip, and the one entry
+  #                    it counts is 16: tools/reproduce.sh now compiles that
+  #                    fixture as its fourth --emitte c unit, measured
+  #                    byte-identical at 21,539 bytes across both condition
+  #                    sets BEFORE the directive moved.
   #                    Entry 22 had once been
   #                    DEFERRED by this very check: tightening it from a
   #                    substring match to an exact set found a second real
@@ -571,7 +577,7 @@ run_conformance_tests() {
   echo "== conformance suite (tests/conformance/, spec §14) =="
   local dir="$REPO_ROOT/tests/conformance"
   local fixture_floor=26
-  local run_floor=19
+  local run_floor=20
 
   if [[ ! -d "$dir" ]]; then
     bad "tests/conformance/ does not exist"
@@ -712,17 +718,21 @@ run_conformance_tests() {
         fi
         ;;
       bytes)
-        # Reused, not reimplemented (this agent's brief). Entries 25 and 26
-        # are status=run through this branch, so the prediction the comment
+        # Reused, not reimplemented (this agent's brief). Entries 16, 25 and
+        # 26 are status=run through this branch, so the prediction the comment
         # here used to make -- "no fixture is status=run for this shape yet
         # (16/17 both need a backend this project does not have) ...
         # flipping that fixture's status= is the only change needed" -- was
-        # tested and held: both flipped with no edit to this branch. Entry
-        # 17 is still deferred (no riscv64 reference backend to compare
-        # against), and entry 16 is deferred for a different reason, which
-        # is NOT a missing backend: `tools/reproduce.sh` does not compile
-        # that fixture, so a pass here would be the harness reporting on
-        # units it happens to build rather than on entry 16's source.
+        # tested three times and held: all three flipped with no edit here.
+        #
+        # NOTE WHAT THIS BRANCH DOES AND DOES NOT PROVE. It runs the WHOLE
+        # script and passes on exit 0, so every entry using this shape rests
+        # on the same run. That is honest only because the script now compiles
+        # entry 16's own fixture as its fourth unit -- before 2026-09-27 it
+        # did not, and a pass here would have been the harness reporting on
+        # units chosen inside itself. Entry 17 stays deferred: there is no
+        # riscv64 reference backend to compare its cross-compiled text
+        # against, which no amount of running this script supplies.
         local rc=0
         "$REPO_ROOT/tools/reproduce.sh" >"$workdir/$name.out" 2>&1 || rc=$?
         if grep -q "THIS RUN TESTS THE FIXTURE, NOT exsc" "$workdir/$name.out"; then
