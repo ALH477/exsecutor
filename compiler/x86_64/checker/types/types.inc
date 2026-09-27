@@ -410,6 +410,26 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	je	.cast_out			; AST_TY_ERROR: already diagnosed
 	cmp	r14, 1
 	je	.cast_out
+	; THE TARGET IS TESTED FIRST WHEN IT IS `dyn`, and only then, because
+	; this block's own comment above already says what the answer is: a
+	; trait-object cast's verdict is pass 3's `EXS-E0510` and nothing else.
+	; The dispatch below reads the SOURCE's kind, so a struct source sent
+	; every `dyn` cast into `__chk_ty_castagg` -- which knows exactly one
+	; aggregate pair (spec §5.2's `@transitus` struct and `acies<u8,
+	; sizeof>`) and refused everything else. `EXS-E0305` at the very span
+	; `EXS-E0510` correctly fires at: two diagnostics for one construct, and
+	; the wrong one first. §14 entry 12's header recorded it as a Stage 2
+	; gap; this is the one line that closes it.
+	;
+	; A `dyn` SOURCE is deliberately NOT exempted. Casting a trait object to
+	; something else is not §4.4's construction rule, has no `EXS-E0510` to
+	; defer to, and `dyn` -> `acies<u8, sizeof>` is exactly the laundering
+	; §5.2's one admitted pair must not be stretched to cover.
+	mov	rdi, rbx
+	mov	rsi, r14
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_DYN
+	je	.cast_out
 	mov	rdi, rbx
 	mov	rsi, r13
 	call	__chk_ty_kindof
@@ -630,6 +650,20 @@ proc __chk_ty_expect, chkt_wX, chkt_nX, chkt_tX
 	; before `.bin_push` hands it down, so nothing inside gets a second
 	; diagnostic; the error expectation itself is always admitted (no
 	; cascade, typed-ast.md section 2.2).
+	;
+	; THIS CHAIN IS AN ALLOWLIST WITH NO DEFAULT-DENY, and that asymmetry is
+	; left standing on purpose rather than by oversight. An operator no arm
+	; below names falls through to `.bin_push` and has its expectation pushed
+	; into both operands with NO admissibility test at all -- which is right
+	; for the comparisons (they legitimately have no rule) and is how
+	; `atque`/`sive` went unchecked in the pending case for a whole wave:
+	; `firma q: i8 = 1 atque 2;` compiled clean on signed operands and
+	; emitted `and`, while its settled twin in `__chk_ty_binary` had a loud
+	; `rassert` and had been failing all along. The quiet one outlived the
+	; loud one. Fixing the asymmetry needs a decision about what the DEFAULT
+	; is, and that decision is not made here; recording it in the code is,
+	; because until now it existed only in commit `a2ce158`'s message and a
+	; message is not where the next person reading this chain looks.
 	cmp	ecx, AST_OP_ADDW
 	je	.bin_wchk
 	cmp	ecx, AST_OP_ADDS
