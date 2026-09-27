@@ -1,4 +1,4 @@
-; TEST: expect-exit=100 c-emit-exit=4
+; TEST: expect-exit=100
 ;
 ; `ordinata` over integers -- the same definition as the float case
 ; (red_ordinata_f32.ir), with the integer group's identities and the integer
@@ -30,8 +30,22 @@
 ; 2 (`sub` gives 1-2-3 = -4). The per-fold normalisation dropped -> exit 4
 ; survives but red_arborea_int_trap.ir stops trapping.
 ;
-; `c-emit-exit=4`: the C backend refuses the reduction opcodes by name
-; (c-backend.md D4 rows 36-38).
+; CROSS-CHECKED THROUGH THE C BACKEND, 2026-09-27. This fixture carried
+; `c-emit-exit=4` from the day it landed: the C backend refused the three
+; reduction opcodes, so the differential phase could only check parity of a
+; refusal. It carries the key no longer -- `backend_c/emit_c.inc` lowers
+; `redinit`/`contrib`/`redfin`, and the four builds (gcc and clang, -O0 and
+; -O2, every one under `-fsanitize=undefined -fno-sanitize-recover=all`) are
+; held to the SAME directive above as the reference's own run. The reference's
+; verdict here is unchanged and has been since the day it landed; what is new
+; is that three more toolchains have to agree with it.
+;
+; What this one cross-checks in particular: that the C fold is the standalone
+; opcode there too. `add i64` becomes `exsi_add_i(acc, v, 64)` and `add u8`
+; becomes `exsi_add_u(acc, v, 8)` -- the same prologue helpers
+; `__bfc_emit_bin` picks for a standalone `add`, so check 4's 255 is
+; normalised and checked at u8 after every contribution in both backends, by
+; the same routine in each.
 
 functio @initium (ptr) -> u8 {
 b0:

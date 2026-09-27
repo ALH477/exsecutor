@@ -1,4 +1,4 @@
-; TEST: expect-exit=100 c-emit-exit=4
+; TEST: expect-exit=100
 ;
 ; A reduction with NO CONTRIBUTION yields the op's identity -- in both
 ; shapes, and that is the half of the definition which makes the rest
@@ -28,8 +28,21 @@
 ; `redfin` folding the tail unconditionally -> exit 3 or 4, nondeterministically
 ; (whatever the frame held).
 ;
-; `c-emit-exit=4`: the C backend refuses the reduction opcodes by name
-; (c-backend.md D4 rows 36-38).
+; CROSS-CHECKED THROUGH THE C BACKEND, 2026-09-27. This fixture carried
+; `c-emit-exit=4` from the day it landed: the C backend refused the three
+; reduction opcodes, so the differential phase could only check parity of a
+; refusal. It carries the key no longer -- `backend_c/emit_c.inc` lowers
+; `redinit`/`contrib`/`redfin`, and the four builds (gcc and clang, -O0 and
+; -O2, every one under `-fsanitize=undefined -fno-sanitize-recover=all`) are
+; held to the SAME directive above as the reference's own run. The reference's
+; verdict here is unchanged and has been since the day it landed; what is new
+; is that three more toolchains have to agree with it.
+;
+; What this one cross-checks in particular: the `arborea` tail at k = 0. The
+; C lowering's tail is an `else if` chain on the live count, so "count 0 folds
+; nothing" is a chain no arm of which matches, where the reference's is a
+; compare-and-jump chain that falls through to its join. Two different shapes,
+; and checks 3 and 4 require them to answer the same identity.
 
 functio @initium (ptr) -> u8 {
 b0:

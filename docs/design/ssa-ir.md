@@ -658,10 +658,18 @@ states for a phi-free block ("must produce exactly the text it produced
 before"), generalised to a refactor: a diff in one of them would have been a
 defect in this change rather than a fixture to update.
 
-**Not settled by either.** The C backend still refuses `div`, `rem` and the
-three reduction opcodes by name (c-backend.md D4 rows 4, 5 and 36–38), so
-ADR 0012's differential test checks **refusal parity** for these fixtures and
-not agreement on values: thirteen of the fourteen new `tests/ir` fixtures
-carry `c-emit-exit=4`. Nothing here is cross-checked against a second
-implementation yet `[UNTESTED]`, which for a definition-by-reference-lowering
-is exactly the gap worth naming.
+**Settled by both, as of 2026-09-27.** This paragraph said "not settled by
+either": the C backend refused `div`, `rem` and the three reduction opcodes by
+name, so ADR 0012's differential test could check **refusal parity** for these
+fixtures and not agreement on values, and thirteen of the fourteen new
+`tests/ir` fixtures carried `c-emit-exit=4`. That was the gap worth naming for
+a definition-by-reference-lowering, and it is closed in two steps: `div`/`rem`
+on 2026-09-25 (`exsi_div_*`/`exsi_rem_*`, c-backend.md rows 4 and 5) and
+`redinit`/`contrib`/`redfin` on 2026-09-27 (rows 36–38). Not one of the
+fourteen carries `c-emit-exit=` now; each is built by gcc and clang at `-O0`
+and `-O2` under `-fsanitize=undefined -fno-sanitize-recover=all` and held to
+the same directive the reference is. `red_arborea_f32.ir` is the one that
+makes this worth having: its two expected values are bit patterns nine ulps
+apart, one per shape, so four more toolchains agreeing is four independent
+readings of the fold order below — which is what a definition by reference
+lowering needs and had not had.

@@ -528,9 +528,9 @@ after the table; the C1 status column says what C1 does with the row.
 | 33 | `itof F a` | source unsigned: `vk = (T)a;`; source signed: `vk = (T)exsi_i64_from_bits(a);` — the bit-cast helper, because `uint64_t → int64_t` is implementation-defined in C and the reference defines it as the two's-complement reinterpretation. `u64 → f32` refused: `bfc: emitter: itof: u64 -> f32 is not implemented (the reference refuses it too: no correctly-rounded one-step sequence at its baseline -- a naive (float)(double) double-rounds)`; `u64 → f64` is lowered | lowered |
 | 34 | `ftoi T a` | dest `uN`: `vk = (uint64_t)a;`; dest `iN`: `vk = (uint64_t)(int64_t)a;` — C's float→integer conversion truncates toward zero, the reference's `cvttsd2si` rule. NaN and out-of-range are `[OPEN]` in the reference; on the C side UBSan's float-cast-overflow aborts them under the harness flags — the documented C-side twin of the same `[OPEN]`, said so in a comment at the emission site | lowered |
 | 35 | `bitcast T a` | refused: `bfc: emitter: bitcast: nothing in-tree produces it and its semantics are [OPEN] (ssa-ir.md 2.3); fconst's bits-to-float path is a prologue helper, not this opcode` | refused |
-| 36 | `redinit F op shape w` | refused, and **not by the message this row used to quote.** Measured 2026-09-26 (`tests/ir/emit_c.asm < tests/ir/red_ordinata_f32.ir`, exit 4): the refusal is the TYPE refusal, `bfc: emitter: unsupported type: library mode holds an integer (uN/iN), an address (ptr/ref/refc), a float (f32/f64) or a vector float (vf32.N/vf64.N) and nothing else (c-backend.md D4, D8)`, raised when the C type name of the `red.F` handle is wanted — one step before the dispatcher could reach `__bfc_refuse`. The by-name arm in `__bfc_refuse` is therefore **unreachable for well-formed IR** (a `redinit` precedes every `contrib` and `redfin` of its handle, so the handle's declaration always dies first); it is kept as the arm a future `red`-less reduction row would need, and says so at the site. This row quoted the by-name message, and its stated reason — "reductions have no reference lowering" — had ALSO stopped being true on 2026-09-25, when the reference gained all three | refused |
-| 37 | `contrib h v` | refused, as `redinit`, by the same type refusal reached through its handle operand | refused |
-| 38 | `redfin F h` | refused, as `redinit` | refused |
+| 36 | `redinit F op shape w` | **lowered since 2026-09-27.** The handle is not a C value and has no C type name (`red.F` is `__bfc_ty_class` class 2, still refused by name everywhere else), so `__bfc_emit_decls` skips a `redinit` in pass 1 and declares its parts in a fourth pass instead: `<F> vk;` the accumulator, plus, for `arborea`, `uint64_t rk;` the live count and `<F> gk[w];` the group cells. The instruction itself is `vk = UINT64_C(ident);` — or `vk = exsi_f32_from_bits(UINT64_C(ident));` for a float F, a bit pattern through the prologue's bit-cast helper for row 60's reason — and, for `arborea`, `rk = UINT64_C(0);`. Identities, the ten-word op vocabulary and every refusal text are `emit.inc`'s `__bfa_red_*` transcribed (see that section's header for why duplicated and not shared). Refused by name: an op word outside `fadd fsub fmul add sub mul addw subw adds subs`; an F that is neither a scalar integer nor a float; an op and F that disagree about which; an identity that is not a value of F (`mul` over `i1`); a result type that is not a `red.F`; `ordinata` with `w != 0` or `arborea` with `w` outside 1..64 | lowered |
+| 37 | `contrib h v` | **lowered since 2026-09-27.** `ordinata` is one statement, the fold: `vh = exsi_add_i(vh, vv, 64);` (`__bfc_emit_bin`'s HELPER row), `vh = exsi_norm_u(vh + vv, 8);` (WRAP, for `addw`/`subw`), or `vh = vh + vv;` (float). `arborea w` is the value into the cell the count names, the count bumped, and a full group folded: `gh[rh] = vv;` / `rh = rh + UINT64_C(1);` / `if (rh == UINT64_C(w)) { <the tree over w cells, one statement per pairwise combine> vh = op(vh, gh[0]); rh = UINT64_C(0); }`. `gh[rh]` is the one place this emitter indexes by a runtime value, for the reason the reference computes one frame address at runtime there | lowered |
+| 38 | `redfin F h` | **lowered since 2026-09-27.** `ordinata`, and `arborea 1`, are the copy `vk = vh;` — at `w = 1` every contribution fills the group, so no partial group exists and no dispatch is emitted (the reference skips it below `w = 2` at the same place). `arborea w >= 2` emits the tail first, as an `else if` chain on the live count where the reference has a compare-and-jump chain plus one labelled block per size: one arm per `k` in 1..w-1, each the tree over `k` cells and then the fold. A count of 0 matches no arm and folds nothing, which is what makes an empty `arborea` answer the identity. O(w²) emitted lines, the bound `BFA_RED_W_MAX` exists for, in this backend as in the reference | lowered |
 | 39 | `slot n align → ptr` | at function top: `_Alignas(align) unsigned char sk[n];`; at the instruction: `vk = sk;`. Alignment a power of two 1..16, as the reference requires | lowered |
 | 40 | `load T p off o` | integer `T`, whole bytes `k = N/8`: `nativus` → `vk = normT(exsi_ld_n(p + off, k), N)`; `maior` → `exsi_ld_be`; `minor` → `exsi_ld_le`; `k == 1` all three are one byte. `T = ptr`: `vk = (unsigned char *)(uintptr_t)exsi_ld_n(p + off, sizeof(void *))`. Not whole bytes: refused, as the reference does. `T = f64/f32`, `nativus` only (the verifier refuses an order before either backend): `vk = exsi_f64_from_bits(exsi_ld_n(p + off, 8))` / `exsi_f32_from_bits((uint32_t)exsi_ld_n(p + off, 4))` — the bits through the integer byte helper and back through the `__builtin_memcpy` bit-cast, both halves byte-order-explicit; a float's IR width field is 0, so the byte count comes from the kind | lowered |
 | 41 | `store T p off o v` | `exsi_st_n(p + off, k, v)` / `exsi_st_be` / `exsi_st_le`; `ptr`: `exsi_st_n(p + off, sizeof(void *), (uintptr_t)v)`; `T = f64/f32`, `nativus` only: `exsi_st_n(p + off, 8, exsi_bits_from_f64(v))` / `…, 4, exsi_bits_from_f32(v))` — bit baggage exactly as the reference's `mov` (no arithmetic, so NaN payloads, −0.0 and subnormals survive; pinned by `tests/ir/float_mem.ir` on four toolchains) | lowered |
@@ -569,23 +569,35 @@ Not in the table: `nop` (op 0; verifier rule 9 refuses it, `verify.inc`
 finding 2) and `faddr` (IR 2.3, `[UNIMPLEMENTED]` in `ir.inc`); both are
 refused by the emitter if met, by name.
 
-Count: **52 of the 64 rows are lowered** — 51 by statement, `phi` at the
-edges — and **12 are refused**: 7 because the reference refuses them too
-(`muls`, the three `*ov`, `callind`, and `fma` and `bitcast`, refused in
-both backends in the same change), 2 (`retain`, `release`) because library
-mode has no runtime, and **3 — the reductions, `redinit`/`contrib`/`redfin`
-— for neither reason.** That third group was counted in the first here
-until 2026-09-26, and it does not belong there: the reference gained all
-three on 2026-09-25 (`emit.inc`'s `__bfa_emit_redinit`/`__bfa_emit_redfin`,
-ssa-ir.md 2.6, whose lowering of `arborea` is the definition) and this
-backend did not follow. So they are the SECOND asymmetry between the two
-backends, and unlike `retain`/`release` — which library mode can never have,
-D1 — this one is simply **owed work**. The consequence is not confined to
-this document: a program using `contrahe` cannot be emitted as C at all, so
-it has no differential leg and no cross leg either (the cross phase goes
-through `--emitte c`), which is why spec §14 entry 28 cannot claim what
-entries 25–27 claim. `tests/ir/red_*.ir`'s seven `c-emit-exit=4` keys are
-the standing measurement of it. 50/14 → 52/12 is `div` and `rem`: the reference settled them on
+Count: **55 of the 64 rows are lowered** — 51 by one statement each, the
+three reductions by a small statement group, `phi` at the edges — and **9 are
+refused**: 7 because the reference refuses them too (`muls`, the three `*ov`,
+`callind`, and `fma` and `bitcast`, refused in both backends in the same
+change) and 2 (`retain`, `release`) because library mode has no runtime. So
+every refusal left in this backend is now one of those two classes, which is
+what the invariant above says it should be.
+
+**THE SECOND ASYMMETRY IS CLOSED, 2026-09-27**, and the record of it stays
+here rather than being deleted, because the shape of the gap is the argument
+for the invariant. Until 2026-09-26 the reductions —
+`redinit`/`contrib`/`redfin` — were counted among the refusals "because the
+reference refuses them too", and they did not belong there: the reference
+gained all three on 2026-09-25 (`emit.inc`'s
+`__bfa_emit_redinit`/`__bfa_emit_redfin`, ssa-ir.md 2.6, whose lowering of
+`arborea` is the definition) and this backend had not followed. That made them
+a third class, neither parity nor library mode's missing runtime, but simply
+**owed work** — and the cost was not confined to this document: a program
+using `contrahe` could not be emitted as C at all, so it had no differential
+leg and no cross leg either (the cross phase goes through `--emitte c`), which
+is why spec §14 entry 28 could not claim what entries 25–27 claim. The seven
+`c-emit-exit=4` keys on `tests/ir/red_*.ir` were the standing measurement of
+it; they are gone, the seven fixtures are built four ways and agree, and
+`tests/programs/contractio/` -- which had to declare the refusal with
+`c-exsc-exit=4` -- is an eligible differential directory instead.
+`red_arborea_f32.ir` is the sharpest of the seven: two bit patterns nine ulps
+apart, one per shape, which both backends now have to produce.
+
+52/12 → 55/9 is that change, rows 36–38. 50/14 → 52/12 is `div` and `rem`: the reference settled them on
 2026-09-25 and this backend followed, which is the only order the invariant
 above permits — a refusal here must be a refusal there, so for the one commit
 between the two changes rows 4 and 5 were refusals whose stated reason had
@@ -1006,8 +1018,7 @@ them `[OPEN]`; the emitter refuses the predicate word by name); `fma` and
 `bitcast` (D4 rows 29 and 35); a float `load`/`store` under `maior` or
 `minor` — byte order is an integer surface (spec 5.2), refused by the
 verifier and by both emitters (`tests/ir/reject_verify_float_load_ord.ir`);
-the honouring of a declared `numeri` (finding 23); the three reduction
-opcodes — what `@dot` still trips; `muls` and
+the honouring of a declared `numeri` (finding 23); `muls` and
 the three `*ov` predicates — integer opcodes the
 reference lacks, which enter **both** backends in one later milestone
 with fixtures for each; ARC — no object header exists in library mode;
@@ -1017,9 +1028,11 @@ silent omission.
 
 ## 3. Shape of the emitted unit
 
-For IR 2.11's `@dot` example the unit would be (illustrative, `[UNTESTED]`;
-`redinit` makes the real `@dot` a refusal, so this is the integer skeleton
-of it):
+For IR 2.11's `@dot` example the unit would be (illustrative, `[UNTESTED]` —
+the integer skeleton of `@dot`, written before either backend lowered a
+reduction and never regenerated; the real `@dot` is no longer a refusal, since
+2026-09-27, but nothing has emitted it and this block is not evidence that it
+would come out as printed):
 
 ```c
 /* exsecutor: reach backend */
@@ -1367,10 +1380,11 @@ C1 is done; C2's harness landed with it. What each says now:
 | **C4** the N64 cross-compile — **DONE** | `--hospes mips64-none-o64` accepted: the row's width to `chk_set_target` (one call site, which had been a literal 64), a `== 4` arm in `program_c.inc`, and a refusal by name in the reference emitter so a narrow address is named rather than mis-described. **Nothing in `lower/` and nothing in `ir.inc`** — ADR 0015 decision 2. The certificate is `tests/run.sh`'s cross phase: six `cross=yes` directories emitted for the row, cross-compiled `-mabi=n32 -march=mips3` and RUN under `qemu-mipsn32`, held to the reference's three observables. Closure cost `lld` + `qemu-user`, both cached; not a cross GCC | D7 (target half), D2's o64 row | **met.** §14 entry 25 `status=run`; six directories agree byte for byte, `forma` among them, so `@transitus` byte order is exercised big-endian. Kiln's own `mips64-elf-gcc` 14.4.0 compiles the o64 reader clean at `-Wall -Wextra -Werror` with its ROM flags **plus `-fno-fast-math`** — 14,616 bytes, `nm -u` = `{exsrt_abortus, memset}` (**`memset`**, not `memcpy`: `-ftrivial-auto-var-init=pattern` produces it), zero FP-register references. **Linked into a Kiln ROM and run**, 2026-09-12. Kiln's `examples/exsec-streamdb-demo/` checks the o64 reader in as generated C, runs it on a 32,768-byte libdragon kthread, and compares every key with Kiln's own `streamdb-embedded` reader on the same container; `./dev shot` in Ares shows open verdict 0, 2 documents (Kiln 2), 29 trie nodes, both present keys found at 56 and 78 bytes, the absent key absent, and BOTH READERS AGREE. It fits because the traversal frame fell from 127,184 to 20,680 bytes (ADR 0016). Not gated: an emulator run on a live display is a recorded measurement, not a check. Two things the first runs found belong to the ROM's side and are recorded in that example: libdragon's `kthread_join` cannot block (a thread must be joined after it has finished), and `n64.mk` compiles an object with the HOST compiler unless it is a prerequisite of the `.z64` |
 
 Later, not scheduled: `muls`/`*ov` in both backends (`div`/`rem` left this
-list on 2026-09-25 for the reference and with rows 4/5 above for C);
-**`redinit`/`contrib`/`redfin` in THIS backend only** — the reference has
-them, so this row is parity work rather than a design question, and it is
-what §14 entry 28's differential and cross legs wait on; the
+list on 2026-09-25 for the reference and with rows 4/5 above for C, and
+**`redinit`/`contrib`/`redfin` left it on 2026-09-27** with rows 36–38 above —
+they were the one entry here that was parity work rather than a design
+question, and they were what §14 entry 28's differential and cross legs were
+waiting on); the
 unordered `fcmp` predicates, `fma`, float load/store and `numeri` honouring
 (`EXS-E0701` becomes reachable when the driver wires it) — the float
 opcodes themselves are no longer on this list; whole-program mode with a C
@@ -1700,23 +1714,31 @@ Numbered; each names the document and the sentence.
     fails verification (exit 5) before any backend sees it; and wiring
     `EXS-E0701` is a `driver/` change this backend cannot make.
 
-24. **`ssa-ir.md`'s own `@dot` example cannot be lowered by either
-    backend — reductions only, since 2026-09-14.** Its body contains
+24. **`ssa-ir.md`'s own `@dot` example could not be lowered by either
+    backend — CLOSED 2026-09-27.** Its body contains
     `%8 = load f32 %7 0 nativus` — a float in memory, which both
     backends' memory lowering used to refuse (the reference's
     `__bfa_mem_plan` dispatched on integer widths; the C emitter's
     `__bfc_mem_k` died on the float class) — and it is built on
-    `redinit`/`contrib`/`redfin`, refused in both backends since D4
-    was first written. The float half closed on 2026-09-14: the
+    `redinit`/`contrib`/`redfin`, refused in both backends when D4 was
+    first written and in this one alone from 2026-09-25 (this line said
+    "refused in both backends since D4 was first written" for two days
+    after the reference gained them). The float half closed on 2026-09-14: the
     signaculum stage needed `acies<f64, N>` element loads and stores,
     so float `load`/`store` in `nativus` order now lowers in both
     backends (the value as its raw IEEE bit pattern, 8 or 4 bytes — no
     arithmetic on the path), with `maior`/`minor` still refused by the
     verifier and both emitters (`tests/ir/float_mem.ir`,
-    `tests/ir/reject_verify_float_load_ord.ir`, D4 rows 40–41). What
-    `@dot` still trips is the reductions half, and that choice —
-    example gets an integer body, or the reductions get lowerings —
-    is not this backend's to make.
+    `tests/ir/reject_verify_float_load_ord.ir`, D4 rows 40–41). The
+    reductions half closed on 2026-09-27, and by the second of the two
+    routes this finding named: the reductions got lowerings (D4 rows
+    36–38), not the example an integer body. So neither half of `@dot`
+    is refused by either backend any more. What is still `[UNTESTED]`
+    is `@dot` ITSELF — no fixture in the tree is that function, and
+    section 3's illustrative unit was written before either backend had
+    a reduction and has not been regenerated since. "Nothing refuses it"
+    and "it has been emitted and run" are different claims, and only the
+    first is made here.
 
 ## 9. What retires each marker
 

@@ -136,8 +136,11 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-193}"
 # the day the C backend gained them. THAT DAY HAS COME FOR `div` AND `rem`:
 # the C backend lowers both (exsi_div_*/exsi_rem_* in prologue.c.in), the six
 # fixtures carry no `c-emit-exit=` any more, and the floor below rose by their
-# 6 x 4 = 24 builds. Seven of the fourteen still carry the key -- the
-# reductions, D4 rows 36-38 -- and the same sentence still stands for them.
+# 6 x 4 = 24 builds. AND THAT DAY HAS NOW COME FOR THE REDUCTIONS TOO
+# (2026-09-27): `backend_c/emit_c.inc` lowers `redinit`/`contrib`/`redfin`, the
+# remaining seven fixtures dropped their key as well, and the floor below rose
+# by their 7 x 4 = 28. Not one of the fourteen carries `c-emit-exit=` now, so
+# the sentence this block was holding open has no fixture left to apply to.
 # Programs 104 -> 126: the musical HydraModem examples (transmitter melos/
 # bassus/bicinium, receiver auditus, streaming receiver auditus_fluxus), set to
 # the count measured with them in.
@@ -172,16 +175,27 @@ PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-128}"
 # lowerable, 52 x 4 = 208. The reference's verdict on all six is unchanged --
 # it has executed them since the day they landed -- so this is a phase GAINING
 # 24 agreements, not any fixture changing its mind.
-DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-208}"
+# 208 -> 236 is the REDUCTIONS, 2026-09-27, and it is the same movement for the
+# same reason: the seven red_*.ir fixtures (red_ordinata_f32, red_ordinata_i64,
+# red_arborea_f32, red_arborea_int_trap, red_empty, red_w1, red_mul) dropped
+# `c-emit-exit=4` when the C backend gained `redinit`/`contrib`/`redfin`, so
+# 59 x 4 = 236. Their directives are untouched -- red_arborea_f32 still expects
+# the SAME two bit patterns, one per shape -- which is what makes the 28 new
+# builds agreements about the definition (ADR 0012) and not about a directive
+# that moved to meet them.
+DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-236}"
 
 # The same phase over tests/programs/. Two floors, because the claim has two
 # halves and a floor on either alone reads green while the other collapses:
 #
 #   DIFFERENTIAL_PROGRAM_FLOOR        program DIRECTORIES that were eligible
 #     (no c-differentia= in their TEST directive) and whose FOUR builds ALL
-#     agreed with the reference. 26 of the 96 directories are eligible; the
-#     other 70 are the receptio_vec_* sweep, each declaring
-#     c-differentia=nightly-sweep by name. A directory that stopped agreeing
+#     agreed with the reference. 76 of the 147 directories are eligible
+#     (measured 2026-09-27; this line read "26 of the 96" long after both
+#     numbers had stopped being true, which is the same defect the floors
+#     below are re-baselined against); the 70 that are not are the
+#     receptio_vec_* sweep, each declaring c-differentia=nightly-sweep by
+#     name. A directory that stopped agreeing
 #     drops this count, and a directory that stopped being COMPILED does too
 #     -- which a floor on builds alone would not catch, since a directory
 #     silently marked ineligible removes four builds and four agreements
@@ -221,8 +235,18 @@ DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-208}"
 #     in the spec, one file further down -- recorded here rather than quietly
 #     corrected, because a harness that misreports its own numbers is worse
 #     placed than a document to be caught doing it.
-DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-58}"
-DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-232}"
+#     58 -> 59 and 232 -> 236: contractio/ (spec 5.4's three reduction shapes
+#     from source, §14 entry 28), its own unit, four builds. It was never
+#     DECLARED ineligible -- it carried `c-exsc-exit=4`, so the phase checked
+#     parity of the C backend's refusal and then `continue`d before counting
+#     it, contributing 0 to both numbers instead of 1 and 4. The C backend
+#     gained `redinit`/`contrib`/`redfin` on 2026-09-27; the key is gone and
+#     the directory counts. A stated refusal that stops being true does not
+#     leave a hole in these numbers, it leaves a FAILING check -- which is
+#     what the phase reported the moment the lowering landed, and is why this
+#     floor moves in that commit and not a later one.
+DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-59}"
+DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-236}"
 
 # The cross phase's own floor, deliberately NOT folded into the differential
 # numbers above: a cross-compiled, emulated run of a 32-bit-`mensura` unit is

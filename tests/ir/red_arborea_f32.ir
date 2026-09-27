@@ -1,4 +1,4 @@
-; TEST: expect-exit=100 c-emit-exit=4
+; TEST: expect-exit=100
 ;
 ; THE FIXTURE THAT MAKES THE SHAPES DIFFERENT. Twenty f32 contributions, the
 ; same twenty in the same order, reduced twice -- `ordinata` and
@@ -84,10 +84,29 @@
 ; red_ordinata_f32.ir's check 1 pins for the identity fold -- and no fixture
 ; here puts a -0.0 in a tail `[UNTESTED]`.
 ;
-; `c-emit-exit=4`: the C backend refuses the three reduction opcodes by name
-; (c-backend.md D4 rows 36-38), so the differential phase checks parity of
-; that refusal. When it gains them, this fixture is the cross-check that the
-; two backends agree bit for bit on both shapes.
+; CROSS-CHECKED THROUGH THE C BACKEND, 2026-09-27. This fixture carried
+; `c-emit-exit=4` from the day it landed: the C backend refused the three
+; reduction opcodes, so the differential phase could only check parity of a
+; refusal. It carries the key no longer -- `backend_c/emit_c.inc` lowers
+; `redinit`/`contrib`/`redfin`, and the four builds (gcc and clang, -O0 and
+; -O2, every one under `-fsanitize=undefined -fno-sanitize-recover=all`) are
+; held to the SAME directive above as the reference's own run. The reference's
+; verdict here is unchanged and has been since the day it landed; what is new
+; is that three more toolchains have to agree with it.
+;
+; THIS IS THE FIXTURE THE CROSS-CHECK WAS WAITING FOR, and it is the sharpest
+; of the seven: both expected values are BIT PATTERNS, and the 9-ulp gap
+; between the two shapes is only there if the group tree is built in the
+; reference's order and the four-cell tail is folded as a tree. Measured
+; 2026-09-27: all four C builds exit 100, so gcc and clang at -O0 and -O2
+; produce 0x3F800000 for `ordinata` and 0x3F800009 for `arborea 8` -- the
+; same two patterns the reference produces. That is what makes ADR 0012's
+; "the reference lowering IS the definition" a checked statement about the C
+; backend and not only a statement about the reference.
+;
+; The `-0.0`-in-a-tail mutation named above is STILL `[UNTESTED]`, and in BOTH
+; backends now: no fixture in either puts a -0.0 in a partial group, so the
+; two backends agreeing says nothing whatever about it. Recorded, not claimed.
 
 functio @initium (ptr) -> u8 {
 b0:

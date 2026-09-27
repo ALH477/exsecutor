@@ -1,4 +1,4 @@
-; TEST: expect-exit=100 c-emit-exit=4
+; TEST: expect-exit=100
 ;
 ; `ordinata` over floats: one accumulator started at the op's IDENTITY, each
 ; `contrib` folding acc = op(acc, v) in contribution order, `redfin` handing
@@ -36,8 +36,22 @@
 ; of the identity -> exit 1 and exit 2 (`fsub` gives -1.0). `fsub`'s
 ; identity taken as the first operand of a two-operand subtraction -> exit 2.
 ;
-; `c-emit-exit=4`: the C backend refuses the reduction opcodes by name
-; (c-backend.md D4 rows 36-38).
+; CROSS-CHECKED THROUGH THE C BACKEND, 2026-09-27. This fixture carried
+; `c-emit-exit=4` from the day it landed: the C backend refused the three
+; reduction opcodes, so the differential phase could only check parity of a
+; refusal. It carries the key no longer -- `backend_c/emit_c.inc` lowers
+; `redinit`/`contrib`/`redfin`, and the four builds (gcc and clang, -O0 and
+; -O2, every one under `-fsanitize=undefined -fno-sanitize-recover=all`) are
+; held to the SAME directive above as the reference's own run. The reference's
+; verdict here is unchanged and has been since the day it landed; what is new
+; is that three more toolchains have to agree with it.
+;
+; What this one cross-checks in particular: CHECK 1's sign. The C lowering
+; seeds the accumulator with `exsi_f32_from_bits(UINT64_C(0))` -- a bit
+; pattern through the prologue's bit-cast helper, never a `0.0f` literal --
+; and then folds, so +0.0 + -0.0 is +0.0 in C exactly as it is in SSE2. A C
+; lowering that had special-cased a single contribution would answer
+; 0x80000000 and fail here, in the same place the reference would.
 
 functio @initium (ptr) -> u8 {
 b0:

@@ -228,7 +228,11 @@ endp
 ; else with no C spelling in library mode (a reduction handle, a function
 ; type), 3 a float (f32 -> `float`, f64 -> `double`), 4 a vector float
 ; (vf32.N -> `exs_vf32_N`, vf64.N -> `exs_vf64_N`). Class 2 is refused by
-; name by every caller; class 3 is the float milestone's addition, and the
+; name by every caller -- `red.F` INCLUDED, and deliberately so now that the
+; reductions are lowered: a handle is still not a C value, so
+; `__bfc_emit_decls`'s pass 1 skips a `redinit` rather than asking for its
+; type name, and verifier rule 7 keeps a `red.F` off every other opcode
+; (see that skip's comment); class 3 is the float milestone's addition, and the
 ; one place it reaches is the float lowerings plus the signature and value
 ; declarations -- float-typed memory, `iconst` and integer `cmp` refuse it.
 ; Class 4 is the vector wave's addition: it reaches the vadd/vsub/vmul/vdiv
@@ -3920,12 +3924,994 @@ proc __bfc_emit_trap, ctx, module, func, instid
 endp
 
 ; ============================================================================
+; D4 rows 36-38: redinit / contrib / redfin -- the reductions
+; ============================================================================
+;
+; ssa-ir.md 2.6 does not describe `arborea` in prose and leave the lowering to
+; follow it: ADR 0012 makes THE REFERENCE LOWERING THE DEFINITION, so what
+; this section owes is not "a correct reduction" but "the reference's
+; reduction, statement for statement". Every routine below is
+; `backend_fasmg/emit.inc`'s `__bfa_red_*`/`__bfa_emit_red*` transcribed --
+; the same op-word vocabulary, the same identities, the same doubling-stride
+; tree, the same per-count tail dispatch, the same refusal texts.
+;
+; THE HELPERS ARE DUPLICATED, NOT SHARED, and both alternatives are worse.
+; Sharing would mean including `emit.inc` into `tests/ir/emit_c.asm` -- whose
+; narrower include set is the thing that makes a shared-helper mistake
+; visible at all -- or parameterising a `die` across two modules that exit
+; with different prefixes. `__bfc_ty_info` (a copy of `__bfa_ty_info`) and
+; `__bfc_die` (a copy of `__bfa_emit_die`) settled the same question twice
+; already. What keeps the copies honest is NOT this comment: the differential
+; phase byte-compares the seven `tests/ir/red_*.ir` fixtures across four
+; toolchains against the expectations the reference's own runs are held to,
+; so a divergence in an identity, an op word, a tree order or a tail size is
+; a failing check rather than a latent drift.
+;
+; ONE PAIRWISE COMBINE IS ONE C STATEMENT. `prologue.c.in`'s contraction
+; defence rests on the sentence "One IR op is one C statement, so no emitted
+; statement ever holds a multiply-and-add tree to contract", and it records
+; that Clang has nothing that works from inside the source. A group tree
+; emitted as one C expression -- `g4[0] = (a + b) + (c + d);` -- would
+; falsify that sentence and hand `-ffp-contract=fast` a tree to fold, which
+; is exactly what spec 5.4's `contractio explicita` forbids. So the tree is
+; emitted one assignment at a time, in the reference's order, and every
+; intermediate is a real cell of the group array.
+;
+; THE ACCUMULATOR IS `vK`, the handle's own value name -- the C counterpart
+; of the reference's "the accumulator: the handle's own slot". `arborea` adds
+; `rK`, the live count, and `gK[w]`, the group cells. All three are declared
+; by `__bfc_emit_decls`'s pass 4, and the `red.F` HANDLE ITSELF IS NOT A C
+; VALUE: pass 1 skips it, because a `red.F` has no C type name (class 2).
+;
+; `gK[rK]` is the one place this emitter indexes by a RUNTIME value, for the
+; same reason the reference computes one frame address at runtime there: the
+; count is a runtime quantity, so the destination cell cannot be a literal
+; name. `rK` is 0..w-1 at every store, so the index is in range by
+; construction and `-fsanitize=bounds` has nothing to report.
+;
+; WHAT IS STILL UNMEASURED, IN BOTH BACKENDS: a tail cell holding -0.0.
+; `red_arborea_f32.ir`'s header names it -- padding a short tail out to `w`
+; with the identity and running the full `w`-tree is observationally
+; different only when a tail cell is -0.0, since 0.0 + -0.0 is +0.0 -- and no
+; fixture in either backend puts one there. `[UNTESTED]`, said here as it is
+; said there, rather than quietly claimed by the fact that the two backends
+; agree: they would be agreeing on the same untested thing.
+; ----------------------------------------------------------------------------
+
+; The two flags an operand word carries. An operand of a combine is either a
+; VALUE (`vN` -- a contributed value, or the accumulator, whose value name is
+; the handle's own id) or a CELL of the group array (`g<h>[idx]`); and the
+; statement is either at the body's indent or inside a brace. Packed into the
+; two argument words because `proc` homes six arguments and no more, exactly
+; as `__bfc_emit_edge_copies` packs its own indent flag into `skipn`.
+BFC_RED_CELL     = 0x80000000	; this operand is `g<h>[idx]`, idx in the low bits
+BFC_RED_DEEP     = 0x40000000	; set on `aenc` only: eight spaces, not four
+BFC_RED_CELLDEEP = 0xC0000000	; both at once, spelled once
+BFC_RED_ENC      = 0xBFFFFFFF	; an `aenc` with DEEP cleared
+BFC_RED_IDX      = 0x3FFFFFFF	; the cell index, once the flags are off
+
+; __bfc_red_case? lit, opc -- one row of the op-word table; emit.inc's
+; `__bfa_red_case?` with this file's prefix. Inside a proc with `oname`/`olen`
+; locals ONLY.
+macro __bfc_red_case? lit, opc
+	local skip, s, e
+	mov	rdi, [oname]
+	mov	rsi, [olen]
+	jmp	e
+	s db	lit
+	e:
+	lea	rdx, [s]
+	mov	rcx, e - s
+	call	__bfa_streq
+	test	eax, eax
+	jz	skip
+	mov	eax, opc
+	return
+  skip:
+end macro
+
+; __bfc_red_op(module, opid) -> eax = the BFA_OP_* the reduction folds with.
+; `redinit`'s op is an INTERNED WORD and not an opcode (parse.inc's
+; `__bfa_ps_redinit`: an OPEN vocabulary, interned so any spelling
+; round-trips), so the admission decision belongs to the emitter. The ten
+; below are spec 5.4's reduction-capable operators, in emit.inc's order;
+; anything else -- `fdiv`, `mulw`, `muls`, a misspelling -- is refused by name
+; rather than folded with a guessed operator.
+proc __bfc_red_op, module, opid
+	locals
+		slot oname, dq
+		slot olen,  dq
+	endl
+	mov	rdi, [module]
+	mov	rdi, [rdi + BfaModule.names]
+	mov	esi, [opid]
+	call	intern_bytes
+	mov	[oname], rax
+	mov	[olen], rdx
+
+	__bfc_red_case 'fadd', BFA_OP_FADD
+	__bfc_red_case 'fsub', BFA_OP_FSUB
+	__bfc_red_case 'fmul', BFA_OP_FMUL
+	__bfc_red_case 'add',  BFA_OP_ADD
+	__bfc_red_case 'sub',  BFA_OP_SUB
+	__bfc_red_case 'mul',  BFA_OP_MUL
+	__bfc_red_case 'addw', BFA_OP_ADDW
+	__bfc_red_case 'subw', BFA_OP_SUBW
+	__bfc_red_case 'adds', BFA_OP_ADDS
+	__bfc_red_case 'subs', BFA_OP_SUBS
+
+	jmp	.after_msg
+  .msg db "redinit: the op must be one of fadd fsub fmul add sub mul addw subw adds subs (spec 5.4's reduction operators)"
+  .after_msg:
+	lea	rdi, [.msg]
+	mov	rsi, .after_msg - .msg
+	call	__bfc_die
+endp
+
+; __bfc_red_isfloat(module, fty, opc) -> eax = 1 if this reduction is a FLOAT
+; one, 0 if an integer one; dies by name when the op and `F` disagree about
+; which, or when `F` is neither. A vector float takes the second refusal, as
+; it does in the reference -- there is no lane-wise reduction in spec 5.4.
+proc __bfc_red_isfloat, module, fty, opc
+	locals
+		slot isflop, dd
+		slot isflty, dd
+	endl
+	mov	dword [isflop], 0
+	mov	ecx, [opc]
+	cmp	ecx, BFA_OP_FADD
+	je	.opfloat
+	cmp	ecx, BFA_OP_FSUB
+	je	.opfloat
+	cmp	ecx, BFA_OP_FMUL
+	jne	.opdone
+  .opfloat:
+	mov	dword [isflop], 1
+  .opdone:
+	mov	rdi, [module]
+	mov	esi, [fty]
+	call	__bfc_ty_info
+	mov	dword [isflty], 0
+	cmp	edx, BFA_TK_U
+	je	.tydone
+	cmp	edx, BFA_TK_I
+	je	.tydone
+	cmp	edx, BFA_TK_F32
+	je	.tyfloat
+	cmp	edx, BFA_TK_F64
+	je	.tyfloat
+	jmp	.after_badty
+  .badty db "redinit: F must be a scalar integer (uN/iN) or float (f32/f64) type (ssa-ir.md 2.6)"
+  .after_badty:
+	lea	rdi, [.badty]
+	mov	rsi, .after_badty - .badty
+	call	__bfc_die
+  .tyfloat:
+	mov	dword [isflty], 1
+  .tydone:
+	mov	eax, [isflop]
+	cmp	eax, [isflty]
+	je	.agree
+	jmp	.after_mismatch
+  .mismatch db "redinit: the op and F disagree -- fadd/fsub/fmul reduce a float, add/sub/mul/addw/subw/adds/subs an integer"
+  .after_mismatch:
+	lea	rdi, [.mismatch]
+	mov	rsi, .after_mismatch - .mismatch
+	call	__bfc_die
+  .agree:
+	mov	eax, [isflty]
+	return
+endp
+
+; __bfc_red_ident(module, fty, opc) -> rax = the accumulator's starting
+; 64-BIT PATTERN: 0 for the additive words (`sub` included -- an `ordinata`
+; `sub` reduction is ((0-a)-b)-c, which is what "the accumulator starts at the
+; identity and every contribution folds" means), 1 for `mul`, and the IEEE
+; pattern of 0.0 or 1.0 for the float three. Dies by name if the value is not
+; a value of F -- `mul` over `i1`, whose values are 0 and -1.
+;
+; The float width comes from `__bfc_ty_info`'s kind rather than from
+; emit.inc's `__bfa_emit_fwidth`, which is not on this file's include chain
+; (the header's finding 14); the two read the same `BfaType`.
+proc __bfc_red_ident, module, fty, opc
+	locals
+		slot ident, dq
+	endl
+	mov	qword [ident], 0
+	mov	ecx, [opc]
+	cmp	ecx, BFA_OP_MUL
+	je	.intone
+	cmp	ecx, BFA_OP_FMUL
+	je	.fltone
+	jmp	.check
+  .intone:
+	mov	qword [ident], 1
+	jmp	.check
+  .fltone:
+	mov	rdi, [module]
+	mov	esi, [fty]
+	call	__bfc_ty_info
+	cmp	edx, BFA_TK_F64
+	je	.f64one
+	mov	qword [ident], 0x3F800000		; 1.0f
+	jmp	.check
+  .f64one:
+	mov	rax, 0x3FF0000000000000			; 1.0
+	mov	[ident], rax
+  .check:
+	mov	rdi, [module]
+	mov	esi, [fty]
+	mov	rdx, [ident]
+	call	bfa_type_canon
+	cmp	rax, [ident]
+	je	.ok
+	jmp	.after_msg
+  .msg db "redinit: this op's identity is not a value of F (`mul` over `i1`: 1 is not an `i1`)"
+  .after_msg:
+	lea	rdi, [.msg]
+	mov	rsi, .after_msg - .msg
+	call	__bfc_die
+  .ok:
+	mov	rax, [ident]
+	return
+endp
+
+; __bfc_red_shape(module, func, h) -> eax = shape, edx = w, ecx = F's type id
+; -- the three facts every routine here reads off a `redinit`.
+;
+; A MERGE of emit.inc's `__bfa_red_shape` and the three validation arms of
+; its `__bfa_emit_redinit`, and the merge is forced rather than tidier: this
+; backend needs the shape, the width AND F at DECLARATION time, one pass
+; before any instruction is lowered, so the checks cannot live in the
+; `redinit` arm alone. All three refusal texts are the reference's, word for
+; word.
+;
+; A handle that is not a `redinit` is refused by name: only `redinit`
+; produces a `red.F` value (verifier rule 7), and `exsc` reaches the emitter
+; without the verifier, so reading `a`/`b` off some other opcode would be
+; reading an unrelated instruction's operands as a shape and a width.
+proc __bfc_red_shape, module, func, h
+	locals
+		slot shape, dd
+		slot w,     dd
+		slot hty,   dd
+		slot fty,   dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [h]
+	call	bfa_inst_ptr
+	movzx	ecx, word [rax + BfaInst.op]
+	cmp	ecx, BFA_OP_REDINIT
+	jne	.nothandle
+	mov	ecx, [rax + BfaInst.a]
+	mov	[shape], ecx
+	mov	ecx, [rax + BfaInst.b]
+	mov	[w], ecx
+	mov	ecx, [rax + BfaInst.ty]
+	mov	[hty], ecx
+
+	mov	rdi, [module]
+	mov	esi, [hty]
+	call	bfa_type_ptr
+	movzx	ecx, byte [rax + BfaType.kind]
+	cmp	ecx, BFA_TK_RED
+	jne	.badhandle
+	mov	ecx, [rax + BfaType.ref]		; red.F -> F
+	mov	[fty], ecx
+
+	cmp	dword [shape], BFA_RSHAPE_ARBOREA
+	je	.arborea
+	cmp	dword [w], 0
+	jne	.badw
+	jmp	.wok
+  .arborea:
+	cmp	dword [w], 0
+	je	.badw
+	cmp	dword [w], BFA_RED_W_MAX
+	ja	.badw
+  .wok:
+	mov	eax, [shape]
+	mov	edx, [w]
+	mov	ecx, [fty]
+	return
+
+  .nothandle:
+	jmp	.after_m1
+  .m1 db "contrib/redfin: the handle operand is not a `redinit` (only `redinit` produces a `red.F`)"
+  .after_m1:
+	lea	rdi, [.m1]
+	mov	rsi, .after_m1 - .m1
+	call	__bfc_die
+  .badhandle:
+	jmp	.after_m2
+  .m2 db "redinit: the result type is not a `red.F` handle"
+  .after_m2:
+	lea	rdi, [.m2]
+	mov	rsi, .after_m2 - .m2
+	call	__bfc_die
+  .badw:
+	jmp	.after_m3
+  .m3 db "redinit: `ordinata` takes w = 0, `arborea` a w in 1..64 (BFA_RED_W_MAX -- the tail dispatch is O(w^2) emitted lines)"
+  .after_m3:
+	lea	rdi, [.m3]
+	mov	rsi, .after_m3 - .m3
+	call	__bfc_die
+endp
+
+; __bfc_emit_redcell(ctx, h, enc) -- one operand of a combine: `vN` for a
+; value (the accumulator included -- its value name is the handle's id), or
+; `g<h>[idx]` for a cell of the group array. `enc` must arrive with
+; BFC_RED_DEEP already cleared.
+proc __bfc_emit_redcell, ctx, h, enc
+	locals
+		slot idx, dd
+	endl
+	mov	eax, [enc]
+	test	eax, BFC_RED_CELL
+	jnz	.cell
+	mov	rdi, [ctx]
+	mov	esi, [enc]
+	call	__bfc_emit_v
+	return
+  .cell:
+	and	eax, BFC_RED_IDX
+	mov	[idx], eax
+	__bfc_emtxt "g"
+	mov	rdi, [ctx]
+	mov	esi, [h]
+	call	__bfa_out_u64
+	__bfc_emtxt "["
+	mov	rdi, [ctx]
+	mov	esi, [idx]
+	call	__bfa_out_u64
+	__bfc_emtxt "]"
+	return
+endp
+
+; __bfc_emit_redop(ctx, module, func, h, aenc, benc) -- ONE reduction step,
+; and ONE C statement:
+;
+;       <a> = op(<a>, <b>);
+;
+; with `op` and `F` read from the `redinit` at `h`. Both operands are encoded
+; words, which is what lets the accumulator (`v<h>`), a contributed value
+; (`v<v>`) and a group cell (`g<h>[i]`) all be the same case -- the C
+; counterpart of the reference's frame BYTE OFFSETS.
+;
+; The three shapes are `__bfc_emit_bin`'s own trichotomy, minus the PLAIN row
+; (no bitwise word reduces) and minus `mulw` (not a reduction operator):
+;
+;   HELPER  <a> = exsi_<op>_<u|i>(<a>, <b>, N);     add sub mul adds subs
+;   WRAP    <a> = exsi_norm_<u|i>(<a> + <b>, N);    addw subw
+;   FLOAT   <a> = <a> + <b>;                        fadd fsub fmul
+;
+; So a trapping tree combine reaches `exsi_add_i`/`exsi_mul_i` -- the very
+; helper the standalone opcode reaches -- and the trap or the wrap or the
+; clamp is the same function, not a re-implementation of it
+; (`tests/ir/red_arborea_int_trap.ir`, and ssa-ir.md 2.6's "integer ops trap
+; exactly as the standalone opcode would"). The float row is one C operator
+; on the operands' own width, which the prologue's FLT_EVAL_METHOD 0 pins to
+; one IEEE rounding.
+;
+; The float operator is chosen by its own chain and not by borrowing
+; `__bfc_emit_fbin`'s, for the reason that routine states about
+; `__bfc_emit_binop`: a shared table a future row falls through is worse than
+; a duplicated one it cannot.
+proc __bfc_emit_redop, ctx, module, func, h, aenc, benc
+	locals
+		slot a,     dd
+		slot b,     dd
+		slot deep,  dd
+		slot opid,  dd
+		slot fty,   dd
+		slot opc,   dd
+		slot nbits, dd
+	endl
+	mov	eax, [aenc]
+	mov	ecx, eax
+	and	ecx, BFC_RED_DEEP
+	mov	[deep], ecx
+	and	eax, BFC_RED_ENC
+	mov	[a], eax
+	mov	eax, [benc]
+	mov	[b], eax
+
+	mov	rdi, [module]
+	mov	rsi, [func]
+	mov	edx, [h]
+	call	__bfc_red_shape
+	mov	[fty], ecx
+	mov	rdi, [func]
+	mov	esi, [h]
+	call	bfa_inst_ptr
+	movzx	ecx, word [rax + BfaInst.aux]
+	mov	[opid], ecx
+	mov	rdi, [module]
+	mov	esi, [opid]
+	call	__bfc_red_op
+	mov	[opc], eax
+
+	mov	rdi, [ctx]
+	mov	esi, [deep]
+	call	__bfc_emit_indent
+	mov	rdi, [ctx]
+	mov	esi, [h]
+	mov	edx, [a]
+	call	__bfc_emit_redcell
+	__bfc_emtxt " = "
+
+	mov	rdi, [module]
+	mov	esi, [fty]
+	mov	edx, [opc]
+	call	__bfc_red_isfloat
+	test	eax, eax
+	jnz	.isfloat
+
+	mov	rdi, [module]
+	mov	esi, [fty]
+	call	__bfc_int_width
+	mov	[nbits], eax
+	cmp	dword [opc], BFA_OP_ADDW
+	je	.wrap
+	cmp	dword [opc], BFA_OP_SUBW
+	je	.wrap
+
+	; ---- HELPER: add sub mul adds subs -----------------------------------
+	mov	rdi, [ctx]
+	mov	esi, [opc]
+	call	__bfc_emit_helpername
+	mov	rdi, [module]
+	mov	esi, [fty]
+	call	__bfc_ty_signed
+	test	eax, eax
+	jz	.hu
+	__bfc_emtxt "_i("
+	jmp	.hargs
+  .hu:
+	__bfc_emtxt "_u("
+  .hargs:
+	mov	rdi, [ctx]
+	mov	esi, [h]
+	mov	edx, [a]
+	call	__bfc_emit_redcell
+	__bfc_emtxt ", "
+	mov	rdi, [ctx]
+	mov	esi, [h]
+	mov	edx, [b]
+	call	__bfc_emit_redcell
+	__bfc_emtxt ", "
+	mov	rdi, [ctx]
+	mov	esi, [nbits]
+	call	__bfa_out_u64
+	mov	rdi, [ctx]
+	mov	esi, ')'
+	call	__bfa_out_byte
+	jmp	.close
+
+	; ---- WRAP: addw subw --------------------------------------------------
+  .wrap:
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	edx, [fty]
+	call	__bfc_norm_open
+	mov	rdi, [ctx]
+	mov	esi, [h]
+	mov	edx, [a]
+	call	__bfc_emit_redcell
+	mov	rdi, [ctx]
+	mov	esi, [opc]
+	call	__bfc_emit_binop
+	mov	rdi, [ctx]
+	mov	esi, [h]
+	mov	edx, [b]
+	call	__bfc_emit_redcell
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	edx, [fty]
+	call	__bfc_norm_close
+	jmp	.close
+
+	; ---- FLOAT: fadd fsub fmul --------------------------------------------
+  .isfloat:
+	mov	rdi, [ctx]
+	mov	esi, [h]
+	mov	edx, [a]
+	call	__bfc_emit_redcell
+	cmp	dword [opc], BFA_OP_FSUB
+	je	.fsub
+	cmp	dword [opc], BFA_OP_FMUL
+	je	.fmul
+	__bfc_emtxt " + "
+	jmp	.fops
+  .fsub:
+	__bfc_emtxt " - "
+	jmp	.fops
+  .fmul:
+	__bfc_emtxt " * "
+  .fops:
+	mov	rdi, [ctx]
+	mov	esi, [h]
+	mov	edx, [b]
+	call	__bfc_emit_redcell
+
+  .close:
+	mov	rdi, [ctx]
+	call	__bfc_semi
+	return
+endp
+
+; __bfc_emit_redtree(ctx, module, func, h, k) -- the pairwise tree over the
+; first `k` cells of the `arborea` handle `h`, in place, leaving the group
+; value in `g<h>[0]`. `k` >= 1; `k` = 1 emits nothing at all (one element IS
+; its own tree). The doubling-stride loop is emit.inc's, index for index, and
+; ssa-ir.md 2.6's fold order is exactly what it walks.
+proc __bfc_emit_redtree, ctx, module, func, h, k
+	locals
+		slot stride, dd
+		slot i,      dd
+		slot aenc,   dd
+		slot benc,   dd
+	endl
+	mov	dword [stride], 1
+  .level:
+	mov	eax, [stride]
+	cmp	eax, [k]
+	jae	.done
+	mov	dword [i], 0
+  .pair:
+	mov	eax, [i]
+	add	eax, [stride]
+	cmp	eax, [k]
+	jae	.nextlevel
+	mov	eax, [i]
+	or	eax, BFC_RED_CELLDEEP
+	mov	[aenc], eax
+	mov	eax, [i]
+	add	eax, [stride]
+	or	eax, BFC_RED_CELL
+	mov	[benc], eax
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [h]
+	mov	r8d, [aenc]
+	mov	r9d, [benc]
+	call	__bfc_emit_redop
+	mov	eax, [stride]
+	add	eax, eax
+	add	eax, [i]
+	mov	[i], eax
+	jmp	.pair
+  .nextlevel:
+	mov	eax, [stride]
+	add	eax, eax
+	mov	[stride], eax
+	jmp	.level
+  .done:
+	return
+endp
+
+; __bfc_emit_redgroup(ctx, module, func, h, k) -- the tree over `k` cells,
+; then the one fold that delivers it: acc = op(acc, group). `k` >= 1. Always
+; inside a brace, so every statement it emits is at eight spaces.
+proc __bfc_emit_redgroup, ctx, module, func, h, k
+	locals
+		slot aenc, dd
+	endl
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [h]
+	mov	r8d, [k]
+	call	__bfc_emit_redtree
+
+	mov	eax, [h]			; the accumulator: `v<h>`
+	or	eax, BFC_RED_DEEP
+	mov	[aenc], eax
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [h]
+	mov	r8d, [aenc]
+	mov	r9d, BFC_RED_CELL		; `g<h>[0]`
+	call	__bfc_emit_redop
+	return
+endp
+
+; __bfc_emit_reddecl(ctx, module, func, instid) -- pass 4's row for one
+; `redinit`: the accumulator, and for `arborea` the live count and the group
+; cells.
+;
+;   <F> v<K>;
+;   uint64_t r<K>;        `arborea` only
+;   <F> g<K>[w];          `arborea` only
+;
+; F is validated here and not only in the `redinit` arm, so that a `red.F`
+; over something which is not a scalar integer or float is named by the
+; reference's own sentence instead of reaching `__bfc_emit_ctype`'s class-2
+; refusal or, worse, being declared as an address.
+proc __bfc_emit_reddecl, ctx, module, func, instid
+	locals
+		slot shape, dd
+		slot w,     dd
+		slot fty,   dd
+		slot opid,  dd
+		slot opc,   dd
+	endl
+	mov	rdi, [module]
+	mov	rsi, [func]
+	mov	edx, [instid]
+	call	__bfc_red_shape
+	mov	[shape], eax
+	mov	[w], edx
+	mov	[fty], ecx
+
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	movzx	ecx, word [rax + BfaInst.aux]
+	mov	[opid], ecx
+	mov	rdi, [module]
+	mov	esi, [opid]
+	call	__bfc_red_op
+	mov	[opc], eax
+	mov	rdi, [module]
+	mov	esi, [fty]
+	mov	edx, [opc]
+	call	__bfc_red_isfloat
+
+	; F is an integer or a float and never an address, so the space after
+	; the type name is unconditional here -- pass 1's class-1 test has
+	; nothing to decide.
+	__bfc_emtxt "    "
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	edx, [fty]
+	call	__bfc_emit_ctype
+	__bfc_emtxt " "
+	mov	rdi, [ctx]
+	mov	esi, [instid]
+	call	__bfc_emit_v
+	mov	rdi, [ctx]
+	call	__bfc_semi
+
+	cmp	dword [shape], BFA_RSHAPE_ARBOREA
+	jne	.done
+	__bfc_emtxt "    uint64_t r"
+	mov	rdi, [ctx]
+	mov	esi, [instid]
+	call	__bfa_out_u64
+	mov	rdi, [ctx]
+	call	__bfc_semi
+	__bfc_emtxt "    "
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	edx, [fty]
+	call	__bfc_emit_ctype
+	__bfc_emtxt " g"
+	mov	rdi, [ctx]
+	mov	esi, [instid]
+	call	__bfa_out_u64
+	__bfc_emtxt "["
+	mov	rdi, [ctx]
+	mov	esi, [w]
+	call	__bfa_out_u64
+	__bfc_emtxt "];", 10
+  .done:
+	return
+endp
+
+; __bfc_emit_redinit(ctx, module, func, instid) -- `%h = redinit F op shape w`:
+; the accumulator to the identity, and for `arborea` the count to 0. Nothing
+; else; the handle is not a value any other opcode can read.
+;
+;   v<K> = UINT64_C(<ident>);                        integer F
+;   v<K> = exsi_f32_from_bits(UINT64_C(<ident>));    f32 F -- `fconst`'s path
+;   r<K> = UINT64_C(0);                              `arborea` only
+;
+; The float identity goes in as a BIT PATTERN through the prologue's bit-cast
+; helper for exactly `fconst`'s reason (row 60): a C floating literal cannot
+; spell what a pattern can, and +0.0 against -0.0 is the distinction
+; `red_ordinata_f32.ir`'s check 1 is about.
+proc __bfc_emit_redinit, ctx, module, func, instid
+	locals
+		slot shape, dd
+		slot w,     dd
+		slot fty,   dd
+		slot opid,  dd
+		slot opc,   dd
+		slot isflt, dd
+		slot ident, dq
+	endl
+	mov	rdi, [module]
+	mov	rsi, [func]
+	mov	edx, [instid]
+	call	__bfc_red_shape
+	mov	[shape], eax
+	mov	[w], edx
+	mov	[fty], ecx
+
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	movzx	ecx, word [rax + BfaInst.aux]
+	mov	[opid], ecx
+	mov	rdi, [module]
+	mov	esi, [opid]
+	call	__bfc_red_op
+	mov	[opc], eax
+	mov	rdi, [module]
+	mov	esi, [fty]
+	mov	edx, [opc]
+	call	__bfc_red_isfloat
+	mov	[isflt], eax
+	mov	rdi, [module]
+	mov	esi, [fty]
+	mov	edx, [opc]
+	call	__bfc_red_ident
+	mov	[ident], rax
+
+	mov	rdi, [ctx]
+	mov	rsi, [func]
+	mov	edx, [instid]
+	call	__bfc_emit_result
+	cmp	dword [isflt], 0
+	je	.intident
+	mov	rdi, [module]
+	mov	esi, [fty]
+	call	__bfc_ty_info
+	cmp	edx, BFA_TK_F64
+	je	.f64ident
+	__bfc_emtxt "exsi_f32_from_bits("
+	jmp	.fltbits
+  .f64ident:
+	__bfc_emtxt "exsi_f64_from_bits("
+  .fltbits:
+	mov	rdi, [ctx]
+	mov	rsi, [ident]
+	call	__bfc_emit_u64c
+	__bfc_emtxt ")"
+	jmp	.identdone
+  .intident:
+	mov	rdi, [ctx]
+	mov	rsi, [ident]
+	call	__bfc_emit_u64c
+  .identdone:
+	mov	rdi, [ctx]
+	call	__bfc_semi
+
+	cmp	dword [shape], BFA_RSHAPE_ARBOREA
+	jne	.done
+	__bfc_emtxt "    r"
+	mov	rdi, [ctx]
+	mov	esi, [instid]
+	call	__bfa_out_u64
+	__bfc_emtxt " = "
+	mov	rdi, [ctx]
+	xor	esi, esi
+	call	__bfc_emit_u64c
+	mov	rdi, [ctx]
+	call	__bfc_semi
+  .done:
+	return
+endp
+
+; __bfc_emit_contrib(ctx, module, func, instid) -- `contrib %h %v`, one
+; contribution.
+;
+;   ordinata   acc = op(acc, v), and that is all -- one statement.
+;   arborea w  the value into the cell the count names, the count bumped, and
+;              when the group is full the tree, the fold and the count back
+;              to 0:
+;
+;       g<h>[r<h>] = v<v>;
+;       r<h> = r<h> + UINT64_C(1);
+;       if (r<h> == UINT64_C(w)) {
+;           ... the tree over w cells, then acc = op(acc, group) ...
+;           r<h> = UINT64_C(0);
+;       }
+;
+; A brace rather than the reference's skip-label: C has the block, and
+; `__bfc_emit_br` already sets the house shape for one (four spaces at the
+; `if`, eight inside). The count is a plain `uint64_t` bumped with a C `+`
+; and not a helper -- it is the emitter's own bookkeeping, not an IR `add`,
+; and it cannot overflow: `w` is at most BFA_RED_W_MAX.
+proc __bfc_emit_contrib, ctx, module, func, instid
+	locals
+		slot h,     dd
+		slot v,     dd
+		slot shape, dd
+		slot w,     dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[h], ecx
+	mov	ecx, [rax + BfaInst.b]
+	mov	[v], ecx
+
+	mov	rdi, [module]
+	mov	rsi, [func]
+	mov	edx, [h]
+	call	__bfc_red_shape
+	mov	[shape], eax
+	mov	[w], edx
+
+	cmp	dword [shape], BFA_RSHAPE_ARBOREA
+	je	.arborea
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [h]
+	mov	r8d, [h]			; the accumulator, `v<h>`
+	mov	r9d, [v]
+	call	__bfc_emit_redop
+	return
+
+  .arborea:
+	__bfc_emtxt "    g"
+	mov	rdi, [ctx]
+	mov	esi, [h]
+	call	__bfa_out_u64
+	__bfc_emtxt "[r"
+	mov	rdi, [ctx]
+	mov	esi, [h]
+	call	__bfa_out_u64
+	__bfc_emtxt "] = "
+	mov	rdi, [ctx]
+	mov	esi, [v]
+	call	__bfc_emit_v
+	mov	rdi, [ctx]
+	call	__bfc_semi
+
+	__bfc_emtxt "    r"
+	mov	rdi, [ctx]
+	mov	esi, [h]
+	call	__bfa_out_u64
+	__bfc_emtxt " = r"
+	mov	rdi, [ctx]
+	mov	esi, [h]
+	call	__bfa_out_u64
+	__bfc_emtxt " + "
+	mov	rdi, [ctx]
+	mov	esi, 1
+	call	__bfc_emit_u64c
+	mov	rdi, [ctx]
+	call	__bfc_semi
+
+	__bfc_emtxt "    if (r"
+	mov	rdi, [ctx]
+	mov	esi, [h]
+	call	__bfa_out_u64
+	__bfc_emtxt " == "
+	mov	rdi, [ctx]
+	mov	esi, [w]
+	call	__bfc_emit_u64c
+	__bfc_emtxt ") {", 10
+
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [h]
+	mov	r8d, [w]
+	call	__bfc_emit_redgroup
+
+	__bfc_emtxt "        r"
+	mov	rdi, [ctx]
+	mov	esi, [h]
+	call	__bfa_out_u64
+	__bfc_emtxt " = "
+	mov	rdi, [ctx]
+	xor	esi, esi
+	call	__bfc_emit_u64c
+	mov	rdi, [ctx]
+	call	__bfc_semi
+	__bfc_emtxt "    }", 10
+	return
+endp
+
+; __bfc_emit_redfin(ctx, module, func, instid) -- `%r = redfin F %h`: the
+; tail, then the accumulator into this instruction's own value.
+;
+;   ordinata   a copy: acc IS the answer.
+;   arborea w  the live count is 0..w-1 at this point (a full group folded
+;              itself), and the tree over k cells is a DIFFERENT unrolled
+;              sequence for each k, so the tail is a dispatch -- an
+;              `else if` chain where the reference has a compare-and-jump
+;              chain plus one labelled block per size:
+;
+;       if (r<h> == UINT64_C(1)) {
+;           ... tree over 1 cell, then the fold ...
+;       } else if (r<h> == UINT64_C(2)) {
+;           ...
+;       }
+;       v<K> = v<h>;
+;
+;   A count of 0 matches no arm and folds nothing, which is what makes an
+;   empty `arborea` answer the identity (`red_empty.ir` checks 3 and 4) and
+;   what keeps a cell nothing ever wrote from being read.
+;
+;   At w = 1 there is no partial group possible -- every contribution fills
+;   the group and resets the count -- so the dispatch is not emitted at all
+;   and `arborea 1` is exactly `ordinata` (tests/ir/red_w1.ir). The reference
+;   skips it below w = 2 at the same place, for the same reason.
+proc __bfc_emit_redfin, ctx, module, func, instid
+	locals
+		slot h,     dd
+		slot shape, dd
+		slot w,     dd
+		slot k,     dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[h], ecx
+
+	mov	rdi, [module]
+	mov	rsi, [func]
+	mov	edx, [h]
+	call	__bfc_red_shape
+	mov	[shape], eax
+	mov	[w], edx
+
+	cmp	dword [shape], BFA_RSHAPE_ARBOREA
+	jne	.copy
+	cmp	dword [w], 2
+	jb	.copy
+
+	mov	dword [k], 1
+  .tails:
+	mov	eax, [k]
+	cmp	eax, [w]
+	jae	.tailsdone
+	cmp	dword [k], 1
+	je	.firstarm
+	__bfc_emtxt "    } else if (r"
+	jmp	.armcond
+  .firstarm:
+	__bfc_emtxt "    if (r"
+  .armcond:
+	mov	rdi, [ctx]
+	mov	esi, [h]
+	call	__bfa_out_u64
+	__bfc_emtxt " == "
+	mov	rdi, [ctx]
+	mov	esi, [k]
+	call	__bfc_emit_u64c
+	__bfc_emtxt ") {", 10
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [h]
+	mov	r8d, [k]
+	call	__bfc_emit_redgroup
+	inc	dword [k]
+	jmp	.tails
+  .tailsdone:
+	__bfc_emtxt "    }", 10
+
+  .copy:
+	mov	rdi, [ctx]
+	mov	rsi, [func]
+	mov	edx, [instid]
+	call	__bfc_emit_result
+	mov	rdi, [ctx]
+	mov	esi, [h]
+	call	__bfc_emit_v
+	mov	rdi, [ctx]
+	call	__bfc_semi
+	return
+endp
+
+; ============================================================================
 ; The dispatcher, and the refusals by name
 ; ============================================================================
 
 ; __bfc_refuse(op) -- never returns. One message per REASON, not one per
-; opcode: c-backend.md D4's table gives 12 refused opcodes in seven classes
-; (nop is the 13th, opcode 0, outside the 1..60 numbering), and a reader who
+; opcode: c-backend.md D4's table gives 9 refused opcodes in five classes
+; (nop is the 10th, opcode 0, outside the 1..60 numbering), and a reader who
 ; meets one wants to know why the backend has no lowering, which is a
 ; property of the class.
 ;
@@ -3936,18 +4922,6 @@ endp
 ;                            asked for, never made)
 ;   bitcast                  nothing in-tree produces it; its semantics
 ;                            are [OPEN] (ssa-ir.md 2.3)
-;   redinit contrib redfin   no lowering HERE; the reference has had one
-;                            since 2026-09-25 -- owed work, not parity.
-;                            THIS ARM IS UNREACHABLE for well-formed IR:
-;                            the `red.F` handle has no C type name, so
-;                            __bfc_ctype dies first, and a `redinit`
-;                            precedes every `contrib`/`redfin` of its
-;                            handle. Measured 2026-09-26 -- emit_c.asm
-;                            over red_ordinata_f32.ir exits 4 with the
-;                            TYPE message, not this one. Kept, not
-;                            deleted: it is the arm a reduction row
-;                            without a `red` result would fall to, and
-;                            silent fall-through is the worse failure.
 ;   retain release           no object header exists in library mode
 ;   callind                  a function value's closure layout is [OPEN]
 ;   nop                      verifier rule 9 refuses it
@@ -3966,6 +4940,21 @@ endp
 ; now `exsi_div_*`/`exsi_rem_*` helper rows in __bfc_emit_bin, and the six
 ; tests/ir/ fixtures that carried `c-emit-exit=4` for that one commit carry
 ; it no longer: they are built four ways and agree.
+;
+; `redinit`/`contrib`/`redfin` LEFT THIS SET ON 2026-09-27, the same way and
+; for the same reason -- and they were the one entry here whose class was
+; neither of the two above: not "the reference refuses it" (the reference has
+; lowered all three since 2026-09-25) and not library mode's missing runtime,
+; but simply owed work. That is why the row said so in those words. It is
+; owed no longer: the three are lowered a few hundred lines above this one,
+; the seven `tests/ir/red_*.ir` fixtures carry no `c-emit-exit=` any more,
+; and c-backend.md D4's "second asymmetry" paragraph is the record of the gap
+; closing rather than of it standing. What is NOT recorded here any more is
+; the note that the arm was unreachable for well-formed IR: a `red.F` handle
+; still has no C type name, but no dispatcher arm falls to this routine for
+; it, so there is nothing left to say about reachability. The arm the note
+; was kept for is now the lowering itself, which refuses a malformed
+; reduction by name in __bfc_red_shape.
 proc __bfc_refuse, op
 	locals
 	endl
@@ -3981,12 +4970,6 @@ proc __bfc_refuse, op
 	je	.fma
 	cmp	dword [op], BFA_OP_BITCAST
 	je	.bitcast
-	cmp	dword [op], BFA_OP_REDINIT
-	je	.reduction
-	cmp	dword [op], BFA_OP_CONTRIB
-	je	.reduction
-	cmp	dword [op], BFA_OP_REDFIN
-	je	.reduction
 	cmp	dword [op], BFA_OP_RETAIN
 	je	.arc
 	cmp	dword [op], BFA_OP_RELEASE
@@ -4025,14 +5008,6 @@ proc __bfc_refuse, op
   .after_m4:
 	lea	rdi, [.m4]
 	mov	rsi, .after_m4 - .m4
-	call	__bfc_die
-
-  .reduction:
-	jmp	.after_m5
-  .m5 db "redinit/contrib/redfin: this backend has no lowering for the reductions; the REFERENCE has had one since 2026-09-25 (ssa-ir.md 2.6: its lowering of arborea is the definition), so this is the one asymmetry that is not library mode's -- it is owed work, not a refusal in both backends"
-  .after_m5:
-	lea	rdi, [.m5]
-	mov	rsi, .after_m5 - .m5
 	call	__bfc_die
 
   .arc:
@@ -4362,6 +5337,36 @@ proc __bfc_emit_inst, ctx, module, func, instid
 	call	__bfc_emit_trap
 	return
   .n_trap:
+	; the reductions (D4 rows 36-38). `redinit` produces a value with no C
+	; TYPE name, so it is the one value-producing opcode `__bfc_emit_decls`
+	; skips in pass 1 and declares in pass 4 instead.
+	cmp	dword [op], BFA_OP_REDINIT
+	jne	.n_redinit
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfc_emit_redinit
+	return
+  .n_redinit:
+	cmp	dword [op], BFA_OP_CONTRIB
+	jne	.n_contrib
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfc_emit_contrib
+	return
+  .n_contrib:
+	cmp	dword [op], BFA_OP_REDFIN
+	jne	.n_redfin
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfc_emit_redfin
+	return
+  .n_redfin:
 	mov	edi, [op]
 	call	__bfc_refuse
 endp
@@ -4628,12 +5633,13 @@ proc __bfc_val_used, func, valueid
 endp
 
 ; __bfc_emit_decls(ctx, module, func) -- every declaration, at the top of the
-; function body, in three passes over the instruction ids: the values, then
-; the phi temporaries, then the `slot` storage. Three passes rather than one
-; because C11 forbids a declaration after a statement label, and because the
-; order must be a pure function of the ids (D5's audit table): id order
-; within each pass, passes in a fixed order, and nothing depending on what
-; an instruction happens to sit next to.
+; function body, in four passes over the instruction ids: the values, then
+; the phi temporaries, then the `slot` storage, then a `redinit`'s
+; accumulator, count and group cells. Several passes rather than one because
+; C11 forbids a declaration after a statement label, and because the order
+; must be a pure function of the ids (D5's audit table): id order within each
+; pass, passes in a fixed order, and nothing depending on what an instruction
+; happens to sit next to.
 proc __bfc_emit_decls, ctx, module, func
 	uses	rbx
 	locals
@@ -4658,6 +5664,22 @@ proc __bfc_emit_decls, ctx, module, func
 	movzx	ecx, word [rax + BfaInst.op]
 	mov	[op], ecx
 	mov	ecx, [rax + BfaInst.ty]
+	; A `redinit` PRODUCES A VALUE AND HAS NO C DECLARATION HERE. Its result
+	; type is `red.F`, a handle, and `__bfc_ty_class` puts every handle in
+	; class 2 -- the class `__bfc_emit_ctype` refuses by name -- so letting
+	; this pass reach it would refuse every reduction at its declaration.
+	; What the reduction actually needs (an accumulator of F, and for
+	; `arborea` a count and a group array) is pass 4's, below.
+	;
+	; `red.F` KEEPS DYING EVERYWHERE ELSE, and nothing is owed there: the
+	; verifier's rule 7 admits a `red.F` result only on a `redinit`
+	; (verify.inc, BFA_VERIFY_R7_REDTYPE), so a `phi`, `call` or `ret` of a
+	; handle cannot reach either backend from well-formed IR. There is
+	; deliberately no fixture for it -- a fixture for IR the verifier
+	; refuses would be a fixture for an unreachable state, and both
+	; harnesses run the verifier before the emitter.
+	cmp	dword [op], BFA_OP_REDINIT
+	je	.vnext
 	mov	edi, [op]
 	mov	esi, ecx
 	call	__bfa_op_is_void
@@ -4750,6 +5772,33 @@ proc __bfc_emit_decls, ctx, module, func
 	inc	ebx
 	jmp	.sloop
   .sdone:
+
+	; ---- pass 4: the accumulator, count and cells behind each `redinit` --
+	; Modelled on pass 3 exactly, and a FOURTH pass rather than a branch in
+	; pass 1 for pass 1's own reason: the order of declarations must be a
+	; pure function of the instruction ids (D5's audit table), so a kind of
+	; declaration that is not one-per-value gets its own pass at a fixed
+	; position rather than being interleaved.
+	mov	ebx, 1
+  .rloop:
+	mov	eax, ebx
+	cmp	eax, [n]
+	ja	.rdone
+	mov	rdi, [func]
+	mov	esi, ebx
+	call	bfa_inst_ptr
+	movzx	ecx, word [rax + BfaInst.op]
+	cmp	ecx, BFA_OP_REDINIT
+	jne	.rnext
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, ebx
+	call	__bfc_emit_reddecl
+  .rnext:
+	inc	ebx
+	jmp	.rloop
+  .rdone:
 	return
 endp
 

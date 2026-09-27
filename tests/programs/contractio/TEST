@@ -63,30 +63,42 @@
 # exit 1, nothing written; 81 bytes -> exit 0 and the same 24 bytes, the
 # surplus byte never read.
 #
-# `c-exsc-exit=4` -- THE C BACKEND REFUSES THIS MODULE, and that is a
-# finding rather than a workaround. `exsc --emitte c` exits 4 with
+# THE C BACKEND EMITS THIS MODULE, since 2026-09-27. This directory
+# carried `c-exsc-exit=4` for two days, and that key was a finding
+# rather than a workaround: `exsc --emitte c` exited 4 with
 #
 #   bfc: emitter: unsupported type: library mode holds an integer
 #   (uN/iN), an address (ptr/ref/refc), a float (f32/f64) or a vector
 #   float (vf32.N/vf64.N) and nothing else (c-backend.md D4, D8)
 #
 # -- the `red.F` handle type, refused one step before D4 rows 36-38's
-# by-opcode-name refusal of `redinit`/`contrib`/`redfin` is ever reached.
-# The seven `tests/ir/red_*.ir` fixtures carry `c-emit-exit=4` for the
-# same reason. So this directory declares the refusal and the
-# differential phase checks PARITY of it, exactly as those fixtures do;
-# it is not `c-differentia=emitter-refusal`, because a named ineligibility
-# would stop saying anything about the C backend at all, and there is
-# something true to say: it refuses, deliberately, at a stated place.
+# by-opcode-name refusal of `redinit`/`contrib`/`redfin` was ever
+# reached, and the seven `tests/ir/red_*.ir` fixtures carried
+# `c-emit-exit=4` for the same reason. So the differential phase could
+# check PARITY of a refusal and nothing more. The C backend now lowers
+# all three (c-backend.md rows 36-38); the key is gone and this
+# directory is ELIGIBLE -- four builds, gcc and clang at -O0 and -O2,
+# every one under `-fsanitize=undefined -fno-sanitize-recover=all`, each
+# held to the same 24 bytes the reference is. Measured 2026-09-27: all
+# four byte-identical to expected.out, which is the ORACLE's file and
+# not this compiler's.
 #
-# NOT `cross=yes`, and this is the same finding. The cross phase goes
-# through `--emitte c` as well (`exsc --hospes mips64-none-o64 --emitte
-# c`, measured: exit 4, the identical message), so opting in would not
-# produce a big-endian run, it would produce a phase failure. §14 entry
-# 28's "byte-identical between the reference and C backends" and
-# "byte-identical cross-run big-endian" clauses are therefore UNMEASURED
-# at this content -- they will hold the day the C backend gains the three
-# reduction opcodes, and this directory is the cross-check waiting for
-# it, but today the entry asserts more than the tree can show. Reported
-# to the orchestrator with the amendment text.
-TEST: expect-exit=0 stdin=tests/data/contractio_viginti.bin c-exsc-exit=4
+# WHAT THAT BUYS, and it is more than a fourth toolchain. The three
+# results above are one f32 apart each; nothing about them survives a
+# lowering that folds in a different order. So the differential phase
+# now requires gcc and clang to build the same group trees and fold the
+# same tails as the reference does. The C backend's reduction lowering
+# emits ONE C STATEMENT PER PAIRWISE COMBINE for exactly this reason
+# (emit_c.inc's reduction section, and prologue.c.in's contraction
+# defence): a group tree emitted as one C expression would be a tree
+# `-ffp-contract=fast` could fold, and spec 5.4's `contractio explicita`
+# is the rule that forbids it. Two ulps of total spread is a small
+# enough margin that a contracted tree would be caught right here.
+#
+# NOT YET `cross=yes`. It could not be before 2026-09-27, because the
+# cross phase emits C too and the C backend refused the module; that
+# obstacle is gone, but a big-endian emulated run is a different
+# measurement from a host build and is opted into in its own change.
+# §14 entry 28's "byte-identical cross-run big-endian" clause stays
+# `[UNTESTED]` until it is.
+TEST: expect-exit=0 stdin=tests/data/contractio_viginti.bin

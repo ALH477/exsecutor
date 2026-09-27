@@ -639,8 +639,8 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   fixtures [78] and 147 Exsecutor programs [128], each compiled, assembled,
   **run**, and syscall-audited (70 of those programs are the receiver's
   impaired vectors);
-  a **differential phase**: 208 IR builds [208] and 304 program builds over 76
-  eligible directories [232 and 58], in which
+  a **differential phase**: 236 IR builds [236] and 308 program builds over 77
+  eligible directories [236 and 59], in which
   the C backend's output must agree with the reference's on stdout bytes, exit
   status and trap-or-not, across gcc and clang at `-O0` and `-O2`, every one
   under `-fsanitize=undefined -fno-sanitize-recover=all`. They agree
@@ -669,7 +669,7 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   so that any floor moving fails this bullet with it:
 
 ```bash truth:id=suite-floors truth:kind=command truth:expect_exit=0 truth:expect_stdout=8
-grep -cE "FLOOR:-(193|78|128|208|58|232|12|6)\}" tests/run.sh
+grep -cE "FLOOR:-(193|78|128|236|59|236|12|6)\}" tests/run.sh
 ```
 
 - `tests/run.sh --device=amdgcn` (measured 2026-09-21, not part of the

@@ -1,4 +1,4 @@
-; TEST: abort=1 c-emit-exit=4
+; TEST: abort=1
 ;
 ; A TRAPPING `add` INSIDE A GROUP TREE TRAPS. `redinit u8 add arborea 4` with
 ; contributions 200, 100, 1, 1: the fourth contribution fills the group, the
@@ -30,8 +30,23 @@
 ; Mutation (run): the tree combine emitted as `addw` -> exit 7. The
 ; accumulator normalised only in `redfin` -> exit 7.
 ;
-; `c-emit-exit=4`: the C backend refuses the reduction opcodes by name
-; (c-backend.md D4 rows 36-38).
+; CROSS-CHECKED THROUGH THE C BACKEND, 2026-09-27. This fixture carried
+; `c-emit-exit=4` from the day it landed: the C backend refused the three
+; reduction opcodes, so the differential phase could only check parity of a
+; refusal. It carries the key no longer -- `backend_c/emit_c.inc` lowers
+; `redinit`/`contrib`/`redfin`, and the four builds (gcc and clang, -O0 and
+; -O2, every one under `-fsanitize=undefined -fno-sanitize-recover=all`) are
+; held to the SAME directive above as the reference's own run. The reference's
+; verdict here is unchanged and has been since the day it landed; what is new
+; is that three more toolchains have to agree with it.
+;
+; What this one cross-checks in particular: WHERE the trap is. The C lowering
+; aborts inside `exsi_add_u`, called from the first pairwise combine of the
+; group tree -- the same statement position the reference aborts at, and the
+; same helper a standalone `add u8` would call. Measured 2026-09-27: all four
+; builds abort with `exsecutor: abortus 1` and SIGILL, as the reference does.
+; A C lowering that had accumulated at 64 bits would return 7 here, so the
+; mutation above is now caught on both paths rather than one.
 
 functio @initium (ptr) -> u8 {
 b0:

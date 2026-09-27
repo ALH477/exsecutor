@@ -1,4 +1,4 @@
-; TEST: expect-exit=100 c-emit-exit=4
+; TEST: expect-exit=100
 ;
 ; `arborea 1` IS `ordinata`, and the definition makes that a theorem rather
 ; than a coincidence: with w = 1 every contribution fills the group at once,
@@ -24,8 +24,20 @@
 ; `count` word itself, and the run never terminates the way it should:
 ; exit 1.
 ;
-; `c-emit-exit=4`: the C backend refuses the reduction opcodes by name
-; (c-backend.md D4 rows 36-38).
+; CROSS-CHECKED THROUGH THE C BACKEND, 2026-09-27. This fixture carried
+; `c-emit-exit=4` from the day it landed: the C backend refused the three
+; reduction opcodes, so the differential phase could only check parity of a
+; refusal. It carries the key no longer -- `backend_c/emit_c.inc` lowers
+; `redinit`/`contrib`/`redfin`, and the four builds (gcc and clang, -O0 and
+; -O2, every one under `-fsanitize=undefined -fno-sanitize-recover=all`) are
+; held to the SAME directive above as the reference's own run. The reference's
+; verdict here is unchanged and has been since the day it landed; what is new
+; is that three more toolchains have to agree with it.
+;
+; What this one cross-checks in particular: that the C lowering skips the tail
+; dispatch below w = 2 as well. `__bfc_emit_redfin` makes the same test at the
+; same place as `__bfa_emit_redfin`, so `arborea 1` emits no dispatch in
+; either backend and the theorem above is a property of both.
 
 functio @initium (ptr) -> u8 {
 b0:
