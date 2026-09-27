@@ -864,12 +864,19 @@ different bit patterns — `0x41673021` (`ordinata`), `0x4167301F`
 (`arborea 8`), `0x41673020` (`arborea 4`): three **adjacent** representables,
 two ulps end to end — each byte-identical to an oracle that implements this
 paragraph independently (`prototypes/contractio_oracle.py`; §14 entry 28).
-**Byte-identity between the two backends is not measured, and this sentence
-claimed it for one day.** Library mode has no lowering for the reduction
-opcodes and refuses any module carrying one (`docs/design/c-backend.md` D4
-rows 36–38), so that program runs on the reference backend alone and neither
-the differential nor the cross phase reaches its bits — `[UNTESTED]`, and
-the thing it waits on is named in §9.2.
+**Byte-identity between the two backends is measured, since 2026-09-27.**
+This sentence claimed it for one day in September, then said for a day that
+it was not measured — library mode had no lowering for the reduction opcodes
+and refused any module carrying one, so `tests/programs/contractio/` ran on
+the reference alone. The C backend lowers `redinit`/`contrib`/`redfin` now
+(`docs/design/c-backend.md` D4 rows 36–38; one pairwise combine per C
+statement, so the contraction defence in `backend_c/prologue.c.in` still
+holds), and the same program is built four ways on the host (gcc and clang,
+`-O0` and `-O2`, under UBSan) and once big-endian under emulation, and every
+build's 24 bytes equal the oracle's — §14 entry 28. What is **still
+`[UNTESTED]` in both backends**: a `-0.0` in a partial `arborea` group, which
+no fixture contains, so two backends agreeing there would be agreement on the
+same unmeasured thing (`tests/ir/red_arborea_f32.ir`'s header).
 
 **A running accumulator is not readable inside the reduction body**
 (`contrahe`, §8.5). If the body could observe the partial total, the summation
@@ -2383,9 +2390,10 @@ The lowering of each opcode is tabulated row by row in
 `docs/design/c-backend.md` (D4), and the two backends' refusal-by-name sets
 are maintained as ONE set — drift between them is a finding. The float wave
 of 2026-09-13 lowered the eleven float opcodes in both backends. **The
-figures: 64 rows, of which the reference lowers 57 and the C backend 52**
+figures: 64 rows, of which the reference lowers 57 and the C backend 55**
 (`retain`/`release` are the reference's alone, library mode having no object
-header; the three reductions are the reference's too, as above). Those three
+header; the three reductions were the reference's alone until 2026-09-27,
+when the C backend gained them — so "52" stood for one day). Those three
 numbers were "48 of 60 rows, the C backend 46" until 2026-09-26, stale since
 Stage 5.1 appended `vadd`/`vsub`/`vmul`/`vdiv` as rows 61–64 and again since
 the reduction and `div`/`rem` waves — `docs/design/c-backend.md`'s D4 table
@@ -2395,16 +2403,18 @@ emitters on 2026-09-26, not from the prose: `ir.inc` defines 65 `BFA_OP_*`
 of which `nop` is opcode 0 and outside the row numbering, and the reference's
 dispatcher refuses exactly seven by name (`muls`, the three `*ov`, `callind`,
 `fma`, `bitcast`) while the C backend's refuses those plus `retain`/`release`
-plus the three reductions. So the
+(and, until 2026-09-27, the three reductions). So the
 refusals that remain are: `muls` and the overflow predicates
 (§5.4 leaves them `[OPEN]`; `div`/`rem` left the set on 2026-09-25 when
 §5.4 settled integer division — `tests/ir/divrem.ir`), `fma` (the SSE2 baseline has no fused op, and
 contraction is what §5.4 says must be asked for, never made), `bitcast`
-(`[OPEN]`), the reductions — `redinit`/`contrib`/`redfin`, which the
-reference gained on 2026-09-25 and the C backend has not, so the refusal
-stands while its stated reason ("no reference lowering") does not, and
-`tests/ir/red_*.ir` carry `c-emit-exit=4` for it — `callind`, and — the C
-backend only — `retain`/`release`. This sentence previously said "the
+(`[OPEN]`), `callind`, and — the C backend only — `retain`/`release`. The
+reductions left the C backend's set on 2026-09-27: `redinit`/`contrib`/
+`redfin` are lowered there as `docs/design/c-backend.md` D4 rows 36–38 say,
+the seven `tests/ir/red_*.ir` no longer carry `c-emit-exit=4` and are built
+by both emitters in the differential phase, and the refusal's stated reason
+("no reference lowering") had already been false since 2026-09-25 — the one
+asymmetry that was owed work rather than a decision, now paid. This sentence previously said "the
 twenty-three the C backend refuses by name"; the count was wrong by two
 before the float wave and is not repeated as a number here on purpose —
 D4's row-by-row table is the count. Built: library mode exists and is
