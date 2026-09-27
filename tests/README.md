@@ -13,9 +13,9 @@ calls):
    four fixtures.
 2. **`tests/conformance/`** — spec §14's suite: 28 entries, 26 with a
    fixture file here (27 and 28 are carried by `tests/programs/`
-   directories, below). **20 of the 26 fixtures run, and 6 are `DEFERRED`;
+   directories, below). **21 of the 26 fixtures run, and 5 are `DEFERRED`;
    with entries 27 and 28, which have no fixture and are carried by
-   `tests/programs/`, 22 of the spec's 28 entries run.** This said "17 run,
+   `tests/programs/`, 23 of the spec's 28 entries run.** This said "17 run,
    9 `DEFERRED`" until 2026-09-27 — stale from 80b9390 and 8e746f3, which
    moved entries 12 and 24 to run without this paragraph following them, and
    `tests/run.sh`'s `run_floor` sat at 17 with it, so neither document would
@@ -92,18 +92,16 @@ calls):
    the same correction, and marks that entry's backend parity and
    big-endian run `[UNTESTED]`.
 
-   The other 6 — 1, 2, 4, 14, 15, 17 — report **`DEFERRED`**
+   The other 5 — 2, 4, 14, 15, 17 — report **`DEFERRED`**
    with what they wait on, each fixture's header naming the current
-   blocker: a `nocap` runner shape (1 — `textus`'s methods now have a
-   declaration site, and that fixture measurably draws exactly
-   `{EXS-E0421}`); brand syntax `[OPEN]` in §8.6 (2); no import closure
+   blocker: brand syntax `[OPEN]` in §8.6 (2); no import closure
    (4); no `lexicon.norma`, §3.3's table being fourteen illustrative roots
    (14); no way for a source program to construct a `refero` value (15 —
    the ARC runtime exists and `tests/unit/prelude_arc.asm` exercises its
    saturation, so this entry's header stopped claiming otherwise on
    2026-09-27); no riscv64 reference backend to compare against (17). They
    are **never counted as passing**. A suite reporting 26/26 while running
-   20 would be worse than no suite.
+   21 would be worse than no suite.
 
    **Entry 16 moved to run on 2026-09-27**, and not by gaining a backend,
    which is what its `needs=` had named: `tools/reproduce.sh` now compiles
@@ -115,6 +113,22 @@ calls):
    harness. `exsc proba-reproducibilitatem` is still a stub (exit 4); this
    script is what §9.3's subcommand stands in for, and the day the
    subcommand exists the two should be compared.
+
+   **Entry 1 moved to run the same day**, and nothing in the compiler changed
+   for it: what was missing was a grading rule. §2.4's unrepresentability
+   table spends no error code on "Locale case fold in program logic" — an em
+   dash in the Error column — so "rejects with entry 1's code" is not a rule
+   that can be written without inventing one, which CLAUDE.md forbids. The
+   `nocap` shape is three conditions instead: exit 1; the code SET exactly
+   `{EXS-E0421}`, the code the general undeclared-capability rule (§4.1)
+   already draws; and some diagnostic's machine-readable `fix` offering
+   `poscit sermo`, named by the directive's new `atom=` token. That third
+   condition is the entry: it requires the compiler to say, in a field a tool
+   reads rather than in English, that the program holds no value of this
+   capability to pass and that declaring it is the edit. The JSON code-set
+   extraction is one helper shared with `shape=code`, not a second copy —
+   both shapes turn on its being a SET comparison, and that is the check this
+   suite has already once had in a weaker form.
 
    Five rule shapes, and a runner assuming one will quietly mishandle four:
    reject-with-exact-code (most), byte-identical output (16, 17, 25–28),
@@ -252,8 +266,8 @@ a shipped artifact, and is checked every time it is built instead.
 ## What is deliberately absent
 
 - **`tests/conformance/` entries that run.** See above: 28 entries, 26 with
-  a fixture file, **20 of those running and 6 `DEFERRED`** on a named
-  component, plus entries 27 and 28 carried by `tests/programs/` — 22 of 28.
+  a fixture file, **21 of those running and 5 `DEFERRED`** on a named
+  component, plus entries 27 and 28 carried by `tests/programs/` — 23 of 28.
   (This bullet said 17 and 9 earlier on 2026-09-27, and 18 until 2026-09-26;
   corrected with the paragraph above, and for the same reason.) (This item was written
   when `exsc` did not exist and said what each of the 24 rows would need: a

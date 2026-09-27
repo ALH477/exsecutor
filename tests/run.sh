@@ -408,6 +408,24 @@ run_unit_tests() {
   fi
 }
 
+# __conf_code_set ERRLOG -- echoes the SET of EXS-E codes in a JSON Lines
+# diagnostic stream: one `"code":"EXS-Exxxx"` member per line (driver/run.inc),
+# deduplicated, sorted, space-separated, empty for none.
+#
+# FACTORED OUT OF shape=code, not written a second time for shape=nocap. Both
+# shapes require the set to be exactly `{expect-code}` and the whole force of
+# that check is that it is a SET comparison rather than a presence test -- a
+# `grep -qF` would pass a fixture that also emits an unrelated second
+# diagnostic, which is a bug this suite has already shipped once (entry 22, see
+# the header above). Two copies of that comparison is two places for the weaker
+# version to come back.
+__conf_code_set() {
+  local set
+  set="$(grep -oE '"code":"EXS-E[0-9]+"' "$1" |
+         sed -E 's/.*"(EXS-E[0-9]+)"$/\1/' | sort -u | tr '\n' ' ')"
+  printf '%s' "${set% }"
+}
+
 run_conformance_tests() {
   # ---------------------------------------------------------------------
   # spec §14, 28 entries, 26 with a fixture file here (was 24 when this
@@ -433,7 +451,18 @@ run_conformance_tests() {
   #             unrepresentability table, whose "Locale case fold in
   #             program logic" row has an em dash in the Error column,
   #             same as two other rows and unlike every code-bearing row
-  #             around it. Never invent one (CLAUDE.md).
+  #             around it. Never invent one (CLAUDE.md). So the grading
+  #             rule cannot be "rejects with entry 1's code", and is three
+  #             conditions instead: exit 1; the code SET exactly
+  #             `expect-code=`, which names the code the general
+  #             undeclared-capability rule (§4.1) already draws and not one
+  #             minted for this row; and at least one diagnostic's
+  #             machine-readable `fix` offering `poscit ATOM` for the
+  #             `atom=` the directive gives. The third condition is what
+  #             makes the shape about capability absence rather than about
+  #             that code in general -- it requires the compiler to say, in
+  #             a field a tool reads, that the program holds no value of
+  #             this capability to pass and that declaring it is the edit.
   #
   # PER-FIXTURE EXPECTATION DIRECTIVE. run_unit_tests' `; TEST:` (above)
   # cannot be reused as-is: `.exsc` source has no `;` comment syntax to
@@ -446,14 +475,21 @@ run_conformance_tests() {
   #
   #   // TEST: entry=<1-26> shape=<code|bytes|cert|abort|nocap>
   #            [expect-code=EXS-E0XXX] status=<run|deferred> [needs=<token>]
-  #            [sources=A,B]
+  #            [sources=A,B] [atom=NAME]
   #
   #   entry=N       the §14 entry number this fixture exercises.
   #   shape=        one of the five above.
   #   expect-code=  the exact EXS-Exxxx exsc must reject with. Required
-  #                 when shape=code; absent for the other four shapes
-  #                 (bytes/cert/abort have no code at all; nocap has none
-  #                 BY DEFINITION -- see above).
+  #                 when shape=code, and when shape=nocap -- where it names
+  #                 the code the general rule draws on the way to a
+  #                 violation §13 assigns none of its own, never a code
+  #                 minted for that row. Absent for bytes/cert/abort, which
+  #                 have no code at all.
+  #   atom=         shape=nocap only, and required there: the capability the
+  #                 program uses without holding one. Some diagnostic's
+  #                 machine `fix` text must offer `poscit ATOM` -- see the
+  #                 shape's own note above for why that, and not the
+  #                 message, is what is matched.
   #   status=       run      -- this function actually exercises the
   #                             fixture and the result counts toward
   #                             PASS/FAIL below.
@@ -463,7 +499,7 @@ run_conformance_tests() {
   #                             report a test you did not see pass").
   #   needs=        required when status=deferred (comma-separated if more
   #                 than one): what it is waiting on. The tokens in use are
-  #                 capability_checker (1), type_checker (2),
+  #                 type_checker (2),
   #                 import_closure (4), lexicon_checker (14),
   #                 refero_construction (15) and backend,cross_compile (17).
   #                 Free text, not a closed
@@ -566,6 +602,11 @@ run_conformance_tests() {
   #                    fixture as its fourth --emitte c unit, measured
   #                    byte-identical at 21,539 bytes across both condition
   #                    sets BEFORE the directive moved.
+  #                    20 -> 21, same day, for entry 1: this function grew a
+  #                    `nocap` branch, and exsc's output for that fixture was
+  #                    pinned first -- exit 1, exactly {EXS-E0421}, and the
+  #                    fix ` poscit sermo` on the diagnostic at `sermo`.
+  #                    Nothing in the compiler changed for it.
   #                    Entry 22 had once been
   #                    DEFERRED by this very check: tightening it from a
   #                    substring match to an exact set found a second real
@@ -577,7 +618,7 @@ run_conformance_tests() {
   echo "== conformance suite (tests/conformance/, spec §14) =="
   local dir="$REPO_ROOT/tests/conformance"
   local fixture_floor=26
-  local run_floor=20
+  local run_floor=21
 
   if [[ ! -d "$dir" ]]; then
     bad "tests/conformance/ does not exist"
@@ -642,7 +683,7 @@ run_conformance_tests() {
       continue
     fi
 
-    local entry="" shape="" expect_code="" status="" needs="" sources=""
+    local entry="" shape="" expect_code="" status="" needs="" sources="" atom=""
     local kv
     for kv in $directive; do
       case "$kv" in
@@ -652,6 +693,7 @@ run_conformance_tests() {
         status=*) status="${kv#status=}" ;;
         needs=*) needs="${kv#needs=}" ;;
         sources=*) sources="${kv#sources=}" ;;
+        atom=*) atom="${kv#atom=}" ;;
       esac
     done
 
@@ -706,9 +748,7 @@ run_conformance_tests() {
         # OTHER code -- a second, real diagnostic the old `grep -qF`
         # presence check never looked for -- fails it.
         local codes
-        codes="$(grep -oE '"code":"EXS-E[0-9]+"' "$errlog" |
-                 sed -E 's/.*"(EXS-E[0-9]+)"$/\1/' | sort -u | tr '\n' ' ')"
-        codes="${codes% }"
+        codes="$(__conf_code_set "$errlog")"
         if [[ "$codes" == "$expect_code" ]]; then
           ok "$name: entry $entry rejected with exactly {$expect_code}, no other code"
           ran=$((ran + 1))
@@ -761,17 +801,69 @@ run_conformance_tests() {
           ran=$((ran + 1))
         fi
         ;;
-      abort|nocap)
-        bad "$name: entry $entry: shape=$shape has no status=run implementation"
+      nocap)
+        # THREE CONDITIONS, and the third is the one that makes this shape
+        # about capability absence rather than about EXS-E0421 in general.
+        # §2.4's unrepresentability table spends NO code on this row -- an em
+        # dash in the Error column, like two other rows -- and CLAUDE.md
+        # forbids inventing one, so "rejects with entry 1's code" is not a
+        # rule that can be written. What can be written is: the compiler
+        # refuses (exit 1); it refuses with exactly the code the general
+        # undeclared-capability rule already draws and nothing else; and it
+        # says, in the machine-readable `fix` a tool reads rather than in
+        # English prose, that the edit is to declare the capability -- which
+        # is the statement that the program holds no value of it to pass.
+        if [[ -z "$expect_code" || -z "$atom" ]]; then
+          bad "$name: shape=nocap needs both expect-code= and atom= (got expect-code='$expect_code' atom='$atom')"
+          continue
+        fi
+        if [[ "$exsc_ok" -ne 1 ]]; then
+          bad "$name: entry $entry claims status=run but exsc is not available this run"
+          continue
+        fi
+        local errlog="$workdir/$name.err"
+        local rc=0
+        "$exsc_bin" aedifica --hospes x86_64-linux --diagnostica json "$f" \
+          >"$workdir/$name.out" 2>"$errlog" || rc=$?
+        if [[ "$rc" -ne 1 ]]; then
+          bad "$name: entry $entry: exsc exited $rc (expected 1, 'diagnostics were emitted')"
+          sed 's/^/         /' "$errlog"
+          continue
+        fi
+        local codes
+        codes="$(__conf_code_set "$errlog")"
+        if [[ "$codes" != "$expect_code" ]]; then
+          bad "$name: entry $entry expected exactly {$expect_code}, exsc's diagnostics carry {${codes:-none}}:"
+          sed 's/^/         /' "$errlog"
+          continue
+        fi
+        # The `fix` OBJECT's bytes only, never the whole line: `message` and
+        # `snippet` also mention the atom, and matching those would pass a
+        # diagnostic that named the capability without offering the edit. The
+        # `[^}]*` holds because a fix object has no nested brace today; if one
+        # ever gains a member that does, this finds nothing and FAILS, which
+        # is the direction a check should break in.
+        local fixes
+        fixes="$(grep -oE '"fix":\{[^}]*\}' "$errlog" || true)"
+        if grep -qF "poscit $atom" <<<"$fixes"; then
+          ok "$name: entry $entry refused with exactly {$expect_code} and a fix naming \`poscit $atom\`"
+          ran=$((ran + 1))
+        else
+          bad "$name: entry $entry: code set is {$expect_code}, but no diagnostic's"
+          bad "machine fix offers \`poscit $atom\` -- the capability-absence half of"
+          bad "this entry is what the fix text carries, so a refusal without it is"
+          bad "not this entry passing. fix objects seen: {${fixes:-none}}"
+          sed 's/^/         /' "$errlog"
+        fi
+        ;;
+      abort)
+        bad "$name: entry $entry: shape=abort has no status=run implementation"
         bad "in this runner -- fix the fixture's directive, or write the branch."
-        bad "abort (entry 15) needs a program that can hold a refero value: the"
-        bad "ARC runtime exists and is unit-tested (prelude/prelude.asm,"
+        bad "Entry 15 needs a program that can hold a refero value: the ARC"
+        bad "runtime exists and is unit-tested (prelude/prelude.asm,"
         bad "tests/unit/prelude_arc.asm), but no source program can construct"
-        bad "one, so there is nothing to drive to saturation. nocap (entry 1)"
-        bad "needs a grading rule, not a checker: exsc already reports that"
-        bad "fixture as exactly {EXS-E0421} with the fix ' poscit sermo'"
-        bad "attached, and what is missing is the shape that decides on the"
-        bad "ABSENCE of a registered code."
+        bad "one, so there is nothing to drive to saturation and nothing for"
+        bad "this branch to grade."
         ;;
       *)
         bad "$name: unknown shape='$shape'"
