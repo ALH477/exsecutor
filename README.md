@@ -629,13 +629,16 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   corpus — `docs/design/diagnostics-review.md`, final section, and
   `tests/diagnostics/`. Stage 2's (`sub` resolution needing a search) does not
   fire, argued first in `docs/design/checker.md` §2.1.
-- `tests/run.sh`: **2,203 checks, 0 fail** at `af354b0`. Each count below is
+- `tests/run.sh`: **2,206 checks, 0 fail**, measured on this commit's tree. (It
+  read "2,203 … at `af354b0`" until a fixture was added above that floor; the
+  hash is dropped rather than left to go stale, because the tree a total belongs
+  to is the commit the line is read from.) Each count below is
   given as measured, with the floor `tests/run.sh` declares in brackets — the
   floors are what the fence after this bullet gates, because a floor can be
   re-derived from the repository and a measured total cannot. Where the two
   differ the floor is deliberately behind: this tree's convention is that a
   floor rises when someone re-baselines it, not automatically, so drift there
-  costs precision and never the guarantee. 193 unit fixtures [193]; 78 IR
+  costs precision and never the guarantee. 194 unit fixtures [193]; 78 IR
   fixtures [78] and 147 Exsecutor programs [128], each compiled, assembled,
   **run**, and syscall-audited (70 of those programs are the receiver's
   impaired vectors);

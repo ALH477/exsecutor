@@ -724,20 +724,45 @@ proc __chk_ty_prim, chkt_wj, chkt_sj, chkt_mj
 	je	.simple
 	jmp	.no
   .simple:
+	; `rsi` carries the `AST_TY_*` this spelling maps to, so the arity call
+	; has to be made around it -- there is nowhere else in this proc where
+	; the kind is live in an argument register.
+	mov	r14, rsi
 	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, [chkt_gj]
+	xor	rcx, rcx
+	call	__chk_ty_genarity
+	mov	rdi, rbx
+	mov	rsi, r14
 	call	__chk_ty_simple
 	return
 
   .mensura:
 	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, [chkt_gj]
+	xor	rcx, rcx
+	call	__chk_ty_genarity
+	mov	rdi, rbx
 	call	__chk_ty_mensura
 	return
   .f32:
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, [chkt_gj]
+	xor	rcx, rcx
+	call	__chk_ty_genarity
 	mov	rdi, [rbx + ChkTyWork.wtre]
 	mov	rsi, 32
 	call	ast_type_float
 	return
   .f64:
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, [chkt_gj]
+	xor	rcx, rcx
+	call	__chk_ty_genarity
 	mov	rdi, [rbx + ChkTyWork.wtre]
 	mov	rsi, 64
 	call	ast_type_float
@@ -752,10 +777,26 @@ proc __chk_ty_prim, chkt_wj, chkt_sj, chkt_mj
   .eventus:
 	mov	r14, AST_TY_EVENTUS
   .una:
+	; ONE ARGUMENT, COUNTED, and then read only if it is there: the arity
+	; test below raises for a missing argument 0, so `__chk_ty_genarg` must
+	; not be asked for it as well -- its own `.bad` arm would raise a second
+	; `EXS-E0304` for the same mistake.
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, [chkt_gj]
+	mov	rcx, 1
+	call	__chk_ty_genarity
+	test	rax, rax
+	jz	.una_err
 	mov	rdi, rbx
 	mov	rsi, [chkt_gj]
 	xor	rdx, rdx
 	call	__chk_ty_genarg
+	jmp	.una_mk
+  .una_err:
+	mov	rdi, rbx
+	call	__chk_ty_err
+  .una_mk:
 	mov	r13, rax
 	mov	rdi, [rbx + ChkTyWork.wtre]
 	mov	rsi, r14
@@ -768,14 +809,31 @@ proc __chk_ty_prim, chkt_wj, chkt_sj, chkt_mj
 	; spec §5.4: the LANE COUNT is in the type, so it can never come from
 	; the host. Argument 0 is the element type, argument 1 the count.
 	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, [chkt_gj]
+	mov	rcx, 2
+	call	__chk_ty_genarity
+	mov	r14, rax			; the count actually written
+	test	r14, r14
+	jz	.acies_err
+	mov	rdi, rbx
 	mov	rsi, [chkt_gj]
 	xor	rdx, rdx
 	call	__chk_ty_genarg
-	mov	r13, rax
+	jmp	.acies_el
+  .acies_err:
+	mov	rdi, rbx
+	call	__chk_ty_err
+  .acies_el:
+	mov	r13, rax			; the element type
+	xor	eax, eax			; and no lane count, unless
+	cmp	r14, 2				; argument 1 was written --
+	jb	.acies_mk			; `__chk_ty_genlit` raises too
 	mov	rdi, rbx
 	mov	rsi, [chkt_gj]
 	mov	rdx, 1
 	call	__chk_ty_genlit
+  .acies_mk:
 	mov	r14, rax
 	mov	rdi, [rbx + ChkTyWork.wtre]
 	mov	rsi, AST_TY_ACIES
@@ -789,11 +847,78 @@ proc __chk_ty_prim, chkt_wj, chkt_sj, chkt_mj
 	return
 endp
 
+; __chk_ty_genarity(w, seg, genargs, expected) -> rax = the number of generic
+; arguments actually written, having raised `EXS-E0304` ONCE when that is not
+; `expected`.
+;
+; THE COUNT WAS ONLY EVER CHECKED FROM ONE END, and that is what this closes.
+; `__chk_ty_genarg` below compares the written count against the INDEX it was
+; asked for with `jbe` -- a lower bound. So every spelling that reads argument
+; 0 and no further accepted any number of arguments above one, `.simple:` read
+; the clause not at all, and a missing clause took `__chk_ty_genarg`'s `.none:`
+; arm, which returns the error type WITHOUT raising. Measured on this tree
+; before the fix: `textus<u8>`, `refero<A, B>`, `unit<T>`,
+; `eventus<mensura, erratum>` and a bare `refero` all type-checked silently --
+; the last of which is spec §5.1's own spelling of `eventus`.
+;
+; ONE DIAGNOSTIC PER MISTAKE. `__chk_ty_raise` does not deduplicate (prim.inc),
+; so a caller that raises here must not then ask `__chk_ty_genarg` or
+; `__chk_ty_genlit` for an index the count does not cover -- both raise `304`
+; themselves for that. `__chk_ty_prim`'s arms guard on the count this returns;
+; that is why it is returned rather than a yes/no.
+;
+; WHERE IT LANDS: on the `GenericArgs` node when the clause is written (`<` is
+; where the wrong number of arguments is), and on the `Seg` when it is not --
+; a missing clause has no node of its own, and the segment is the token the
+; reader has to look at. `refero<>` parses as a `GenericArgs` with zero items
+; (cst/parse.inc's `__cst_generic_args` closes on an immediate `>`), so the
+; present-but-empty case lands at the node like any other wrong count.
+;
+; NOT COVERED, and named rather than implied: the ONE-parameter spellings above
+; are counted, and so are the three remaining zero-argument primitive arms
+; (`mensura`, `f32`, `f64`) -- but `__chk_ty_genarg`'s other caller,
+; `member.inc`'s generic-instantiation loop, still compares a count against an
+; index and keeps its own `304`. A generic USER type's arity is checked there,
+; one argument at a time, and unifying the two is a separate change.
+proc __chk_ty_genarity, chkt_wA2, chkt_sA2, chkt_gA2, chkt_eA2
+	uses	rbx, r12, r13
+	locals
+	endl
+	mov	rbx, [chkt_wA2]
+	mov	r12, [chkt_gA2]
+	xor	r13, r13
+	test	r12, r12
+	jz	.count
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_node
+	mov	r13d, [rax + AstNode.b]
+  .count:
+	cmp	r13, [chkt_eA2]
+	je	.ok
+	mov	rdx, r12
+	test	r12, r12
+	jnz	.at
+	mov	rdx, [chkt_sA2]
+  .at:
+	mov	rdi, rbx
+	mov	rsi, 304
+	call	__chk_ty_raise
+  .ok:
+	mov	rax, r13
+	return
+endp
+
 ; __chk_ty_genarg(w, genargs, i) -> rax = the type of generic argument `i`, or
 ; the ERROR type when there is none. `EXS-E0304` (wrong number of generic
 ; arguments) is raised at the `GenericArgs` node, or at nothing when the whole
 ; clause is missing -- in which case the diagnostic goes on the enclosing type
 ; expression through the error type it returns.
+;
+; `__chk_ty_prim`'s callers no longer reach the `.bad` arm: `__chk_ty_genarity`
+; above has already counted, so they ask only for indices that exist. The arm
+; stays for `member.inc`'s generic-instantiation loop, which has no such count
+; and for which this IS the arity check.
 proc __chk_ty_genarg, chkt_wy, chkt_gy, chkt_iy
 	uses	rbx, r12
 	locals
