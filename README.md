@@ -463,10 +463,6 @@ and nothing in the tree defined which seven). It writes WAV files
 **byte-identical** to HydraModem's own reference transmitter, built from
 source and vendored at `vendor/hydramodem-tx/` (ADR 0013):
 
-```bash truth:id=tx-lines truth:kind=command truth:expect_exit=0 truth:expect_stdout=~/387\s+total/
-wc -l examples/hydramodem/quantum.exsc examples/hydramodem/modulator.exsc examples/hydramodem/emitte.exsc
-```
-
 ```text truth:ignore
 hydramodem_loopback: stdout byte-identical to vendor/hydramodem-tx/d310123400a1ffffdeadbeef0a1b2ca961.wav
 hydramodem_exemplum: stdout byte-identical to vendor/hydramodem-tx/d31312340001ffffdeadbeefab12cd24c0.wav
@@ -485,6 +481,12 @@ move by a byte when it changed. Reference renders of four more profiles
 (4-FSK, 8-FSK, 125 baud, and the aux-cable profile as far as HydraModem's own
 CLI can express it) are vendored under `vendor/hydramodem-tx/profiles/`; no
 Exsecutor program targets them yet.
+
+The transmitter's three files, measured rather than asserted:
+
+```bash truth:id=tx-lines truth:kind=command truth:expect_exit=0 truth:expect_stdout=~/387\s+total/
+wc -l examples/hydramodem/quantum.exsc examples/hydramodem/modulator.exsc examples/hydramodem/emitte.exsc
+```
 
 **And the receiver, certified by its verdicts.** The other half is written too
 (ADR 0014): it reads a WAV on standard input and writes the seventeen bytes it
@@ -566,6 +568,8 @@ reproducing all 1,555,215 bytes bit for bit on a target with no SSE at
 all (spec §14 entry 27) — and, since Stage 6 G2, the same 1,555,215 bytes
 from an AMD GPU, both generations this machine has (the status bullets
 below).
+
+Both goldens are committed files, so both figures above are measured here:
 
 ```bash truth:id=triangle-golden truth:kind=command truth:expect_exit=0 truth:expect_stdout=~/^15565\s/
 wc -c tests/programs/pictura_triangulum/expected.out
@@ -661,7 +665,8 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   paragraph whose whole job is to say what was measured. The pass total is
   stated with its commit for the same reason the binary sizes above are: it
   moves with every fixture added and the gate cannot re-derive it. The floors
-  can be, so the floors are what is bound.
+  can be, so the floors are what is bound — all eight of them, as one count,
+  so that any floor moving fails this bullet with it:
 
 ```bash truth:id=suite-floors truth:kind=command truth:expect_exit=0 truth:expect_stdout=8
 grep -cE "FLOOR:-(193|78|128|208|58|232|12|6)\}" tests/run.sh

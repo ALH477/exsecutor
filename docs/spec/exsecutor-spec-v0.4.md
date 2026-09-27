@@ -1043,7 +1043,7 @@ scales.
   `rem_sign.ir` at the IR; `tests/unit/chk_ty_intdiv.asm` for the typing;
   from source, `tests/programs/numerus_decimalis/`, the first program in
   this tree that prints a number.
-- **Bitwise and and or** are the contextual words `atque` and `sive`
+- **Bitwise and/or** are the contextual words `atque` and `sive`
   (settled 2026-09-25 with the program §8.6 asked for). They are arithmetic
   on unsigned integers under exactly the rules `aut` has above — unsigned
   operands only (`EXS-E0305` per operand), both operands the same type
