@@ -6,7 +6,22 @@
 #   cp hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
 # or, once TrvthNvke is on PATH:
 #   trvthnvke install-hook
+#
+# Upstream's hook is these two `exec`s and nothing else. The branch below is
+# added deliberately and changes no policy: if TrvthNvke is absent the commit
+# is still REFUSED -- a gate that skips itself when its tool is missing is the
+# "check that is never run", and this tree treats that as indistinguishable
+# from no check at all -- but it is refused with a sentence instead of a
+# Python ModuleNotFoundError traceback, which is what a contributor who
+# installed the hook and not the tool would otherwise have to decode.
 if command -v trvthnvke >/dev/null 2>&1; then
   exec trvthnvke verify --fail
 fi
-exec python3 -m trvthnvke verify --fail
+if python3 -c 'import trvthnvke' >/dev/null 2>&1; then
+  exec python3 -m trvthnvke verify --fail
+fi
+echo "pre-commit: the README gate cannot run -- TrvthNvke is not installed." >&2
+echo "  Install it (see CONTRIBUTING.md, \"The README gate\"), or remove" >&2
+echo "  .git/hooks/pre-commit if you do not want the gate locally. CI runs it" >&2
+echo "  either way, so skipping here only moves the failure later." >&2
+exit 1

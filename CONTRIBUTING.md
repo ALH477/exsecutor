@@ -140,6 +140,28 @@ entailment back: `README.md`'s conformance count is a `file_contains` against
 the spec's own "twenty-eight", not a re-derivation, which is both non-circular
 and drift-proof. Prefer that shape whenever an external source of truth exists.
 
+**What the gate cannot reach, and therefore what still needs a human.** The
+gate's command runner is confined, allowlisted and time-capped, so anything
+needing `fasmg`, a C toolchain, a GPU or emulation is out of its reach. Three
+figures in `README.md` are in that class and each says so at the point it is
+stated, with the commit it was measured at:
+
+- `build/exsc`'s size -- needs `fasmg`, and `build/` is not in the repository.
+- the emitted C unit's size -- needs `exsc`. This one drifts easily: every
+  emitted unit carries the whole of `compiler/x86_64/backend_c/prologue.c.in`,
+  so any addition to that runtime grows all of them at once. The 2026-09-26
+  wave moved it by 13,303 bytes.
+- the entry-23 certificate binary's size -- needs `exsc` and `fasmg`.
+
+For each, what is gated instead is the property that matters more than the
+number: `make reproduce` holds them byte-identical across directory, `TZ`,
+locale, `SOURCE_DATE_EPOCH`, umask and hostname. A figure that cannot be
+re-derived from inside the gate is stated with its commit and marked as
+ungated, rather than left looking checked. And a figure that moves on every
+fixture added -- the suite's total pass count -- is no longer stated at all:
+the fixture FLOORS are what the gate binds, because those are what can be
+re-derived.
+
 It does **not** refuse an unbound `unbound_path_token` warning -- most paths
 named in `README.md` are not bound to a claim, by choice, the same way most of
 the compiler's own path citations are not re-verified by `tools/spec-check.sh`.

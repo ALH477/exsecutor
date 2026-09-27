@@ -32,11 +32,27 @@ coverage_severity = "warning"
 
 # Closed on purpose, the same way compiler/x86_64/rt/sys.inc's syscall
 # allowlist is closed (CLAUDE.md, "The compiler is freestanding"): these are
-# the exact two commands a claim below runs, spelled out in full, nothing
+# the exact commands the claims below run, spelled out in full, nothing
 # more.
 command_allow = [
   ["grep", "-c", "^proc sys_", "compiler/x86_64/rt/sys.inc"],
   ["wc", "-c", "examples/saluta.expected"],
+  # The transmitter's compilation unit, as tests/programs/hydramodem_*/TEST
+  # names it. Full argument vectors, not bare binary names: the allowlist is
+  # a list of exact prefixes, so this permits this measurement and no other.
+  ["wc", "-l", "examples/hydramodem/quantum.exsc",
+               "examples/hydramodem/modulator.exsc",
+               "examples/hydramodem/emitte.exsc"],
+  # Every fixture floor tests/run.sh declares, matched as one count. If any
+  # floor moves, the count drops and the README's suite figures fail with it
+  # -- which is the only way those eight numbers can be gated from here: the
+  # totals themselves need the whole suite, and the suite needs fasmg.
+  ["grep", "-cE",
+   "FLOOR:-(193|78|128|208|58|232|12|6)\\}", "tests/run.sh"],
+  # The two rasterizer goldens. Committed files, so unlike the emitted-unit
+  # and exsc sizes these can be measured from here.
+  ["wc", "-c", "tests/programs/pictura_triangulum/expected.out"],
+  ["wc", "-c", "tests/programs/pictura_octonaria/expected.out"],
 ]
 
 [[docs]]

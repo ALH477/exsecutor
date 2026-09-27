@@ -387,7 +387,7 @@ are byte-exact exceptions and why).
      Every figure is from running the named command at the named commit.
      Refresh it here and nowhere else. -->
 
-## Status as of `747fa30` (2026-09-26)
+## Status as of `af354b0` (2026-09-26)
 
 <!-- truth:claim
 id: status-snapshot
@@ -397,7 +397,10 @@ Every figure here was produced by running the named command at this commit, in
 the `nix develop` shell, on `x86_64-linux`. This block is refreshed by hand at
 each snapshot (see the comment above it); the heading's own commit and date
 cannot be self-checking, because the commit that updates them is always one
-ahead of the hash it names.
+ahead of the hash it names. So the convention is that it names the commit the
+figures were MEASURED at, not the one that wrote them down -- which is why
+`af354b0` appears both here and beside the individual figures that carry a
+commit of their own.
 <!-- truth:end -->
 
 **The publish gate is met.** `tools/publish-gate.sh` reports `RESULT: GATE MET`
@@ -453,9 +456,16 @@ hex literals, struct literals and one aggregate cast — spec §5.2, §5.4, §8.
 **An acoustic modem, byte for byte.** HydraModem's transmitter — 2-FSK at
 48 kHz and 1000 baud, CRC-16, a K=7 convolutional code, an interleaver and
 CPFSK modulation — is written in Exsecutor (`examples/hydramodem/`; the
-transmitter's seven files are 563 lines by `wc -l`). It writes WAV files
+transmitter is three files and 387 lines by `wc -l` — the compilation unit
+`tests/programs/hydramodem_exemplum/TEST` names, measured below rather
+than asserted; this read "seven files are 563 lines" until 2026-09-26,
+and nothing in the tree defined which seven). It writes WAV files
 **byte-identical** to HydraModem's own reference transmitter, built from
 source and vendored at `vendor/hydramodem-tx/` (ADR 0013):
+
+```bash truth:id=tx-lines truth:kind=command truth:expect_exit=0 truth:expect_stdout=~/387\s+total/
+wc -l examples/hydramodem/quantum.exsc examples/hydramodem/modulator.exsc examples/hydramodem/emitte.exsc
+```
 
 ```text truth:ignore
 hydramodem_loopback: stdout byte-identical to vendor/hydramodem-tx/d310123400a1ffffdeadbeef0a1b2ca961.wav
@@ -506,8 +516,16 @@ is certified against the upstream writer's own bytes: all 24 documents
 byte-exact, both suffix searches in traversal order, and three corrupted
 containers behaving exactly as the reference C reader does — including
 falling back to the older commit when the newer header is damaged. The
-emitted C unit is 136,793 bytes and reproduces byte-identically across
-divergent directory, locale, time zone and hostname.
+emitted C unit is 150,096 bytes at `af354b0` and reproduces
+byte-identically across divergent directory, locale, time zone and
+hostname. Only the second half of that is gated — `make reproduce`
+checks the byte-identity, while the size needs `exsc`, which the README
+gate's confined runner cannot build. The figure read 136,793 until
+2026-09-26, and this wave is part of why it drifted: every emitted unit
+carries the whole `backend_c/prologue.c.in` runtime, so adding the
+`exsi_div_*`/`exsi_rem_*` helpers grew all of them at once. A number
+that moves whenever the prologue does is a poor thing to state precisely
+and is stated here with the commit that produced it.
 
 Declaring the header as a `@transitus` struct forced two zero-pad gaps in the
 format into the open that no survey of it had listed, and declaring the
@@ -525,7 +543,7 @@ a 96×54 RGB triangle by incremental edge-function rasterization — one
 `fadd` per edge per pixel, exactly four divisions in the whole program
 (three per-vertex reciprocals and one reciprocal of the determinant, none
 inside the pixel loop) — and writes a binary P6 image on stdout. Its
-15,565 bytes are byte-identical between the reference backend, all four
+15,565 bytes (measured below) are byte-identical between the reference backend, all four
 differential toolchains, and an independently written Python oracle that
 mirrors the program's f64 operation order (`prototypes/pictura_oracle.py`;
 spec §14 entry 26) — and byte-identical cross-run big-endian on mips64
@@ -548,6 +566,14 @@ reproducing all 1,555,215 bytes bit for bit on a target with no SSE at
 all (spec §14 entry 27) — and, since Stage 6 G2, the same 1,555,215 bytes
 from an AMD GPU, both generations this machine has (the status bullets
 below).
+
+```bash truth:id=triangle-golden truth:kind=command truth:expect_exit=0 truth:expect_stdout=~/^15565\s/
+wc -c tests/programs/pictura_triangulum/expected.out
+```
+
+```bash truth:id=octonaria-golden truth:kind=command truth:expect_exit=0 truth:expect_stdout=~/^1555215\s/
+wc -c tests/programs/pictura_octonaria/expected.out
+```
 
 ![the RGB triangle at 960x540, rendered lane-parallel by examples/pictura/octonaria.exsc](docs/images/pictura_octonaria.png)
 
@@ -574,7 +600,14 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
 
 **What runs:**
 
-- `make all` → `build/exsc`, **489,213 bytes**, freestanding, no libc.
+- `make all` → `build/exsc`, **503,761 bytes** at `af354b0`, freestanding,
+  no libc. Not bound by the README gate, and the reason is worth stating
+  rather than leaving as a gap: reproducing this number needs `fasmg`,
+  which the gate's confined command runner cannot reach, and `build/` is
+  not in the repository. It read 489,213 until 2026-09-26. What *is*
+  gated is the property that matters more than the figure — `make
+  reproduce` holds the binary byte-identical across directory, `TZ`,
+  locale, `SOURCE_DATE_EPOCH`, umask and hostname (§9.3).
 - **All three stages of §16 reach end to end.** Stage 1: the §8.1 source gate,
   the lexer, the lossless CST, the typed AST. Stage 2: name resolution, types,
   capability rows, packed layout — the lexicon pass is built and **not
@@ -592,25 +625,48 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   corpus — `docs/design/diagnostics-review.md`, final section, and
   `tests/diagnostics/`. Stage 2's (`sub` resolution needing a search) does not
   fire, argued first in `docs/design/checker.md` §2.1.
-- `tests/run.sh`: **1564 pass, 0 fail** — 178 unit fixtures; 64 IR
-  fixtures and 104 Exsecutor programs, each compiled, assembled, **run**, and
-  syscall-audited (70 of those programs are the receiver's impaired vectors);
-  a **differential phase**: 184 IR builds and 136 program builds in which
+- `tests/run.sh`: **2,203 checks, 0 fail** at `af354b0`. Each count below is
+  given as measured, with the floor `tests/run.sh` declares in brackets — the
+  floors are what the fence after this bullet gates, because a floor can be
+  re-derived from the repository and a measured total cannot. Where the two
+  differ the floor is deliberately behind: this tree's convention is that a
+  floor rises when someone re-baselines it, not automatically, so drift there
+  costs precision and never the guarantee. 193 unit fixtures [193]; 78 IR
+  fixtures [78] and 147 Exsecutor programs [128], each compiled, assembled,
+  **run**, and syscall-audited (70 of those programs are the receiver's
+  impaired vectors);
+  a **differential phase**: 208 IR builds [208] and 304 program builds over 76
+  eligible directories [232 and 58], in which
   the C backend's output must agree with the reference's on stdout bytes, exit
   status and trap-or-not, across gcc and clang at `-O0` and `-O2`, every one
   under `-fsanitize=undefined -fno-sanitize-recover=all`. They agree
-  everywhere; zero sanitizer reports. And a **cross phase**: ten of those
-  directories are also emitted for `--hospes mips64-none-o64`,
+  everywhere; zero sanitizer reports. And a **cross phase**: fourteen of those
+  directories [12] are also emitted for `--hospes mips64-none-o64`,
   cross-compiled to big-endian MIPS-III with 32-bit addresses, and **run
   under emulation** against the same three observables — the first
   big-endian execution of anything this compiler produces, now carried by
   the lane rasterizers too (the soft `vector_size` lowering keeps every
   lane's bits), and the thing
   that finally tests §9.5's standing claim that the emitted text assumes
-  nothing about byte order. 13 of 27 conformance entries run, each required
-  to emit exactly its expected code and nothing else (the other 14 report
-  `DEFERRED` and are never counted as passing); 0 program directories
-  deferred.
+  nothing about byte order. 17 of the 26 conformance FIXTURES run, each
+  required to emit exactly its expected code and nothing else, and 9 report
+  `DEFERRED` and are never counted as passing; with entries 27 and 28, which
+  have no fixture and are carried by program directories, 19 of the spec's 28
+  entries run. 0 program directories deferred.
+
+  This bullet read "1564 pass — 178 unit fixtures; 64 IR fixtures and 104
+  Exsecutor programs … 184 IR builds and 136 program builds … ten of those
+  directories … 13 of 27 conformance entries run … the other 14 report
+  `DEFERRED`" until 2026-09-26. Nine figures, every one stale, in the
+  paragraph whose whole job is to say what was measured. The pass total is
+  stated with its commit for the same reason the binary sizes above are: it
+  moves with every fixture added and the gate cannot re-derive it. The floors
+  can be, so the floors are what is bound.
+
+```bash truth:id=suite-floors truth:kind=command truth:expect_exit=0 truth:expect_stdout=8
+grep -cE "FLOOR:-(193|78|128|208|58|232|12|6)\}" tests/run.sh
+```
+
 - `tests/run.sh --device=amdgcn` (measured 2026-09-21, not part of the
   hermetic run above because a GPU is hardware, not a flake input): a
   **device phase** in which six of those program directories — the hello
