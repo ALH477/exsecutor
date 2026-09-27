@@ -11,8 +11,9 @@
 # The exit status is the program's own count: 0 only if all 7,897 bytes
 # were written.
 #
-# Measured 2026-09-26 on the reference backend: compiles and assembles,
-# exits 0, stdout byte-identical, syscall surface within {Mundus, ambitus}.
+# Measured 2026-09-26: green in CI at 84db83d on the reference backend
+# (compiles and assembles, exits 0, stdout byte-identical, syscall surface
+# within {Mundus, ambitus}) and in the differential phase's four C builds.
 # Its first CI run is what found the two defects the first draft had, both
 # the compiler being right: `varius(s, c, (*c).mora)` is an aliased mutable
 # argument (EXS-E0310), and `gradus`/`tactus` took 9 and 10 arguments where

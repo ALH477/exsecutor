@@ -110,9 +110,8 @@ Exsecutor source, ten programs, all compiled and run by `tests/run.sh`:
   walking it twice (count, then write) for the MTrk length.
   `tests/programs/onus_oligarchiae/` holds its 7,897 bytes against
   `prototypes/onus_oracle.py`'s, which sorts absolute-time events instead.
-  It passes on the reference backend; its C-backend builds are
-  `[UNTESTED]` (`onus/README.md`). Oligarchy's FAUST orchestra performs
-  the file.
+  It passes on the reference backend and under all four C builds
+  (`onus/README.md`). Oligarchy's FAUST orchestra performs the file.
 
 And one more that is **not** yet in the "all compiled and run" count above,
 because it has not been: **`somnium/`, the screensaver engine** — one
