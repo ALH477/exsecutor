@@ -201,6 +201,15 @@ CHK_F_PROGRAM	= 0x01
 CHK_FR_BLOCK	= 1
 CHK_FR_FN	= 2	; a function root -- parameters and the declared row live here
 CHK_FR_LAMBDA	= 3	; a lambda root -- crossing one outward records a capture
+CHK_FR_TYDECL	= 4	; a `typus` / `structura` / `interfacies` root -- its own
+			; `[GenericParams]` (spec §8.6's `TypeDecl`, `StructDecl`
+			; and `InterfaceDecl` all admit them) live here and are
+			; visible over its body and NOWHERE else. It is not a
+			; function root, so it does not stop `__chk_lookup`'s
+			; outward walk and `__chk_frame_root` skips it the way it
+			; skips a `BLOCK`: `ChkFrame.node` is a `Typus`/`Struct`/
+			; `Interface` node, which has no `Sig` to insert a row
+			; into.
 
 ; `ChkUse.kind` -- what pass 3 (the rows agent) is being handed.
 CHK_USE_DRAW	= 1	; an atom drawn where no frame provides it, in a function
@@ -997,7 +1006,10 @@ proc __chk_frame_top, chk_c
 endp
 
 ; __chk_frame_root(chk_c) -> rax = the innermost `FN` or `LAMBDA` frame, or 0.
-; Parameters and a declared row bind here, never in an inner block.
+; Parameters and a declared row bind here, never in an inner block -- and never
+; in a `TYDECL` frame either, which is skipped exactly as a `BLOCK` is: both
+; callers read `ChkFrame.node`'s `.a` as a `Sig`, and a `Struct`/`Interface`/
+; `Typus` node's `.a` is a member list or a type.
 proc __chk_frame_root, chk_c
 	uses	rbx, r12
 	locals
@@ -1013,6 +1025,8 @@ proc __chk_frame_root, chk_c
 	call	__chk_frame_at
 	movzx	ecx, byte [rax + ChkFrame.kind]
 	cmp	ecx, CHK_FR_BLOCK
+	je	.up
+	cmp	ecx, CHK_FR_TYDECL
 	jne	.here
 	jmp	.up
   .here:
@@ -1326,7 +1340,24 @@ proc __chk_lookup, chk_c, chk_nm, chk_ord
 	call	__chk_frame_at
 	movzx	ecx, byte [rax + ChkFrame.kind]
 	cmp	ecx, CHK_FR_FN
-	je	.outer
+	jne	.cont
+	; THE ONE THING OUTSIDE A FUNCTION THAT IS STILL A SCOPE. The stop above
+	; is justified by "a function is never inside another function's scope";
+	; a `TYDECL` frame is not a function's scope. An interface member's
+	; signature may name the interface's own generic parameter
+	; (`interfacies I<T> { functio acc(self: I, v: T) -> T }`, spec §8.6's
+	; `InterfaceDecl [GenericParams]`), so the walk continues when -- and
+	; only when -- the next frame out is a `TYDECL`.
+	mov	rcx, [chk_fi]
+	test	rcx, rcx
+	jz	.outer
+	mov	rdi, rbx
+	lea	rsi, [rcx - 1]
+	call	__chk_frame_at
+	movzx	ecx, byte [rax + ChkFrame.kind]
+	cmp	ecx, CHK_FR_TYDECL
+	jne	.outer
+  .cont:
 	mov	r12, [chk_fi]
 	jmp	.frame
 
@@ -2749,6 +2780,12 @@ proc __chk_walk, chk_c, chk_n, chk_pos
 	je	.rowitem
 	cmp	rcx, AST_FN
 	je	.fn
+	cmp	rcx, AST_TYPUS
+	je	.tydecl
+	cmp	rcx, AST_STRUCT
+	je	.tydecl
+	cmp	rcx, AST_IFACE
+	je	.tydecl
 	cmp	rcx, AST_LAMBDA
 	je	.lambda
 	cmp	rcx, AST_BLOCK
@@ -2868,6 +2905,65 @@ proc __chk_walk, chk_c, chk_n, chk_pos
 	mov	[rbx + ChkCtx.owner], eax
 	mov	eax, [chk_sv2]
 	mov	[rbx + ChkCtx.rowdecl], eax
+	jmp	.out
+
+  .tydecl:
+	; `typus T<…> = …`, `structura S<…> { … }`, `interfacies I<…> { … }`.
+	; Modelled on `.fn` above and for its reason: spec §8.6 gives all three
+	; an optional `[GenericParams]`, and until this arm existed pass 1 never
+	; put them in scope over the body. `__chk_kids`' slot order walked the
+	; BODY first (`Typus.a`, `Struct.a`/`Interface.a`) and the `Generics`
+	; (`.c`) after it, and then `.genparam`'s `__chk_bind` found no frame
+	; open at module level and dropped the parameter on the floor -- so
+	; `typus box<T> = refero<T>;`, `typus e2<T, E> = casus prosperum(T),
+	; casus adversum(E);`, `structura S<T> { x: T }` and
+	; `interfacies I<T> { functio acc(self: I, v: T) -> T }` all raised
+	; `EXS-E0301` at the parameter's USE. MEASURED, all four, with
+	; `--diagnostica json` before this arm; `potestas` is not in the list
+	; because its grammar takes no generic parameters (`Potestas.c` is
+	; `AST_R_NONE` and `potestas P<T>` is `EXS-E0201` at the `<`).
+	;
+	; One arm for three kinds, because the scoping question is one question.
+	; They differ only in the SHAPE of the body slot: `Typus.a` is a single
+	; node (a `Ty*` for an alias, an `AST_SUMBODY` for a sum -- the child's
+	; kind is the discriminator, sum-types.md D1), while `Struct.a` and
+	; `Interface.a` are a member LIST with `.b` its count.
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, CHK_FR_TYDECL
+	call	__chk_frame_push
+	mov	rdi, rbx
+	mov	rsi, [chk_cc]		; `Generics`, or 0 -- BEFORE the body
+	xor	rdx, rdx
+	call	__chk_walk
+	cmp	qword [chk_k], AST_TYPUS
+	je	.tydecl_one
+	mov	qword [chk_i], 0
+  .tydecl_elem:
+	mov	rax, [chk_i]
+	cmp	rax, [chk_b]
+	jae	.tydecl_done
+	mov	rdi, [rbx + ChkCtx.tree]
+	mov	rsi, [chk_a]
+	add	rsi, [chk_i]
+	call	ast_extra_at
+	test	eax, eax
+	jz	.tydecl_next
+	mov	rdi, rbx
+	mov	rsi, rax
+	mov	rdx, [chk_pos]
+	call	__chk_walk
+  .tydecl_next:
+	inc	qword [chk_i]
+	jmp	.tydecl_elem
+  .tydecl_one:
+	mov	rdi, rbx
+	mov	rsi, [chk_a]
+	mov	rdx, [chk_pos]
+	call	__chk_walk
+  .tydecl_done:
+	mov	rdi, rbx
+	call	__chk_frame_pop
 	jmp	.out
 
   .lambda:

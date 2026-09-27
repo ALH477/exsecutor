@@ -366,16 +366,35 @@ is one and at the path segment when there is not, raising the `EXS-E0304` the
 site already raises. That is a prerequisite owed by the checker independently
 of sum types — a real silent-acceptance bug today — not part of D5.
 
-**A second prerequisite, measured while landing D1's grammar: pass 1 does not
-scope a `typus`'s generic parameters over its body.** `typus e2<T, E> = casus
-prosperum(T), casus adversum(E);` raises `EXS-E0301` at `T` and at `E` — and
-so does the alias form `typus box<T> = refero<T>;`, which §8.6's `TypeDecl`
+**A second prerequisite, measured while landing D1's grammar: pass 1 did not
+scope a `typus`'s generic parameters over its body. FIXED.** `typus e2<T, E> =
+casus prosperum(T), casus adversum(E);` raised `EXS-E0301` at `T` and at `E` —
+and so did the alias form `typus box<T> = refero<T>;`, which §8.6's `TypeDecl`
 has admitted all along. Nothing in the corpus writes a generic `typus`, so
-nothing had ever asked. `tests/unit/chk_ty_typus_sum.asm` row 5 pins the
-measured behaviour so that fixing pass 1 flips it deliberately. Until it is
-fixed, D5's `eventus<T, E>` cannot be declared as a prelude `typus` at all;
-that fix belongs to `checker/resolve/`, alongside the scoping it already does
-for a function's and a struct's generics.
+nothing had ever asked.
+
+Re-measured while fixing it, the hole was **wider than a `typus`**, and this
+paragraph's own closing sentence was the stale part: pass 1 scoped a
+*function's* generics (`Fn.c`, since `6ce455b`) and nothing else.
+`structura S<T> { x: T }` and
+`interfacies I<T> { functio acc(self: I, v: T) -> T }` raised the same
+`EXS-E0301` at the parameter's use, measured one file at a time with
+`--diagnostica json`. All three now go through one `.tydecl` arm in
+`checker/resolve/resolve.inc`: a `CHK_FR_TYDECL` frame with the `Generics`
+list walked into it *before* the body, which `__chk_kids`' slot order walked
+first. (`potestas` is not in that list: its grammar takes no generic
+parameters, and `potestas P<T>` is `EXS-E0201` at the `<`.) The interface case
+needed one thing more than the arm — `__chk_lookup`'s frame walk stops at the
+innermost `FN` frame, so a member's signature naming the interface's own `T`
+had to be let across it, which it now is when and only when the next frame out
+is a `TYDECL`.
+
+`tests/unit/chk_ty_typus_sum.asm` row 5 flipped from two `EXS-E0301`s to no
+diagnostic, with a read-back that both payload type nodes are `AST_TY_PARAM`;
+`tests/unit/chk_resolve_typus_generics.asm` covers all three declaration
+kinds, a parameter *not* being visible outside its declaration, and two
+`typus` declarations both naming `T` without an `EXS-E0302` between them.
+D5's `eventus<T, E>` is no longer blocked on this.
 
 ### D6 — Layout: the tag, then the largest payload, packed
 

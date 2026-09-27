@@ -50,17 +50,30 @@
 ;      field: §5.2 admits only unsigned integers on the wire, through pass
 ;      4's existing kind test, now from source.
 ;   5. a generic sum, `typus e2<T, E> = casus prosperum(T), casus adversum(E);`
-;      -- `EXS-E0301` TWICE, at `T` and at `E`. Not a defect of the sum arm:
-;      MEASURED on the alias form too, `typus box<T> = refero<T>;` raises the
-;      same `EXS-E0301` at its `T`. Pass 1 has never put a `typus`'s generic
-;      parameters in scope over its body, although spec §8.6's `TypeDecl`
-;      has admitted `[GenericParams]` all along; nothing in the corpus
-;      writes one, so nothing had ever asked. Pinned as the measured
-;      behaviour so that fixing pass 1 flips this row on purpose -- and it
-;      must be fixed before `eventus<T, E>` can become the prelude `typus`
-;      sum-types.md D5 wants (recorded there as a prerequisite). The sum
-;      still lays out, as 1 byte: an unresolved payload is the error type,
-;      width 0, and the tag is never elided (D6).
+;      -- no diagnostic, and both payload type nodes resolve to their own
+;      generic parameter (`AST_TY_PARAM`, twice, and there are exactly two
+;      `TyPath` nodes in this source).
+;
+;      THIS ROW WAS `EXS-E0301` TWICE, at `T` and at `E`, and was pinned that
+;      way on purpose. Pass 1 had never put a `typus`'s generic parameters in
+;      scope over its body, although spec §8.6's `TypeDecl` has admitted
+;      `[GenericParams]` all along; nothing in the corpus writes one, so
+;      nothing had ever asked. Measured then on the alias form too
+;      (`typus box<T> = refero<T>;`, the same `EXS-E0301` at its `T`), and on
+;      `structura S<T> { x: T }` and
+;      `interfacies I<T> { functio acc(self: I, v: T) -> T }`, which failed
+;      the same way for the same cause. Fixed by `resolve.inc`'s `.tydecl`
+;      arm -- one arm for all three kinds, a `CHK_FR_TYDECL` frame with the
+;      `Generics` list walked into it BEFORE the body -- which is also the
+;      prerequisite sum-types.md D5 records for `eventus<T, E>` as a prelude
+;      `typus`.
+;
+;      The sum still lays out as 1 byte, and for a DIFFERENT reason than
+;      before: a generic parameter is not the error type any more, but
+;      `AST_TY_PARAM` is outside `__chk_lay_ty`'s switch and so has no
+;      width, the payload contributes 0, and the tag is never elided (D6).
+;      Pass 4 sizes it without asserting -- run under `-o` as well, which is
+;      where `__chk_lay_sum` is actually reached.
 ;
 ; Exit 0 = every row held; 10+N = row N's diagnostics were wrong; 30+N = row
 ; N's read-back was wrong.
@@ -189,11 +202,19 @@ segment readable executable
 	jne	.rb_bad
 	jmp	.row_next
   .rb5:
-	; decl 1 `e2`; its payloads are unresolved (row 5's note), so the sum
-	; is its tag alone: 1 byte
+	; decl 1 `e2`; a generic parameter has no width in `__chk_lay_ty`'s
+	; switch (row 5's note), so the sum is its tag alone: 1 byte
 	mov	rsi, 1
 	call	fx_lay
 	cmp	rax, 1
+	jne	.rb_bad
+	; both payloads -- the only two `TyPath` nodes in this source -- now
+	; resolve to a generic parameter rather than raising `EXS-E0301`
+	mov	edi, AST_TY_PARAM
+	call	fx_typaths
+	cmp	rax, 2
+	jne	.rb_bad
+	cmp	rdx, 2
 	jne	.rb_bad
 	jmp	.row_next
   .row_next:
@@ -412,6 +433,56 @@ include '../../compiler/x86_64/checker/checker.inc'
 	pop	rbx
 	ret
 
+; fx_typaths(edi = an `AstType` kind) -> rax = how many `AST_TYPATH` nodes the
+; last tree holds, rdx = how many of those have `Node.ty` of that kind. A
+; payload that did not resolve has `Node.ty` 0 or the error type, so counting
+; BOTH is what distinguishes "resolved to a generic parameter" from "resolved
+; to nothing and reported": a row expecting no diagnostic and reading back only
+; the second number would also pass on a tree with no `TyPath` in it at all.
+  fx_typaths:
+	push	rbx
+	push	r12
+	push	r13
+	push	r14
+	push	r15
+	mov	r15d, edi
+	xor	ebx, ebx
+	xor	r14d, r14d
+	mov	r13, 1
+  .scan:
+	lea	rdi, [fx_tree]
+	call	ast_node_count
+	cmp	r13, rax
+	ja	.out
+	lea	rdi, [fx_tree]
+	mov	rsi, r13
+	call	ast_node_at
+	movzx	ecx, word [rax + AstNode.kind]
+	cmp	ecx, AST_TYPATH
+	jne	.next
+	inc	rbx
+	mov	esi, [rax + AstNode.ty]
+	test	esi, esi
+	jz	.next
+	lea	rdi, [fx_tree]
+	call	ast_type_at
+	movzx	ecx, byte [rax + AstType.kind]
+	cmp	ecx, r15d
+	jne	.next
+	inc	r14
+  .next:
+	inc	r13
+	jmp	.scan
+  .out:
+	mov	rax, rbx
+	mov	rdx, r14
+	pop	r15
+	pop	r14
+	pop	r13
+	pop	r12
+	pop	rbx
+	ret
+
 ; fx_setup -> eax = 0 once the arenas and the interner exist.
   fx_setup:
 	push	rbx
@@ -476,7 +547,7 @@ segment readable
 	dq fx_c4, fx_c4_LEN
 	dd 1, 321, FX_ANY, 0, 0, 0
 	dq fx_c5, fx_c5_LEN
-	dd 2, 301, 33, 301, 52, 0
+	dd 0, 0, 0, 0, 0, 0
   FX_NROWS = ($ - fx_tab) / FX_ROW
   assert ($ - fx_tab) mod FX_ROW = 0
 

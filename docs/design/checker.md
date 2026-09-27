@@ -60,6 +60,11 @@ function → module in one step; the intra-function structure is the ranges.
 atom in spec §4.6's order (`Mundus`=1 … `Crudum`=11), holding the `Decl`
 that provides that atom in that scope, or 0.**
 
+(A fourth kind was added later — a `TYDECL` root, one per `typus`,
+`structura` or `interfacies` that carries `[GenericParams]`; see section 2.2's
+pass 1. It holds generic parameters, never a capability provider, so every
+`cap` slot in one is 0 and `Lookup(P)` below passes straight through it.)
+
     Frame { node u32, first_decl u32, seen u32, kind u8, cap[11] u32 }   ~60 bytes
 
 - **Bind.** `sub P = e;` (statement form) sets `cap[P]` in the *current*
@@ -176,6 +181,38 @@ error; an inner block shadowing an ordinary name is allowed (names resolve
 by name, so nearest-wins is unambiguous — only capabilities resolve by type
 and only they forbid shadowing). `Member.d` is *not* resolved here: a
 member needs the receiver's type. `&x` on a `Path` sets `address_taken`.
+
+**A TYPE DECLARATION IS A SCOPE TOO,** and pass 1 did not treat one as a scope
+until 2026-09-27. Spec §8.6 gives `TypeDecl`, `StructDecl` and
+`InterfaceDecl` an optional `[GenericParams]`; only a *function's* were ever
+bound (`Fn.c`, since `6ce455b`), so `typus box<T> = refero<T>;`,
+`typus e2<T, E> = casus prosperum(T), casus adversum(E);`,
+`structura S<T> { x: T }` and
+`interfacies I<T> { functio acc(self: I, v: T) -> T }` each raised
+`EXS-E0301` at the parameter's *use* — measured one file at a time, not
+reasoned from the grammar. Two causes, both in the default walk: `__chk_kids`
+takes slots in order, so the body (`Typus.a`, `Struct.a`/`Interface.a`) was
+walked *before* the `Generics` in `.c`; and at module level `__chk_bind` has
+no frame to bind into and drops the parameter. All three kinds now share one
+`.tydecl` arm — a frame of kind **`CHK_FR_TYDECL`**, the `Generics` walked
+into it first, then the body, then pop — which is `.fn`'s shape and is why
+none of the three needs an arm of its own. (`potestas` takes no generic
+parameters: `Potestas.c` is `AST_R_NONE`, and `potestas P<T>` is `EXS-E0201`
+at the `<`.)
+
+The new frame kind exists because `Lookup`'s walk above **stops at the
+innermost `FN` frame**, justified by "a function is never inside another
+function's scope". An interface member's signature naming the interface's own
+`T` has to cross outward past its own `FN` frame into something that is a
+scope and is not a function, so the walk now continues past an `FN` frame
+when, and only when, the next frame out is a `TYDECL`; and
+`__chk_frame_root` skips a `TYDECL` exactly as it skips a `BLOCK`, since both
+of its callers read that frame's node as a `Fn`/`Lambda` with a `Sig` to
+insert a row into. Pinned by `tests/unit/chk_resolve_typus_generics.asm`
+(all three kinds, a parameter not visible outside its declaration, and two
+`typus` declarations both naming `T` with no `EXS-E0302` between them) and by
+`tests/unit/chk_ty_typus_sum.asm` row 5, which flipped from two `EXS-E0301`s
+to none.
 
 **`E0500` is not pass 1's**, and this document said it was until 2026-09-25.
 Spec §4.1 rule 7 reads *"No module-level mutable state. (`EXS-E0500`; with a

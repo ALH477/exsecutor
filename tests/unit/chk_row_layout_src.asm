@@ -72,13 +72,23 @@
 ; THE CRASH CLASS, every other type kind with no layout of its own, as a
 ; field: a capability atom (c13/c14), `dyn Iface` (c15/c16), `functio(...)`
 ; (c17/c18), `eventus<T>` (c19/c20), a generic parameter (c21/c22). Each is
-; clean out of `@transitus` and `EXS-E0321` in it, except the generic
-; parameter, which is `EXS-E0301` at `X` in both: the resolver binds no
-; generic parameter anywhere (`functio f<X>(x: X) -> X` is two `EXS-E0301`
-; too), so what a generic field's layout is cannot be asked yet -- `[OPEN]`,
-; pinned so the day it resolves this row is revisited rather than silently
-; changed. `refero<u8>` is not a row: in type position it is `EXS-E0201`,
-; a parse error, before any pass here runs.
+; clean out of `@transitus` and `EXS-E0321` in it -- the generic parameter
+; INCLUDED, as of the day this fixture asked to be revisited.
+;
+; c21/c22 read `EXS-E0301` at `X` in both until 2026-09-27, because pass 1
+; bound no generic parameter outside a function, so what a generic field's
+; layout is could not be asked. That was marked `[OPEN]` here and "pinned so
+; the day it resolves this row is revisited rather than silently changed".
+; The day is `checker/resolve/resolve.inc`'s `.tydecl` arm, which scopes a
+; `structura`'s own `[GenericParams]` over its body (and a `typus`'s and an
+; `interfacies`'s -- `tests/unit/chk_resolve_typus_generics.asm`).
+; RE-MEASURED with `--diagnostica json` on each row's own source, not
+; inferred: c21 is CLEAN and c22 is `EXS-E0321` ALONE, at the field, byte 29.
+; `AST_TY_PARAM` is outside `__chk_lay_ty`'s switch, so a generic field has no
+; width and is not `AST_TY_INT` -- exactly the crash class's shape, which is
+; what these two rows were written to test and could not reach before.
+; `refero<u8>` is not a row: in type position it is `EXS-E0201`, a parse
+; error, before any pass here runs.
 ;
 ; EVERY ROW PINS THE COUNT, THE CODE AND THE OFFSET (up to two diagnostics,
 ; in the order the checker buffered them). The offsets were computed by the
@@ -689,12 +699,13 @@ segment readable
 	; c20: @transitus, an eventus field: E0321
 	dq fx_c20, fx_c20_LEN
 	dd 1, 321, 26, 0, 0, 0
-	; c21: a generic-parameter field: E0301 at X (generics do not resolve)
+	; c21: a generic-parameter field: clean -- `X` resolves (`.tydecl`) and
+	; the struct is not `@transitus`, so nothing asks for a width
 	dq fx_c21, fx_c21_LEN
-	dd 1, 301, 21, 0, 0, 0
-	; c22: @transitus, a generic-parameter field: E0301, then E0321
+	dd 0, 0, 0, 0, 0, 0
+	; c22: @transitus, a generic-parameter field: E0321 at the field, alone
 	dq fx_c22, fx_c22_LEN
-	dd 2, 301, 32, 321, 29, 0
+	dd 1, 321, 29, 0, 0, 0
 	; c23: forging a Scriptor from bytes through a @transitus struct: E0305 (pass 2), E0321
 	dq fx_c23, fx_c23_LEN
 	dd 2, 305, 87, 321, 26, 0
