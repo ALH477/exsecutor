@@ -75,34 +75,6 @@ Exsecutor source, ten programs, all compiled and run by `tests/run.sh`:
   as digital-watch firmware (set time, alarm, countdown, stopwatch), bare on
   emulated Cortex-M4 and M0+; `metronomus/README.md` has the mutants and the
   compiler crash it found.
-- **`arca/`, a tar-header judge for root** — for Oligarchy's reliquary,
-  which extracts USB-sourced payloads as root and used to check member names
-  but not types (a hostile payload made a world-readable block device).
-  `arca.exsc` is pure and admits only GNU tar's own output shape: regular
-  files, directories, GNU long names, exact checksum/size/numeric forms, safe
-  names. `proba_c.sh` holds it to GNU tar itself: reliquary's archives
-  admitted with identical member lists, 32 hostile cases refused by verdict,
-  and a header fuzz with zero gate-admitted/tar-disagrees cases, plus six
-  behaviour mutants and the rule-6 capability checks.
-- **`custos/`, the DCF datagram gate** — for Punctim's `dcf-ws-bridge`,
-  which links its C. `custos.exsc` is a pure library: `admitte` says whether
-  one bare-dialect UDP datagram is a valid 17-byte DeModFrame or a valid
-  32-byte SuperPack (joint CRC, both cores version 1), and otherwise why
-  not. Built as one unit with §14 entry 23's fixture and codex, so a frame
-  is judged by the certified `lege` itself. `proba_c.sh` checks reproducible
-  emission, 19 anchors under gcc and clang with UBSan, and five mutants; the
-  vector certification is the consumer's, in Punctim.
-- **`potestas/`, a plugin host's install-time policy** — for Oligarchy's
-  plugind, whose root acts on every answer. `potestas.exsc` is pure and
-  states, as one rule each, plugind's id grammar, the lexical half of its
-  forbidden-path check in both directions (`/` contains `/proc`), its
-  capability anchor rule, and the W^X rule that plugind's Rust and its Nix
-  module each state separately. `proba_c.sh` checks reproducible emission,
-  122 anchors from plugind's own tests under gcc and clang with UBSan, 16
-  mutants and the rule-6 capability checks. Like `arca/` and `custos/`, it
-  is run by its own `proba_c.sh`, not by `tests/run.sh`. The differential
-  certification against plugind and the Nix mirror is the consumer's, in
-  Oligarchy.
 - **`tempus/`, the time register** — one DeModFrame carrying a node's held
   time onto the Punctim wire, and the read of one that arrives. Built as one
   unit with §14 entry 23's fixture and codex, so the frame declaration is
@@ -141,20 +113,8 @@ Exsecutor source, ten programs, all compiled and run by `tests/run.sh`:
   It passes on the reference backend and under all four C builds
   (`onus/README.md`). Oligarchy's FAUST orchestra performs the file.
 
-- **`utf16/`, twenty-seven UTF-8 to UTF-16 converters** — one pure contract
-  (`contractus.exsc`), one driver (`probatio.exsc`), and twenty-seven libraries
-  that differ in how a sequence is recognised, how a pass is structured, how
-  lockstep stages are connected, and how a fault would be caught (a DFA, a
-  WHATWG register machine, Table 3-7 as data, divide and conquer, a registered
-  pipeline, a bit reservoir, dual and triple redundant decoders, ...). All 27 are
-  held byte for byte to Python's codec on valid and ill-formed input, in a strict
-  mode and in a U+FFFD-per-maximal-subpart mode, through `exsc`, both byte orders
-  and gcc/clang. `utf16/README.md` has the roster, the commands, and what was and
-  was not checked; `tests/programs/utf16_*/` run them in `tests/run.sh`, and
-  `tools/identify.py` says which library a binary is.
-
-And one more that is **not** yet in the "all compiled and run" count above,
-because it has not been: **`somnium/`, the screensaver engine** — one
+And one more, in the "all compiled and run" count above since 2026-09-27:
+**`somnium/`, the screensaver engine** — one
 program, nine effects: a sine plasma, a heat-diffusion fire, Life coloured
 by age, digital rain, a warp starfield, the demoscene tunnel, a Mandelbrot
 deep zoom in f64, a title card in which the rain flies together into
@@ -168,23 +128,15 @@ frames are pinned by golden files (`tests/programs/somnium_*/`, written by
 `prototypes/somnium_oracle.py`). Two builds of the one unit: the
 freestanding reference, and the C backend with the buffered host
 `somnium/hospes.c` (one `write(2)` a frame rather than one a byte). It was
-written where no `fasmg` was available, so it is `[UNTESTED]` as Exsecutor
-until the first `tests/run.sh` that reaches it; `docs/design/somnium.md` is
-its design and says exactly what did and did not run. Oligarchy's
-`custom.screensaver` is its consumer, through this repo's flake.
-
-And one that is **not a program** and is not in the count either:
-**`abortus/`, a trap that returns.** A library-mode unit's traps call a
-`_Noreturn` hook, so in a long-running host (`custos` in Punctim's bridge,
-`arca` in reliquary, which runs as root) a trap that an input can reach
-kills the process. `tutela.c` is a hosted C guard: `setjmp` in one place,
-and `exsrt_abortus` jumps back to it. The host gets the trap's kind and
-keeps running. With no guard open it still aborts. There is no compiler
-change. `proba_c.sh` drives custos's, arca's and a test-only module's traps
-under gcc and clang with UBSan (and gcc with ASan), from C and from Rust,
-with three mutants. It also shows why none of this works in a kernel: there
-is no `<setjmp.h>`. `docs/design/returning-trap.md` is the kernel's half,
-design only.
+written where no `fasmg` was available, so it was `[UNTESTED]` as Exsecutor
+until the first `tests/run.sh` that reached it. That run was 2026-09-27:
+all twelve sources compile, both builds link, and all seventeen fixtures
+are byte-identical to the oracle's goldens on the first compile, with no
+edit to any source. `docs/design/somnium.md` is its design; its section 10
+is the frame time that run measured, and the reason the reference build is
+100× slower than the C one on seven of the nine (48,000 `write(2)` a
+frame). Oligarchy's `custom.screensaver` is its consumer, through this
+repo's flake.
 
 This file said "nothing here compiles — there is no compiler" until
 2026-09-10, and then, until the hydramodem commit, that nothing here was
