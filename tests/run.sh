@@ -419,10 +419,10 @@ run_conformance_tests() {
   # that assumes one shape quietly mishandles four):
   #
   #   code   -- "exsc rejects this source with exactly code EXS-Exxxx"
-  #             (entries 2-14, 18-22)
-  #   bytes  -- byte-identical output across conditions/hosts (16, 17) --
-  #             tools/reproduce.sh already knows how to check this; called
-  #             from below, never reimplemented
+  #             (entries 2-14, 18-22, 24)
+  #   bytes  -- byte-identical output across conditions/hosts (16, 17, 25,
+  #             26) -- tools/reproduce.sh already knows how to check this;
+  #             called from below, never reimplemented
   #   cert   -- an EXTERNAL certificate, vendor/hydramesh-wire's 246 golden
   #             vectors, not a case this project wrote for itself (23 only)
   #   abort  -- a RUNTIME abort, not a compile failure -- needs a built and
@@ -461,10 +461,15 @@ run_conformance_tests() {
   #                             counted as passing (CLAUDE.md: "Never
   #                             report a test you did not see pass").
   #   needs=        required when status=deferred (comma-separated if more
-  #                 than one): what it is waiting on -- parser,
-  #                 type_checker, capability_checker, lexicon_checker,
-  #                 wire_layout_checker, ffi_checker, import_closure,
-  #                 backend, runtime, cross_compile, wire_codec.
+  #                 than one): what it is waiting on. The tokens in use are
+  #                 capability_checker (1), type_checker (2),
+  #                 import_closure (4), lexicon_checker (14),
+  #                 refero_construction (15), backend (16) and
+  #                 backend,cross_compile (17). Free text, not a closed
+  #                 set -- the check below is only that a deferred fixture
+  #                 names SOMETHING. Entry 15's token was `runtime,backend`
+  #                 until 2026-09-27, which named the wrong blocker: the
+  #                 ARC runtime exists (tests/unit/prelude_arc.asm).
   #   sources=      shape=cert only: the files compiled AFTER the fixture,
   #                 in this order, as one unit (spec §12), relative to
   #                 tests/conformance/. They live in a subdirectory
@@ -538,14 +543,24 @@ run_conformance_tests() {
   #   fixture_floor -- 26 entries have a fixture file; fewer *.exsc files
   #                    than that means fixtures went missing, not that §14
   #                    shrank.
-  #   run_floor     -- 17 as of 2026-09-25: entries 3, 5, 18, 20 (lexically
+  #   run_floor     -- 19 as of 2026-09-27: entries 3, 5, 18, 20 (lexically
   #                    checkable), 6, 7, 9, 19, 21 (the @transitus layout
   #                    checker, type checker and identifier classification),
-  #                    23 (its certificate), 25 and 26 (the bytes shape), and
-  #                    the five that moved in the Stage 7 wave -- 8, 10, 11,
+  #                    23 (its certificate), 25 and 26 (the bytes shape), the
+  #                    five that moved in the Stage 7 wave -- 8, 10, 11,
   #                    13, 22 -- each measured to emit exactly its expected
   #                    code and nothing else after 6f6cd8c and b86b080 (see
-  #                    each fixture's header). Entry 22 had once been
+  #                    each fixture's header), and 12 and 24, which moved in
+  #                    the Stage 2 wave: 80b9390 gave `textus` and its views
+  #                    a method table, and 8e746f3 stopped comparing a
+  #                    receiver reached through an interface by identity.
+  #                    17 -> 19 IS A RE-BASELINE, NOT A NEW MEASUREMENT.
+  #                    Entries 12 and 24 have carried `status=run` since
+  #                    those two commits, so this floor sat two below the
+  #                    tree and would not have noticed losing either of
+  #                    them -- which is the one thing a floor is for. No
+  #                    fixture's directive was flipped to reach 19.
+  #                    Entry 22 had once been
   #                    DEFERRED by this very check: tightening it from a
   #                    substring match to an exact set found a second real
   #                    diagnostic (EXS-E0322 over parser recovery debris),
@@ -556,7 +571,7 @@ run_conformance_tests() {
   echo "== conformance suite (tests/conformance/, spec §14) =="
   local dir="$REPO_ROOT/tests/conformance"
   local fixture_floor=26
-  local run_floor=17
+  local run_floor=19
 
   if [[ ! -d "$dir" ]]; then
     bad "tests/conformance/ does not exist"
@@ -697,10 +712,17 @@ run_conformance_tests() {
         fi
         ;;
       bytes)
-        # Reused, not reimplemented (this agent's brief). No fixture is
-        # status=run for this shape yet (16/17 both need a backend this
-        # project does not have) -- this branch exists so the day one is,
-        # flipping that fixture's status= is the only change needed.
+        # Reused, not reimplemented (this agent's brief). Entries 25 and 26
+        # are status=run through this branch, so the prediction the comment
+        # here used to make -- "no fixture is status=run for this shape yet
+        # (16/17 both need a backend this project does not have) ...
+        # flipping that fixture's status= is the only change needed" -- was
+        # tested and held: both flipped with no edit to this branch. Entry
+        # 17 is still deferred (no riscv64 reference backend to compare
+        # against), and entry 16 is deferred for a different reason, which
+        # is NOT a missing backend: `tools/reproduce.sh` does not compile
+        # that fixture, so a pass here would be the harness reporting on
+        # units it happens to build rather than on entry 16's source.
         local rc=0
         "$REPO_ROOT/tools/reproduce.sh" >"$workdir/$name.out" 2>&1 || rc=$?
         if grep -q "THIS RUN TESTS THE FIXTURE, NOT exsc" "$workdir/$name.out"; then
@@ -730,10 +752,16 @@ run_conformance_tests() {
         fi
         ;;
       abort|nocap)
-        bad "$name: entry $entry: shape=$shape has no status=run implementation --"
-        bad "no fixture should claim status=run for this shape yet (abort needs"
-        bad "an executed binary, nocap needs a capability checker) -- fix the"
-        bad "fixture's directive, not this branch"
+        bad "$name: entry $entry: shape=$shape has no status=run implementation"
+        bad "in this runner -- fix the fixture's directive, or write the branch."
+        bad "abort (entry 15) needs a program that can hold a refero value: the"
+        bad "ARC runtime exists and is unit-tested (prelude/prelude.asm,"
+        bad "tests/unit/prelude_arc.asm), but no source program can construct"
+        bad "one, so there is nothing to drive to saturation. nocap (entry 1)"
+        bad "needs a grading rule, not a checker: exsc already reports that"
+        bad "fixture as exactly {EXS-E0421} with the fix ' poscit sermo'"
+        bad "attached, and what is missing is the shape that decides on the"
+        bad "ABSENCE of a registered code."
         ;;
       *)
         bad "$name: unknown shape='$shape'"

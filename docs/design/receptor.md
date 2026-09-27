@@ -392,8 +392,10 @@ only use); an `alloc` arena for the arrays (a capability for something
 the type already says, and the audit would then show `mmap`); prefix sums
 at a reduced width (D5 shows `i64` is needed and sufficient).
 
-**Retired by:** R2's three WAV tests; `tests/programs/hydramodem_rx_caput/`
-feeding each rejected header field in turn (exit 3, no output). As landed:
+**Retired by:** R2's three WAV tests; tests/programs/hydramodem_rx_caput/
+feeding each rejected header field in turn (exit 3, no output) — the plan's
+own spelling, unbackticked because no such directory exists (the convention
+docs/design/sum-types.md §7 states). As landed:
 the three WAV tests run, and the header directory is `receptio_caput/`, one
 field (the sample rate), whose own `TEST` records that it proves the header
 path rejects and writes nothing, not the rate field in particular; the
@@ -498,8 +500,8 @@ modem.md §9) — finding 14, retired by R2: `x * t[m0]` runs 4 × 19,008
 times a decode and `i * i + q * q` some 150,000 times (section 10).
 
 **Retired by:** R2 (every bound is exercised at the vendored amplitude —
-done, section 12: no trap in 1,430 decodes); `tests/programs/
-hydramodem_rx_plenus/`, a synthetic full-scale input (every sample ±32768
+done, section 12: no trap in 1,430 decodes); tests/programs/
+hydramodem_rx_plenus/, a synthetic full-scale input (every sample ±32768
 on the tones) that must not abort — the one input that reaches the bounds
 rather than a tenth of them — **not written**.
 
@@ -598,8 +600,10 @@ would lose every bit); per-bit normalisation by cross-multiplication
 argues against); `f64` (`[OPEN]` in the backend and not needed).
 
 **Retired by:** R2 and R3's AWGN vectors (the metric decides only under
-noise); `tests/programs/hydramodem_rx_plenus/` for the shift at the
-bound.
+noise); tests/programs/hydramodem_rx_plenus/ for the shift at the
+bound — unbackticked because it is not written (the convention
+docs/design/sum-types.md §7 states and `tools/spec-check.sh` check 5
+enforces: backticks are what make a path an evidence claim).
 
 ### D8 Soft Viterbi: 64 states, `i64` metrics, one decision bit per state and step, output bit from the state
 
@@ -738,7 +742,8 @@ exemplum,vacuum}/`, each `stdin=vendor/hydramodem-tx/<frame>.wav`,
 `expect-exit=0`, and an `expected.out` of the frame's 17 bytes (the
 harness's existing binary-stdout comparison; the `stdin=` key did not
 exist when this was written and is finding 15, since retired). And one
-loopback test, `tests/programs/hydramodem_circuitus/`: a driver compiled with
+loopback test, `tests/programs/receptio_circuitus/` (planned here as
+hydramodem_circuitus/): a driver compiled with
 `quantum.exsc`, `modulator.exsc` and `receptor.exsc` that, for the zero
 word, the 136 one-hot words and the three frames, synthesises the 19,008
 samples in memory with the transmitter's own `sona(k, i)` (M1's, unchanged

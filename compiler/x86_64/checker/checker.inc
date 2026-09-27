@@ -45,33 +45,43 @@
 ; WHAT RUNS TODAY, AND WHAT THE HOOKS BELOW ARE FOR. checker.md section 2.2
 ; lists six deliverables; `checker-resolve` (this agent) built numbers 0, 1 and
 ; 6. `chk_run` calls the passes that exist and NOTHING ELSE -- an empty hook is
-; a comment here rather than a stub proc, so that "the types pass has not run"
-; is visible in the source instead of being a call that silently succeeds.
+; a comment here rather than a stub proc, so that "the lexicon pass has not
+; run" is visible in the source instead of being a call that silently succeeds.
 ;
 ; | # | pass    | owner            | state                                     |
 ; |---|---------|------------------|-------------------------------------------|
 ; | 0 | atoms   | `checker-resolve`| DONE -- `__chk_pass0`                     |
 ; | 1 | resolve | `checker-resolve`| DONE -- `chk_resolve`                     |
-; | 2 | types   | `checker-types`  | not written                               |
-; | 3 | rows    | `checker-rows`   | built (`chk_rows`), called when CHK_S_TYPES is set |
-; | 4 | layout  | `checker-rows`   | built (`chk_layout`), called when CHK_S_TYPES is set     |
-; | 5 | lexicon | `checker-lexicon`| not written                               |
+; | 2 | types   | `checker-types`  | DONE -- `chk_types`                       |
+; | 3 | rows    | `checker-rows`   | DONE -- `chk_rows`, called when CHK_S_TYPES is set |
+; | 4 | layout  | `checker-rows`   | DONE -- `chk_layout`, called when CHK_S_TYPES is set |
+; | 5 | lexicon | `checker-lexicon`| WRITTEN, NOT IN THE BUILD -- see below     |
 ; | 6 | verify  | `checker-resolve`| DONE -- `chk_verify`, gated on CHK_S_*    |
 ;
-; WHY PASSES 3 AND 4 ARE INCLUDED BUT NOT CALLED. `checker/rows/` is in the
-; build -- verify.inc's chain reaches it, so it assembles and its own fixtures
-; run -- and `chk_run` still does not call it, because that module's own header
-; states its precondition: it reads `Decl.ty` and `Node.ty`, which pass 2 fills,
-; and pass 2 does not exist. Calling it over a tree whose type slots are all
-; zero would not be "running pass 3 early"; it would be running it on inputs it
-; documents as required. Wiring is one edit here once `checker-types` lands, and
-; it is two calls plus one shim, all named below.
+; This table read "2 | types | not written" and "5 | lexicon | not written"
+; until 2026-09-27, by which time `chk_types` was called fifteen lines below
+; it. Rows 3 and 4 carried a paragraph here explaining why they were INCLUDED
+; BUT NOT CALLED; they are called, gated on CHK_S_TYPES, and the gate is what
+; that paragraph asked for.
+;
+; WHY PASS 5 IS WRITTEN AND STILL DOES NOT RUN. `checker/lexicon/lexicon.inc`
+; exists and defines `chk_lexicon`, raising EXS-E0601, E0602, E0603 and E0610,
+; with six fixtures (`tests/unit/chk_lx_*.asm`) that include that file DIRECTLY
+; and run green. It is not in `verify.inc`'s chain and `chk_run` does not call
+; it, for a reason that is about the spec and not about the code: E0601 ("does
+; not decompose") judges the coverage of the morpheme table, and spec §3.3's
+; table is fourteen illustrative roots, so a called pass would flag ordinary
+; identifiers across the whole tree. Enabling it is one `include` in verify.inc
+; and one call below, behind a decision recorded in §3.3 -- not a port.
 ;
 ; ---------------------------------------------------------------------------
-; HOW THE DRIVER CALLS THIS. `driver/run.inc` does not call the checker yet, and
-; the binary is unchanged by this module until it does (`make audit` sees the
-; same bytes). What that file needs to add, after its existing
-; `ast_verify_stage1` and before `--emitte`:
+; HOW THE DRIVER CALLS THIS. `driver/run.inc` calls it, after
+; `ast_verify_stage1` and before `--emitte`, in the sequence below (this note
+; said the driver "does not call the checker yet" until 2026-09-27; the call
+; site is `run.inc`'s "---- Stage 2: the checker" block, which cites this note
+; back). `chk_set_target` is the one step the driver owns rather than this
+; note: spec §9.5 forbids a default, so the pointer width comes from the
+; `--hospes` row -- 32 for `mips64-none-o64`, 64 otherwise.
 ;
 ;	mov	rdi, [r15 + DrvCtx.chk]		; -> ChkCtx, sizeof.ChkCtx
 ;	mov	rsi, [r15 + DrvCtx.ast]
@@ -142,14 +152,15 @@ proc chk_run, chk_c
 	; `include` line per pass lives in verify.inc (the chain); one CALL per
 	; pass lives here.
 	;
-	; Pass 2 (types, `checker-types`) does not exist yet. Passes 3 and 4 read
-	; `Decl.ty`/`Node.ty`, which only pass 2 fills, so they are GATED on
-	; CHK_S_TYPES: today they never run on a real tree (every fixture that
-	; reaches them builds its tree with types pre-filled through ast/load.inc
-	; and calls them directly), and the day chk_types ORs its bit in, they
-	; run with no further edit here. That is deliberate -- an ungated call
-	; would run the row fixpoint over `ty == 0` everywhere and either rassert
-	; or raise E0421 against nothing.
+	; Passes 3 and 4 read `Decl.ty`/`Node.ty`, which only pass 2 fills, so
+	; they are GATED on CHK_S_TYPES rather than called unconditionally: an
+	; ungated call would run the row fixpoint over `ty == 0` everywhere and
+	; either rassert or raise E0421 against nothing. `chk_types` ORs that bit
+	; in on its way out and has no early return, so in the driver the gate is
+	; always open and passes 3 and 4 always follow pass 2; what it still buys
+	; is that the precondition is stated in the source rather than assumed.
+	; (This comment said "pass 2 does not exist yet" until 2026-09-27, eight
+	; lines above the call that runs it.)
 	;
 	mov	rdi, rbx
 	call	chk_types		; pass 2 -- `checker-types`
@@ -166,7 +177,9 @@ proc chk_run, chk_c
 	;
 	;	mov	rdi, rbx
 	;	call	chk_lexicon		; pass 5 -- `checker-lexicon` (built against
-	;					; §3.7 and entry 14, NOT ENABLED: spec §3.3)
+	;					; §3.7 and entry 14, NOT ENABLED: spec §3.3,
+	;					; and not in verify.inc's chain either, so
+	;					; this call needs that include first)
 	;
 	; Each pass takes what it needs, raises through `chk_raise*` with its own
 	; CHK_P_* pass number, and ORs its CHK_S_* bit into `ChkCtx.stages` on the

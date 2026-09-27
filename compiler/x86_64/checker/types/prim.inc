@@ -1266,14 +1266,15 @@ proc chk_ty_prelude_type, chkt_wp, chkt_kp
   ; `.args:` compares it by identity for a concrete receiver. `textus` and
   ; `octeti` are concrete, so the spelling has to be exact.
   ;
-  ; §10.1 WRITES `plica_unicode(t: &textus)`, A BORROW, AND THIS TABLE DOES
-  ; NOT, and that is a recorded difference rather than an oversight. Every
-  ; existing row here spells its receiver plainly (`scribe(s: Scriptor, …)`,
+  ; §10.1 SPELLED `plica_unicode(t: &textus)`, A BORROW, AND THIS TABLE DID
+  ; NOT -- reported from here rather than reconciled, because `docs/spec/` is
+  ; not edited from this file. Commit 884b662 (2026-09-27) settled it the way
+  ; this table already had: the manifest row now reads `(t: textus)`. The
+  ; reasons stand as the record of why this side was the right one. Every row
+  ; here spells its receiver plainly (`scribe(s: Scriptor, …)`,
   ; `lege_octeto(l: Lector)`), a borrow parameter would be BOUND by
   ; `__chk_ty_borrowparam` instead of compared, and ADR 0016 admits
-  ; `&mutabilis` on aggregates only -- `textus` is a two-word value (§5.1). The
-  ; plain spelling is what the rest of the table does; `[OPEN]` whether §10.1's
-  ; `&` is a borrow in the ADR 0016 sense or predates it.
+  ; `&mutabilis` on aggregates only -- `textus` is a two-word value (§5.1).
 
   .fn_plica_uni:
 	; functio plica_unicode(t: textus) -> textus
@@ -1315,11 +1316,14 @@ proc chk_ty_prelude_type, chkt_wp, chkt_kp
 	; authority travels in parameter 1's TYPE (§4.2: rows travel with a
 	; value's type), so nothing is lost by it.
 	;
-	; §10.1 SPELLS THE SAME FUNCTION `-> textus poscit sermo`, WITH ONE
-	; PARAMETER. Those are two different signatures for one name and the spec
-	; holds both; this table follows §5.1 and §14 entry 1, because entry 1 is
-	; the conformance fixture that has to run against it. Reported, not
-	; silently reconciled -- `docs/spec/` is not edited from here.
+	; §10.1 SPELLED THE SAME FUNCTION `-> textus poscit sermo`, WITH ONE
+	; PARAMETER -- two signatures for one name, both held by the spec. This
+	; table followed §5.1 and §14 entry 1, because entry 1 is the conformance
+	; fixture that has to run against it, and the difference was reported
+	; rather than silently reconciled (`docs/spec/` is not edited from here).
+	; Commit 884b662 (2026-09-27) reconciled it in this row's favour: §10.1
+	; now reads `(t: textus, s: sermo) -> textus`, keeping the old spelling on
+	; the line as history.
 	mov	rdi, [rbx + ChkTyWork.wtre]
 	call	ast_list_mark
 	mov	[chkt_np], rax

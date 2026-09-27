@@ -434,9 +434,12 @@ exsrt_iface_decls:
 
 ; 5: functio scribe(s: Scriptor, t: textus) -> mensura
 ;    [OPEN] spec 11 as amended says this returns `eventus<mensura>`; the
-;    prelude returns the COUNT until `eventus` has syntax, and that is what
-;    this row declares. Marked APERTUM so the row cannot be mistaken for a
-;    settled signature.
+;    prelude returns the COUNT until `eventus` is inhabited
+;    (docs/design/sum-types.md D1/D5), and that is what this row declares.
+;    Marked APERTUM so the row cannot be mistaken for a settled signature.
+;    The blocker is no longer syntax: D1's `typus ... = casus ...` parses and
+;    builds, so what is missing is `eventus<T, E>` as a prelude declaration
+;    (D5) and a value of it a program can construct.
 	db EXS_IFACE_K_FN, EXS_IFACE_F_PUBLICA or EXS_IFACE_F_APERTUM
 	db EXS_IFACE_CAP_NONE, 0
 	dd exsrt_iface_nomina.scribe, exsrt_iface_nomina.scribe_len
@@ -460,8 +463,9 @@ exsrt_iface_decls:
 ;    docs/design/wire-codec.md D7. One byte, the low 8 bits of `b`, to `s`'s
 ;    descriptor -- the raw-byte writer a `textus` cannot be (spec 5.1: UTF-8).
 ;    Provisional for exactly `scribe`'s reason, and marked the same way:
-;    APERTUM, returning the COUNT (1, or 0 on failure) until `eventus` has
-;    syntax. A method on `Scriptor` like row 5, not associated: `s` is the
+;    APERTUM, returning the COUNT (1, or 0 on failure) until `eventus` is
+;    inhabited (row 5's note, docs/design/sum-types.md D1/D5). A method on
+;    `Scriptor` like row 5, not associated: `s` is the
 ;    receiver, so the checker gives it `scribe`'s shape and its row.
 	db EXS_IFACE_K_FN, EXS_IFACE_F_PUBLICA or EXS_IFACE_F_APERTUM
 	db EXS_IFACE_CAP_NONE, 0
@@ -508,10 +512,12 @@ exsrt_iface_decls:
 ;    the pair reads as one family.
 ;
 ;    PROVISIONAL, and marked APERTUM for `scribe`'s reason: spec 11 as
-;    amended wants `eventus`, which has no syntax, so the result is a `u16`
-;    with 256 for "no byte" -- and EOF and error are NOT distinguished (the
-;    blob's own comment says so at the routine). When `eventus` lands this
-;    becomes `eventus<u8>` and the sentinel goes.
+;    amended wants `eventus`, which is not inhabited yet
+;    (docs/design/sum-types.md D1/D5 -- the grammar landed, a constructible
+;    value did not), so the result is a `u16` with 256 for "no byte" -- and
+;    EOF and error are NOT distinguished (the blob's own comment says so at
+;    the routine). When `eventus` is inhabited this becomes `eventus<u8>` and
+;    the sentinel goes.
 	db EXS_IFACE_K_FN, EXS_IFACE_F_PUBLICA or EXS_IFACE_F_APERTUM
 	db EXS_IFACE_CAP_NONE, 0
 	dd exsrt_iface_nomina.lege_octeto, exsrt_iface_nomina.lege_octeto_len

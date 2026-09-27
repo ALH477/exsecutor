@@ -21,10 +21,27 @@
 // this value" for readability; it is explicitly NOT how the real
 // conformance check would be driven once one exists.
 //
-// DEFERRED, current blocker: no ARC runtime exists yet, and the runner has
-// no `abort` shape implemented -- there is nothing to build a saturating
-// refcount into and nothing in tests/run.sh that would recognize the
-// SIGILL/`abortus N` shape if it fired.
+// DEFERRED, and the blocker is NOT the ARC runtime. That half of this header
+// was false: `exsrt_retain` in compiler/x86_64/prelude/prelude.asm saturates
+// by construction -- `add qword [rdi + EXS_OBJ_RC], 1` followed by `jc
+// exsrt_abort_saturatio` -- and `rc == 0` means UNDER DESTRUCTION, so §6.6's
+// resurrection is one compare; tests/unit/prelude_arc.asm exercises both,
+// including the `abortus 2` line on fd 2 and exit 132. The saturating
+// refcount is built.
+//
+// THE BLOCKER IS THAT NO SOURCE PROGRAM CAN HOLD A `refero` VALUE. `refero<T>`
+// has a grammar production (6f6cd8c) and a type, and nothing constructs one:
+// `grep -rl refero tests/programs examples` is empty, and the prelude's
+// `alloc` row yields an ARENA, not a reference. So there is no program to
+// build, with or without a hook, and `needs=refero_construction` says so.
+// (A debug hook that fast-forwarded a refcount from outside the language
+// would be either an environment read CLAUDE.md forbids or a new language
+// surface -- neither is a thing this fixture may invent.)
+//
+// A second thing is also missing and is not the gate: tests/run.sh has no
+// `abort` shape implementation, so nothing would recognise the
+// SIGILL/`abortus N` shape if it fired. That branch is a grading rule over a
+// program that exists; this entry has no program yet.
 
 // `dum COND { ... }` is §8.5's own attested shape (`dum COND terminus N`);
 // the condition spelling and an unbounded `dum` with no `terminus` are
@@ -38,4 +55,4 @@ publica functio satura(n: refero<mensura>) poscit alloc {
     }
 }
 
-// TEST: entry=15 shape=abort status=deferred needs=runtime,backend
+// TEST: entry=15 shape=abort status=deferred needs=refero_construction

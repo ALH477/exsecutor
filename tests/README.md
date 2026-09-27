@@ -13,14 +13,18 @@ calls):
    four fixtures.
 2. **`tests/conformance/`** — spec §14's suite: 28 entries, 26 with a
    fixture file here (27 and 28 are carried by `tests/programs/`
-   directories, below). **17 of the 26 fixtures run, and 9 are `DEFERRED`;
+   directories, below). **19 of the 26 fixtures run, and 7 are `DEFERRED`;
    with entries 27 and 28, which have no fixture and are carried by
-   `tests/programs/`, 19 of the spec's 28 entries run.** This said "18 run as
-   of 2026-09-25" until 2026-09-26, which was wrong twice over: 17 fixtures
-   carry `status=run` (`grep -l` says so, and `tests/run.sh`'s own
-   `run_floor=17` agreed with the tree while this sentence did not — two
-   committed documents disagreeing about the same fact on the same day), and
-   "18 run, 9 DEFERRED" does not sum to 26 either way. `exsc` now exists, so the entries the lexer can
+   `tests/programs/`, 21 of the spec's 28 entries run.** This said "17 run,
+   9 `DEFERRED`" until 2026-09-27 — stale from 80b9390 and 8e746f3, which
+   moved entries 12 and 24 to run without this paragraph following them, and
+   `tests/run.sh`'s `run_floor` sat at 17 with it, so neither document would
+   have noticed losing either fixture. It said "18 run as of 2026-09-25"
+   before that, which was wrong twice over: 17 fixtures carried
+   `status=run`, and "18 run, 9 DEFERRED" does not sum to 26 either way.
+   The counts here are `grep -c status=run` and `grep -c status=deferred`
+   over `tests/conformance/*.exsc`, and the runner's floor is the thing that
+   fails when they drift. `exsc` now exists, so the entries the lexer can
    decide are checked against a real diagnostic: 3 (bidi in a comment,
    `EXS-E0103`), 5 (non-NFC, `E0102`), 18 (BOM, `E0101`), 19 (mixed-script,
    `E0104`), 20 (CRLF, `E0106`). The wire-codec branch's `@transitus`
@@ -56,7 +60,12 @@ calls):
    defect, changed to `u8`), 10 (`E0421`, the `sicut`-named parameter now
    row-polymorphic), 11 (`E0501`, one code chosen by the capability
    instead of `E0500` and `E0501` both), 13 (`E0520`, from source), and 22
-   (`E0201` alone). Each fixture's header records the measurement.
+   (`E0201` alone). Each fixture's header records the measurement. Two more
+   followed in the Stage 2 wave: **12** (`E0510`, a capability behind a bare
+   `dyn`) once `textus` and its views had a method table (80b9390), and
+   **24** (`E0510`, an impl exceeding its trait's ceiling) once a receiver
+   reached through an interface stopped being compared by identity
+   (8e746f3).
    Entry 19 (mixed-script) was a genuine fixture defect instead — two
    missing `;`s that a source-policy fast-path had been masking on 3/5/18/20
    but not on 19, whose `E0104` is raised later, mid-lex, without halting
@@ -83,14 +92,19 @@ calls):
    the same correction, and marks that entry's backend parity and
    big-endian run `[UNTESTED]`.
 
-   The other 9 — 1, 2, 4, 12, 14, 15, 16, 17, 24 — report **`DEFERRED`**
+   The other 7 — 1, 2, 4, 14, 15, 16, 17 — report **`DEFERRED`**
    with what they wait on, each fixture's header naming the current
-   blocker (a `nocap` runner shape and `textus` methods with no
-   declaration site; brand syntax `[OPEN]` in §8.6; no import closure;
-   generic impl heads; no `lexicon.norma`; no ARC runtime and no `abort`
-   shape; a stub `proba-reproducibilitatem`; no riscv64 reference backend)
-   — and are **never counted as passing**. A suite reporting 26/26 while
-   running 18 would be worse than no suite.
+   blocker: a `nocap` runner shape (1 — `textus`'s methods now have a
+   declaration site, and that fixture measurably draws exactly
+   `{EXS-E0421}`); brand syntax `[OPEN]` in §8.6 (2); no import closure
+   (4); no `lexicon.norma`, §3.3's table being fourteen illustrative roots
+   (14); no way for a source program to construct a `refero` value (15 —
+   the ARC runtime exists and `tests/unit/prelude_arc.asm` exercises its
+   saturation, so this entry's header stopped claiming otherwise on
+   2026-09-27); `tools/reproduce.sh` never compiling that fixture, and a
+   stub `proba-reproducibilitatem` (16); no riscv64 reference backend to
+   compare against (17). They are **never counted as passing**. A suite
+   reporting 26/26 while running 19 would be worse than no suite.
 
    Five rule shapes, and a runner assuming one will quietly mishandle four:
    reject-with-exact-code (most), byte-identical output (16, 17, 25–28),
@@ -228,10 +242,10 @@ a shipped artifact, and is checked every time it is built instead.
 ## What is deliberately absent
 
 - **`tests/conformance/` entries that run.** See above: 28 entries, 26 with
-  a fixture file, **17 of those running and 9 `DEFERRED`** on a named
-  component, plus entries 27 and 28 carried by `tests/programs/` — 19 of 28.
-  (This bullet also said 18 until 2026-09-26; corrected with the paragraph
-  above, and for the same reason.) (This item was written
+  a fixture file, **19 of those running and 7 `DEFERRED`** on a named
+  component, plus entries 27 and 28 carried by `tests/programs/` — 21 of 28.
+  (This bullet said 17 and 9 until 2026-09-27, and 18 until 2026-09-26;
+  corrected with the paragraph above, and for the same reason.) (This item was written
   when `exsc` did not exist and said what each of the 24 rows would need: a
   source fixture plus an expectation — a diagnostic code for most; byte-
   identical output under varied conditions for #16, which is what

@@ -786,20 +786,30 @@ endp
 ; kind of thing that makes a conformance expectation flaky.
 ;
 ; A THIRD CHECK FOLLOWS THEM, ONCE BOTH ARE PRESENT: `--hospes`'S VALUE MUST
-; BE EXACTLY `x86_64-linux`. Checked here because it was NOT checked before --
+; BE A ROW OF A CLOSED TABLE. Checked here because it was NOT checked before --
 ; any non-empty string was silently accepted and then ignored, which was only
 ; invisible because nothing downstream read it. That changed the moment
 ; Stage 2's `chk_set_target` needed a pointer width derived from the triple
 ; (checker/checker.inc's driver-wiring note), and spec §9.5 forbids guessing
 ; one: *"`exsc` with no `--hospes` is an error. No default-to-build-platform."*
-; This assembly implementation is x86-64 machine code with no backend at all
-; (§18.2's own note: the §12 cross-compilation demo is "dropped" for exactly
-; this reason), so `x86_64-linux` is the only triple there is anything to do
-; with -- refused with exit 4, not 2: the triple is not malformed, the target
-; is simply unimplemented, the same distinction `drv_stub` already draws for
-; nine whole subcommands. A second accepted triple, the day one exists, is a
-; small table here (triple bytes -> ptrbits) in place of the single compare
-; below -- not a redesign.
+;
+; The table has three rows, and the note this replaces predicted its shape: it
+; said `x86_64-linux` was the only triple there was anything to do with and
+; that "a second accepted triple, the day one exists, is a small table here
+; (triple bytes -> ptrbits) in place of the single compare below". That day
+; came twice. The rows, and what each one costs (the refusal messages at
+; `drv_m_hospesunsup` and `drv_m_hospesnoc` are the same list):
+;
+;   x86_64-linux       both backends -- the only reference-backend target,
+;                      since the reference emits x86-64 fasmg text
+;   riscv64-linux      `--emitte c` only; `mensura` 64
+;   mips64-none-o64    `--emitte c` only; `mensura` 32 (ADR 0015)
+;
+; So there are two refusals, not one, and they are different facts: a triple
+; outside the table at all, and a triple in it that names no reference backend
+; and therefore needs `--emitte c`. Both exit 4, not 2 -- the triple is not
+; malformed, the target is simply unimplemented for what was asked, the same
+; distinction `drv_stub` already draws for nine whole subcommands.
 proc drv_aedifica, argc, argv
 	uses	rbx, r12, r13, r14
 	locals
@@ -860,8 +870,13 @@ proc drv_aedifica, argc, argv
 	; A row is accepted iff SOME backend in this build can honour it:
 	;   x86_64-linux     both backends
 	;   riscv64-linux    the C backend only, so `--emitte c` is required
-	;   mips64-none-o64  refused outright -- its 32-bit `ptr` needs
-	;                    lower/ty.inc and ir.inc, which are other trees
+	;   mips64-none-o64  the C backend only, same requirement, and
+	;                    `mensura` is 32 there (ADR 0015 decisions 1 and 3;
+	;                    `chk_set_target` below is where that width is set)
+	; This list said mips64-none-o64 was "refused outright -- its 32-bit
+	; `ptr` needs lower/ty.inc and ir.inc, which are other trees" until
+	; 2026-09-27; those trees landed, §14 entry 25 runs the row big-endian
+	; under emulation, and the code below has accepted it since.
 	; Each refusal is a USAGE error, exit 4, no EXS-E code: the fault is in
 	; the invocation, not in the source (spec 9.3), which is the same class
 	; `drv_m_hospesunsup` always was.

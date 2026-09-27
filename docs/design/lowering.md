@@ -772,14 +772,18 @@ second agent owns. The split is where Braun's procedures stop knowing what
 a tree is: `ssa.inc` takes `(var id, block id)` and the builders and never
 reads an `AstNode`, so it is testable by a scripted sequence of writes,
 reads and seals with no AST at all — and that fixture is the one that pins
-the phi's operand order. Prefix `low_` / `__low_`, struct prefix `Low`;
+the phi's operand order. Prefix `lwr_` / `__lwr_`, struct prefix `Lwr`;
 neither appears in `docs/asm-conventions.md` §4.1's burned list (`lo` does,
-as an argument name, and is avoided).
+as an argument name, and is avoided). This paragraph and the table below said
+`low_` / `__low_` / `Low`, and named the two fixtures `low_ssa_loop.asm` and
+`low_saluta.asm`, until 2026-09-27. What landed is `lwr_`, `Lwr`,
+`tests/unit/lwr_ssa.asm` and `tests/unit/lwr_saluta.asm`; the two stale paths
+were what `tools/spec-check.sh`'s check 5 reported absent from this document.
 
 | agent | owns | depends on | non-vacuous fixture |
 |---|---|---|---|
-| `lower-ssa` | `lower/ssa.inc`: `LowState`'s `defs`/`incomplete`, the six procedures of section 2.3, the sweep, canonicalisation, compaction; `lower/cfg.inc`: block creation, the two terminator helpers, sealing | `backend_fasmg/ir.inc` builders (existing plus the additions below); `rt/map.inc` | `tests/unit/low_ssa_loop.asm`: a hand-driven script — `b0: write x %a; jmp b1; b1 (unsealed): read x → phi; cmp; br b2 b3; b2: write x %b; jmp b1; seal b1; seal b3` — printed through `bfa_print`, and the header's phi line must be exactly `phi u64 b0 %a b2 %b` (two operands, predecessor order); a second script with a variable unchanged across two nested loops, asserting after the sweep that no phi remains and reporting how many the sweep (not the local check) removed — the count is the `[UNTESTED]` claim of section 2.3 made measurable |
-| `lower` | `lower/lower.inc` (module, function, signature), `stmt.inc` (section 2.5, 2.6), `expr.inc` (2.7, 2.8), `scope.inc` (frames, `cap[11]`, release lists) | `lower-ssa`; `ast/` accessors and `ast/load.inc`; the checker's tables as CHK 2.5 lists them; `prelude/interface.inc`'s symbol column (finding 8) | `tests/unit/low_saluta.asm`: the three typed trees of section 3 hand-written in `ast/dump.inc`'s format — its `t`, `d`, `n` sections carry `Ast.types`, `Decl.ty` and `Node.ty`, so the dump is typed; `konst` on the two `Lit`s and `own` are set after `ast_side_alloc` by the fixture, since the dump format has no section for side tables — loaded, lowered, verified by `bfa_verify_module`, printed by `bfa_print`, compared byte for byte to RT 5's text embedded in the fixture; exit 0 only on equality |
+| `lower-ssa` | `lower/ssa.inc`: `LowState`'s `defs`/`incomplete`, the six procedures of section 2.3, the sweep, canonicalisation, compaction; `lower/cfg.inc`: block creation, the two terminator helpers, sealing | `backend_fasmg/ir.inc` builders (existing plus the additions below); `rt/map.inc` | `tests/unit/lwr_ssa.asm`: a hand-driven script — `b0: write x %a; jmp b1; b1 (unsealed): read x → phi; cmp; br b2 b3; b2: write x %b; jmp b1; seal b1; seal b3` — printed through `bfa_print`, and the header's phi line must be exactly `phi u64 b0 %a b2 %b` (two operands, predecessor order); a second script with a variable unchanged across two nested loops, asserting after the sweep that no phi remains and reporting how many the sweep (not the local check) removed — the count is the `[UNTESTED]` claim of section 2.3 made measurable |
+| `lower` | `lower/lower.inc` (module, function, signature), `stmt.inc` (section 2.5, 2.6), `expr.inc` (2.7, 2.8), `scope.inc` (frames, `cap[11]`, release lists) | `lower-ssa`; `ast/` accessors and `ast/load.inc`; the checker's tables as CHK 2.5 lists them; `prelude/interface.inc`'s symbol column (finding 8) | `tests/unit/lwr_saluta.asm`: the three typed trees of section 3 hand-written in `ast/dump.inc`'s format — its `t`, `d`, `n` sections carry `Ast.types`, `Decl.ty` and `Node.ty`, so the dump is typed; `konst` on the two `Lit`s and `own` are set after `ast_side_alloc` by the fixture, since the dump format has no section for side tables — loaded, lowered, verified by `bfa_verify_module`, printed by `bfa_print`, compared byte for byte to RT 5's text embedded in the fixture; exit 0 only on equality |
 
 Order: `lower-ssa` first (its fixture needs no tree), `lower` second.
 Neither runs from the driver until `driver/run.inc` calls it after the

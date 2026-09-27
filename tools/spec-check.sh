@@ -299,25 +299,30 @@ spec_keywords_raw_dupes() {
 # Scope is the spec, which is this script's subject. The same scan over
 # docs/design/ and docs/decisions/ is reported as a note, not a failure, and
 # that split is a measurement rather than a convenience. All twelve absent
-# paths those documents named on 2026-09-26 were triaged, and not one is a
-# false evidence claim -- they are three other things:
+# paths those documents named on 2026-09-26 were triaged, and not one was a
+# false evidence claim -- they were three things, and the third is now empty:
 #
-#   - a HYPOTHETICAL tree. `compiler/aarch64/` in ADRs 0002 and 0003 and in
-#     asm-conventions.md, each time as "a future" or "the eventual" one.
-#   - ANOTHER PROJECT'S path. HydraModem's tests/test_loopback.c (ADR 0014,
-#     receptor.md) and Kiln's examples/exsec-streamdb-demo/ (ADR 0015,
-#     c-backend.md) are repo-relative in THEIR trees, not this one.
-#   - A PLAN'S OWN SPELLING, recorded beside what landed instead. receptor.md
-#     names tests/programs/hydramodem_rx_caput/ and then says "As landed: the
-#     header directory is `receptio_caput/`"; it names
-#     hydramodem_rx_plenus/ and says, in bold, "not written". lowering.md's
-#     and runtime.md's per-module tables and c-backend.md's
-#     tests/unit/bfc_emit_float.asm are the same: a fixture the design OWES,
-#     said in prose to be owed.
+#   - a HYPOTHETICAL tree. `compiler/aarch64/` in ADRs 0002 and 0003 (and in
+#     asm-conventions.md, which this scan does not reach), each time as "a
+#     future" or "the eventual" one.
+#   - ANOTHER PROJECT'S path. HydraModem's tests/test_loopback.c (ADR 0014)
+#     and Kiln's examples/exsec-streamdb-demo/ (ADR 0015, c-backend.md) are
+#     repo-relative in THEIR trees, not this one.
+#   - A PLAN'S OWN SPELLING, recorded beside what landed instead -- CLOSED on
+#     2026-09-27, which is why the note below now reports five and not
+#     twelve. Five citations were renamed to what landed
+#     (`tests/unit/lwr_ssa.asm`, `tests/unit/lwr_saluta.asm`,
+#     `tests/unit/driver_emit.asm`, `receptio_caput/`,
+#     `receptio_circuitus/`), each with the plan's spelling kept on the line
+#     as history, and two owed fixtures -- c-backend.md's
+#     tests/unit/bfc_emit_float.asm and receptor.md's
+#     tests/programs/hydramodem_rx_plenus/ -- lost their backticks, which is
+#     the convention below applied rather than argued about.
 #
-# So the docs' prose is already honest where the spec's was not, and the
-# backtick convention above is the only thing out of step. Promoting this
-# half to a failure means editing six historical documents to satisfy a lint
+# So the docs' prose is already honest where the spec's was not, and what the
+# note still reports is five citations of three distinct paths, every one of
+# them naming a tree that is not this one. Promoting this half to a failure
+# means editing four historical ADRs and one design document to satisfy a lint
 # whose finding is that they are correct, which is the wrong way round. It
 # reports, the list stays visible, and a document that starts claiming
 # evidence it does not have is one grep from being seen.

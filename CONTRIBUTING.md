@@ -225,9 +225,14 @@ contract: change the code first, then the claim the code made false; never
 rewrite the README freehand.
 
 Until 2026-09-27 the tool was installed nowhere on the development machine
-and the hook was not installed in the checkout, so the gate ran for no local
-commit -- CI would have caught it, and CI was blocked. The flake input and
-the hook's fallback exist so that cannot recur silently.
+and the hook was not installed in the checkout, so the gate ran in CI on
+every push and nowhere locally. An earlier version of this sentence added
+"and CI was blocked", which was false: `gh run list` shows both the `ci` and
+`TrvthNvke` workflows completing successfully on every push, this one
+included. The claim came from a memory about Actions billing that was months
+stale and was repeated without being checked -- the same failure mode as
+reporting a benchmark you did not run. The flake input and the hook's
+fallback exist so the local half cannot go missing silently again.
 
 ## Running the whole suite
 
