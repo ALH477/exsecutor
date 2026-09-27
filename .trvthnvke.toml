@@ -1,0 +1,64 @@
+# Policy for Exsecutor's own claim-gated docs, enforced by TrvthNvke
+# (github.com/ALH477/TrvthNvke). Every checkable sentence bound here is
+# verified by a command instead of trusted -- the same discipline CLAUDE.md's
+# evidence rule and `make audit` already hold the compiler to.
+#
+# Adapted from TrvthNvke's templates/consumer/.trvthnvke.toml. See
+# CONTRIBUTING.md, "The README gate", for what this refuses and how to add a
+# claim.
+#
+# NOTE: this file supersedes the repository's earlier `.truthgate.toml`
+# (added in 6578b56, scoped to examples/hydramodem/README.md and
+# docs/decisions/0014-hydramodem-receiver.md only). TrvthNvke discovers
+# exactly one policy file per repository, in a fixed name order, and
+# `.trvthnvke.toml` wins that order over `.truthgate.toml` (both names are
+# accepted for the same tool -- "truthgate" was this project's name before
+# 0.4.0). A second, lower-priority policy file is never consulted; leaving
+# the old one in place would silently stop gating those two docs while
+# looking active. Its three claims (`exsecutor-basis-137`,
+# `exsecutor-rx-impaired`, `exsecutor-timing`) and its `require_bound_fences
+# = false` docs are carried forward below instead, under the one policy
+# file the tool actually reads.
+
+[policy]
+fail_on = "error"
+command_mode = "allowlist"
+require_lock = true
+lock_path = ".trvthnvke.lock"
+require_entailment = true
+strict_ignore = true
+coverage = "paths"
+coverage_severity = "warning"
+
+# Closed on purpose, the same way compiler/x86_64/rt/sys.inc's syscall
+# allowlist is closed (CLAUDE.md, "The compiler is freestanding"): these are
+# the exact two commands a claim below runs, spelled out in full, nothing
+# more.
+command_allow = [
+  ["grep", "-c", "^proc sys_", "compiler/x86_64/rt/sys.inc"],
+  ["wc", "-c", "examples/saluta.expected"],
+]
+
+[[docs]]
+path = "README.md"
+require_bound_fences = true
+required_headings = [
+  "What this is",
+  "The hello world",
+  "Building and checking",
+  "The tree",
+  "How the project works",
+  "Licence",
+  "Where to look next",
+  "It also runs on N64 compatible hardware btw",
+]
+
+# Carried forward from the superseded .truthgate.toml (see note above).
+# Neither doc's fences are claim-gated, matching the original scope.
+[[docs]]
+path = "examples/hydramodem/README.md"
+require_bound_fences = false
+
+[[docs]]
+path = "docs/decisions/0014-hydramodem-receiver.md"
+require_bound_fences = false

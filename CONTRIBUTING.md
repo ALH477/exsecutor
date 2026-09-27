@@ -96,6 +96,100 @@ are the byte-exact paths `.gitattributes` names -- `vendor/`,
 which are a fixture's stdout and its stdin rather than source and may be raw
 bytes -- for the reasons written there.
 
+## The README gate
+
+`README.md` is gated by [TrvthNvke](https://github.com/ALH477/TrvthNvke)
+(policy: `.trvthnvke.toml`), the same evidence discipline as everything above
+this section, applied to prose instead of code: a checkable sentence is bound
+to a claim -- an HTML comment (invisible on GitHub) or a fenced command --
+and the gate re-runs it rather than trusting the sentence. `docs/ARCHITECTURE.md`
+in the TrvthNvke repository explains the mechanism; this section says what it
+means here.
+
+What it refuses:
+
+- a bound claim that no longer verifies (a stale count, a renamed file, a
+  moved path);
+- a code fence in a gated doc with neither `truth:id=...` nor `truth:ignore`
+  (an undocumented "copy this and run it" block);
+- a malformed, duplicate, or unclosed claim block;
+- a missing required heading;
+- (locally and in CI) a policy file that does not match `.trvthnvke.lock`,
+  which is regenerated with `trvthnvke lock`, never edited by hand.
+
+**Know which half of a claim the gate actually holds you to.** Measured on
+2026-09-26 by breaking a claim of each shape and watching the verdict:
+
+- **Path- and symbol-valued kinds** (`file_exists`, `dir_exists`,
+  `file_contains`, `python_symbol`, `entrypoint`) enforce *entailment*: the
+  bound value must appear **in the prose**, so the sentence and the tree cannot
+  drift apart. Renaming the spec in the sentence alone fails the gate with
+  `claim body does not mention bound value 'docs/spec/exsecutor-spec-v0.4.md'`.
+  This is the strong form, and it is why paths are worth binding.
+- **Number-valued kinds** (`glob_count`, `version_sync`, and `command`'s
+  `expect_stdout`) do **not**. They check the *attribute* against the tree --
+  `equals: 16` against sixteen matching files -- and never look at the
+  sentence. So editing "sixteen ADRs" to "fifteen" beside a passing
+  `glob_count equals: 16` **is not caught.** Verified, not assumed.
+
+The consequence for anyone adding a count: `glob_count` pins the attribute, and
+the attribute sits three lines above the prose where a reviewer will see it --
+which is worth having, but it is not the guarantee the strong form gives. Where
+a number is stated by some other document, bind it *there* instead and get
+entailment back: `README.md`'s conformance count is a `file_contains` against
+the spec's own "twenty-eight", not a re-derivation, which is both non-circular
+and drift-proof. Prefer that shape whenever an external source of truth exists.
+
+It does **not** refuse an unbound `unbound_path_token` warning -- most paths
+named in `README.md` are not bound to a claim, by choice, the same way most of
+the compiler's own path citations are not re-verified by `tools/spec-check.sh`.
+`fail_on = "error"` in `.trvthnvke.toml` means only claim failures, missing
+headings, and unbound fences are gate failures; coverage gaps are reported,
+not blocking.
+
+To add a claim, wrap the sentence in a matched pair of comments:
+
+```markdown
+<!-- truth:claim
+id: some-stable-id
+kind: file_exists
+path: tools/some-script.sh
+-->
+`tools/some-script.sh` does the thing this sentence says it does.
+<!-- truth:end -->
+```
+
+The claim's `kind` decides what gets re-run (`file_exists`, `dir_exists`,
+`glob_count`, `file_contains`, `command`, `heading`, `rel_link`,
+`version_sync`, and a few more -- `trvthnvke schema` prints the full list with
+every attribute each kind accepts). For a `file_exists`/`dir_exists`/
+`file_contains` claim, the bound value (the path or pattern) must appear
+literally in the sentence's own text -- `require_entailment = true` means the
+checker refuses to bind a claim to a number or a path the sentence does not
+actually say, which is what stops the sentence and the check from drifting
+apart again. A number that is a floor rather than an exact count (this
+project adds fixtures continuously; see `tests/run.sh`'s own floors) is bound
+with `min:`, not `equals:`; bind `equals:` only where the count is genuinely
+fixed, the way an ADR number or a byte count is.
+
+Some sentences cannot be bound: a figure that requires the full `nix develop`
+toolchain or a GPU to re-derive is out of reach of the gate's confined,
+allow-listed command runner (`command_mode = "allowlist"`; `command_allow` in
+`.trvthnvke.toml` is a closed list, the same idea as the syscall allowlist
+above), and a "status as of this commit" line can never verify itself, because
+the commit that updates it is always one ahead of the hash it names. Such a
+sentence is marked `kind: prose` (tracked, not machine-checked -- the same
+role `[OPEN]`/`[UNTESTED]`/`[UNREPRODUCED]` play above) rather than left
+silently unbound, or is left as ordinary prose and reported only as a
+coverage warning.
+
+Verify locally with `trvthnvke verify --fail` (install into a virtualenv --
+`pip install git+https://github.com/ALH477/TrvthNvke` -- this tool is not part
+of the devShell). Install the pre-commit gate with
+`cp hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit`,
+or `trvthnvke install-hook` once it is on `PATH`; `.github/workflows/trvthnvke.yml`
+runs the same check in CI.
+
 ## Running the whole suite
 
 ```sh

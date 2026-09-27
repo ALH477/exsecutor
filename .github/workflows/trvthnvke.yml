@@ -1,0 +1,32 @@
+# The README gate: every claim `.trvthnvke.toml` binds must still verify.
+# TrvthNvke (github.com/ALH477/TrvthNvke) is not part of this repository's
+# build closure or devShell (CLAUDE.md: no libc, no dynamic linking, and this
+# tool is neither -- it checks prose, not the compiler); it is installed here
+# from its own repository, pinned to a commit, the same way the actions below
+# are pinned to a commit rather than a moving tag.
+name: TrvthNvke
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify-readme:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.1.0
+        with:
+          python-version: "3.12"
+      - name: Install TrvthNvke
+        run: pip install "git+https://github.com/ALH477/TrvthNvke@8012565071041d26e39a14ec3705424bb81c4954" # main, 2026-09-26
+      - name: Verify README claims
+        run: trvthnvke verify --fail --receipt --json
+      - name: Upload receipt
+        if: always()
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        with:
+          name: trvthnvke-receipt
+          path: .trvthnvke/receipt.json
+          if-no-files-found: ignore

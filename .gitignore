@@ -10,5 +10,9 @@ result
 result-*
 .direnv/
 
-# Truthgate run receipt (python3 -m truthgate verify --receipt); not a source file
+# TrvthNvke run receipt (trvthnvke verify --receipt); not a source file.
+# .truthgate/receipt.json is kept for anyone with a pre-existing local receipt
+# from before .trvthnvke.toml superseded .truthgate.toml (see that file's
+# header note); TrvthNvke itself now writes to .trvthnvke/receipt.json.
+.trvthnvke/receipt.json
 .truthgate/receipt.json

@@ -11,9 +11,15 @@ width, clock, or environment. If a computation depends on a human language or on
 a machine, that dependency appears in its signature or the program does not
 compile.
 
+<!-- truth:claim
+id: spec-file
+kind: file_exists
+path: docs/spec/exsecutor-spec-v0.4.md
+-->
 The full design is `docs/spec/exsecutor-spec-v0.4.md`. Read it before writing
 code; it is the source of truth, and code that contradicts it is a bug in one of
 the two.
+<!-- truth:end -->
 
 ## What this is
 
@@ -39,13 +45,33 @@ meant to know that before you decide whether this is for you.
 
 **A freestanding x86-64 assembly compiler.** `exsc` is written in x86-64
 assembly, assembled by fasmg, with no libc and no dynamic linking; the only way
+<!-- truth:claim
+id: sys-inc-file
+kind: file_exists
+path: compiler/x86_64/rt/sys.inc
+-->
 it touches the operating system is a closed allowlist of nine syscalls in
-`compiler/x86_64/rt/sys.inc`. The reason is §18.1: §9.3's purity contract --
+`compiler/x86_64/rt/sys.inc`.
+<!-- truth:end -->
+
+```bash truth:id=syscall-count truth:kind=command truth:expect_exit=0 truth:expect_stdout=9
+grep -c "^proc sys_" compiler/x86_64/rt/sys.inc
+```
+
+The reason is §18.1: §9.3's purity contract --
 no environment reads, no `setlocale`, no `$HOME`, no clock, no network, ever --
 stops being a discipline that reviewers enforce and becomes a property of the
-artifact. The code to read a dotfile is not linked in, and `tools/syscall-audit.sh`
+artifact. The code to read a dotfile is not linked in, and
+<!-- truth:claim
+id: audit-script
+kind: file_exists
+path: tools/syscall-audit.sh
+-->
+`tools/syscall-audit.sh`
 disassembles the binary and diffs every `syscall` site's number against the
-allowlist. The costs are recorded in §18.2 and ADR 0002: the compiler runs only
+allowlist.
+<!-- truth:end -->
+The costs are recorded in §18.2 and ADR 0002: the compiler runs only
 on `x86_64-linux`, other hosts are rewrites of the architecture-specific tree,
 and the LSP is deferred.
 
@@ -53,7 +79,7 @@ and the LSP is deferred.
 
 `examples/saluta.exsc` is the canonical program, and it cannot print:
 
-```exsecutor
+```exsecutor truth:ignore
 publica functio saluta() -> textus {
     redde "Ave, mundus.
 ...
@@ -76,26 +102,73 @@ sicut s`, which requires exactly what its writer requires and nothing more
 (§4.2: rows travel with a value's type). `examples/initium.exsc` is the entry
 point: `publica functio initium(m: Mundus) -> u8`, deriving the standard
 streams from `m` as `ambitus` (§4.6) and handing `saluta()` to
-`imprime_gutenbergio`. `examples/saluta.expected` is the 101 bytes the program
-must write, with no trailing newline. `examples/README.md` explains each file,
+`imprime_gutenbergio`.
+<!-- truth:claim
+id: saluta-expected-bytes
+kind: prose
+-->
+`examples/saluta.expected` is the 101 bytes the program
+must write, with no trailing newline.
+<!-- truth:end -->
+
+```bash truth:id=saluta-expected-wc truth:kind=command truth:expect_exit=0 truth:expect_stdout=~/^101\s/
+wc -c examples/saluta.expected
+```
+
+<!-- truth:claim
+id: examples-readme
+kind: file_exists
+path: examples/README.md
+-->
+`examples/README.md` explains each file,
 including the two spec defects writing them exposed and the reason
 `Gutenbergius` is an eponym and not a root.
+<!-- truth:end -->
 
+<!-- truth:claim
+id: publish-gate-script
+kind: file_exists
+path: tools/publish-gate.sh
+-->
 `tools/publish-gate.sh` is the condition for this repository going public,
-written as a command: `exsc` compiles the three files together, `fasmg`
+written as a command:
+<!-- truth:end -->
+<!-- truth:claim
+id: examples-three
+kind: glob_count
+glob: examples/*.exsc
+equals: 3
+-->
+`exsc` compiles the three files together (`examples/*.exsc` is exactly
+`saluta.exsc`, `imprime.exsc` and `initium.exsc`, three), `fasmg`
 assembles the emitted text, the result runs, writes exactly those bytes,
 reproducibly, with its syscall surface inside `{Mundus, ambitus}` and every
-other check green. Whether that is true today is in the status block below.
+other check green.
+<!-- truth:end -->
+Whether that is true today is in the status block below.
 
 ## Building and checking
 
+<!-- truth:claim
+id: vendor-fasmg-dir
+kind: dir_exists
+path: vendor/fasmg-x86
+-->
 The build closure is `fasmg` plus the vendored x86-64 macro package under
-`vendor/fasmg-x86/`, and nothing else. fasmg is architecture-neutral -- the
+`vendor/fasmg-x86/`, and nothing else.
+<!-- truth:end -->
+fasmg is architecture-neutral -- the
 binary knows no machine instructions -- so the instruction set and the ELF64
 writer are ordinary fasmg source, vendored verbatim with recorded hashes
+<!-- truth:claim
+id: vendor-provenance
+kind: file_exists
+path: vendor/fasmg-x86/PROVENANCE.md
+-->
 (`vendor/fasmg-x86/PROVENANCE.md`).
+<!-- truth:end -->
 
-```sh
+```sh truth:ignore
 nix develop                          # fasmg, binutils, python3 on PATH; INCLUDE set
 make all                             # assembles compiler/x86_64/exsc.asm -> build/exsc
 make audit                           # tools/syscall-audit.sh build/exsc
@@ -139,10 +212,29 @@ What the two proofs prove:
 carries a floor on the number of fixtures it must discover, because this
 project has produced green checks that saw nothing four times, and the floor is
 what stopped a fifth.
+<!-- truth:claim
+id: unit-fixture-floor
+kind: glob_count
+glob: tests/unit/*.asm
+min: 191
+-->
+That floor is a minimum, not an exact count, because fixtures are added
+concurrently and only ever rise: `tests/unit/*.asm` numbers at least 191 files
+today.
+<!-- truth:end -->
+<!-- truth:claim
+id: programs-fixture-floor
+kind: glob_count
+glob: tests/programs/*/
+min: 147
+-->
+`tests/programs/*/` numbers at least 147 directories today, the same kind of
+floor.
+<!-- truth:end -->
 
 To see the front end work on a file:
 
-```sh
+```sh truth:ignore
 build/exsc aedifica --hospes x86_64-linux --emitte ast examples/initium.exsc
 build/exsc aedifica --hospes x86_64-linux --diagnostica json tests/conformance/entry20_crlf.exsc
 ```
@@ -152,10 +244,21 @@ with no arguments prints its usage, its options, and its exit-status table.
 
 ## The tree
 
-```
+<!-- truth:claim
+id: adr-count
+kind: glob_count
+glob: docs/decisions/0*.md
+equals: 16
+-->
+`docs/decisions/` holds sixteen ADRs, `0001` through `0016`, immutable once
+written; superseded, never edited (a status line and an Open list may be
+updated).
+<!-- truth:end -->
+
+```text truth:ignore
 compiler/           the compiler: x86_64/ is the machine-specific body, shared/ is not
 docs/spec/          the specification -- source of truth
-docs/decisions/     ADRs 0001-0014, immutable once written; superseded, never edited (a status line and an Open list may be updated)
+docs/decisions/     ADRs 0001-0016, immutable once written; superseded, never edited (a status line and an Open list may be updated)
 docs/design/        design documents: hypotheses with a status line, built against, and amended by what building found
 docs/asm-conventions.md   the binding rules for every line of assembly here
 examples/           the hello world, its golden output, HydraModem's transmitter and receiver, and their READMEs
@@ -170,7 +273,7 @@ CLAUDE.md           the working invariants, binding on every change
 Inside `compiler/x86_64/`, in dependency order, each named with the document
 it was built against:
 
-```
+```text truth:ignore
 macros/         the fasmg dialect (proc, flow_*, struct, rassert) -- docs/asm-conventions.md; frozen
 rt/             syscalls, arena, vec, insertion-ordered map, interner, str, span, sort -- docs/asm-conventions.md, spec §6.3, §9.3
 lexer/          §8.1 source policy, §8.2 identifiers, §8.4 tokens; keywords.inc generated from §8.4
@@ -184,8 +287,22 @@ checker/        Stage 2 name resolution and capability rows -- docs/design/check
 exsc.asm        the aggregation point: includes the chain above
 ```
 
+<!-- truth:claim
+id: unicode-tables-dir
+kind: dir_exists
+path: compiler/shared/unicode
+-->
 `compiler/shared/unicode/` holds the NFC, XID and script tables generated from
-UCD 17.0.0 by `tools/ucd-gen/` (ADR 0004), plus the assembly that reads them;
+<!-- truth:end -->
+UCD 17.0.0 by
+<!-- truth:claim
+id: ucd-gen-dir
+kind: dir_exists
+path: tools/ucd-gen
+-->
+`tools/ucd-gen/`
+<!-- truth:end -->
+(ADR 0004), plus the assembly that reads them;
 the tables are the architecture-neutral part.
 
 ## How the project works
@@ -210,15 +327,38 @@ capability-row checker are not in this tree. `tools/spec-check.sh` counts the
 markers; nothing is reported as passing that was not seen to pass.
 
 **Error codes are permanent** (§8.3). Tools match `EXS-E####` codes, never
-English text. §13 is the only registry; `compiler/x86_64/diag/codes.inc` is
-generated from it by `tools/gen-codes.py`, and `tools/spec-check.sh` fails on
+English text. §13 is the only registry;
+<!-- truth:claim
+id: codes-inc-file
+kind: file_exists
+path: compiler/x86_64/diag/codes.inc
+-->
+`compiler/x86_64/diag/codes.inc`
+<!-- truth:end -->
+is
+generated from it by
+<!-- truth:claim
+id: gen-codes-script
+kind: file_exists
+path: tools/gen-codes.py
+-->
+`tools/gen-codes.py`,
+<!-- truth:end -->
+and `tools/spec-check.sh` fails on
 drift. A new code is a spec amendment first.
 
-**Conformance is §14.** Twenty-seven entries, each a fixture under
+<!-- truth:claim
+id: conformance-count
+kind: file_contains
+path: docs/spec/exsecutor-spec-v0.4.md
+pattern: twenty-eight
+-->
+**Conformance is §14 of `docs/spec/exsecutor-spec-v0.4.md`.** Twenty-eight entries, each a fixture under
 `tests/conformance/`. The runner distinguishes five rule shapes (reject with
 exactly this code; byte-identical output; external certificate; runtime abort;
 capability absence) and reports an entry it cannot yet run as `DEFERRED`,
 naming what it waits on; deferred entries are never counted as passing.
+<!-- truth:end -->
 
 **Kill criteria are evaluated.** §16 attaches one to every stage. Stage 1's --
 "diagnostics quality is not retrofittable; bad here, stop and fix" -- was
@@ -229,8 +369,15 @@ fixes were split from suggestions), and was re-evaluated on a checked-in corpus
 (`tests/diagnostics/`) before Stage 2 opened. The original verdict is kept as
 written above the re-evaluation.
 
+<!-- truth:claim
+id: agents-readme
+kind: file_exists
+path: .claude/agents/README.md
+-->
 **Scopes are exclusive.** `.claude/agents/README.md` lists who owns which
-directory. An agent needing a change outside its tree reports it rather than
+directory.
+<!-- truth:end -->
+An agent needing a change outside its tree reports it rather than
 making it. Every fixture is proven non-vacuous by mutation, every commit says
 what was run, and the repository holds itself to the source policy it enforces
 (§8.1: UTF-8, no BOM, LF, NFC -- `.gitattributes` says which two directories
@@ -240,15 +387,23 @@ are byte-exact exceptions and why).
      Every figure is from running the named command at the named commit.
      Refresh it here and nowhere else. -->
 
-## Status as of `03e490f` (2026-09-14)
+## Status as of `747fa30` (2026-09-26)
 
+<!-- truth:claim
+id: status-snapshot
+kind: prose
+-->
 Every figure here was produced by running the named command at this commit, in
-the `nix develop` shell, on `x86_64-linux`.
+the `nix develop` shell, on `x86_64-linux`. This block is refreshed by hand at
+each snapshot (see the comment above it); the heading's own commit and date
+cannot be self-checking, because the commit that updates them is always one
+ahead of the hash it names.
+<!-- truth:end -->
 
 **The publish gate is met.** `tools/publish-gate.sh` reports `RESULT: GATE MET`
 — twelve checks of twelve. The hello world compiles and runs:
 
-```
+```text truth:ignore
 $ build/exsc aedifica --hospes x86_64-linux \
       examples/saluta.exsc examples/imprime.exsc examples/initium.exsc -o hello.asm
 $ INCLUDE=vendor/fasmg-x86 fasmg hello.asm hello && ./hello
@@ -277,7 +432,7 @@ production quantum with eleven independent implementations — is written in
 Exsecutor (`tests/conformance/entry23/codex.exsc`) and passes §14 entry 23,
 the external certificate vendored at `vendor/hydramesh-wire/`:
 
-```
+```text truth:ignore
 entry 23: certificate: 246/246 vectors (encode basis 109/109, syndrome basis 137/137)
 entry 23: anchors: 3/3 (section 3)
 entry 23: laws: 218/218 (section 4), 136/136 (section 5)
@@ -302,7 +457,7 @@ transmitter's seven files are 563 lines by `wc -l`). It writes WAV files
 **byte-identical** to HydraModem's own reference transmitter, built from
 source and vendored at `vendor/hydramodem-tx/` (ADR 0013):
 
-```
+```text truth:ignore
 hydramodem_loopback: stdout byte-identical to vendor/hydramodem-tx/d310123400a1ffffdeadbeef0a1b2ca961.wav
 hydramodem_exemplum: stdout byte-identical to vendor/hydramodem-tx/d31312340001ffffdeadbeefab12cd24c0.wav
 hydramodem_vacuum:   stdout byte-identical to vendor/hydramodem-tx/d310000000000000000000000000005b80.wav
@@ -475,7 +630,17 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   real binary. `make reproduce`: PASS on four artifacts — the compiler
   itself and three emitted C units, one of them the N64 row's — byte-identical
   across directory, `TZ`, locale, `SOURCE_DATE_EPOCH`, umask and hostname.
-  `tools/spec-check.sh`: PASS, 49 error codes in sync with §13.
+<!-- truth:claim
+id: code-count
+kind: file_contains
+path: compiler/x86_64/diag/codes.inc
+pattern: DIAG_CODE_COUNT = 51
+-->
+  `tools/spec-check.sh`: PASS, and the 51 error codes of `§13` are in sync
+  with the generated `compiler/x86_64/diag/codes.inc`, which is what check 1
+  compares. (This line said 49 until 2026-09-26 -- wrong when there were 50 and
+  wrong again at 51 -- so it is bound now rather than trusted.)
+<!-- truth:end -->
   `tools/syscall-audit.sh --self-test`: PASS, including the prelude's own
   reader binary accepted under `Mundus,ambitus` and rejected under `Mundus`.
   `nix flake check`: green (run by the gate).
@@ -560,13 +725,58 @@ and so does this sentence.
 
 - `docs/spec/exsecutor-spec-v0.4.md` §1, §2, §4, then §16 and §18.
 - `examples/README.md`, then the three example files.
-- `docs/decisions/0002-host-language-x86-64-asm.md` and `0005-lexicon-is-bespoke.md`
+- <!-- truth:claim
+  id: adr-0002-cited
+  kind: file_exists
+  path: docs/decisions/0002-host-language-x86-64-asm.md
+  -->
+  `docs/decisions/0002-host-language-x86-64-asm.md`
+  <!-- truth:end --> and
+  <!-- truth:claim
+  id: adr-0005-cited
+  kind: file_exists
+  path: docs/decisions/0005-lexicon-is-bespoke.md
+  -->
+  `docs/decisions/0005-lexicon-is-bespoke.md`
+  <!-- truth:end -->
   for the two choices most likely to decide whether you stay.
-- `docs/design/diagnostics-review.md` for what evaluating a kill criterion
+- <!-- truth:claim
+  id: diagnostics-review-doc
+  kind: file_exists
+  path: docs/design/diagnostics-review.md
+  -->
+  `docs/design/diagnostics-review.md` for what evaluating a kill criterion
   looks like here.
-- `tests/README.md` and `tests/run.sh` for how a check earns the right to say
-  PASS.
-- `CONTRIBUTING.md` and `SECURITY.md`.
+  <!-- truth:end -->
+- <!-- truth:claim
+  id: tests-readme
+  kind: file_exists
+  path: tests/README.md
+  -->
+  `tests/README.md`
+  <!-- truth:end --> and
+  <!-- truth:claim
+  id: tests-run-script
+  kind: file_exists
+  path: tests/run.sh
+  -->
+  `tests/run.sh`
+  <!-- truth:end -->
+  for how a check earns the right to say PASS.
+- <!-- truth:claim
+  id: contributing-doc
+  kind: file_exists
+  path: CONTRIBUTING.md
+  -->
+  `CONTRIBUTING.md`
+  <!-- truth:end --> and
+  <!-- truth:claim
+  id: security-doc
+  kind: file_exists
+  path: SECURITY.md
+  -->
+  `SECURITY.md`.
+  <!-- truth:end -->
 
 ## It also runs on N64 compatible hardware btw
 <img width="1256" height="776" alt="image" src="https://github.com/user-attachments/assets/0023ccc9-cb51-4310-9568-baa4d3320eb5" />

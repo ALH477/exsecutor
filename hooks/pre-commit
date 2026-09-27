@@ -1,0 +1,12 @@
+#!/bin/sh
+# The README gate. Refuses a commit when a claim in .trvthnvke.toml's
+# gated docs no longer verifies (see CONTRIBUTING.md, "The README gate").
+#
+# Install with:
+#   cp hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+# or, once TrvthNvke is on PATH:
+#   trvthnvke install-hook
+if command -v trvthnvke >/dev/null 2>&1; then
+  exec trvthnvke verify --fail
+fi
+exec python3 -m trvthnvke verify --fail
