@@ -2633,8 +2633,16 @@ ego norma.textus {
     publica interfacies legibilis
     publica structura   lector
     publica functio     lege(l: lector) -> lectus
-    publica functio     plica_unicode(t: &textus) -> textus
-    publica functio     plica_sermone(t: &textus) -> textus  poscit sermo
+    publica functio     plica_unicode(t: textus) -> textus
+    publica functio     plica_sermone(t: textus, s: sermo) -> textus
+                        // the capability is the ARGUMENT (§5.1's code block,
+                        // §14 entry 1), not a row: a caller with no `sermo`
+                        // has no value to pass. This row read
+                        // `(t: &textus) -> textus poscit sermo` until
+                        // 2026-09-27 -- two signatures for one name; the
+                        // checker's prelude table follows the one the
+                        // conformance fixture runs against. `textus` is a
+                        // value (§5.1), so the receiver is not borrowed.
 
     exitus [ lib, dev, doc ]
 }
