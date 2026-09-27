@@ -1,6 +1,6 @@
 # Sum types, constructor patterns, and `eventus`
 
-**Status: design. Nothing here is implemented.** Every decision below is `D`-numbered
+**Status: D1 (grammar), D2 (grammar and pass-1 scoping), D6 (layout) and the declaration's typing are implemented as of 2026-09-27; D2's typing, D3, D4 and D5 are design.** When this document was written nothing here was implemented. Every decision below is `D`-numbered
 so the spec and the fixtures can cite one rather than quote the argument, and every
 claim about what the tree does today was measured on 2026-09-26 at `747fa30` plus the
 working tree. Prose designs are hypotheses until code runs; this document is a

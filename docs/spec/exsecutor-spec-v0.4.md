@@ -95,7 +95,7 @@ Rejecting bidi at the lexer is correct and cheap. **It is not a differentiator.*
 
 | Class | Mechanism | Error |
 |---|---|---|
-| Locale case fold in program logic | `plica_unicode` total and locale-free; `plica_sermone` requires `sermo` | — |
+| Locale case fold in program logic | `plica_unicode` total and locale-free; `plica_sermone` requires `sermo` | `EXS-E0421` (§4.1: the capability is a parameter, and a caller with no `sermo` has no value to pass; measured on §14 entry 1, whose fix is ` poscit sermo`) |
 | Index computed on transformed text | Branded offsets (§5.1) | `EXS-E0332` |
 | Bidi source attack | Lexer rejects unbalanced controls | `EXS-E0103` |
 | Homoglyph identifier attack | UTS #39 over import closure | `EXS-E0105` |
@@ -226,7 +226,7 @@ This is wrong Latin on purpose. Assimilation destroys guessability and greppabil
 
 ```
 lege        functio      read
-lector      structura    reader
+lector      structura    reader        (the lexeme; the prelude's type is `Lector`, capitalised as `Scriptor` is — §4.6)
 legibilis   interfacies  can be read
 lectio      structura    a read operation
 lectus      typus        read result
@@ -347,7 +347,9 @@ vocabulary. Sub-lexicons obey this section in full; they are not a relaxation.
 `exsc lexicon` (§12) checks a proposal mechanically: it runs the collision
 check, verifies the stems compose under §3.4 and §3.5, confirms the claimed
 derivations decompose, and reports the loan-register delta. Judgment stays with
-the reviewer; the arithmetic does not.
+the reviewer; the arithmetic does not. `[OPEN]` The subcommand is a stub
+(§12); the decomposition it would run is pass 5 of the checker, which exists
+and is not called (§3.3).
 
 ---
 
@@ -472,7 +474,7 @@ publica functio initium(m: Mundus) -> u8 { … }
 
 Rule 2 names `initium` and says `Mundus` is passed to it; this pins the rest. A program has exactly one `initium`; it is `publica`; its one parameter is the root, which is rule 4's second path — received as a parameter — so it carries no `poscit` and there is nothing to declare: the program's whole authority is that one value, and every other capability is derived from it, explicitly (rule 2). Its result is the process exit status. A module with no `initium` is a library; "it runs" is a claim only a program can make. `[OPEN]` no library artifact exists for the reference backend — `fasmg` has no link step — so until one is designed, `-o` on a module without `initium` asks for a program that cannot be built and is `EXS-E0424` (`docs/design/runtime.md`, finding 2). That sentence is about the reference backend. Under `--emitte c` (§9.2, library mode) a module without `initium` **is** a library and `-o` names its C translation unit: the driver does not mark a program as asked for, and `EXS-E0424` does not fire. `[UNTESTED]` — `docs/design/c-backend.md` D1.
 
-Derivation is by method on the root — `m.ambitus()`, `m.archivum()` — and rule 2's *fallibly* is resolved at two different times. Where presence is a property of the host (`ambitus`, `archivum`: a `none-eabi` target has neither), it is decided at compile time by `--hospes` (§9.5) and the `hospites` list (§10.1), and the derivation itself is total. Where presence is a property of the run (`rete`), the derivation returns `eventus`. `[OPEN]` which atoms fall on which side beyond these three; the checker (`docs/design/checker.md`) decides per atom. A second `initium`, one with the wrong signature, or none where a program was asked for, is `EXS-E0424`.
+Derivation is by method on the root — `m.ambitus()`, `m.archivum()` — and rule 2's *fallibly* is resolved at two different times. `[OPEN]` Only `m.ambitus()` has a prelude row today (`compiler/x86_64/prelude/interface.inc`, `checker/types/prim.inc`'s `.fn_ambitus`); `archivum` and the other atoms are declared (§4.6) and not yet derivable. Where presence is a property of the host (`ambitus`, `archivum`: a `none-eabi` target has neither), it is decided at compile time by `--hospes` (§9.5) and the `hospites` list (§10.1), and the derivation itself is total. Where presence is a property of the run (`rete`), the derivation returns `eventus`. `[OPEN]` which atoms fall on which side beyond these three; the checker (`docs/design/checker.md`) decides per atom. A second `initium`, one with the wrong signature, or none where a program was asked for, is `EXS-E0424`.
 
 ---
 
@@ -488,7 +490,14 @@ t.grapha().numerus();      // 4   grapheme clusters
 t[0];                      // EXS-E0311: textus has no integer index
 ```
 
-UTF-8 storage. **`textus` is a value: a two-word view — pointer and byte length — over storage it does not own**, and may not outlive that storage's arena. O(1) slicing forces a view, and `saluta`'s empty row forces a literal that allocates nothing (`docs/design/runtime.md` §2.3). Slicing by byte offset, O(1), returns `eventus`, never panics. `octeti`, `scalares`, `grapha` are distinct types, not coercing views. Grapheme segmentation ships in the standard library.
+`[OPEN]` Of the four method calls above, `t.octeti().numerus()` types and
+runs; `scalares()` and `grapha()` are prelude rows, but `numerus` is one row
+that takes `octeti` only (`checker/types/prim.inc`'s `.fn_numerus`), so the
+second and third lines draw `EXS-E0305` today. One prelude row is one `fn`
+type and a concrete receiver is compared by identity; a `numerus` per view
+is owed.
+
+UTF-8 storage. **`textus` is a value: a two-word view — pointer and byte length — over storage it does not own**, and may not outlive that storage's arena. O(1) slicing forces a view, and `saluta`'s empty row forces a literal that allocates nothing (`docs/design/runtime.md` §2.3). Slicing by byte offset, O(1), returns `eventus<textus, erratum>` (§11's spelling; the checker refuses the bare `eventus` as `EXS-E0304` since it counts generic arguments at both ends), never panics. `octeti`, `scalares`, `grapha` are distinct types, not coercing views. Grapheme segmentation ships in the standard library.
 
 **Branded offsets.** `quaere` returns `positio<'t>`, generatively branded to the buffer it indexed. `sectio` accepts only its own brand:
 
@@ -500,6 +509,13 @@ firma pars    = via.sectio(0..ubi)?;      // EXS-E0332: branded to `abassus`
 
 There is no conversion from `positio<'t>` to bare `mensura` outside `Crudum`. This makes CVE-2026-24895's class unrepresentable rather than discouraged — the highest-value change the CVE research produced.
 
+`[OPEN]` None of this block is implemented: `quaere` and `sectio` have no
+prelude row, `'` is not a §8.4 token so `positio<'t>` does not parse (§8.6),
+and `EXS-E0332` is registered in §13 with **no raise site anywhere in the
+compiler** — §14 entry 2 is `DEFERRED` on exactly these three. The design
+stands; the sentence above describes what the type system will refuse, not
+what it refuses today.
+
 **Case folding:**
 
 ```exsecutor
@@ -507,7 +523,7 @@ There is no conversion from `positio<'t>` to bare `mensura` outside `Crudum`. Th
 "I".plica_sermone(sermo)   // "ı" under tr-TR — requires the capability
 ```
 
-Collation follows the same shape: `ordina_binarie()` total, `ordina_sermone(sermo)` capability-gated.
+Collation follows the same shape: `ordina_binarie()` total, `ordina_sermone(sermo)` capability-gated. `[OPEN]` Neither collation name has a prelude row; `plica_unicode` and `plica_sermone` do (`checker/types/prim.inc`, since 2026-09-27).
 
 ## 5.2 Integers, byte order, `@transitus`
 
@@ -1392,7 +1408,12 @@ kept small and most of the vocabulary is *contextual* instead.
 | jump | `rumpe` `perge` |
 
 Thirty words. §8.2 says "~40 keywords learned once"; the real number is under
-that, and it is now a count rather than an estimate.
+that, and it is now a count rather than an estimate. `[UNTESTED]` The `ego`
+structure words listed as contextual above (`versio`, `licentia`, `fontes`,
+`hospites`, `acceleratores`, `potestates`, `exitus`, and the four `numeri`
+keys) occur in no compiler table: the CST parses no `ego` block (§8.6, blocked
+on the `HASH` token), so their contextual status is the grammar's claim and
+nothing has measured it. The operator words are complete and measured.
 
 **2. Contextual keywords** — meaningful only in a specific position, and
 ordinary identifiers everywhere else.
@@ -1446,6 +1467,7 @@ All already in evidence in this document, recorded here rather than introduced.
 | `.` | field and method access | §5.1 |
 | `=` | binding and assignment | §4.5 |
 | `-` `-%` `-\|` | negation and subtraction, three overflow modes | §5.4 |
+| `/` | quotient — float since the float wave, integer since 2026-09-25 (`PUN_SLASH`, `compiler/x86_64/lexer/token.inc`) | §5.4 |
 | `:` | type annotation | §4.2 |
 
 The second half of that table was **missing** from the first draft, which
@@ -1509,7 +1531,8 @@ separators remain `[OPEN]`.
   takes above. The exponent is an optional sign and one to three decimal
   digits; a fraction carries at least one digit after the dot; a leading dot
   is never a literal (`.` is field access). Every other shape — `1e`, `1e+`,
-  a fourth exponent digit, a suffix like `1.5f32` — is `EXS-E0210`.
+  a fourth exponent digit, a suffix like `1.5f32` — is `EXS-E0210`
+  (`tests/unit/lex_float_literal.asm` pins every shape in this sentence).
   More than fifteen significant mantissa digits, or a value above the
   width's finite range (`1e309` as `f64`) or underflowing to zero from
   nonzero digits (`1e-338` as `f64`), is `EXS-E0308`: the literal did not
@@ -1615,9 +1638,13 @@ refused one. `EXS-E0351` now exists for it (§13), and
 declares the enumeration, D2 gives constructor patterns, and **D3 is the rule**
 — a sum-typed scrutinee is exhaustive when every variant is covered or
 `aliter` is present, and a scalar scrutinee, whose value space is 2^N,
-**requires** `aliter`. That design is design only; its §6 states what landing
-D3 costs, which is four of those thirty checks, since they exist precisely to
-pin the behaviour D3 outlaws.
+**requires** `aliter`. D1's grammar and its layout (D6) landed on 2026-09-27
+(`tests/unit/cst_typus_sum.asm`, `tests/unit/chk_row_layout_sum.asm`), and
+D2's grammar with its bindings scoped to the arm (`tests/unit/cst_pattern_ctor.asm`,
+`tests/unit/chk_pattern_scope.asm`); D2's typing and **D3 itself are still
+design** — no `EXS-E0351` is emitted — and its §6 states what landing D3
+costs, which is four of those thirty checks, since they exist precisely to pin
+the behaviour D3 outlaws.
 
 ### Iteration
 
@@ -2231,8 +2258,9 @@ refusing symbolic comparisons — is what makes that last one possible.
   `Path '(' IDENT (',' IDENT)* ')'` to `Pattern` on a one-token peek at `(`.
   This bullet's prediction held: the peek after `typus IDENT [GenericParams]
   '='` is one token, at `casus`, which no enclosing production can want.
-  **What is implemented is the grammar, the representation and the layout,
-  and nothing above them.** `TypeDecl` above parses `SumBody` on that one
+  **What is implemented is the grammar (declarations and patterns), the
+  representation, the declaration's typing and the layout, and nothing
+  above them.** `TypeDecl` above parses `SumBody` on that one
   peek (`compiler/x86_64/cst/parse.inc`'s `__cst_sum_body`;
   `tests/unit/cst_typus_sum.asm`), the tree has the kinds (`AST_SUMBODY`,
   `AST_VARIANT`, `AST_D_VARIANT`, `AST_TY_SUM`,
@@ -2248,10 +2276,15 @@ refusing symbolic comparisons — is what makes that last one possible.
   is refused as `EXS-E0303` — class C, whichever `typus` form spells the
   infinite type — and that a generic `typus`'s parameters do not resolve in
   pass 1, on the alias form too, which `[GenericParams]` above has admitted
-  all along and nothing in the corpus had ever exercised). Still `[OPEN]`
-  as a claim about the language: no constructor or pattern exists, a
-  variant's declaration has no type, and nothing lowers; §7 there lists the
-  fixtures that would retire it. Recursive sum types (pass 4 breaks the cycle at width 0
+  all along and nothing in the corpus had ever exercised). Constructor
+  patterns parse, build and scope their bindings to the arm (D2's grammar,
+  `tests/unit/cst_pattern_ctor.asm`, `tests/unit/chk_pattern_scope.asm`;
+  a nested pattern is refused as `EXS-E0201`). Still `[OPEN]` as a claim
+  about the language: no constructor call is typed, a pattern is not
+  resolved against the scrutinee's variants (so `casus arborea(n)` is
+  `EXS-E0301` today and a use of `n` is `EXS-E0307`), a variant's
+  declaration has no type, and nothing lowers; §7 there lists the fixtures
+  that would retire it. Recursive sum types (pass 4 breaks the cycle at width 0
   and does not diagnose it; the types pass must), nested patterns, range
   patterns, `?`'s error conversion and the unreachable-arm rule are each
   deferred there by name rather than folded in.
@@ -2401,9 +2434,14 @@ had been recounted each time and this sentence had not, which is drift between
 a spec figure and the design document the spec defers to. Recounted from the
 emitters on 2026-09-26, not from the prose: `ir.inc` defines 65 `BFA_OP_*`
 of which `nop` is opcode 0 and outside the row numbering, and the reference's
-dispatcher refuses exactly seven by name (`muls`, the three `*ov`, `callind`,
-`fma`, `bitcast`) while the C backend's refuses those plus `retain`/`release`
-(and, until 2026-09-27, the three reductions). So the
+dispatcher names two refusals (`fma`, `bitcast`; `compiler/x86_64/backend_fasmg/emit.inc`)
+and lets `muls`, the three `*ov` and `callind` fall to its generic
+"opcode not implemented" tail — the same seven refused, five of them without
+a sentence of their own — while the C backend's `__bfc_refuse` enumerates all
+seven plus `retain`/`release` (and, until 2026-09-27, the three reductions).
+This paragraph said "exactly seven by name" of the reference until
+2026-09-27; the outcome was right and the mechanism was not, which is the
+drift the next sentence says is a finding. So the
 refusals that remain are: `muls` and the overflow predicates
 (§5.4 leaves them `[OPEN]`; `div`/`rem` left the set on 2026-09-25 when
 §5.4 settled integer division — `tests/ir/divrem.ir`), `fma` (the SSE2 baseline has no fused op, and
@@ -2605,6 +2643,9 @@ Keying a build cache on the interface hash lets an attacker change only an imple
 
 ```exsecutor
 // ego.exsc — generated by `exsc ego --emitte`, verified in CI. Never hand-edited.
+// [OPEN] an illustration of the FORMAT: `exsc ego` is a stub (§12), and the
+// declarations below are not the prelude's rows (those are
+// compiler/x86_64/prelude/interface.inc).
 
 ego norma.textus {
     versio    "0.4.1"
@@ -2654,7 +2695,7 @@ ego norma.textus {
 
 - **Evaluable without building.** The whole dependency graph, capability closure, and platform compatibility compute from `ego` files alone — no compilation, no network.
 - **Interface identity is separate from implementation identity.** Changing a body without changing a signature leaves the `ego` hash unchanged, so dependents do not rebuild. Combined with dictionary-passing generics (§7.1), this actually works — **but only because of §4.4's ceiling**, and it did not before. `prototypes/gendict/` showed that without it, a new or edited implementation in an unrelated module could invalidate an already-compiled generic's soundness while changing no signature, no body of that generic, and no `ego` hash: the rebuild trigger never fires and soundness is gone anyway. The ceiling is what puts the fact a generic relies on inside the trait's *interface*, where the hash can see it. See §9.6 for the hash that must *not* be reused.
-- **Generated, never written.** `exsc ego --emitte` derives it; CI fails if stale; the LSP shows drift inline. Same discipline as a lockfile — this avoids the OCaml `.mli` sync tax.
+- **Generated, never written.** `exsc ego --emitte` derives it; CI fails if stale; the LSP shows drift inline. Same discipline as a lockfile — this avoids the OCaml `.mli` sync tax. `[OPEN]` Nine of §12's ten subcommands, `ego` among them, are `drv_stub` (`compiler/x86_64/driver/run.inc`); `--potestates` is not an option the driver accepts (`compiler/x86_64/driver/cli.inc`). This bullet and §10.3's transcript describe the tool as designed.
 - **Parsed, never included.** No preprocessor, at any layer, ever.
 
 ## 10.3 The capability audit
@@ -2696,11 +2737,13 @@ A dependency that gains `rete` in a new version is a one-line diff in a checked-
   which is why this is a respelling and not a broken promise — recorded here so
   that no fixture is written against the short form. The spelling is not what
   is missing: the checker interns `eventus<T>` today
-  (`compiler/x86_64/checker/types/sig.inc`), and because it counts generic
-  arguments from one side only it accepts the two-parameter spelling and the
-  bare one as well (`docs/design/sum-types.md` D5, a checker bug owed
-  independently). What is missing is a variant, a constructor, a pattern and a
-  layout; the type is uninhabited, not unspellable.
+  (`compiler/x86_64/checker/types/sig.inc`) and, since 2026-09-27, counts
+  generic arguments at both ends (`__chk_ty_genarity`,
+  `tests/unit/chk_ty_genarity.asm`), so the two-parameter spelling and the
+  bare one are `EXS-E0304` until D5 lands — this paragraph said the opposite
+  for a day, while the count was one-sided. What is missing is a variant, a
+  constructor, a pattern and a layout; the type is uninhabited, not
+  unspellable.
 - **I/O reports failure as `eventus`; a count is never silently short.** A closed descriptor is discovered at the write, which a bare `mensura` cannot report, so `Scriptor.scribe` returns `eventus<mensura>` (`docs/design/runtime.md`, finding 10); `examples/imprime.exsc` and §14 entry 12 write `-> mensura` and are `[OPEN]` until `eventus` is inhabited (the bullet above). `Lector.lege_octeto` (§4.6) is provisional the same way: its `-> u16` carries 256 for end of input and for an error alike (`tests/unit/prelude_lege_octeto.asm` pins both), and becomes `-> eventus<u8>` when it is.
 - Grapheme segmentation ships in the core, not a third-party package. This was Rust's mistake.
 - **The Unicode data version is a content-addressed dependency** of every `ego` transitively using text. `plica_unicode` is stable only against a pinned table.
@@ -2765,7 +2808,7 @@ not inside the compiler.
 
 `exsc novum` scaffolds a working project with a valid `ego.exsc` in one command — first running program under 60 seconds or onboarding has failed.
 
-Scratch work without ambient authority: `exsc curre --potestates omnes scratch.exsc`. Grants typed on the command line — explicit, not ambient, one flag of friction.
+Scratch work without ambient authority: `exsc curre --potestates omnes scratch.exsc`. Grants typed on the command line — explicit, not ambient, one flag of friction. `[OPEN]` `curre` is a stub and `--potestates` is not yet an option (§10.2).
 
 **The demo:** `exsc aedifica --hospes riscv64-linux` on a Mac, no toolchain setup, static binary, byte-identical to CI. Zig's cross-compilation demo is most of why Zig got noticed; here it falls out of the design rather than being engineered. **Dropped** under the assembly implementation (§18.2): the compiler is x86-64 machine code and a Mac is aarch64. The nearest surviving demo is the same command from an `x86_64-linux` host.
 
@@ -2873,10 +2916,16 @@ written.
 This amendment lands **before** the checker work, not after it, because
 CLAUDE.md forbids inventing a code and §13 is the only source — the same
 ordering ADR 0010's profile codes needed and did not get for some time. The
-design it serves is `docs/design/sum-types.md`, which is **design only**: the
-code exists here so that D3 can be implemented, and until it is implemented
-nothing emits it. A registered code with no emitter is the state
-`EXS-E0601`–`EXS-E0603` are already in, for the same documented reason.
+design it serves is `docs/design/sum-types.md`, of which D1, D2's grammar and
+D6 have since landed and D3 has not: the code exists here so that D3 can be
+implemented, and until it is implemented nothing emits it. Registered codes
+with no raise site anywhere in the compiler, counted on 2026-09-27:
+`EXS-E0105`, `EXS-E0332`, `EXS-E0351`, `EXS-E0701` and the `08xx` profile
+codes. This sentence used to put `EXS-E0601`–`EXS-E0603` in that state; they
+are not — the lexicon pass emits all three and `EXS-E0610`
+(`compiler/x86_64/checker/lexicon/lexicon.inc`, six fixtures) behind a call
+the checker does not make while its morpheme table is §3.3's illustrative
+fourteen roots (§3.3 has said so all along; this section had not).
 
 `08xx` is the `certus` profile (`docs/design/profile-certus.md`, ADR 0010).
 The grouping is the profile's own section structure, not an invention:
@@ -2947,8 +2996,12 @@ for 15 since it was written and for 23 since it was added;
 `docs/design/wire-codec.md`, finding 1. The "twenty-five" count was stale
 from the moment entry 25 appended; entry 26 appended with the float wave's
 RGB triangle, entry 27 with Stage 5's lane rasterizers, and both counts are
-settled at twenty-seven with seven running, and entry 28 appended on
-2026-09-25 with the reduction wave — twenty-eight, eight running.)
+settled at twenty-seven with seven of the run-and-judge shape, and entry 28
+appended on 2026-09-25 with the reduction wave — twenty-eight, eight of that
+shape. "Running" here has only ever meant that partition; how many entries
+the suite actually executes is `tests/run.sh`'s own RAN/DEFERRED line and
+`README.md`'s gated bullet, and this section does not carry a third copy of
+a number that moves with every fixture.)
 
 1. Turkish dotless-ı case fold in program logic → `plica_sermone` without `sermo`
 2. Index computed on a folded copy, applied to the original → `EXS-E0332`
@@ -3032,21 +3085,24 @@ a referenced list is the same mistake as renumbering an error code (§8.3).
 
 # 16. Roadmap
 
-**Stage 0 — validation.** Four of five kill criteria retired with evidence: CVE gate passed (§2), ARC measured (§6.2), compile speed measured (§9.2), capability rows prototyped (§4.2).
+Written in v0.3 as a plan with month estimates per stage; rewritten on
+2026-09-27 as a status, stage by stage, because every stage it scheduled has
+since been built or measured, and a roadmap in the future tense about the
+past is the drift this document's evidence note exists to refuse. Each kill
+criterion is kept as history: what would have stopped the work, and whether
+it fired.
 
-Remaining, before Stage 1:
-- **Closure capture in the prototype.** Done, and it did its job: it returned a negative, §4.2 was redesigned so rows travel with values, and the probe now rejects the violation while still accepting the correctly-declared variant. This is what a kill criterion looks like when it fires and the design survives.
-- **The derivation test.** Print the affix table and twenty roots; give twenty derivation tasks; score against recall accuracy on an equivalent English API. Days, no compiler, no engineering. **Cheapest high-value experiment in the project.**
-  - **No longer a kill criterion.** v0.3 originally read: *"if derivation accuracy does not clearly beat English recall, §3 is decorative — and everything else in this spec survives unchanged with English roots in the same derivational frame."* That branch has been closed by decision — §3 is retained whatever the number says, because the lexicon is an identity commitment rather than a hypothesis (ADR 0005). The test is still worth running as **calibration**: it measures what §3 costs, which affixes and roots produce errors, and therefore which of `EXS-E0601`–`EXS-E0610` need the best diagnostics and the widest `exsc emenda` coverage. The English control is kept because it makes that cost measurable rather than anecdotal.
+**Stage 0 — validation.** Four of five kill criteria retired with evidence: CVE gate passed (§2), ARC measured (§6.2), compile speed measured (§9.2), capability rows prototyped (§4.2). Closure capture in the prototype returned a negative; §4.2 was redesigned so rows travel with values, and the probe now rejects the violation while accepting the correctly-declared variant (§15 #1) — what a kill criterion looks like when it fires and the design survives. The derivation test is prepared and not administered (§15 #2); ADR 0005 closed the branch in which its result could have removed §3, so it is no longer a kill criterion and the risk stands undiluted (§17).
 
-**Stage 1 — frontend (3–4 months).** Lexer with the full §8.1 policy. Lossless CST. Typed AST. Diagnostics with spans and stable codes.
-*Kill:* diagnostics quality is not retrofittable. Bad here → stop and fix.
+**Stage 1 — front end. Built.** Lexer with the full §8.1 policy (`compiler/x86_64/lexer/`), lossless CST (`compiler/x86_64/cst/`), typed AST (`compiler/x86_64/ast/`), diagnostics with spans and stable codes (`compiler/x86_64/diag/`, §8.3, §13). *Kill: diagnostics quality is not retrofittable.* Did not fire; `tests/diagnostics/` is the corpus the diagnostics are held to.
 
-**Stage 2 — types and capabilities (4–6 months).** Type checker. Capability rows with substitution and inference. Capability-bearing types and `dyn` bounds. Text types and brands. `@transitus` enforcement. Lexicon checking.
-*Kill:* if `sub` resolution needs a search algorithm, redesign.
+**Stage 2 — types and capabilities. Built, with named gaps.** Passes 0–4 of `compiler/x86_64/checker/` run on every compile: resolution, types, capability rows with substitution and inference, capability-bearing types and `dyn` bounds, `@transitus` layout. The lexicon pass (pass 5) is built and tested and not called, because its morpheme table is §3.3's illustrative fourteen roots (§3.3, `[OPEN]`); brands (`positio<'t>`) have no syntax (§8.6); sum types have their grammar, layout and declaration typing and not yet their patterns' typing or exhaustiveness (§8.5, §8.6). *Kill: if `sub` resolution needs a search algorithm, redesign.* Did not fire (`docs/design/checker.md` §2.1).
 
-**Stage 3 — backends, runtime, Nix (3–4 months).** SSA lowering via Braun. The **fasmg reference backend** (§9.2), then C emission. Cross-compile to RISC-V and embedded Linux. `buildExsecutorPackage`. `proba-reproducibilitatem` green in CI, and the two backends agreeing on every conformance module.
-*Kill:* undebuggable generated C → move to QBE.
+**Stage 3 — backends, runtime, Nix. Built, and not as planned.** SSA lowering via Braun (`compiler/x86_64/lower/`); the fasmg reference backend (§9.2) first — pulled forward, on the argument the note below makes, and it found what that note predicted (§5.4's guarantees are measured through it, not through C); then the C backend in library mode, held to the reference on stdout, exit status and trap-or-not across gcc and clang at two optimisation levels under UBSan (§9.2, `tests/run.sh`'s differential phase); `buildExsecutorPackage` (`flake.nix`). Cross-compilation went to `mips64-none-o64`, run big-endian under emulation (§9.5, §14 entry 25, ADR 0015), not to RISC-V: `riscv64-linux` emits C and has no comparison target (§14 entry 17, `[OPEN]`). Reproducibility is `tools/reproduce.sh` under `make reproduce`, in CI (§9.3, §14 entries 16, 25, 26); the `proba` subcommand §12 names for it is a stub. Beyond the plan: `acies` lanes on both backends (§5.4) and a single-translation-unit device build for `amdgcn` (§5.5, its placement surface `[OPEN]`), landed because the programs that needed them arrived. *Kill: undebuggable generated C → move to QBE.* Not evaluated: no one has yet had to debug the emitted C, because the reference backend is where §5.4 is debugged (§15 #7).
+
+**Stage 4 — tooling. Not started.** LSP, formatter, package manager. Nine of §12's ten subcommands are stubs (`compiler/x86_64/driver/run.inc`); only `aedifica` is implemented. *Kill: if any is intractable because of a language decision, the decision is wrong. Change it.* Not yet evaluable.
+
+**Stage 5 — users, then optimisation. Not started.** QBE or Cranelift; self-hosting; LLVM for release. Self-hosting is the step that changes the cost of every change: the checker rules closed on 2026-09-27 were tens of lines of logic each and hours of assembly each.
 
 > **The reference backend does not have to wait for Stage 1.** §9.2's clean SSA
 > boundary means it is written against the IR contract
@@ -3063,15 +3119,15 @@ Remaining, before Stage 1:
 > them until a reference backend exists. Both are arguments for pulling the
 > reference backend forward rather than for the ordering above.
 >
-> `[OPEN]` — not rescheduled here. Moving it is a decision about where effort
-> goes, and the estimate that a naive backend is cheap has not been measured.
+> The rescheduling question this note raised was answered by doing it: the
+> reference backend was pulled forward on exactly this argument and landed
+> first (Stage 3 above), and what it found is recorded in §5.4 and §9.2.
+> `[OPEN]` The estimate that a naive backend is cheap has still not been
+> measured — there is no compile-speed harness (§9.2).
 
-**Stage 4 — tooling (4–8 months).** LSP, formatter, package manager.
-*Kill:* if any is intractable because of a language decision, the decision is wrong. Change it.
-
-**Stage 5 — users, then optimization.** QBE or Cranelift. Self-hosting. LLVM for release.
-
-**Estimate: 14–22 months** to something usable, assuming this is not the only project competing for attention. Treat as optimistic: three earlier estimates in this project were revised after measurement, all in the direction of more surprises rather than fewer.
+The v0.3 estimate — 14–22 months to something usable — is not restated. Three
+earlier estimates in this project were revised after measurement, all towards
+more surprises; the stages above are dated by commits now, not by months.
 
 ---
 
