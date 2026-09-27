@@ -1,12 +1,23 @@
 # somnium — a screensaver engine in Exsecutor
 
-Status: **written, `[UNTESTED]` as Exsecutor.** `examples/somnium/` and
-`tests/programs/somnium_*/` were written in an environment with no `fasmg`:
-the proxy refused `flatassembler.net`, and running an unvetted prebuilt
-binary was declined. So **no `exsc` has compiled these files, and no binary
-built from them has run** — not the reference build, not the C build.
+Status: **compiled and run, 2026-09-27.** This line read "written,
+`[UNTESTED]` as Exsecutor" until then: `examples/somnium/` and
+`tests/programs/somnium_*/` were written in an environment with no `fasmg`
+(the proxy refused `flatassembler.net`, and running an unvetted prebuilt
+binary was declined), so no `exsc` had compiled these files and no binary
+built from them had run.
 
-What *has* run:
+**All twelve sources compile, both builds link, and all seventeen fixtures
+pass byte-identical to the oracle's goldens — on the first compile, with no
+edit to any source.** The full `make test` on that run was `pass: 2263
+fail: 0`. Section 10 has the frame times, which are the other half of what
+this block was waiting for. The evidence-class point worth keeping: the
+oracle was written first and every golden came from it, so the first run of
+the program was a *test* and not a bring-up. Nothing here is a
+re-derivation presented as a restoration — the goldens in the tree are the
+bytes they always were, and the program met them.
+
+What had run before that, and still stands:
 
 - **The independent oracle**, `prototypes/somnium_oracle.py`. It wrote every
   `expected.out` under `tests/programs/somnium_*/`, and its frames were
@@ -195,9 +206,19 @@ committed ones.
 
 None of these directories carries `cross=yes` or `c-differentia=`. They are
 in the differential phase by default: the C backend must agree with the
-reference on every one, the f64 ones included. **The program floors in
-`tests/run.sh` were not raised**, because a floor is set to a measured count
-and nothing was measured.
+reference on every one, the f64 ones included — and on 2026-09-27 every one
+of them did, under gcc and clang at `-O0` and `-O2`, the f64 ones included.
+
+**The program floors in `tests/run.sh` have now been raised**, which this
+paragraph used to say they had not been, "because a floor is set to a
+measured count and nothing was measured". Something has been measured: the
+phases discovered 202 unit fixtures, 147 program directories, 77 eligible
+and agreeing differential directories over 308 runs, and 15 cross
+directories, and every floor is set to that. Seventeen of the program
+directories and sixty-eight of the differential runs are these fixtures —
+counted off the run's log rather than inferred from the difference, and
+`tests/run.sh`'s own floor headers record which part of the re-baseline is
+this wave's and which part is drift it declines to attribute.
 
 ## 6. Two builds, and the GPU
 
@@ -232,8 +253,10 @@ and is outside the syscall audit, and says so.
 - A consumer closing the pipe after one frame ends the process with
   SIGPIPE (status 141).
 
-What the real program's frame rate is on either build is `[UNTESTED]`.
-Oligarchy's `.#screensaver-tests` prints it per effect per build.
+What the real program's frame rate is on either build was `[UNTESTED]`
+here until 2026-09-27. Section 10 is the measurement, and
+`tools/somnium-bench.sh` is the instrument that made it. Oligarchy's
+`.#screensaver-tests` prints the same thing on the consumer's side.
 
 **The AMD GPU, stated exactly.** Exsecutor has no GPU code generation for a
 parallel loop yet. There is no `@nucleus` and no `apud machina`, and
@@ -291,10 +314,63 @@ Shadowing an ordinary name in an inner block is allowed
 
 ## 9. Open
 
-- `[UNTESTED]`: everything in `examples/somnium/` as Exsecutor (the status line).
-- `[UNTESTED]`: frame time on either build. Oligarchy's gate reports it.
+- ~~`[UNTESTED]`: everything in `examples/somnium/` as Exsecutor.~~ Retired
+  2026-09-27: it compiles, it runs, and all seventeen fixtures are
+  byte-identical to the oracle (the status block).
+- ~~`[UNTESTED]`: frame time on either build.~~ Retired 2026-09-27; section
+  10.
 - `[OPEN]`: a bulk-write prelude primitive, which would give the reference
   build what `hospes.c` gives the C one. Reported to
-  `compiler/x86_64/prelude/`'s owner.
+  `compiler/x86_64/prelude/`'s owner. **Section 10 puts a number on it: it
+  is worth 100× on seven of the nine somnia**, which is not a tuning
+  opportunity but the difference between the reference build being a
+  demonstration and being the thing you would actually run.
 - `[OPEN]`: `quisque` on the independent pixel loops, when a backend can
   dispatch it (section 6).
+
+## 10. Measured
+
+Machine: the author's x86-64 Linux box, 2026-09-27, inside `nix develop`.
+Instrument: `tools/somnium-bench.sh`, which builds both units from the
+twelve sources in `flake.nix`'s `somniumSources` order, renders 120 frames
+of each cheap somnium and 24 of `abyssus` and `signum`, and reports the
+**median of three** wall times as milliseconds per frame. Re-run it; do not
+copy these numbers forward into a tree they were not measured in.
+
+| somnium | frames | reference ms/frame | C build ms/frame | ratio |
+|---|---|---|---|---|
+| `plasma` | 120 | 17.04 | 0.17 | 100.2× |
+| `ignis` | 120 | 17.16 | 0.15 | 114.4× |
+| `vita` | 120 | 17.38 | 0.23 | 75.6× |
+| `pluvia` | 120 | 16.61 | 0.14 | 118.6× |
+| `stellae` | 120 | 16.57 | 0.14 | 118.4× |
+| `cuniculus` | 120 | 16.82 | 0.17 | 98.9× |
+| `abyssus` | 24 | 27.79 | 1.67 | 16.6× |
+| `titulus` | 120 | 16.73 | 0.14 | 119.5× |
+| `signum` | 24 | 37.46 | 2.83 | 13.2× |
+
+**Read the first column as a floor, not as nine measurements.** Seven of
+the nine sit between 16.6 and 17.4 ms whatever they compute — a Life board,
+a heat field, four summed sines, a tunnel — because none of them is what
+the reference build is spending its time on. It is spending it on 48,000
+`write(2)` calls, and that cost is the same for every somnium because every
+somnium writes exactly one 160 × 100 frame. `abyssus` and `signum` are the
+two that rise above the floor, by 11 ms and 21 ms, and those two numbers
+are the only per-effect arithmetic figures in the column.
+
+Subtract the floor and the C column becomes readable as a second fact: the
+reference backend's own arithmetic is roughly 7× the C backend's on both of
+the somnia expensive enough to measure it (11.2 / 1.67 and 20.9 / 2.83).
+That is a codegen figure, it is not what section 9's `[OPEN]` is about, and
+closing that `[OPEN]` will not move it.
+
+**Against the budget.** A screensaver at 20 fps has 50 ms a frame. The
+reference build spends 34% of that on syscalls before computing a pixel,
+and `signum` spends 75% of it in total. The C build's worst somnium uses
+5.7%.
+
+**`machina`'s stack frame is 3,031,632 bytes**, read out of the emitted
+text (`sub rsp, 3031632` in `bfausr_machina`) rather than summed from the
+declarations. It is reserved for every somnium, including the eight that
+never touch the 3D engine's 512 × 512 frame and f64 z-buffer, because they
+are all one function's locals.

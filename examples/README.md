@@ -113,8 +113,8 @@ Exsecutor source, ten programs, all compiled and run by `tests/run.sh`:
   It passes on the reference backend and under all four C builds
   (`onus/README.md`). Oligarchy's FAUST orchestra performs the file.
 
-And one more that is **not** yet in the "all compiled and run" count above,
-because it has not been: **`somnium/`, the screensaver engine** — one
+And one more, in the "all compiled and run" count above since 2026-09-27:
+**`somnium/`, the screensaver engine** — one
 program, nine effects: a sine plasma, a heat-diffusion fire, Life coloured
 by age, digital rain, a warp starfield, the demoscene tunnel, a Mandelbrot
 deep zoom in f64, a title card in which the rain flies together into
@@ -128,10 +128,15 @@ frames are pinned by golden files (`tests/programs/somnium_*/`, written by
 `prototypes/somnium_oracle.py`). Two builds of the one unit: the
 freestanding reference, and the C backend with the buffered host
 `somnium/hospes.c` (one `write(2)` a frame rather than one a byte). It was
-written where no `fasmg` was available, so it is `[UNTESTED]` as Exsecutor
-until the first `tests/run.sh` that reaches it; `docs/design/somnium.md` is
-its design and says exactly what did and did not run. Oligarchy's
-`custom.screensaver` is its consumer, through this repo's flake.
+written where no `fasmg` was available, so it was `[UNTESTED]` as Exsecutor
+until the first `tests/run.sh` that reached it. That run was 2026-09-27:
+all twelve sources compile, both builds link, and all seventeen fixtures
+are byte-identical to the oracle's goldens on the first compile, with no
+edit to any source. `docs/design/somnium.md` is its design; its section 10
+is the frame time that run measured, and the reason the reference build is
+100× slower than the C one on seven of the nine (48,000 `write(2)` a
+frame). Oligarchy's `custom.screensaver` is its consumer, through this
+repo's flake.
 
 This file said "nothing here compiles — there is no compiler" until
 2026-09-10, and then, until the hydramodem commit, that nothing here was

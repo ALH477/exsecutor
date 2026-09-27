@@ -92,7 +92,7 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # the Generics list). Both fixtures were run against the pre-fix code and
 # fail there, which is what makes them regression tests rather than
 # descriptions.
-UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-193}"
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-202}"
 
 # The same guarantee for the two run phases below: tests/ir/*.ir fixtures,
 # and tests/programs/*/ directories. Same rule -- `found < floor` fails --
@@ -154,8 +154,18 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-193}"
 # is the documented trade (drift costs precision, not the guarantee); whoever
 # re-baselines the 18 directories nobody re-bumped for should do it as its own
 # change and say so, rather than have it ride along with a new fixture.
+#
+# THIS IS THAT CHANGE (2026-09-27), and it says so. Every floor in this file
+# is set to the count the phase discovered on a full `make test` run whose
+# summary was `pass: 2263  fail: 0`. Programs 128 -> 147: the 19 directories
+# between the last bump and this one, seventeen of which are
+# tests/programs/somnium_*/ (docs/design/somnium.md section 5 records that
+# they were added WITHOUT raising this floor -- "a floor is set to a measured
+# count and nothing was measured", which was true of the tree they were
+# written in and is not true of this one). The other floors below move for
+# the same reason and in the same commit; no fixture is added by it.
 IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-78}"
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-128}"
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-147}"
 
 # The differential phase (run_differential_tests, below), which compiles the
 # C backend's emitted units and runs them against the same expectations the
@@ -245,8 +255,22 @@ DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-236}"
 #     leave a hole in these numbers, it leaves a FAILING check -- which is
 #     what the phase reported the moment the lowering landed, and is why this
 #     floor moves in that commit and not a later one.
-DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-59}"
-DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-236}"
+#     59 -> 77 and 236 -> 308: the 2026-09-27 re-baseline described in
+#     PROGRAM_FIXTURE_FLOOR's header above. Of the +18 directories and +72
+#     runs, SEVENTEEN directories and SIXTY-EIGHT runs are the somnium
+#     fixtures -- counted off the run's own log, not derived from the
+#     difference. The remaining +1 and +4 are a directory an earlier commit
+#     did not bump for; this change does not claim to know which, because it
+#     re-baselines to the discovered counts rather than auditing the history
+#     that drifted from them, and a guess here would be the kind of
+#     unmeasured number this block already records being caught at twice.
+#     The somnium seventeen are ONE unit over seventeen inputs: the phase
+#     emits it once, checks the other sixteen directories byte-identical to
+#     it, and runs 17 x 4 binaries. That is exactly the directories-and-runs
+#     split these two floors exist to keep separate, which is why the first
+#     moves by 17 and the second by 68 and not by 17 x 4 compiles.
+DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-77}"
+DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-308}"
 
 # The cross phase's own floor, deliberately NOT folded into the differential
 # numbers above: a cross-compiled, emulated run of a 32-bit-`mensura` unit is
@@ -281,7 +305,9 @@ DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-236}"
 # re-baseline, which is the drift this tree's convention licenses -- a floor
 # rises when someone raises it, never automatically. Whoever re-baselines the
 # two nobody bumped for should do it as its own change and say so.
-CROSS_PROGRAM_FLOOR="${CROSS_PROGRAM_FLOOR:-13}"
+# 13 -> 15 is that change (2026-09-27, PROGRAM_FIXTURE_FLOOR's header): the
+# two directories nobody bumped for, set to the count the phase discovered.
+CROSS_PROGRAM_FLOOR="${CROSS_PROGRAM_FLOOR:-15}"
 
 # The device phase's floor (Stage 6 G2): programs carrying `device=amdgcn`,
 # each built as one translation unit with tests/c/exsrt_shim_amdgpu.c and

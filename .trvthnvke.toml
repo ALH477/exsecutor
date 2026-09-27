@@ -47,8 +47,14 @@ command_allow = [
   # floor moves, the count drops and the README's suite figures fail with it
   # -- which is the only way those eight numbers can be gated from here: the
   # totals themselves need the whole suite, and the suite needs fasmg.
+  # Re-baselined 2026-09-27 (193|128|59|236->202|147|77|308, 13->15) when the
+  # somnium wave measured the suite and raised every floor to its discovered
+  # count. THE GATE WORKED: the floors moved first, this claim went red, and
+  # the allowlist had to be amended deliberately rather than the README
+  # quietly re-typed -- which is the whole point of pinning the argument
+  # vector and not the binary name.
   ["grep", "-cE",
-   "FLOOR:-(193|78|128|236|59|236|13|6)\\}", "tests/run.sh"],
+   "FLOOR:-(202|78|147|236|77|308|15|6)\\}", "tests/run.sh"],
   # The two rasterizer goldens. Committed files, so unlike the emitted-unit
   # and exsc sizes these can be measured from here.
   ["wc", "-c", "tests/programs/pictura_triangulum/expected.out"],
