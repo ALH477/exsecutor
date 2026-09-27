@@ -4377,8 +4377,14 @@ proc __cst_for_stmt, p
 	return
 endp
 
-; __cst_pattern(p) -- `Pattern ::= Literal | Path`. Constructor patterns are
-; `[OPEN]` in §8.6 and are not invented here.
+; __cst_pattern(p) -- `Pattern ::= Literal | Path | Path '(' IDENT (',' IDENT)* ')'`
+; (spec §8.6 as amended by docs/design/sum-types.md D2). After the path, one
+; token decides: `(` opens a FLAT binding list -- plain names only, because
+; D2 keeps exhaustiveness a set-cover over the declared variants; a nested
+; pattern (`casus a(b(x))`) is refused where its `(` stands, as `EXS-E0201`
+; at the token `)` was expected at. The bindings are the `TK_IDENT` leaves
+; that are DIRECT children of this node; the path's own identifiers sit
+; inside its `PATH`, so ast/from_cst.inc can tell them apart by depth alone.
 proc __cst_pattern, p
 	uses	rbx, r12
 	locals
@@ -4409,6 +4415,33 @@ proc __cst_pattern, p
   .path:
 	mov	rdi, rbx
 	call	__cst_path
+	mov	rdi, rbx
+	mov	esi, PUN_LPAREN
+	call	__cst_pun
+	test	eax, eax
+	jz	.done
+	mov	rdi, rbx
+	call	__cst_bump
+  .bind:
+	mov	rdi, rbx
+	mov	esi, PUN_RPAREN
+	call	__cst_pun
+	test	eax, eax
+	jnz	.rparen
+	mov	rdi, rbx
+	call	__cst_xident
+	mov	rdi, rbx
+	mov	esi, PUN_COMMA
+	call	__cst_pun
+	test	eax, eax
+	jz	.rparen
+	mov	rdi, rbx
+	call	__cst_bump
+	jmp	.bind
+  .rparen:
+	mov	rdi, rbx
+	mov	esi, PUN_RPAREN
+	call	__cst_xpun
   .done:
 	mov	rdi, [rbx + CstParser.tree]
 	mov	esi, CST_PATTERN

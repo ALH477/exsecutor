@@ -2055,8 +2055,12 @@ Terminals are §8.4's tokens; `IDENT` `INT` `STRING` are the lexer's classes.
     Contrahe      ::= 'contrahe' IDENT ':' ArithOp
     MatchStmt     ::= 'discerne' ExprNS '{' MatchArm* ['aliter' Block] '}'
     MatchArm      ::= 'casus' Pattern Block
-    Pattern       ::= Literal | Path                         (* constructors [OPEN];
-                                                      sum-types.md D2 *)
+    Pattern       ::= Literal | Path | Path '(' IDENT (',' IDENT)* ')'
+                                                    (* sum-types.md D2: parsed and
+                                                      built, bindings scoped to the
+                                                      arm; typing against the
+                                                      scrutinee's variants [OPEN];
+                                                      nested patterns refused *)
 
     Expr          ::= Or           (* ExprNS: identical, level-1 '{' suffix disabled *)
     Or            ::= And ('vel' And)*

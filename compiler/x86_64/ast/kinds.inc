@@ -472,7 +472,10 @@ ast_roles:
 	db AST_R_LIST,  AST_R_COUNT, AST_R_NAME,  AST_R_ANY	; 28 ForHead
 	db AST_R_NAME,  AST_R_NONE,  AST_R_NONE,  AST_R_DECL	; 29 Contrahe
 	db AST_R_NODEQ, AST_R_LIST,  AST_R_COUNT, AST_R_NODE	; 30 Discerne
-	db AST_R_NODEQ, AST_R_NODEQ, AST_R_NONE,  AST_R_NONE	; 31 Casus
+	; `Casus.c`/`d`: the constructor pattern's bindings (sum-types.md D2),
+	; `Binding` nodes with no annotation and no initializer, each owning an
+	; AST_D_BINDING; an empty list for a literal or a bare-path pattern.
+	db AST_R_NODEQ, AST_R_NODEQ, AST_R_LIST,  AST_R_COUNT	; 31 Casus
 	db AST_R_NAME,  AST_R_NONE,  AST_R_NONE,  AST_R_NONE	; 32 Lit
 	db AST_R_LIST,  AST_R_COUNT, AST_R_NONE,  AST_R_DECL	; 33 Path
 	db AST_R_NAME,  AST_R_NODE,  AST_R_NONE,  AST_R_DECL	; 34 Seg

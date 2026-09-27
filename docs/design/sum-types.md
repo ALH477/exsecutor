@@ -214,7 +214,7 @@ uninhabited type. Retirement is the last commit of this design, not the first.
 
 ### D2 — Constructor patterns, flat and irrefutable-bound
 
-Replacing §8.6's `Pattern ::= Literal | Path`:
+Now §8.6's `Pattern`, replacing `Pattern ::= Literal | Path`:
 
 ```
 Pattern ::= Literal | Path | Path '(' IDENT (',' IDENT)* ')'
@@ -247,6 +247,16 @@ enumerates, computable with a bitmask, while coverage over nested patterns is th
 usefulness-of-a-match-matrix problem and a different order of work. Flat first; if a
 program needs nesting, it can `discerne` twice, and the cost of that is one extra
 block rather than an unbounded algorithm.
+
+**Two facts the grammar's landing measured, for the typing to honour.** A
+pattern binding is a `Binding` node with no initializer, so pass 2's definite
+assignment rule reads a use of it as "read before assigned" and raises
+`EXS-E0307` (`tests/unit/chk_pattern_scope.asm` row 3): the typing that gives
+the binding its payload type must also mark it initialized by the match. And a
+binding's declaration is pushed before its arm's block, so it falls outside
+the block's contiguous declaration range (typed-ast.md section 2.4) and
+outside the scope-exit release walk — harmless for scalars, `[OPEN]` for an
+ARC-typed payload until a constructor can produce one.
 
 **Binding arity must equal the variant's payload arity**, and a mismatch is
 `EXS-E0304` (wrong number of arguments) — the same code a call with the wrong count
@@ -534,8 +544,17 @@ check starts holding this document to them. Item 0 has crossed over.
    rule (§8.6: 0202 for an unclosed bracket, block or `<…>`; 0203 inside any
    other construct) says 0203, and no bracket is open there. Measured, and the
    rule is right.
-2. **tests/unit/cst_pattern_ctor.asm** — D2: `casus prosperum(n)`, the bare-path
-   form, and a nested pattern refused by name.
+2. **`tests/unit/cst_pattern_ctor.asm`** — D2's grammar and tree, **exists
+   and runs**: `casus arborea(n)` and `casus par(a, b)` beside a bare-path
+   arm, binding counts 0/1/2 in `Casus.c`/`d`, each binding a bare `Binding`
+   owning an `AST_D_BINDING`, and a nested pattern refused as `EXS-E0201` at
+   its inner `(`. Pass 1 scopes the bindings to the arm (an arm is a frame of
+   its own, `checker/resolve/resolve.inc` `.casus`). What it does NOT retire:
+   D2's subtle half — resolving the pattern's path against the scrutinee's
+   variants before the value namespace, binding types from the payload, and
+   `EXS-E0304` on an arity mismatch — which is the checker's next commit, and
+   the reason a constructor pattern still reaches pass 2 as an unresolved
+   path today.
 3. **tests/unit/chk_ty_exhaustive.asm** — D3, both rules: a sum-typed `discerne`
    missing one variant raises `EXS-E0351` **and the diagnostic names the missing
    variant**; a scalar `discerne` with no `aliter` raises it; both complete forms

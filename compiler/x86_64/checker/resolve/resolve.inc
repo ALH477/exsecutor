@@ -2711,6 +2711,7 @@ proc __chk_walk, chk_c, chk_n, chk_pos
 		slot	chk_ord, dq
 		slot	chk_sv,  dq
 		slot	chk_sv2, dq
+		slot	chk_i,   dq
 	endl
 	mov	rbx, [chk_c]
 	mov	r12, [chk_n]
@@ -2764,6 +2765,8 @@ proc __chk_walk, chk_c, chk_n, chk_pos
 	je	.for
 	cmp	rcx, AST_CONTRAHE
 	je	.contrahe
+	cmp	rcx, AST_CASUS
+	je	.casus
 	cmp	rcx, AST_ERROR
 	je	.out			; AST H3: an `Error` node says nothing here
 
@@ -2906,6 +2909,54 @@ proc __chk_walk, chk_c, chk_n, chk_pos
 	mov	rsi, r12
 	mov	rdx, [chk_pos]
 	call	__chk_kids
+	mov	rdi, rbx
+	call	__chk_frame_pop
+	jmp	.out
+
+  .casus:
+	; `casus P(n, …) B` (sum-types.md D2): the pattern's bindings are
+	; visible in the arm's block and NOWHERE ELSE, so the arm is a frame
+	; of its own -- the pattern walked first (its path may not see the
+	; names it binds), then each binding bound, then the block, which
+	; opens its own frame inside this one. Bindings are `Casus.c`/`d`,
+	; `Binding` nodes with no annotation and no initializer; walking them
+	; through `.binding` would bind them too, but in whichever frame
+	; happened to be innermost -- the FUNCTION's, since an arm is not a
+	; block -- and two arms binding `n` would then be `EXS-E0302`.
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, CHK_FR_BLOCK
+	call	__chk_frame_push
+	mov	rdi, rbx
+	mov	rsi, [chk_a]
+	xor	rdx, rdx
+	call	__chk_walk
+	mov	qword [chk_i], 0
+  .casus_bind:
+	mov	rax, [chk_i]
+	cmp	rax, [chk_dd]
+	jae	.casus_body
+	mov	rdi, [rbx + ChkCtx.tree]
+	mov	rsi, [chk_cc]
+	add	rsi, [chk_i]
+	call	ast_extra_at
+	mov	rdi, [rbx + ChkCtx.tree]
+	mov	rsi, rax
+	call	ast_node_at
+	mov	ecx, [rax + AstNode.d]
+	test	rcx, rcx
+	jz	.casus_bind_next
+	mov	rdi, rbx
+	mov	rsi, rcx
+	call	__chk_bind
+  .casus_bind_next:
+	inc	qword [chk_i]
+	jmp	.casus_bind
+  .casus_body:
+	mov	rdi, rbx
+	mov	rsi, [chk_b]
+	xor	rdx, rdx
+	call	__chk_walk
 	mov	rdi, rbx
 	call	__chk_frame_pop
 	jmp	.out

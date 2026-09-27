@@ -3068,17 +3068,25 @@ proc __ast_w_match, w, red
 	return
 endp
 
+; `MatchArm ::= 'casus' Pattern Block`. `Casus.a` the pattern, `Casus.b` the
+; block, `Casus.c`/`d` the pattern's bindings (sum-types.md D2) -- built from
+; the `PATTERN`'s own `TK_IDENT` leaves by `__ast_w_patbinds`, BEFORE the block
+; is walked, so their declarations precede the block's in source order.
 proc __ast_w_casus, w, red
 	uses	rbx, r12, r13, r14
 	locals
 		slot wn2_sub, sizeof.CstRed
 		slot wn2_pat, dq
 		slot wn2_blk, dq
+		slot wn2_off, dq
+		slot wn2_cnt, dq
 	endl
 	mov	rbx, [w]
 	mov	r12, [red]
 	mov	qword [wn2_pat], 0
 	mov	qword [wn2_blk], 0
+	mov	qword [wn2_off], 0
+	mov	qword [wn2_cnt], 0
 	mov	r14, -1
   .kid:
 	mov	rdi, rbx
@@ -3102,6 +3110,11 @@ proc __ast_w_casus, w, red
 	lea	rsi, [wn2_sub]
 	call	__ast_w_node
 	mov	[wn2_pat], rax
+	mov	rdi, rbx
+	lea	rsi, [wn2_sub]
+	call	__ast_w_patbinds
+	mov	[wn2_off], rax
+	mov	[wn2_cnt], rdx
 	jmp	.kid
   .blk:
 	mov	rdi, rbx
@@ -3131,12 +3144,101 @@ proc __ast_w_casus, w, red
 	mov	r8, [wn2_pat]
 	mov	r9, [wn2_blk]
 	call	__ast_w_mk
+	mov	r13, rax
+	mov	rdi, [rbx + AstWalk.ast]
+	mov	rsi, r13
+	mov	rdx, [wn2_off]
+	mov	rcx, [wn2_cnt]
+	call	ast_node_cd
+	mov	rax, r13
 	return
 endp
 
-; `Pattern ::= Literal | Path` -- constructor patterns are `[OPEN]` in spec
-; §8.6 and add no kind here (typed-ast.md section 2.3: "Kinds absent from spec
-; §8.6 are absent here").
+; __ast_w_patbinds(w, pattern red) -> rax = `extra` offset, rdx = count: one
+; `Binding` node (no annotation, no initializer) and one AST_D_BINDING per
+; `TK_IDENT` that is a DIRECT child of the `PATTERN` -- the names inside the
+; constructor's parentheses (sum-types.md D2). The pattern's path keeps its
+; identifiers inside its own `PATH` node, so depth is the whole distinction.
+; A literal or bare-path pattern has none and answers (0, 0).
+proc __ast_w_patbinds, w, red
+	uses	rbx, r12, r13, r14
+	locals
+		slot wpb_sub,  sizeof.CstRed
+		slot wpb_mark, dq
+		slot wpb_n,    dq
+		slot wpb_i,    dq
+		slot wpb_dec,  dq
+	endl
+	mov	rbx, [w]
+	mov	r12, [red]
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__ast_w_nkid
+	mov	[wpb_n], rax
+	mov	rdi, [rbx + AstWalk.ast]
+	call	ast_list_mark
+	mov	[wpb_mark], rax
+	mov	qword [wpb_i], 0
+  .kid:
+	mov	rax, [wpb_i]
+	cmp	rax, [wpb_n]
+	jae	.done
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, [wpb_i]
+	lea	rcx, [wpb_sub]
+	call	__ast_w_child
+	mov	rdi, rbx
+	lea	rsi, [wpb_sub]
+	call	__ast_w_kind
+	cmp	rax, CST_TK_IDENT
+	jne	.next
+	mov	rdi, rbx
+	lea	rsi, [wpb_sub]
+	call	__ast_w_text
+	mov	r13, rax
+	mov	rdi, rbx
+	lea	rsi, [wpb_sub]
+	mov	rdx, AST_D_BINDING
+	xor	rcx, rcx
+	mov	r8, r13
+	call	__ast_w_decl
+	mov	[wpb_dec], rax
+	mov	rdi, rbx
+	lea	rsi, [wpb_sub]
+	mov	rdx, AST_BINDING
+	xor	rcx, rcx
+	xor	r8, r8
+	xor	r9, r9
+	call	__ast_w_mk
+	mov	r14, rax
+	mov	rdi, [rbx + AstWalk.ast]
+	mov	rsi, r14
+	xor	rdx, rdx
+	mov	rcx, [wpb_dec]
+	call	ast_node_cd
+	mov	rdi, [rbx + AstWalk.ast]
+	mov	rsi, [wpb_dec]
+	mov	rdx, r14
+	call	ast_decl_node
+	mov	rdi, [rbx + AstWalk.ast]
+	mov	rsi, r14
+	call	ast_list_push
+  .next:
+	inc	qword [wpb_i]
+	jmp	.kid
+  .done:
+	mov	rdi, [rbx + AstWalk.ast]
+	mov	rsi, [wpb_mark]
+	call	ast_list_emit
+	return
+endp
+
+; `Pattern ::= Literal | Path | Path '(' IDENT (',' IDENT)* ')'`. The pattern
+; node is the `Path` (or the literal) in every form; a constructor pattern's
+; bindings are not part of it but of the `Casus` (`__ast_w_patbinds`), so a
+; consumer that reads `Casus.a` as "the thing compared" is not disturbed by
+; them.
 proc __ast_w_pattern, w, red
 	uses	rbx, r12
 	locals

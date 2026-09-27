@@ -120,7 +120,7 @@ that way, appended after `Error`.
 | `ForHead` | `Contrahe` list | count | `forma` id or 0 | — | — |
 | `Contrahe` | name id | — | — | accumulator decl | op |
 | `Discerne` | scrutinee | `Casus` list | count | `aliter` `B` or 0 | — |
-| `Casus` | pattern (`Lit` or `Path`) | `B` | — | — | — |
+| `Casus` | pattern (`Lit` or `Path`) | `B` | bindings: `Binding` list, no annotation, no initializer, each owning an `AST_D_BINDING` (sum-types.md D2; empty for a literal or bare-path pattern) | count | — |
 | `Lit` | raw interned text id (INT and STRING alike; quotes included, escapes undecoded while §8.4's literal grammar is `[OPEN]`) | — | — | — | class |
 | `Path` | segments (`Seg`) | count | — | resolved decl | — |
 | `Seg` | name id | `GenericArgs` or 0 | — | resolved decl | — |

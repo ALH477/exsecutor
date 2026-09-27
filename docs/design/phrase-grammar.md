@@ -214,7 +214,7 @@ trivially LL(1). Hashes and target names are the hazard (H12).
     ForStmt       ::= ('per' | 'quisque') IDENT 'in' ExprNS ('contrahe' IDENT ':' ArithOp)*
                       ['forma' IDENT] Block
     MatchStmt     ::= 'discerne' ExprNS '{' ('casus' Pattern Block)* ['aliter' Block] '}'
-    Pattern       ::= Literal | Path ['(' [Pattern (',' Pattern)*] ')']         (* [OPEN] *)
+    Pattern       ::= Literal | Path | Path '(' IDENT (',' IDENT)* ')'         (* sum-types.md D2: flat; one-token peek at `(` *)
 
     Expr          ::= Or              (* ExprNS: identical, struct-literal suffix disabled *)
     Or            ::= And ('vel' And)*
