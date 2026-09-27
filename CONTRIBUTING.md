@@ -117,6 +117,18 @@ What it refuses:
 - (locally and in CI) a policy file that does not match `.trvthnvke.lock`,
   which is regenerated with `trvthnvke lock`, never edited by hand.
 
+**Moving a fixture floor is a three-step change, and the gate announces only
+the first.** This has caught two sessions on 2026-09-27 alone, so it is
+written down rather than rediscovered: the floors in `tests/run.sh` are bound
+by a `command` claim whose allowlisted `grep` matches the floor **literals**,
+so raising one turns that claim red. The fix is not a README edit. It is
+(1) the floor in `tests/run.sh`, (2) the same literal in
+`.trvthnvke.toml`'s `command_allow` regex — which is a *policy* edit — and
+(3) `trvthnvke lock`, because a policy file that no longer matches its lock
+fails every gate afterwards as `policy_drift`, a verdict whose text names a
+hash mismatch and not the step you missed. All three belong in the commit
+that moves the floor.
+
 **Know which half of a claim the gate actually holds you to.** Measured on
 2026-09-26 by breaking a claim of each shape and watching the verdict:
 
