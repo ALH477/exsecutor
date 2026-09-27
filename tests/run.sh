@@ -92,7 +92,11 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # the Generics list). Both fixtures were run against the pre-fix code and
 # fail there, which is what makes them regression tests rather than
 # descriptions.
-UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-202}"
+# 202 -> 204: tests/unit/prelude_scribe_octetos.asm and
+# prelude_lege_octetos.asm, spec §4.6's bulk pair, added with the rows they
+# pin. Raised by exactly the two fixtures added, which is this file's
+# convention when a commit adds them rather than re-baselines.
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-204}"
 
 # The same guarantee for the two run phases below: tests/ir/*.ir fixtures,
 # and tests/programs/*/ directories. Same rule -- `found < floor` fails --

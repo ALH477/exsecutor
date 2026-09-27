@@ -641,7 +641,7 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   never automatically, so the two columns had drifted apart by up to 19, and
   the somnium wave's own commit re-baselined all eight to what its run
   discovered. Drift is still permitted and still costs precision rather than
-  the guarantee; it is simply zero today. 202 unit fixtures [202]; 78 IR
+  the guarantee; it is simply zero today. 204 unit fixtures [204]; 78 IR
   fixtures [78] and 147 Exsecutor programs [147], each compiled, assembled,
   **run**, and syscall-audited (70 of those programs are the receiver's
   impaired vectors);
@@ -677,7 +677,7 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   so that any floor moving fails this bullet with it:
 
 ```bash truth:id=suite-floors truth:kind=command truth:expect_exit=0 truth:expect_stdout=8
-grep -cE "FLOOR:-(202|78|147|236|77|308|15|6)\}" tests/run.sh
+grep -cE "FLOOR:-(204|78|147|236|77|308|15|6)\}" tests/run.sh
 ```
 
 - `tests/run.sh --device=amdgcn` (measured 2026-09-21, not part of the

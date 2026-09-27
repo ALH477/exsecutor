@@ -240,6 +240,44 @@ uint64_t exsrt_lector_lege_octeto(unsigned char *lp)
     }
 }
 
+/* exsrt_scriptor_scribe_octetos(s: ptr, b: ptr, n: u64) -> mensura -- `n`
+ * bytes, looping only on a partial write or -EINTR. Returns the count; any
+ * other -errno ends the loop returning what was already written. */
+uint64_t exsrt_scriptor_scribe_octetos(unsigned char *sp, unsigned char *b,
+                                        uint64_t n)
+{
+    long fd = get32(sp + SCR_DESCRIPTOR);
+    uint64_t done = 0;
+    while (done < n) {
+        long w = sys3(SYS_write, fd, (long)(usize)(b + done),
+                      (long)(n - done));
+        if (w > 0) { done += (uint64_t)w; continue; }
+        if (w == 0) continue;
+        if (w == -4) continue;                  /* -EINTR */
+        break;
+    }
+    return done;
+}
+
+/* exsrt_lector_lege_octetos(l: ptr, b: ptr, n: u64) -> mensura -- READS
+ * FULLY, so a short count means the input really ended. No 256 sentinel: a
+ * count can be short where a byte has no spare value. */
+uint64_t exsrt_lector_lege_octetos(unsigned char *lp, unsigned char *b,
+                                    uint64_t n)
+{
+    long fd = get32(lp + SCR_DESCRIPTOR);
+    uint64_t done = 0;
+    while (done < n) {
+        long r = sys3(SYS_read, fd, (long)(usize)(b + done),
+                      (long)(n - done));
+        if (r > 0) { done += (uint64_t)r; continue; }
+        if (r == 0) break;                      /* end of input */
+        if (r == -4) continue;                  /* -EINTR */
+        break;
+    }
+    return done;
+}
+
 /* ---- the entry point --------------------------------------------------- */
 uint64_t exs_initium(unsigned char *p0);
 

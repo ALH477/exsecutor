@@ -274,7 +274,18 @@ EXS_IFACE_D_LECTOR		= 8	; APPENDED for the same reason: a decl id
 EXS_IFACE_D_AB_INTROITU		= 9	; is an INDEX into the table below, so a
 EXS_IFACE_D_LEGE_OCTETO		= 10	; row next to `Scriptor`'s would renumber
 					; every reference to rows 1-7
-EXS_IFACE_DECL_COUNT		= 11
+EXS_IFACE_D_SCRIBE_OCTETOS	= 11	; APPENDED for the third time and the
+EXS_IFACE_D_LEGE_OCTETOS	= 12	; same reason. The BULK pair belongs
+					; beside rows 7 and 10 by meaning and
+					; cannot go there by construction:
+					; `checker/types/prim.inc`'s pool index
+					; is this index plus one, so inserting
+					; either next to its one-byte sibling
+					; would renumber `Lector` and both of
+					; its rows. Meaning loses to the
+					; invariant; the comment carries the
+					; adjacency instead.
+EXS_IFACE_DECL_COUNT		= 13
 
 if defined EXS_IFACE_EMIT_DECLS
 
@@ -315,6 +326,18 @@ exsrt_iface_nomina:
   .lege_octeto		= $ - exsrt_iface_nomina
 	db 'lege_octeto'
   .lege_octeto_len	= $ - exsrt_iface_nomina - .lege_octeto
+  ; The bulk pair. `-os` is the accusative PLURAL of `octetus` where rows 7
+  ; and 10 write the singular `-o`: "write the bytes", not "write the byte".
+  ; Spec 3.1's qualifier rule governs the part after the `_`, and a plural
+  ; qualifier is the same construction with the same case, so neither name
+  ; needs a coinage -- which is the point of naming them this way rather
+  ; than `scribe_bulk` or `scribe_multa`.
+  .scribe_octetos	= $ - exsrt_iface_nomina
+	db 'scribe_octetos'
+  .scribe_octetos_len	= $ - exsrt_iface_nomina - .scribe_octetos
+  .lege_octetos		= $ - exsrt_iface_nomina
+	db 'lege_octetos'
+  .lege_octetos_len	= $ - exsrt_iface_nomina - .lege_octetos
   ; ---- prelude symbols. The label in the blob carries emit.inc's `bfausr_`
   ; prefix (runtime.md 2.2); the IR names the short form, and the emitter
   ; prints the prefix. These are the SHORT forms.
@@ -339,6 +362,12 @@ exsrt_iface_nomina:
   .sym_lege_octeto	= $ - exsrt_iface_nomina
 	db 'exsrt_lector_lege_octeto'
   .sym_lege_octeto_len	= $ - exsrt_iface_nomina - .sym_lege_octeto
+  .sym_scribe_octetos	= $ - exsrt_iface_nomina
+	db 'exsrt_scriptor_scribe_octetos'
+  .sym_scribe_octetos_len = $ - exsrt_iface_nomina - .sym_scribe_octetos
+  .sym_lege_octetos	= $ - exsrt_iface_nomina
+	db 'exsrt_lector_lege_octetos'
+  .sym_lege_octetos_len	= $ - exsrt_iface_nomina - .sym_lege_octetos
 EXS_IFACE_NOMINA_LEN = $ - exsrt_iface_nomina
 
 ; ---- signature pool ---------------------------------------------------------
@@ -373,6 +402,24 @@ exsrt_iface_signa:
   .lege_octeto		= $ - exsrt_iface_signa
 	db 1, EXS_IFACE_T_U16, EXS_IFACE_T_PTR	; (ptr) -> u16: the Lector by
 						; ptr, the byte-or-256 by value
+  ; The bulk pair, one shape. NO NEW EXS_IFACE_T_* CODE IS NEEDED and that is
+  ; worth stating: the buffer is an `acies` and IR 2.9 passes every aggregate
+  ; by pointer, so at this level a length-polymorphic borrow of `acies<u8, N>`
+  ; and a plain `acies` argument are the same `ptr`. The polymorphism is
+  ; entirely a checker-side acceptance rule (checker/types/member.inc); the
+  ; lowering and `__lwr_iface_ir` see nothing new, which is why neither
+  ; needed an edit for these rows.
+  .scribe_octetos	= $ - exsrt_iface_signa
+	db 3, EXS_IFACE_T_U64, EXS_IFACE_T_PTR, EXS_IFACE_T_PTR, EXS_IFACE_T_U64
+						; (ptr ptr u64) -> u64: the
+						; Scriptor, the buffer, the
+						; count; returns bytes written
+  .lege_octetos		= $ - exsrt_iface_signa
+	db 3, EXS_IFACE_T_U64, EXS_IFACE_T_PTR, EXS_IFACE_T_PTR, EXS_IFACE_T_U64
+						; the mirror: the Lector, the
+						; buffer, the count; returns
+						; bytes read, short at the end
+						; of input
 EXS_IFACE_SIGNA_LEN = $ - exsrt_iface_signa
 
 ; ---- the declarations -------------------------------------------------------
@@ -524,6 +571,74 @@ exsrt_iface_decls:
 	dd exsrt_iface_nomina.sym_lege_octeto, exsrt_iface_nomina.sym_lege_octeto_len
 	dd EXS_IFACE_D_LECTOR
 	dd exsrt_iface_signa.lege_octeto
+	dd 0, 0
+
+; 11: functio scribe_octetos(s: Scriptor, b: &acies<u8, 0>, n: mensura) -> mensura
+;     Row 7 in bulk: `n` bytes from `b` to `s`'s descriptor in ONE write(2)
+;     where it can, looping only on a partial write or EINTR. It adds no
+;     syscall -- `write(1)` is already `ambitus`'s, and this issues exactly
+;     that -- so neither closed set moves and tools/syscall-audit.sh needs
+;     no new row.
+;
+;     WHY IT EXISTS, measured rather than assumed: with only row 7, a
+;     program writing a 160x100 rgb24 frame makes 48,000 write(2) calls, and
+;     `docs/design/somnium.md` section 10 puts that at 16.6-17.4 ms a frame
+;     against 0.14-0.23 ms for the same program through the C backend, whose
+;     host buffers the frame. Seven of nine effects there sit on that floor
+;     whatever they compute. That gap, 100x on most of them, is this row.
+;
+;     THE BUFFER IS LENGTH-POLYMORPHIC and the length is a separate
+;     argument. An `acies`'s extent is part of its type and a literal in it,
+;     so a fixed spelling would serve one buffer size and no other. The
+;     parameter is therefore `&acies<u8, 0>` -- a borrow of an extent no
+;     literal can construct -- and `checker/types/member.inc` admits an
+;     argument of any extent against it, BUT ONLY WHEN THE CALLEE IS A
+;     PRELUDE ROW, so a user-written `&acies<u8, 0>` parameter gets the
+;     ordinary borrow check and accepts nothing.
+;
+;     The hole that leaves is stated, not hidden: nothing relates `n` to the
+;     buffer's extent, so a literal `n` too large is EXS-E0312 and any other
+;     `n` too large is UNCHECKED. Spec 13's paragraph on that code says so
+;     in those words. `octeti` as a real byte view (spec 11) is the general
+;     fix and is not this row.
+;
+;     APERTUM and returns the COUNT, for `scribe`'s reason: spec 11 wants
+;     `eventus<mensura>` and `eventus` has no syntax. `count < n` is the
+;     only failure signal.
+	db EXS_IFACE_K_FN, EXS_IFACE_F_PUBLICA or EXS_IFACE_F_APERTUM
+	db EXS_IFACE_CAP_NONE, 0
+	dd exsrt_iface_nomina.scribe_octetos, exsrt_iface_nomina.scribe_octetos_len
+	dd exsrt_iface_nomina.sym_scribe_octetos, exsrt_iface_nomina.sym_scribe_octetos_len
+	dd EXS_IFACE_D_SCRIPTOR
+	dd exsrt_iface_signa.scribe_octetos
+	dd 0, 0
+
+; 12: functio lege_octetos(l: Lector, b: &mutabilis acies<u8, 0>, n: mensura) -> mensura
+;     Row 10 in bulk, with one deliberate asymmetry to row 10 and one to
+;     row 11.
+;
+;     AGAINST ROW 10: THERE IS NO 256 SENTINEL. Row 10 returns a `u16`
+;     because a byte has no value left to mean "the input ended"; a COUNT
+;     has -- a short count. So this returns `mensura`, and `count < n` means
+;     end of input OR error, the two undistinguished exactly as row 10's 256
+;     leaves them. When `eventus` is inhabited both become `eventus`, and
+;     the sentinel and the short count go together.
+;
+;     AGAINST ROW 11: IT READS FULLY. A single read(2) on a pipe returns
+;     whatever is buffered, which would push a loop into every caller and
+;     buy nothing over row 10. So this loops until `n` bytes are in, the
+;     kernel returns 0, or a non-EINTR error -- and a short count therefore
+;     means the input really ended, not that it arrived in pieces.
+;
+;     The borrow is `&mutabilis` where row 11's is `&`: this one writes.
+;     ADR 0016 governs it, and the caller passes the array with no sigil,
+;     as it does for every other mutable borrow.
+	db EXS_IFACE_K_FN, EXS_IFACE_F_PUBLICA or EXS_IFACE_F_APERTUM
+	db EXS_IFACE_CAP_NONE, 0
+	dd exsrt_iface_nomina.lege_octetos, exsrt_iface_nomina.lege_octetos_len
+	dd exsrt_iface_nomina.sym_lege_octetos, exsrt_iface_nomina.sym_lege_octetos_len
+	dd EXS_IFACE_D_LECTOR
+	dd exsrt_iface_signa.lege_octetos
 	dd 0, 0
 
 assert $ - exsrt_iface_decls = EXS_IFACE_DECL_COUNT * EXS_IFACE_DECL_SIZE

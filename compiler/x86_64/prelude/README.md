@@ -23,7 +23,10 @@ itself and never reaches `OUT`.
 (below). `interface.inc` part A — the layout constants — is checked against
 the blob every time both are assembled together. `interface.inc` part B — the
 serialized `Decl` rows, `EXS_IFACE_DECL_COUNT = 11` since `8524028` added
-`Lector`, `ab_introitu` and `lege_octeto` as rows 8–10 (rows are appended,
+`Lector`, `ab_introitu` and `lege_octeto` as rows 8–10, and the bulk pair
+`scribe_octetos`/`lege_octetos` as rows 11–12 — which belong beside rows 7
+and 10 by meaning and cannot go there, because a pool index is the row index
+plus one and inserting would renumber `Lector` (rows are appended,
 never inserted) — is consumed by `checker/types/prim.inc` and
 `lower/lower.inc`: every prelude call a program makes resolves through it.
 This paragraph said part B was `[UNTESTED]` because `checker/resolve/` did
@@ -110,6 +113,8 @@ IR-callable (`bfausr_exsrt_…`), with the IR signature the lowering must emit:
 | `exsrt_scriptor_scribe_octeto` | `(ptr u8) -> u64` | `s.scribe_octeto(b)`: ONE raw byte, `b`'s low 8 bits (wire-codec.md D7). Returns the count, 1 or 0 -- `scribe`'s convention and `scribe`'s `[OPEN]` |
 | `exsrt_lector_ab_introitu` | `(ptr ptr) -> void` | `Lector.ab_introitu(a)`: the reader over `ExsAmbitus.in`, `ad_exitum`'s shape with the other stream. Cannot fail |
 | `exsrt_lector_lege_octeto` | `(ptr) -> u16` | `l.lege_octeto()`: ONE raw byte, or **256** at end of input -- a value no byte has. EOF and error are NOT distinguished; `[OPEN]` for `scribe`'s reason |
+| `exsrt_scriptor_scribe_octetos` | `(ptr ptr u64) -> u64` | `s.scribe_octetos(b, n)`: `n` bytes in as few `write(2)` as the kernel allows. Returns the count; `count < n` is the only failure signal, and unlike `scribe_octeto` a failure after a partial write reports what LEFT, not 0. `n == 0` issues no syscall |
+| `exsrt_lector_lege_octetos` | `(ptr ptr u64) -> u64` | `l.lege_octetos(b, n)`: **reads fully** -- loops until `n` bytes are in, the input ends, or a non-EINTR error. Returns the count. **No 256 sentinel**: a count can be short where a byte has no spare value. EOF and error still undistinguished |
 | `exsrt_alloc_novum` | `(ptr u64) -> ptr` | `(Mundus, capacity) -> ExsArena*`. `[OPEN]` surface spelling |
 | `exsrt_alloc_da` | `(ptr u64 u64) -> ptr` | `(arena, n, align)`. `align` is a precondition: a power of two, at least 1 |
 | `exsrt_alloc_reconde` | `(ptr) -> void` | `cur = base` (spec 6.3 decision 1) |
@@ -205,6 +210,8 @@ Measured, not asserted — `tools/syscall-audit.sh` on each fixture binary:
 | `prelude_scribe` | Mundus, ambitus | `exit_group`, `write` ×3 (`scribe`, `scribe_octeto`, and `exsrt_abort`'s unreached path) |
 | `prelude_scribe_octeto` | Mundus, ambitus | the same three, plus the fixture's OWN `lseek` -- its instrument for stdout's offset, not a prelude syscall |
 | `prelude_lege_octeto` | Mundus, ambitus | `exit_group`, `read` (`lege_octeto`), `write` ×3 (the two writers, and `exsrt_abort`'s unreached path) |
+| `prelude_scribe_octetos` | Mundus, ambitus | as `prelude_scribe_octeto`, plus the bulk writer's own `write`. **No new syscall NUMBER appears** — the bulk rows issue the `write(1)`/`read(0)` `ambitus` already admits, which is why `tools/syscall-audit.sh` gained no row for them |
+| `prelude_lege_octetos` | Mundus, ambitus | as `prelude_lege_octeto`, plus the bulk reader's own `read` |
 | `prelude_sine_ambitus` | Mundus | `exit_group`, `write` (abort only) |
 | `prelude_arc`, `prelude_arc_resurrectio`, `prelude_abortus_terminus`, `prelude_mxcsr*` | Mundus | `exit_group`, `write` (abort only) |
 | `prelude_arena`, `prelude_arena_exhausta` | Mundus, alloc | `exit_group`, `mmap`, `munmap`, `write` (abort only) |
@@ -249,6 +256,8 @@ hand-written `bfausr_initium` in place of an emitted one — the way
 |---|---|---|---|
 | `prelude_scribe.asm` | Mundus, ambitus | `exit=101`, `audit=pass` | the entry stub, `m.ambitus()`, `Scriptor.ad_exitum`, `scribe` writing 101 bytes and **returning 101**; the literal byte-identical to `examples/saluta.expected`; `Scriptor.descriptor` read through `interface.inc`'s own offset (H4) |
 | `prelude_scribe_octeto.asm` | Mundus, ambitus | `exit=7`, `audit=pass` | `scribe_octeto` writes EXACTLY one byte per call -- stdout's file offset, read back with `lseek`, moves by one each time -- and returns 1, for 0x00 0x7f 0xff 0x80 0xd3 and two arguments with garbage above bit 7; returns 0 and writes nothing on a descriptor the kernel refuses; touches no callee-saved register. The byte VALUES are `tests/programs/octeti`'s, compared with `cmp` |
+| `prelude_scribe_octetos.asm` | Mundus, ambitus | `exit=5`, `audit=pass` | ONE call writes SEVEN bytes and ONE call writes 4,096 — stdout's `lseek` offset moves by exactly that much, which is what refuses a routine that looped per byte internally and would otherwise pass every check its one-byte sibling makes. `n == 0` writes nothing; a refused descriptor returns 0 and moves nothing; no callee-saved register touched (the routine keeps its running total in `rbx`, so that check is real). The EINTR, zero-return and **partial-write** paths need a second process and are `[UNTESTED]` |
+| `prelude_lege_octetos.asm` | Mundus, ambitus | `exit=0`, `audit=pass`, `stdin=tests/data/lector_quattuor.bin` | `n == 2` fills two bytes and leaves the third painted; **`n == 10` over a 2-byte remainder returns 2** — the short-read contract, and the whole difference from `lege_octeto`, which spends 256 instead because a byte has no spare value; then 0 at end of input (**not 256**), 0 for `n == 0`, 0 on a refused descriptor. The read-fully LOOP needs a pipe written in pieces and is `[UNTESTED]` |
 | `prelude_lege_octeto.asm` | Mundus, ambitus | `exit=0`, `audit=pass`, `stdin=tests/data/lector_quattuor.bin` | `Lector.ab_introitu(a)` takes `ExsAmbitus.in` (descriptor 0, read back through `interface.inc`'s own offset); `lege_octeto` returns 0x00, 0x7f, 0x80, 0xff in order, then **256** at end of input, 256 again after that, and 256 on a descriptor the kernel refuses -- EOF and error being the same answer is the documented hole, pinned here rather than implied. Touches no callee-saved register |
 | `prelude_sine_ambitus.asm` | Mundus | `exit=0` | with `ambitus` at 0, none of the six `ambitus` routines nor `exsrt_ambitus` is assembled -- an assembly-time check, so a routine moved out of the gate fails here by name |
 | `prelude_arc.asm` | Mundus | `exit=132`, `abortus 2` | retain/release, the destructor running exactly once with `rc == 0`, the atomic pair, then saturation at 2⁶⁴−1 |
@@ -304,9 +313,29 @@ growth; a size-class free list, so a released object's bytes come back only
 with `reconde` (runtime.md H3).
 
 `[UNTESTED]`: `scribe`'s partial-write loop and its `EINTR` retry,
-`scribe_octeto`'s `EINTR` and zero-return retries, and `lege_octeto`'s
-`EINTR` retry. None can be produced without a second process, which
-`tests/run.sh` does not have.
+`scribe_octeto`'s `EINTR` and zero-return retries, `lege_octeto`'s `EINTR`
+retry, and the same three paths in the bulk pair -- including
+`scribe_octetos`'s PARTIAL-WRITE loop and `lege_octetos`'s read-fully loop,
+which are the two paths those rows exist for and the two hardest to
+provoke: one needs a full pipe, the other an input delivered in pieces.
+None can be produced without a second process, which `tests/run.sh` does
+not have.
+
+`[UNTESTED]`, and it is a gap in the GOLDENS rather than in a routine: **no
+fixture in this tree can detect a regression in the float environment this
+file establishes.** `exsrt_start` loads `EXS_MXCSR` = `0x1F80` (spec §5.4 is
+SET, not assumed), and a downstream measurement -- Oligarchy's screensaver
+gate, 2026-09-27 -- ran `examples/somnium/`'s eleven rendering fixtures with
+MXCSR deliberately dirtied to FTZ|DAZ and got **byte-identical output on all
+of them**, because FTZ and DAZ only move a result on a subnormal and no
+fixture produces one. So "all seventeen goldens hold" is necessary and does
+not cover this, and a prelude edit that dropped or moved the `ldmxcsr` would
+pass the whole suite. Closing it wants either a fixture whose arithmetic
+reaches the subnormal range, or a check that reads MXCSR back rather than
+comparing bytes -- and if the latter, assert only the CONTROL bits: the
+engine raises PE on its own first multiply, so the whole register reads
+`0x1fa0` and a correct reset looks like a failure. Recorded here rather than
+fixed, because the fixture is not this change's.
 runtime.md 3 says so and this file repeats it rather than quietly implying
 coverage.
 

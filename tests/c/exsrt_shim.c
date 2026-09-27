@@ -195,6 +195,59 @@ uint64_t exsrt_lector_lege_octeto(unsigned char *lp)
     }
 }
 
+/* exsrt_scriptor_scribe_octetos(s: ptr, b: ptr, n: u64) -> u64 -- `n` bytes
+ * in as few write(2) as the kernel allows, returning the count written.
+ * `count < n` is the only failure signal.
+ *
+ * MIRRORS THE REFERENCE EXACTLY, including where the reference is awkward:
+ * a partial write advances and retries, EINTR retries, a zero-byte return
+ * retries, and ANY OTHER errno ends the loop returning WHAT WAS ALREADY
+ * WRITTEN rather than 0. That last one differs from scribe_octeto above,
+ * which returns 0 on failure, only because with one byte there is no
+ * partial. n == 0 issues no syscall.
+ *
+ * The buffer arrives as a pointer because IR 2.9 passes every aggregate that
+ * way; its extent is in the argument's TYPE and is not visible here, which
+ * is the division spec 13's EXS-E0312 paragraph describes. */
+uint64_t exsrt_scriptor_scribe_octetos(unsigned char *sp, unsigned char *b,
+                                        uint64_t n)
+{
+    ExsScriptor s;
+    uint64_t done = 0;
+    memcpy(&s, sp, sizeof s);
+    while (done < n) {
+        ssize_t w = write(s.descriptor, b + done, (size_t)(n - done));
+        if (w > 0) { done += (uint64_t)w; continue; }
+        if (w == 0) continue;
+        if (errno == EINTR) continue;
+        break;
+    }
+    return done;
+}
+
+/* exsrt_lector_lege_octetos(l: ptr, b: ptr, n: u64) -> u64 -- READS FULLY:
+ * loops until `n` bytes are in, the kernel returns 0, or a non-EINTR error
+ * arrives. Returns the count.
+ *
+ * NO 256 SENTINEL, unlike lege_octeto above, and that asymmetry is the
+ * reference's: a byte has no value left to mean "the input ended", a count
+ * has -- a short one. EOF and error stay undistinguished either way. */
+uint64_t exsrt_lector_lege_octetos(unsigned char *lp, unsigned char *b,
+                                    uint64_t n)
+{
+    ExsLector l;
+    uint64_t done = 0;
+    memcpy(&l, lp, sizeof l);
+    while (done < n) {
+        ssize_t r = read(l.descriptor, b + done, (size_t)(n - done));
+        if (r > 0) { done += (uint64_t)r; continue; }
+        if (r == 0) break;              /* end of input, never a retry */
+        if (errno == EINTR) continue;
+        break;
+    }
+    return done;
+}
+
 /* ---- the entry point --------------------------------------------------- */
 /* Every tests/ir/ fixture declares `functio @initium (ptr) -> u8`, so the
  * emitted definition is `uint64_t exs_initium(unsigned char *p0)` and its

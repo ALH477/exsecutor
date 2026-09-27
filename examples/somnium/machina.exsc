@@ -39,13 +39,24 @@ functio verbum(r: acies<u8, 17>, p: mensura) -> u32 {
         + (r[p + 3] sicut u32 sursum 24);
 }
 
-// One frame, byte by byte: 48,000 write(2) calls (somnium.exsc's header).
+// One frame, in ONE write(2) -- spec §4.6's `scribe_octetos`.
+//
+// This was a `per i in 0..48000` of `scribe_octeto`, and somnium.exsc's
+// header still explains why the frame is 160x100 rather than 320x200: at one
+// write(2) per byte, a bigger frame was unaffordable. docs/design/somnium.md
+// section 10 measured what that cost -- 16.6 to 17.4 ms a frame on the
+// reference build for SEVEN OF THE NINE somnia, whatever they computed,
+// because none of them was what the time was going on. The C build, whose
+// host buffers the frame, did the same work in 0.14 to 0.23 ms.
+//
+// The bulk row closes that. Nothing else in this file changes, and no
+// golden moves: the bytes written are the same bytes in the same order, and
+// tests/programs/somnium_*/ is what proves it rather than this comment.
+//
+// The count is still checked against 48,000 by the caller, so a short write
+// -- the only failure signal a count-returning call has -- still exits 2.
 functio scribe_tabulam(s: Scriptor, fb: acies<u8, 48000>) -> mensura {
-    mutabilis n: mensura = 0;
-    per i in 0..48000 {
-        n = n + s.scribe_octeto(fb[i]);
-    }
-    redde n;
+    redde s.scribe_octetos(fb, 48000);
 }
 
 functio machina(l: Lector, s: Scriptor) -> u8 {

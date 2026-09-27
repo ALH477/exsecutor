@@ -389,6 +389,30 @@ compiler's nine, `read` included, and would not notice an ungated one.
 through one pool, so a second `a` behind `Scriptor.a` would be unreachable;
 its mark is written down once, in `chk_row_pre_marks`.
 
+**The bulk pair, and why one byte at a time was not merely slow.** Since
+2026-09-27 §4.6 also carries `s.scribe_octetos(b, n) -> mensura` and
+`l.lege_octetos(b, n) -> mensura` — `exsrt_scriptor_scribe_octetos(s, b, n)`
+and `exsrt_lector_lege_octetos(l, b, n)`, both `(ptr ptr u64) -> u64`. The
+measurement that forced them is `docs/design/somnium.md` §10: a program
+writing a 160 × 100 rgb24 frame made 48,000 `write(2)` a frame and ran at
+16.6–17.4 ms **for seven of nine effects alike, whatever they computed**,
+because the syscalls swamped the arithmetic; after the change the same
+program runs at 0.62–22.58 ms and the spread is finally the effects. Both
+return the count, `count < n` is the only failure signal, and both are
+`[OPEN]` in `scribe`'s way until `eventus` is inhabited.
+
+Two asymmetries are deliberate and are stated so nobody reconciles them.
+`lege_octetos` **reads fully** — looping until `n` bytes are in, the input
+ends, or a non-`EINTR` error arrives — because a single `read(2)` on a pipe
+returns whatever is buffered and would push the loop into every caller. And
+it has **no 256 sentinel** where `lege_octeto` does: a byte has no value
+left to spell "the input ended" and a count has, a short one. End of input
+and error stay undistinguished in both, and both are fixed together when
+`eventus` lands. The buffer parameter is length-polymorphic
+(`&acies<u8, 0>`, admitted for prelude callees only) and the length is
+unchecked unless it is a literal — spec §13's `EXS-E0312` is that half, and
+says in its own words that the other half is not checked.
+
 **Where `Scriptor` lives, and what changes with `norma`.** Today: prelude
 assembly with an interface the checker pre-seeds — there is no module
 system, no import (spec §8.6 decision 5), and no `norma` source to compile,

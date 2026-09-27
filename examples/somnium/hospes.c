@@ -202,6 +202,66 @@ uint64_t exsrt_lector_lege_octeto(unsigned char *lp)
     return g_in[g_in_pos++];
 }
 
+/* s.scribe_octetos(b, n): the bulk pair, and on THIS host it is nearly a
+ * no-op of a change -- hospes.c already buffered a whole frame and left in
+ * one write(2), which is exactly what the reference prelude could not do and
+ * what §4.6's new rows now give it. So the interesting figure is not this
+ * function, it is that the two builds converge: docs/design/somnium.md
+ * section 10 measured the reference build 100x slower than this one on seven
+ * of nine somnia BECAUSE of the 48,000 write(2) per frame, and that gap is
+ * what the bulk rows close.
+ *
+ * Still buffered rather than written straight through, deliberately: the
+ * buffer is one frame, a caller may hand over less than a frame, and going
+ * direct here would interleave with whatever is already pending. Flushing
+ * exactly at the frame boundary is what keeps one frame one write(2). */
+uint64_t exsrt_scriptor_scribe_octetos(unsigned char *sp, unsigned char *b,
+                                        uint64_t n)
+{
+    uint64_t done = 0;
+    (void)sp;
+    while (done < n) {
+        size_t room = HOSPES_TABULA - g_ex_n;
+        size_t take = (n - done) < room ? (size_t)(n - done) : room;
+        memcpy(g_ex + g_ex_n, b + done, take);
+        g_ex_n += take;
+        done += take;
+        if (g_ex_n == HOSPES_TABULA) {
+            if (hospes_effunde() != 0) return done;
+        }
+    }
+    return done;
+}
+
+/* l.lege_octetos(b, n): READS FULLY, out of the same 65,536-byte input
+ * buffer lege_octeto above refills from -- which is what lets the 44,801-byte
+ * EXSG model arrive in three read(2) rather than 44,801. A short count is
+ * the end of input, with no 256 sentinel: see the reference prelude's own
+ * note on why a count needs none. */
+uint64_t exsrt_lector_lege_octetos(unsigned char *lp, unsigned char *b,
+                                    uint64_t n)
+{
+    ExsLector l;
+    uint64_t done = 0;
+    memcpy(&l, lp, sizeof l);
+    while (done < n) {
+        if (g_in_pos == g_in_n) {
+            ssize_t r = read(l.descriptor, g_in, sizeof g_in);
+            if (r > 0) { g_in_pos = 0; g_in_n = (size_t)r; }
+            else if (r < 0 && errno == EINTR) continue;
+            else break;                 /* end of input, or an error */
+        }
+        {
+            size_t have = g_in_n - g_in_pos;
+            size_t take = (n - done) < have ? (size_t)(n - done) : have;
+            memcpy(b + done, g_in + g_in_pos, take);
+            g_in_pos += take;
+            done += take;
+        }
+    }
+    return done;
+}
+
 /* ---- the entry point --------------------------------------------------- */
 
 uint64_t exs_initium(unsigned char *p0);

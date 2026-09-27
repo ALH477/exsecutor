@@ -496,6 +496,160 @@ bfausr_exsrt_lector_lege_octeto:
 	pop	rbp
 	ret
 
+; bfausr_exsrt_scriptor_scribe_octetos(s: ptr, b: ptr, n: u64) -> u64
+;   `s.scribe_octetos(b, n)`. `n` bytes from `b` to the Scriptor's descriptor,
+;   in ONE `write(2)` when the kernel takes them all, looping only on a
+;   partial write or EINTR. Returns the COUNT written; `count < n` is the only
+;   failure signal.
+;
+;   WHY IT IS HERE, measured and not assumed. With only `scribe_octeto`, a
+;   program writing a 160x100 rgb24 frame makes 48,000 `write(2)` calls.
+;   docs/design/somnium.md section 10 measures that at 16.6-17.4 ms a frame
+;   on this build against 0.14-0.23 ms for the same program through the C
+;   backend, whose host buffers the frame -- SEVEN OF NINE EFFECTS THERE SIT
+;   ON THAT FLOOR WHATEVER THEY COMPUTE, because none of them is what the
+;   time is going on. That 100x is this routine. It was carried as an [OPEN]
+;   in somnium.md section 9 ("a bulk-write prelude primitive, which would
+;   give the reference build what hospes.c gives the C one") before it was a
+;   number.
+;
+;   NO SYSCALL IS ADDED TO EITHER CLOSED SET. This is `write(1)` on the same
+;   descriptor `scribe_octeto` uses, inside the same `if EXS_POTESTAS_AMBITUS`
+;   gate; tools/syscall-audit.sh admits it under `ambitus` and nothing else.
+;   A bulk write is not a larger authority than a one-byte write.
+;
+;   THE BUFFER POINTER IS NOT COPIED INTO THE FRAME, and that is the
+;   difference from `scribe_octeto` above. That routine stores its byte to
+;   `[rbp - 8]` because `write` needs an ADDRESS and it was handed a value;
+;   this one is handed the address already -- IR 2.9 passes every aggregate
+;   by pointer, so `b` arrives in `rsi` pointing at the caller's `acies`.
+;   Nothing is copied and no bound is known here: the extent lives in the
+;   argument's TYPE, which the checker sees and this does not. Spec 13's
+;   EXS-E0312 paragraph is where that division is written down.
+;
+;   PARTIAL WRITES ARE REAL AND ARE THE REASON FOR THE LOOP. A `write(2)` of
+;   48,000 bytes to a pipe returns when the pipe buffer is full -- typically
+;   65,536 bytes on Linux but not contractually anything -- so a caller
+;   feeding a consumer that reads slowly WILL see short returns. Treating one
+;   as success would silently truncate a frame. The loop advances the pointer
+;   and decrements the remainder, which is `scribe`'s own arithmetic.
+;
+;   ERROR CONVENTION, `scribe`'s exactly: EINTR retries, a zero-byte return
+;   retries (nothing moved, go again), any other -errno ENDS THE LOOP AND
+;   RETURNS WHAT WAS ALREADY WRITTEN -- not 0. A partial frame followed by a
+;   closed pipe reports the partial count, because the bytes did leave. That
+;   differs from `scribe_octeto`, which returns 0 on failure, only because
+;   with one byte there is no partial. EAGAIN and SIGPIPE are `scribe`'s
+;   [OPEN] items, unchanged. The EINTR, partial-write and zero-return paths
+;   need a second process to produce and are [UNTESTED], as `scribe`'s are.
+;
+;   n == 0 issues NO syscall and returns 0. A `write` of zero bytes to a pipe
+;   is defined to do nothing, but it is still a syscall in the audit's trace
+;   and still a context switch in the loop of a caller that has nothing to
+;   say; refusing it here is cheaper than explaining it.
+;
+;   REGISTERS: rbx holds the running total across the syscall, which destroys
+;   rax, rcx and r11 (this file's header). It is callee-saved, so it is
+;   pushed; rsp stays 16-aligned across the pair of pushes.
+bfausr_exsrt_scriptor_scribe_octetos:
+	push	rbp
+	mov	rbp, rsp
+	push	rbx
+	mov	r8d, [rdi + EXS_SCRIPTOR_DESCRIPTOR]	; the fd, once
+	xor	ebx, ebx				; bytes written so far
+	test	rdx, rdx
+	jz	.done					; n == 0: no syscall
+  .loop:
+	mov	edi, r8d				; rsi and rdx are already
+							; the buffer and the
+							; remainder, advanced in
+							; place by the loop below
+	mov	eax, 1					; write -- an immediate,
+	syscall						; adjacent to its syscall
+	cmp	rax, -4096				; the error range
+	ja	.err
+	test	rax, rax				; 0 and no error: nothing
+	jz	.loop					; moved, go again
+	add	rbx, rax				; count it
+	add	rsi, rax				; advance the buffer
+	sub	rdx, rax				; and the remainder
+	jnz	.loop					; short write: keep going
+	jmp	.done
+  .err:
+	cmp	eax, -4					; -EINTR: nothing was
+	je	.loop					; written, retry
+							; any other -errno: stop
+							; and report what left
+  .done:
+	mov	rax, rbx
+	pop	rbx
+	mov	rsp, rbp
+	pop	rbp
+	ret
+
+; bfausr_exsrt_lector_lege_octetos(l: ptr, b: ptr, n: u64) -> u64
+;   `l.lege_octetos(b, n)`. Returns the COUNT read.
+;
+;   IT READS FULLY, and that is the whole design decision. A single `read(2)`
+;   on a pipe returns whatever happens to be buffered, so a routine that
+;   passed that straight back would push a retry loop into every caller and
+;   buy nothing over `lege_octeto`. This one loops until `n` bytes are in,
+;   the kernel returns 0, or a non-EINTR error arrives. A SHORT COUNT
+;   THEREFORE MEANS THE INPUT REALLY ENDED, not that it arrived in pieces --
+;   which is what makes `count < n` usable as a loop condition at all.
+;
+;   THERE IS NO 256 SENTINEL, where `lege_octeto` above has one. That routine
+;   returns a `u16` because a byte has no value left to spell "the stream
+;   ended"; a count has -- a short one. So this returns `mensura`. The
+;   asymmetry is deliberate, and interface.inc row 12 and
+;   checker/types/prim.inc's `.fn_lege_octs` both state it, so that nobody
+;   later "fixes" it into agreement with its sibling.
+;
+;   EOF AND ERROR ARE STILL NOT DISTINGUISHED, exactly as `lege_octeto`
+;   leaves them: a short count is end of input OR a broken stream, and a
+;   program cannot tell which. Same provisional bargain, same ending -- spec
+;   11's `eventus`, when it is inhabited, takes the sentinel and the short
+;   count together. A reader that loops until `count < n` will treat a broken
+;   stream as a complete one; said here because it is the one way to be
+;   caught by this.
+;
+;   A zero-length read is NOT retried: for `read` that is end of input, not
+;   `scribe`'s "nothing moved, go again". EINTR retries. EAGAIN on a
+;   non-blocking descriptor ends the read here rather than spinning, as
+;   `lege_octeto` [OPEN] does. n == 0 issues no syscall and returns 0.
+bfausr_exsrt_lector_lege_octetos:
+	push	rbp
+	mov	rbp, rsp
+	push	rbx
+	mov	r8d, [rdi + EXS_LECTOR_DESCRIPTOR]	; the fd, once
+	xor	ebx, ebx				; bytes read so far
+	test	rdx, rdx
+	jz	.done					; n == 0: no syscall
+  .loop:
+	mov	edi, r8d
+	mov	eax, 0					; read -- an immediate,
+	syscall						; adjacent to its syscall
+	cmp	rax, -4096				; the error range
+	ja	.err
+	test	rax, rax				; 0 and no error: END OF
+	jz	.done					; INPUT, never a retry
+	add	rbx, rax				; count it
+	add	rsi, rax				; advance the buffer
+	sub	rdx, rax				; and the remainder
+	jnz	.loop					; short read: keep going
+	jmp	.done
+  .err:
+	cmp	eax, -4					; -EINTR: nothing was
+	je	.loop					; read, retry
+							; any other -errno: stop
+							; and report what arrived
+  .done:
+	mov	rax, rbx
+	pop	rbx
+	mov	rsp, rbp
+	pop	rbp
+	ret
+
 end if	; EXS_POTESTAS_AMBITUS
 
 ; =============================================================================

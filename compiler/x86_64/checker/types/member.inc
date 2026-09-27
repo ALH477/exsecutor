@@ -187,6 +187,8 @@ proc __chk_ty_pre_member, chkt_wPM, chkt_tPM, chkt_mPM
 	je	.yes
 	cmp	r13, CHK_TY_PRE_SCRIBE_OCT
 	je	.yes
+	cmp	r13, CHK_TY_PRE_SCRIBE_OCTS
+	je	.yes
 	cmp	r13, CHK_TY_PRE_AD_EXITUM
 	je	.yes
 	jmp	.no
@@ -198,6 +200,8 @@ proc __chk_ty_pre_member, chkt_wPM, chkt_tPM, chkt_mPM
 	cmp	rax, r12
 	jne	.no
 	cmp	r13, CHK_TY_PRE_LEGE_OCT
+	je	.yes
+	cmp	r13, CHK_TY_PRE_LEGE_OCTS
 	je	.yes
 	cmp	r13, CHK_TY_PRE_AB_INTROITU
 	je	.yes
@@ -825,6 +829,167 @@ proc __chk_ty_borrowparam, chkt_wBP, chkt_nBP, chkt_tBP
 	return
 endp
 
+; __chk_ty_prerow(w, n) -> eax = the `CHK_TY_PRE_*` row `n` names if `n` is a
+; prelude member, else 0. The gate on the rule below, and the reason it is a
+; gate rather than a property of the type: `&acies<u8, 0>` must mean "any
+; extent" ONLY when the prelude wrote it. A user-written parameter of that
+; type keeps `__chk_ty_borrowparam`, which will accept nothing, because no
+; array literal can produce a zero-extent `acies` (`[0; 0]` is `EXS-E0308`).
+; Without this gate the amendment would hand every program unchecked length
+; polymorphism, which is not what spec §13's `EXS-E0312` paragraph licenses.
+proc __chk_ty_prerow, chkt_wPR, chkt_nPR
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [chkt_wPR]
+	mov	r12, [chkt_nPR]
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_kind
+	cmp	rax, AST_MEMBER
+	jne	.no
+	lea	rdi, [rbx + ChkTyWork.wpre]
+	mov	rsi, r12
+	call	vec_get
+	movzx	eax, byte [rax]
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
+; __chk_ty_bulkparam(w, argn, pty, lenn) -> eax = 1 if `pty` is §4.6's
+; length-polymorphic buffer parameter and `argn` has been bound to it (having
+; raised whatever it had to raise); 0 if `pty` is not that parameter at all
+; and the caller should carry on to `__chk_ty_borrowparam`.
+;
+; `lenn` is the argument that FOLLOWS the buffer -- the `n` of
+; `scribe_octetos(b, n)` -- or 0 when there is none. It is passed in because
+; the extent lives on the buffer's type and the length lives on the next
+; argument, and `EXS-E0312` is the one place the two meet.
+;
+; THIS IS `__chk_ty_borrowparam` WITH THE EXTENT COMPARISON REMOVED, and
+; nothing else. That routine's `.isagg` requires the argument to BE the
+; borrowed-of type, which is exactly what a prelude row cannot ask for: an
+; `acies`'s extent is part of its type, so one row would serve one buffer
+; size. Here the ELEMENT must match and the extent may be anything. Every
+; other rule it applies is applied here too -- ADR 0016's `mutabilis` root
+; for a mutable borrow, `EXS-E0306` and not also `EXS-E0303`, and above all
+; THE ARGUMENT IS NOT RETYPED. Its `ty` stays `acies<u8, N>`; rewriting it to
+; the borrow's id would make `lwr_ty_scalar` true for it and emit a
+; `lwr_load` of a `ptr` out of the array's first eight bytes, which is
+; `__chk_ty_borrowparam`'s own recorded miscompile.
+;
+; WHAT IT CANNOT CHECK, said here as well as in §13 because this is where a
+; reader will look for it: `n` is related to the buffer's extent by nothing
+; in the type system. A literal `n` past the end is `EXS-E0312`; any other
+; expression is UNCHECKED and will read or write past the buffer. The fix is
+; `octeti` as a real byte view (spec §11), not a cleverer rule here.
+proc __chk_ty_bulkparam, chkt_wBK, chkt_nBK, chkt_tBK, chkt_lBK
+	uses	rbx, r12, r13, r14
+	locals
+		slot chkt_iBK, dq	; the borrowed-of `acies<u8, 0>`
+		slot chkt_eBK, dq	; its element type
+		slot chkt_mBK, dq	; the mutable bit
+		slot chkt_aBK, dq	; the argument's own type
+	endl
+	mov	rbx, [chkt_wBK]
+	mov	r12, [chkt_nBK]
+	mov	r13, [chkt_tBK]
+	test	r13, r13
+	jz	.no
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	esi, r13d
+	call	ast_type_at
+	cmp	byte [rax + AstType.kind], AST_TY_BORROW
+	jne	.no
+	mov	ecx, [rax + AstType.a]
+	mov	[chkt_iBK], rcx
+	movzx	ecx, byte [rax + AstType.sign]
+	mov	[chkt_mBK], rcx
+	; The borrowed-of must be an `acies` OF EXTENT ZERO. That zero is the
+	; marker and the only one: `checker/types/prim.inc`'s
+	; `__chk_ty_bulkbuf` is the sole thing in the tree that builds it.
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	esi, [chkt_iBK]
+	call	ast_type_at
+	cmp	byte [rax + AstType.kind], AST_TY_ACIES
+	jne	.no
+	cmp	dword [rax + AstType.width], 0
+	jne	.no
+	mov	ecx, [rax + AstType.a]
+	mov	[chkt_eBK], rcx
+	; Type the argument and require an `acies` of the SAME ELEMENT. The
+	; extent is free; the element is not, so `acies<u16, 8>` is still
+	; `EXS-E0303` from `__chk_ty_same` and not a silently reinterpreted
+	; buffer.
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_expr
+	mov	rdi, rbx
+	mov	rsi, rax
+	mov	rdx, r12
+	call	__chk_ty_settled
+	mov	[chkt_aBK], rax
+	test	rax, rax
+	jz	.no
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	esi, [chkt_aBK]
+	call	ast_type_at
+	cmp	byte [rax + AstType.kind], AST_TY_ACIES
+	jne	.no
+	mov	ecx, [rax + AstType.a]
+	cmp	rcx, [chkt_eBK]
+	jne	.no
+	mov	r14d, [rax + AstType.width]	; the argument's extent
+	; `&mutabilis` wants a `mutabilis` root (ADR 0016 decision 3).
+	cmp	qword [chkt_mBK], 0
+	je	.len
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_mutroot
+	test	eax, eax
+	jnz	.len
+	mov	rdi, rbx
+	mov	rsi, 306
+	mov	rdx, r12
+	call	__chk_ty_raise
+  .len:
+	; EXS-E0312: the half of the length that a compiler can check. The
+	; diagnostic is at the LENGTH, not at the buffer -- the length is the
+	; argument that is wrong, and it is the one the reader must edit.
+	cmp	qword [chkt_lBK], 0
+	je	.ok
+	mov	rdi, rbx
+	mov	rsi, [chkt_lBK]
+	call	__chk_ty_kind
+	cmp	rax, AST_LIT
+	jne	.ok			; not a literal: unchecked, by §13
+	mov	rdi, rbx
+	mov	rsi, [chkt_lBK]
+	call	__chk_ty_node
+	movzx	ecx, word [rax + AstNode.aux]
+	cmp	ecx, AST_LIT_INT
+	jne	.ok
+	mov	rdi, rbx
+	mov	rsi, [chkt_lBK]
+	call	chk_ty_litval
+	test	rdx, rdx
+	jz	.ok			; no value to compare: say nothing
+	cmp	rax, r14
+	jbe	.ok			; `n == extent` is the whole buffer
+	mov	rdi, rbx
+	mov	rsi, 312
+	mov	rdx, [chkt_lBK]
+	call	__chk_ty_raise
+  .ok:
+	mov	eax, 1
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
 ; __chk_ty_ismutborrow(w, ty) -> eax = 1 if `ty` is `&mutabilis T`.
 proc __chk_ty_ismutborrow, chkt_wMB, chkt_tMB
 	uses	rbx
@@ -888,6 +1053,10 @@ proc __chk_ty_call, chkt_wCL, chkt_nCL
 		slot chkt_mCL, dq	; the mutable-borrow argument found, or 0
 		slot chkt_kCL, dq	; the parameter ordinal of the argument
 					; being checked (spec §4.2's `sicut`)
+		slot chkt_lCL, dq	; the argument AFTER this one, or 0 --
+					; §4.6's bulk buffer needs it, because
+					; the extent is on the buffer's type
+					; and the length is the next argument
 	endl
 	mov	rbx, [chkt_wCL]
 	mov	r12, [chkt_nCL]
@@ -1069,6 +1238,38 @@ proc __chk_ty_call, chkt_wCL, chkt_nCL
 	add	rsi, rax
 	call	ast_extra_at
 	mov	r14, rax		; the parameter type id
+	; ---- spec §4.6: the bulk pair's length-polymorphic buffer -----------
+	; Tried BEFORE the ordinary borrow rule, and only for a prelude
+	; callee. `__chk_ty_bulkparam` returns 0 for every parameter that is
+	; not `&acies<u8, 0>`, so a prelude call with ordinary parameters
+	; falls straight through to the line this block used to be.
+	mov	rdi, rbx
+	mov	rsi, [chkt_fCL]
+	call	__chk_ty_prerow
+	test	eax, eax
+	jz	.arg_borrow
+	; the next WRITTEN argument, which is the length when this is a buffer
+	mov	rax, [chkt_iCL]
+	inc	rax
+	cmp	rax, [chkt_cCL]
+	jae	.arg_nolen
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_oCL]
+	add	rsi, rax
+	call	ast_extra_at
+	mov	[chkt_lCL], rax
+	jmp	.arg_bulk
+  .arg_nolen:
+	mov	qword [chkt_lCL], 0
+  .arg_bulk:
+	mov	rdi, rbx
+	mov	rsi, r13
+	mov	rdx, r14
+	mov	rcx, [chkt_lCL]
+	call	__chk_ty_bulkparam
+	test	eax, eax
+	jnz	.arg_next
+  .arg_borrow:
 	mov	rdi, rbx
 	mov	rsi, r13
 	mov	rdx, r14

@@ -645,6 +645,17 @@ chk_row_pre_marks:
 				;   fewer row to cross-read it against.
 	db 0			; 10 `functio ab_introitu(a: ambitus) -> Lector`
 	db 0			; 11 `functio lege_octeto(l: Lector) -> u16`
+	db 0			; 12 `functio scribe_octetos(s: Scriptor, …)`
+	db 0			; 13 `functio lege_octetos(l: Lector, …)`
+				;   Both 0 for rows 6, 8, 10 and 11's reason:
+				;   the authority is the RECEIVER's mark (spec
+				;   §4.2), drawn through `Scriptor`'s row 1 and
+				;   `Lector`'s row 9, so the function rows
+				;   themselves bear nothing. A bulk write is
+				;   not a larger authority than a one-byte
+				;   write -- it is the same `write(1)` on the
+				;   same descriptor -- and this byte is where
+				;   that would have to be said if it were.
 assert $ - chk_row_pre_marks = CHK_TY_PRE_COUNT
 
 ; ---- spec §4.3: the atoms a TYPE bears -------------------------------------

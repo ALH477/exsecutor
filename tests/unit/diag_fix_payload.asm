@@ -332,6 +332,18 @@ segment readable writeable
 			;   different storage, or to restructure so one call does not
 			;   both read and write it. Neither is derivable (ADR 0016)
 	dd	311, 0	; EXS-E0311
+	dd	312, 0	; EXS-E0312 -- the bulk pair's length. NO FIX, and the
+			;   reason is worth writing down rather than leaving
+			;   as another zero: the compiler knows the buffer's
+			;   extent and the literal that overran it, so a fix
+			;   of "use the extent" LOOKS mechanically derivable.
+			;   It is not. A caller writing `scribe_octetos(b, 9)`
+			;   over an 8-byte buffer may have meant a bigger
+			;   buffer, not a shorter write, and clamping the
+			;   length silently truncates their output. §8.3
+			;   scopes fixes to edits that are derivable; this one
+			;   is a guess between two edits that compute
+			;   different things.
 	dd	321, 0	; EXS-E0321
 	dd	322, 0	; EXS-E0322
 	dd	332, 0	; EXS-E0332
