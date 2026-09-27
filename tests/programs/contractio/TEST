@@ -95,10 +95,26 @@
 # is the rule that forbids it. Two ulps of total spread is a small
 # enough margin that a contracted tree would be caught right here.
 #
-# NOT YET `cross=yes`. It could not be before 2026-09-27, because the
-# cross phase emits C too and the C backend refused the module; that
-# obstacle is gone, but a big-endian emulated run is a different
-# measurement from a host build and is opted into in its own change.
-# §14 entry 28's "byte-identical cross-run big-endian" clause stays
-# `[UNTESTED]` until it is.
-TEST: expect-exit=0 stdin=tests/data/contractio_viginti.bin
+# `cross=yes` -- AND BIG-ENDIAN IS WHERE THE FOLD ORDER STOPS BEING AN
+# x86 FACT. The cross phase emits this unit for `--hospes
+# mips64-none-o64`, cross-compiles it to big-endian MIPS-III with 32-bit
+# addresses and runs it under `qemu-mipsn32`, against these same 24
+# bytes. Two things differ on that row and neither may move a bit of the
+# output: `mensura` is 32 bits there and 64 on the host, so the emitted
+# unit's index arithmetic is a DIFFERENT call from the same source line
+# (`exsi_*(…, 32)` against `exsi_*(…, 64)`, numerus_decimalis/'s finding);
+# and clang soft-lowers every `f32` operation per operation, because
+# MIPS-III has no SSE2 to lower to. The same 24 bytes on both rows is
+# therefore the evidence that spec 5.4's group-and-fold order is a
+# property of the LOWERING, which is what §14 entry 28's cross clause
+# asserts and what ADR 0012's "the reference lowering is the definition"
+# needs in order to mean anything portable.
+#
+# It could not be opted in before 2026-09-27: the cross phase goes
+# through `--emitte c` as well (`exsc --hospes mips64-none-o64 --emitte
+# c`, measured then: exit 4, the identical `red.F` message), so the key
+# would have produced a phase failure rather than a run. Measured
+# 2026-09-27, with the reduction lowering in: exit 0, 24 bytes, identical
+# to expected.out -- the oracle's file. That retires the last `[UNTESTED]`
+# leg of §14 entry 28.
+TEST: expect-exit=0 stdin=tests/data/contractio_viginti.bin cross=yes

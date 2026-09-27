@@ -644,8 +644,8 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   the C backend's output must agree with the reference's on stdout bytes, exit
   status and trap-or-not, across gcc and clang at `-O0` and `-O2`, every one
   under `-fsanitize=undefined -fno-sanitize-recover=all`. They agree
-  everywhere; zero sanitizer reports. And a **cross phase**: fourteen of those
-  directories [12] are also emitted for `--hospes mips64-none-o64`,
+  everywhere; zero sanitizer reports. And a **cross phase**: fifteen of those
+  directories [13] are also emitted for `--hospes mips64-none-o64`,
   cross-compiled to big-endian MIPS-III with 32-bit addresses, and **run
   under emulation** against the same three observables — the first
   big-endian execution of anything this compiler produces, now carried by
@@ -669,7 +669,7 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   so that any floor moving fails this bullet with it:
 
 ```bash truth:id=suite-floors truth:kind=command truth:expect_exit=0 truth:expect_stdout=8
-grep -cE "FLOOR:-(193|78|128|236|59|236|12|6)\}" tests/run.sh
+grep -cE "FLOOR:-(193|78|128|236|59|236|13|6)\}" tests/run.sh
 ```
 
 - `tests/run.sh --device=amdgcn` (measured 2026-09-21, not part of the

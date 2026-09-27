@@ -593,7 +593,10 @@ is why spec §14 entry 28 could not claim what entries 25–27 claim. The seven
 `c-emit-exit=4` keys on `tests/ir/red_*.ir` were the standing measurement of
 it; they are gone, the seven fixtures are built four ways and agree, and
 `tests/programs/contractio/` -- which had to declare the refusal with
-`c-exsc-exit=4` -- is an eligible differential directory instead.
+`c-exsc-exit=4` -- is an eligible differential directory instead, and as of
+2026-09-27 a `cross=yes` one: the same 24 bytes on a big-endian MIPS-III run
+with 32-bit `mensura` and clang's soft `f32`, which is the last leg spec §14
+entry 28 was waiting on.
 `red_arborea_f32.ir` is the sharpest of the seven: two bit patterns nine ulps
 apart, one per shape, which both backends now have to produce.
 

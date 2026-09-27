@@ -269,7 +269,19 @@ DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-236}"
 # says its `atque` masks and `deorsum`/`sursum` shifts carry no byte-order
 # assumption -- the encoder reassembles 24-bit groups arithmetically, so a
 # big-endian run agreeing is the evidence that it never leaned on the host's.
-CROSS_PROGRAM_FLOOR="${CROSS_PROGRAM_FLOOR:-12}"
+# 12 -> 13 is contractio/ (cross=yes, §14 entry 28) -- the first big-endian run
+# of a DECLARED REDUCTION SHAPE. `mensura` is 32 bits on the cross row and 64 on
+# the host, so the unit's index arithmetic is a different call from the same
+# source line, and clang soft-lowers the f32 folds per operation on MIPS-III:
+# the same 24 bytes on both rows says the FOLD ORDER is a property of the
+# lowering and not of SSE2. It could not be opted in before 2026-09-27, because
+# the cross phase emits C and the C backend refused the three reduction opcodes.
+# Note what this floor is NOT: the discovered count. The phase finds 15
+# directories with this addition (14 before it) and the floor is a +1
+# re-baseline, which is the drift this tree's convention licenses -- a floor
+# rises when someone raises it, never automatically. Whoever re-baselines the
+# two nobody bumped for should do it as its own change and say so.
+CROSS_PROGRAM_FLOOR="${CROSS_PROGRAM_FLOOR:-13}"
 
 # The device phase's floor (Stage 6 G2): programs carrying `device=amdgcn`,
 # each built as one translation unit with tests/c/exsrt_shim_amdgpu.c and
