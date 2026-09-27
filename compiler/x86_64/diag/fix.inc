@@ -248,6 +248,16 @@ endp
 ; a loop or dropping a capability each change what the program computes, which
 ; a fix-it must never do quietly.
 diag_fixreq_codes:
+	dd	351			; EXS-E0351  `discerne` not exhaustive -- the missing `casus`
+				;   arms, in the sum type's declaration order. §8.5 promised
+				;   this edit ("lists the missing cases and ships the edit")
+				;   before §13 had a code to carry it, so the promise is
+				;   older than the entry. Only the SUM-TYPE half is
+				;   derivable; the scalar half's `aliter` body is the
+				;   author's (docs/design/sum-types.md D3). Listed anyway:
+				;   this predicate answers "may this code carry a fix", and
+				;   `diag_fix_required` is a predicate, not an enforcement
+				;   point (this file's header).
 	dd	421			; EXS-E0421  undeclared capability
 	dd	422			; EXS-E0422  capability bound twice -- delete the second binding
 	dd	423			; EXS-E0423  row item malformed -- delete the item

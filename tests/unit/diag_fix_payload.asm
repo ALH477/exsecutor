@@ -342,6 +342,14 @@ segment readable writeable
 			;   with an explicit accumulator, which changes what the
 			;   program computes.
 	dd	343, 0	; EXS-E0343 -- no fix: a reduction shape is a restructure.
+	dd	351, 1	; EXS-E0351 -- a fix, and §8.5 promised it before §13 had the
+			;   code: the missing `casus` arms, in the sum type's own
+			;   declaration order, which is derivable from the
+			;   enumeration. ONE FLAG, TWO CASES: the scalar-scrutinee
+			;   half of docs/design/sum-types.md D3 has no derivable
+			;   edit -- the `aliter` body is the author's -- so this 1
+			;   is "can carry a fix", not "always does". Nothing emits
+			;   it yet; the code exists so D3 can be implemented.
 	dd	421, 1	; EXS-E0421
 	dd	422, 1	; EXS-E0422 -- delete the shadowing binding: derivable.
 	dd	423, 1	; EXS-E0423 -- delete the malformed row item: derivable.

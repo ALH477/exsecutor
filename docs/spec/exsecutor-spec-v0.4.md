@@ -1471,6 +1471,23 @@ document.
 the missing cases* and ships the edit — mechanically derivable, which is exactly
 the class §8.3 says is suited to `exsc emenda`.
 
+`[OPEN]` **— and this sentence has never been true of the implementation.**
+`discerne` compiles, lowers and runs (`tests/programs/discerne/`, thirty checks
+through `-o` on both backends), and it is a comparison chain with a
+fall-through: with no `aliter` and no matching arm, the chain's last false edge
+goes to the join and **nothing runs**. That fixture's header pins the behaviour
+and records the contradiction rather than papering over it, which was the right
+call — exhaustiveness needs an enumeration §8.6 lists as `[OPEN]`, and until
+2026-09-26 §13 had no code to report a missing arm with, so nothing could have
+refused one. `EXS-E0351` now exists for it (§13), and
+`docs/design/sum-types.md` is the design that would make the sentence true: D1
+declares the enumeration, D2 gives constructor patterns, and **D3 is the rule**
+— a sum-typed scrutinee is exhaustive when every variant is covered or
+`aliter` is present, and a scalar scrutinee, whose value space is 2^N,
+**requires** `aliter`. That design is design only; its §6 states what landing
+D3 costs, which is four of those thirty checks, since they exist precisely to
+pin the behaviour D3 outlaws.
+
 ### Iteration
 
 ```exsecutor
@@ -1888,7 +1905,9 @@ Terminals are §8.4's tokens; `IDENT` `INT` `STRING` are the lexer's classes.
     RowItem       ::= Path | 'sicut' IDENT
     StructDecl    ::= 'structura' IDENT [GenericParams] '{' Field* '}'
     Field         ::= IDENT ':' Type
-    TypeDecl      ::= 'typus' IDENT [GenericParams] '=' Type ';'   (* sum types [OPEN] *)
+    TypeDecl      ::= 'typus' IDENT [GenericParams] '=' Type ';'   (* sum types [OPEN];
+                                                      designed, unimplemented:
+                                                      sum-types.md D1 *)
     InterfaceDecl ::= 'interfacies' Path [GenericParams]
                       ( '{' Member* '}'
                       | 'in' Type [DeclRow] '{' FunctionDecl* '}' )
@@ -1909,7 +1928,8 @@ Terminals are §8.4's tokens; `IDENT` `INT` `STRING` are the lexer's classes.
     Contrahe      ::= 'contrahe' IDENT ':' ArithOp
     MatchStmt     ::= 'discerne' ExprNS '{' MatchArm* ['aliter' Block] '}'
     MatchArm      ::= 'casus' Pattern Block
-    Pattern       ::= Literal | Path                         (* constructors [OPEN] *)
+    Pattern       ::= Literal | Path                         (* constructors [OPEN];
+                                                      sum-types.md D2 *)
 
     Expr          ::= Or           (* ExprNS: identical, level-1 '{' suffix disabled *)
     Or            ::= And ('vel' And)*
@@ -2436,6 +2456,15 @@ A dependency that gains `rete` in a new version is a one-line diff in a checked-
 - Human formatting requires `sermo`, always.
 - Paths are an abstract type with `hostPlatform`-dependent semantics, not strings.
 - Time is a capability (`horologium`); time zones are data.
+- **`eventus`'s spellings below are one type parameter short.**
+  `docs/design/sum-types.md` D5 declares it `eventus<T, E>` and deliberately
+  refuses a defaulted second parameter, because defaulted type parameters do
+  not exist in §7 and inventing them as a side effect of declaring a sum type
+  is a second feature the first one does not need. So `eventus<mensura>` below,
+  §4.6's `eventus<u8>`, and §5.1's bare `eventus` all become
+  `eventus<…, erratum>` when the syntax lands. They are `[OPEN]` already, which
+  is why this is a respelling and not a broken promise — recorded here so that
+  no fixture is written against the short form.
 - **I/O reports failure as `eventus`; a count is never silently short.** A closed descriptor is discovered at the write, which a bare `mensura` cannot report, so `Scriptor.scribe` returns `eventus<mensura>` (`docs/design/runtime.md`, finding 10); `examples/imprime.exsc` and §14 entry 12 write `-> mensura` and are `[OPEN]` until `eventus` has its syntax. `Lector.lege_octeto` (§4.6) is provisional the same way: its `-> u16` carries 256 for end of input and for an error alike (`tests/unit/prelude_lege_octeto.asm` pins both), and becomes `-> eventus<u8>` when the syntax exists.
 - Grapheme segmentation ships in the core, not a third-party package. This was Rust's mistake.
 - **The Unicode data version is a content-addressed dependency** of every `ego` transitively using text. `plica_unicode` is stable only against a pinned table.
@@ -2538,6 +2567,7 @@ Scratch work without ambient authority: `exsc curre --potestates omnes scratch.e
 | `EXS-E0341` | reduction accumulator read inside its own body |
 | `EXS-E0342` | `rumpe` inside an iteration carrying a `contrahe` |
 | `EXS-E0343` | reduction shape malformed |
+| `EXS-E0351` | `discerne` is not exhaustive |
 | `EXS-E0421` | undeclared capability (atom or row) |
 | `EXS-E0422` | capability bound twice in one scope |
 | `EXS-E0423` | capability row item malformed |
@@ -2582,6 +2612,35 @@ had a code to be reported with. Both are `03xx` because they are semantic
 rules about a §5.x construct, alongside `EXS-E0311`'s `textus` index and
 `EXS-E0332`'s branded offsets. Neither carries a machine-applicable fix: the
 edit in both cases is a restructure that changes what the program computes.
+
+`EXS-E0351` closes a gap §8.5 opened and is `03xx` on the same reasoning as
+`EXS-E0341` above: a semantic rule about a §8.x construct. §8.5 has said since
+it was written that `discerne` is "**Exhaustive, with no fallthrough**" and
+that "a missing arm is a diagnostic that *lists the missing cases* and ships
+the edit" — **and there was no code to report it with, so nothing ever
+refused one.** `tests/programs/discerne/`'s header records the contradiction
+in writing and pins the actual behaviour (a `discerne` with no `aliter` and no
+matching arm runs nothing and falls to the join), which is the honest thing to
+have done and is not the language §8.5 describes.
+
+It takes `035x` rather than `0344` because §13's `03xx` groups by the
+construct a rule belongs to — `0301`–`0311` general typing, `0321`–`0322`
+`@transitus`, `0332` branded offsets, `0341`–`0343` the reductions — and
+patterns are a fourth construct, so the reductions keep the rest of their
+decade. It is **one** code and not four: `docs/design/sum-types.md` D2 and D4
+reuse `EXS-E0301`, `E0302`, `E0303`, `E0304` and `E0307` for unknown variant
+names, variant/constant collisions, pattern type mismatches, constructor arity
+and a misplaced `?`, on the argument §13 already records for `EXS-E0510`:
+the same class of mistake keeps its code, differing only in where it was
+written.
+
+This amendment lands **before** the checker work, not after it, because
+CLAUDE.md forbids inventing a code and §13 is the only source — the same
+ordering ADR 0010's profile codes needed and did not get for some time. The
+design it serves is `docs/design/sum-types.md`, which is **design only**: the
+code exists here so that D3 can be implemented, and until it is implemented
+nothing emits it. A registered code with no emitter is the state
+`EXS-E0601`–`EXS-E0603` are already in, for the same documented reason.
 
 `08xx` is the `certus` profile (`docs/design/profile-certus.md`, ADR 0010).
 The grouping is the profile's own section structure, not an invention:
