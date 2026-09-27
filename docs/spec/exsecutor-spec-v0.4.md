@@ -2029,9 +2029,12 @@ Terminals are §8.4's tokens; `IDENT` `INT` `STRING` are the lexer's classes.
     RowItem       ::= Path | 'sicut' IDENT
     StructDecl    ::= 'structura' IDENT [GenericParams] '{' Field* '}'
     Field         ::= IDENT ':' Type
-    TypeDecl      ::= 'typus' IDENT [GenericParams] '=' Type ';'   (* sum types [OPEN];
-                                                      designed, unimplemented:
-                                                      sum-types.md D1 *)
+    TypeDecl      ::= 'typus' IDENT [GenericParams] '=' (SumBody | Type) ';'
+    SumBody       ::= Variant (',' Variant)*                 (* sum-types.md D1: parsed,
+                                                      built and laid out;
+                                                      constructors, patterns,
+                                                      typing, lowering [OPEN] *)
+    Variant       ::= 'casus' IDENT ['(' Type (',' Type)* ')']
     InterfaceDecl ::= 'interfacies' Path [GenericParams]
                       ( '{' Member* '}'
                       | 'in' Type [DeclRow] '{' FunctionDecl* '}' )
@@ -2217,18 +2220,27 @@ refusing symbolic comparisons — is what makes that last one possible.
   `Path '(' IDENT (',' IDENT)* ')'` to `Pattern` on a one-token peek at `(`.
   This bullet's prediction held: the peek after `typus IDENT [GenericParams]
   '='` is one token, at `casus`, which no enclosing production can want.
-  **What is implemented is the representation and the layout, and nothing
-  above them.** The tree has the kinds (`AST_SUMBODY`, `AST_VARIANT`,
-  `AST_D_VARIANT`, `AST_TY_SUM`, `compiler/x86_64/ast/kinds.inc`) and pass 4
-  lays a sum out by that document's D6 — the tag at byte 0, the variant's
-  index in declaration order, one byte up to 256 variants; then the widest
-  payload, packed; alignment 1; `:nativus`, so a sum on the wire is
-  `EXS-E0321` through §5.2's existing rule — measured by
-  `tests/unit/chk_row_layout_sum.asm` over hand-built trees, because that
-  document's §6 required the layout to be pinned before any grammar could
-  produce one. Still `[OPEN]` as a claim about the language: no grammar, no
-  checker rule and no lowering exists, and §7 there lists the fixtures that
-  would retire it. Recursive sum types (pass 4 breaks the cycle at width 0
+  **What is implemented is the grammar, the representation and the layout,
+  and nothing above them.** `TypeDecl` above parses `SumBody` on that one
+  peek (`compiler/x86_64/cst/parse.inc`'s `__cst_sum_body`;
+  `tests/unit/cst_typus_sum.asm`), the tree has the kinds (`AST_SUMBODY`,
+  `AST_VARIANT`, `AST_D_VARIANT`, `AST_TY_SUM`,
+  `compiler/x86_64/ast/kinds.inc`) and pass 4 lays a sum out by that
+  document's D6 — the tag at byte 0, the variant's index in declaration
+  order, one byte up to 256 variants; then the widest payload, packed;
+  alignment 1; `:nativus`, so a sum on the wire is `EXS-E0321` through
+  §5.2's existing rule — measured by `tests/unit/chk_row_layout_sum.asm`
+  over hand-built trees, because that document's §6 required the layout to
+  be pinned before any grammar could produce one; pass 2 types the
+  declaration as its own nominal sum and pass 4 lays it out from source
+  (`tests/unit/chk_ty_typus_sum.asm`, which also pins that a recursive sum
+  is refused as `EXS-E0303` — class C, whichever `typus` form spells the
+  infinite type — and that a generic `typus`'s parameters do not resolve in
+  pass 1, on the alias form too, which `[GenericParams]` above has admitted
+  all along and nothing in the corpus had ever exercised). Still `[OPEN]`
+  as a claim about the language: no constructor or pattern exists, a
+  variant's declaration has no type, and nothing lowers; §7 there lists the
+  fixtures that would retire it. Recursive sum types (pass 4 breaks the cycle at width 0
   and does not diagnose it; the types pass must), nested patterns, range
   patterns, `?`'s error conversion and the unreachable-arm rule are each
   deferred there by name rather than folded in.

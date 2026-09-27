@@ -3584,9 +3584,15 @@ proc __ast_w_namety, w, red, akind, dkind, required
 	return
 endp
 
-; `TypeDecl ::= 'typus' IDENT [GenericParams] '=' Type ';'`. Whether `typus`
-; makes an alias or a new type is `[OPEN]` (typed-ast.md section 2.5); the
-; tree records what was written either way.
+; `TypeDecl ::= 'typus' IDENT [GenericParams] '=' (SumBody | Type) ';'`.
+; Whether an ALIAS `typus` makes an alias or a new type is `[OPEN]`
+; (typed-ast.md section 2.5); the tree records what was written either way.
+; A SUM `typus` (docs/design/sum-types.md D1) puts its `SumBody` in `Typus.a`
+; where the alias puts its type node -- the child's kind is the discriminator,
+; and there is no `aux` bit to fall out of step with it. The variants are
+; walked with the walk's parent set to this declaration, so each
+; `AST_D_VARIANT` is parented to its `typus` (D2: a variant is a name in the
+; scope of its type).
 proc __ast_w_typus, w, red
 	uses	rbx, r12, r13, r14
 	locals
@@ -3629,6 +3635,19 @@ proc __ast_w_typus, w, red
   .no_g:
 	mov	rdi, rbx
 	mov	rsi, r12
+	mov	rdx, CST_SUM_BODY
+	lea	rcx, [wtd_sub]
+	call	__ast_w_kidk
+	test	eax, eax
+	jz	.alias
+	mov	rdi, rbx
+	lea	rsi, [wtd_sub]
+	call	__ast_w_node			; the `SumBody`, variants and all
+	mov	[wtd_ty], rax
+	jmp	.no_ty
+  .alias:
+	mov	rdi, rbx
+	mov	rsi, r12
 	mov	rdx, CST_TYPE
 	lea	rcx, [wtd_sub]
 	call	__ast_w_kidk
@@ -3663,6 +3682,59 @@ proc __ast_w_typus, w, red
 	call	ast_node_cd
 	mov	rdi, [rbx + AstWalk.ast]
 	mov	rsi, [wtd_dec]
+	mov	rdx, r14
+	call	ast_decl_node
+	mov	rax, r14
+	return
+endp
+
+; `Variant ::= 'casus' IDENT ['(' Type (',' Type)* ')']` (sum-types.md D1).
+; The declaration is pushed before the payload types are walked, as
+; `__ast_w_namety` does for a field, and it takes the walk's parent, which is
+; the `typus` declaration for the whole of `__ast_w_typus`'s child walk.
+; `Variant.a` is the name, `b`/`c` the payload TYPE nodes in source order (an
+; empty list for a payload-less variant), `d` the declaration.
+proc __ast_w_variant, w, red
+	uses	rbx, r12, r13, r14
+	locals
+		slot wvr_dec, dq
+		slot wvr_off, dq
+		slot wvr_cnt, dq
+	endl
+	mov	rbx, [w]
+	mov	r12, [red]
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__ast_w_name
+	mov	r13, rax
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, AST_D_VARIANT
+	xor	rcx, rcx
+	mov	r8, r13
+	call	__ast_w_decl
+	mov	[wvr_dec], rax
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, CST_TYPE
+	call	__ast_w_list
+	mov	[wvr_off], rax
+	mov	[wvr_cnt], rdx
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, AST_VARIANT
+	xor	rcx, rcx
+	mov	r8, r13
+	mov	r9, [wvr_off]
+	call	__ast_w_mk
+	mov	r14, rax
+	mov	rdi, [rbx + AstWalk.ast]
+	mov	rsi, r14
+	mov	rdx, [wvr_cnt]
+	mov	rcx, [wvr_dec]
+	call	ast_node_cd
+	mov	rdi, [rbx + AstWalk.ast]
+	mov	rsi, [wvr_dec]
 	mov	rdx, r14
 	call	ast_decl_node
 	mov	rax, r14
@@ -4683,6 +4755,10 @@ proc __ast_w_node, w, red
 	je	.field
 	cmp	r13, CST_TYPE_DECL
 	je	.typus
+	cmp	r13, CST_SUM_BODY
+	je	.sumbody
+	cmp	r13, CST_VARIANT
+	je	.variant
 	cmp	r13, CST_INTERFACE_DECL
 	je	.iface
 	cmp	r13, CST_MEMBER
@@ -4937,6 +5013,18 @@ proc __ast_w_node, w, red
 	mov	rdi, rbx
 	mov	rsi, r12
 	call	__ast_w_typus
+	return
+  .sumbody:
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, AST_SUMBODY
+	mov	rcx, CST_VARIANT
+	call	__ast_w_listnode
+	return
+  .variant:
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__ast_w_variant
 	return
   .iface:
 	mov	rdi, rbx

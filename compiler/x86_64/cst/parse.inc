@@ -4837,8 +4837,11 @@ proc __cst_struct_decl, p
 	return
 endp
 
-; __cst_type_decl(p) -- `'typus' IDENT [GenericParams] '=' Type ';'`. Sum types
-; are `[OPEN]`.
+; __cst_type_decl(p) -- `'typus' IDENT [GenericParams] '=' (SumBody | Type) ';'`
+; (spec §8.6 as amended by docs/design/sum-types.md D1). One token decides
+; which: `casus` after `=` can belong to no enclosing production, so the peek
+; is §8.6 decision 6's shape -- the one that gave `refero <` its production --
+; and the alias form is untouched by it.
 proc __cst_type_decl, p
 	uses	rbx, r12
 	locals
@@ -4864,12 +4867,127 @@ proc __cst_type_decl, p
 	mov	esi, PUN_EQ
 	call	__cst_xpun
 	mov	rdi, rbx
+	mov	esi, KW_CASUS
+	call	__cst_kw
+	test	eax, eax
+	jnz	.sum
+	mov	rdi, rbx
 	call	__cst_type
+	jmp	.semi
+  .sum:
+	mov	rdi, rbx
+	call	__cst_sum_body
+  .semi:
 	mov	rdi, rbx
 	mov	esi, PUN_SEMI
 	call	__cst_xpun
 	mov	rdi, [rbx + CstParser.tree]
 	mov	esi, CST_TYPE_DECL
+	mov	rdx, r12
+	call	cst_close
+	return
+endp
+
+; __cst_sum_body(p) -- `SumBody ::= Variant (',' Variant)*` (sum-types.md D1).
+; Entered with the cursor ON `casus`. A comma commits to another variant:
+; `__cst_variant` reports the missing `casus` itself, so a trailing comma is
+; one diagnostic at the token after it, not a silent acceptance. `,` and not
+; `|`, for the reason D1 gives: `|` is not a §8.4 token, and shifts stayed
+; words rather than become `<<`.
+proc __cst_sum_body, p
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [p]
+	mov	rdi, [rbx + CstParser.tree]
+	call	cst_open
+	mov	r12, rax
+  .variant:
+	mov	rdi, rbx
+	call	__cst_variant
+	mov	rdi, rbx
+	mov	esi, PUN_COMMA
+	call	__cst_pun
+	test	eax, eax
+	jz	.close
+	mov	rdi, rbx
+	call	__cst_bump
+	jmp	.variant
+  .close:
+	mov	rdi, [rbx + CstParser.tree]
+	mov	esi, CST_SUM_BODY
+	mov	rdx, r12
+	call	cst_close
+	return
+endp
+
+; __cst_variant(p) -- `Variant ::= 'casus' IDENT ['(' Type (',' Type)* ')']`.
+; The payload list is peeked on `(`; a payload-less variant is the common case
+; (D1) and writes no `()`. An empty `()` is admitted as a payload-less variant
+; too: refusing it would spend a diagnostic on a spelling that means nothing
+; different. Inside the parentheses the loop is `__cst_generic_args`'s: a
+; token that cannot start a type is skipped to the next `,` or `)`
+; (CST_SYNC_LIST) -- never at end of input or at `)` itself, which
+; `__cst_error_skip` requires of every caller.
+proc __cst_variant, p
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [p]
+	mov	rdi, [rbx + CstParser.tree]
+	call	cst_open
+	mov	r12, rax
+	mov	rdi, rbx
+	mov	esi, KW_CASUS
+	call	__cst_xkw
+	mov	rdi, rbx
+	call	__cst_xident
+	mov	rdi, rbx
+	mov	esi, PUN_LPAREN
+	call	__cst_pun
+	test	eax, eax
+	jz	.close
+	mov	rdi, rbx
+	call	__cst_bump
+  .item:
+	mov	rdi, rbx
+	mov	esi, PUN_RPAREN
+	call	__cst_pun
+	test	eax, eax
+	jnz	.rparen
+	mov	rdi, rbx
+	xor	esi, esi
+	call	__cst_kindn
+	cmp	eax, TOK_EOF
+	je	.rparen
+	mov	rdi, rbx
+	call	__cst_type_starts
+	test	eax, eax
+	jnz	.type
+	mov	rdi, rbx
+	mov	esi, CST_SYNC_LIST
+	mov	edx, PUN_RPAREN
+	call	__cst_error_skip
+	jmp	.sep
+  .type:
+	mov	rdi, rbx
+	call	__cst_type
+  .sep:
+	mov	rdi, rbx
+	mov	esi, PUN_COMMA
+	call	__cst_pun
+	test	eax, eax
+	jz	.rparen
+	mov	rdi, rbx
+	call	__cst_bump
+	jmp	.item
+  .rparen:
+	mov	rdi, rbx
+	mov	esi, PUN_RPAREN
+	call	__cst_xpun
+  .close:
+	mov	rdi, [rbx + CstParser.tree]
+	mov	esi, CST_VARIANT
 	mov	rdx, r12
 	call	cst_close
 	return

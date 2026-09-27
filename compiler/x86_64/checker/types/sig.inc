@@ -1350,13 +1350,25 @@ endp
 
 ; __chk_ty_typus(w, d) -> rax = a `typus` declaration's type.
 ;
-; TRANSPARENT (checker.md section 2.2, finding 8): the alias's `Decl.ty` IS the
-; right-hand side's id, and `AST_TY_ALIAS` stays unused. A cycle is `EXS-E0303`
-; -- class C's "alias cycle" -- reported once, at the declaration that closed
-; it, with the error type standing in so nothing cascades.
+; An ALIAS is TRANSPARENT (checker.md section 2.2, finding 8): the alias's
+; `Decl.ty` IS the right-hand side's id, and `AST_TY_ALIAS` stays unused. A
+; SUM (docs/design/sum-types.md D1: `Typus.a` is a `SumBody`, told apart by
+; the child's kind) is NOMINAL: its type is `AST_TY_SUM` over this very
+; declaration, interned once, and the payload type nodes are interned here so
+; that pass 4 (`__chk_lay_sum`) finds `AstNode.ty` on each of them. A cycle
+; is `EXS-E0303` -- class C's "alias cycle" -- reported once, at the
+; declaration that closed it, with the error type standing in so nothing
+; cascades; and a payload that names its own sum (`typus arbor = casus
+; nodus(arbor)`) comes back through `__chk_ty_decl_type`'s `.alias` arm while
+; this declaration is BUSY and lands on the same `.cycle`, which is how D1's
+; "refuse a recursive sum by name" is met with a code that already exists:
+; an infinite type is class C whichever `typus` form spells it. Variant
+; declarations keep `Decl.ty` = 0 for now -- a constructor's type is D2's,
+; not yet written -- and pass 4 does not need it.
 proc __chk_ty_typus, chkt_wx, chkt_dx
 	uses	rbx, r12, r13
 	locals
+		slot chkt_sumty, dq
 	endl
 	mov	rbx, [chkt_wx]
 	mov	r12, [chkt_dx]
@@ -1379,10 +1391,29 @@ proc __chk_ty_typus, chkt_wx, chkt_dx
 	mov	rdi, rbx
 	mov	rsi, r13
 	call	__chk_ty_node
-	mov	ecx, [rax + AstNode.a]		; `Typus.a` = the aliased type
+	mov	ecx, [rax + AstNode.a]		; `Typus.a`: the aliased type,
+	mov	r13, rcx			; or a `SumBody`
 	mov	rdi, rbx
-	mov	rsi, rcx
+	mov	rsi, r13
+	call	__chk_ty_node
+	movzx	ecx, word [rax + AstNode.kind]
+	cmp	ecx, AST_SUMBODY
+	je	.sum
+	mov	rdi, rbx
+	mov	rsi, r13
 	call	chk_ty_of_node
+	jmp	.record
+  .sum:
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, AST_TY_SUM
+	mov	rdx, r12
+	xor	rcx, rcx
+	call	ast_type_una
+	mov	[chkt_sumty], rax
+	mov	rdi, rbx
+	mov	rsi, r13
+	call	__chk_ty_sumbody
+	mov	rax, [chkt_sumty]
 	jmp	.record
   .erronly:
 	mov	rdi, rbx
@@ -1429,6 +1460,61 @@ proc __chk_ty_typus, chkt_wx, chkt_dx
 	mov	rsi, r12
 	call	ast_decl_at
 	mov	eax, [rax + AstDecl.ty]
+	return
+endp
+
+; __chk_ty_sumbody(w, n) -- intern every payload type of every variant of the
+; `SumBody` at `n` (sum-types.md D1), in source order. `chk_ty_of_node`
+; annotates the type nodes, which is what `__chk_lay_sum` reads; a payload
+; that does not resolve is that routine's diagnostic (`EXS-E0301`) and comes
+; back as the error type, which pass 4 sizes as 0 and says nothing about --
+; AST H3, the parser and the resolver have spoken.
+proc __chk_ty_sumbody, chkt_wV, chkt_nV
+	uses	rbx, r12
+	locals
+		slot chkt_vi, dq
+		slot chkt_vn, dq
+		slot chkt_pi, dq
+		slot chkt_pn, dq
+	endl
+	mov	rbx, [chkt_wV]
+	mov	rdi, rbx
+	mov	rsi, [chkt_nV]
+	call	__chk_ty_node
+	mov	ecx, [rax + AstNode.a]
+	mov	[chkt_vi], rcx
+	mov	ecx, [rax + AstNode.b]
+	mov	[chkt_vn], rcx
+  .variant:
+	cmp	qword [chkt_vn], 0
+	jle	.out
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_vi]
+	call	ast_extra_at
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	__chk_ty_node
+	mov	ecx, [rax + AstNode.b]
+	mov	[chkt_pi], rcx
+	mov	ecx, [rax + AstNode.c]
+	mov	[chkt_pn], rcx
+  .payload:
+	cmp	qword [chkt_pn], 0
+	jle	.variant_next
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_pi]
+	call	ast_extra_at
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	chk_ty_of_node
+	inc	qword [chkt_pi]
+	dec	qword [chkt_pn]
+	jmp	.payload
+  .variant_next:
+	inc	qword [chkt_vi]
+	dec	qword [chkt_vn]
+	jmp	.variant
+  .out:
 	return
 endp
 

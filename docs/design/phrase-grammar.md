@@ -196,7 +196,9 @@ trivially LL(1). Hashes and target names are the hazard (H12).
     TypeRow       ::= 'poscit' '{' [RowItem (',' RowItem)*] '}'
     RowItem       ::= IDENT | 'sicut' IDENT
     StructDecl    ::= 'structura' IDENT [GenericParams] '{' (IDENT ':' Type)* '}'
-    TypeDecl      ::= 'typus' IDENT [GenericParams] ['=' Type] ';'      (* [OPEN] sum types *)
+    TypeDecl      ::= 'typus' IDENT [GenericParams] '=' (SumBody | Type) ';'
+    SumBody       ::= Variant (',' Variant)*                 (* sum-types.md D1; one-token peek at `casus` *)
+    Variant       ::= 'casus' IDENT ['(' Type (',' Type)* ')']
     InterfaceDecl ::= 'interfacies' Path [GenericParams]
                       ( '{' (Signature [Block])* '}' | 'in' Type [DeclRow] '{' FunctionDecl* '}' )
     PotestasDecl  ::= 'potestas' IDENT '=' '{' [IDENT (',' IDENT)*] '}'

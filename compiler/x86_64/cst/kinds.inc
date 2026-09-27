@@ -182,8 +182,15 @@ CST_PATH            = 85
 ; this file's header sanctions exactly that: kinds are internal and renumbering
 ; them is a local edit.
 CST_REFERO_TYPE     = 86
-CST_ERROR           = 87
-CST_KIND_COUNT = 87
+; docs/design/sum-types.md D1: `SumBody ::= Variant (',' Variant)*` and
+; `Variant ::= 'casus' IDENT ['(' Type (',' Type)* ')']` -- the body of a
+; `typus` whose `=` is followed by `casus`. Inserted before `ERROR`, as
+; `REFERO_TYPE` was and for the same reason: `ERROR` stays last, and kinds
+; are symbolic (this file's header), so `ERROR` moving to 89 is a local edit.
+CST_SUM_BODY        = 87
+CST_VARIANT         = 88
+CST_ERROR           = 89
+CST_KIND_COUNT = 89
 
 ; ---- kind names ------------------------------------------------------------
 ; For `cst_dump` (cst/red.inc) and for fixtures. Not output: no rendered
@@ -278,7 +285,9 @@ cst_kind_text:
   cst_kn_84:	db	'PLACE_SUFFIX'
   cst_kn_85:	db	'PATH'
   cst_kn_86:	db	'REFERO_TYPE'
-  cst_kn_87:	db	'ERROR'
+  cst_kn_87:	db	'SUM_BODY'
+  cst_kn_88:	db	'VARIANT'
+  cst_kn_89:	db	'ERROR'
   cst_kn_end:
 
 cst_kind_off:
@@ -369,6 +378,8 @@ cst_kind_off:
 	dd	cst_kn_85 - cst_kind_text
 	dd	cst_kn_86 - cst_kind_text
 	dd	cst_kn_87 - cst_kind_text
+	dd	cst_kn_88 - cst_kind_text
+	dd	cst_kn_89 - cst_kind_text
 	dd	cst_kn_end - cst_kind_text
 
 ; cst_kind_name(kind) -> rax = pointer to the name's bytes, rdx = its length.

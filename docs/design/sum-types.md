@@ -70,6 +70,28 @@ language has never had and had no code to report. D3 makes the sentence true; §
 below states what making it true costs, because four of that fixture's checks exist
 precisely to pin the behaviour D3 outlaws.
 
+**`typus … = casus …` parses and builds, and nothing reads it yet.** D1's
+grammar is §8.6's now: `compiler/x86_64/cst/parse.inc`'s `__cst_type_decl`
+peeks one token after `=`, `__cst_sum_body`/`__cst_variant` parse the list,
+and `compiler/x86_64/ast/from_cst.inc`'s `__ast_w_variant` builds the
+`SumBody`/`Variant` nodes and the `AST_D_VARIANT` declarations
+(`tests/unit/cst_typus_sum.asm`, five checks, including that the alias form
+is untouched by the peek). Pass 2's `__chk_ty_typus` has a `.sum` arm
+(`compiler/x86_64/checker/types/sig.inc`): the declaration's type is
+`AST_TY_SUM` over itself, nominal where an alias is transparent, the payload
+type nodes are interned, and pass 4 then lays the sum out by D6 — from
+source, end to end (`tests/unit/chk_ty_typus_sum.asm`). **Measured before
+that arm existed, and the reason it landed in the same commit as the
+grammar:** with the grammar alone, `typus modus = casus ordinata, casus
+arborea(mensura);` followed by `structura S { m: modus b: u8 }` compiled
+clean with `-o` — exit 0, no diagnostic — because `chk_ty_of_node` gives a
+non-type node the error type silently (AST H3), so `m` got width 0 and `b`
+was laid out at byte 0 on top of it. That is §6's "wrong rather than
+absent" layout, reachable from source for the first time, and it is why a
+grammar for a type must never land without the pass that types it. What
+does NOT exist: constructors, patterns, any lowering, and a type for a
+variant's declaration (`Decl.ty` stays 0; D2's).
+
 **`?` is lexed, parsed, named, used — and checked, by a rule the spec never
 wrote.** `PUN_QUESTION` (`compiler/x86_64/lexer/token.inc`, emitted by
 `compiler/x86_64/lexer/lex.inc`), spelled in the CST's punctuation table
@@ -135,7 +157,8 @@ typus modus =
     casus arborea(mensura);
 ```
 
-Grammar, replacing §8.6's `TypeDecl`:
+Grammar, now §8.6's `TypeDecl` (landed after D6, in that order, for §6's
+reason):
 
 ```
 TypeDecl   ::= 'typus' IDENT [GenericParams] '=' (SumBody | Type) ';'
@@ -333,6 +356,17 @@ is one and at the path segment when there is not, raising the `EXS-E0304` the
 site already raises. That is a prerequisite owed by the checker independently
 of sum types — a real silent-acceptance bug today — not part of D5.
 
+**A second prerequisite, measured while landing D1's grammar: pass 1 does not
+scope a `typus`'s generic parameters over its body.** `typus e2<T, E> = casus
+prosperum(T), casus adversum(E);` raises `EXS-E0301` at `T` and at `E` — and
+so does the alias form `typus box<T> = refero<T>;`, which §8.6's `TypeDecl`
+has admitted all along. Nothing in the corpus writes a generic `typus`, so
+nothing had ever asked. `tests/unit/chk_ty_typus_sum.asm` row 5 pins the
+measured behaviour so that fixing pass 1 flips it deliberately. Until it is
+fixed, D5's `eventus<T, E>` cannot be declared as a prelude `typus` at all;
+that fix belongs to `checker/resolve/`, alongside the scoping it already does
+for a function's and a struct's generics.
+
 ### D6 — Layout: the tag, then the largest payload, packed
 
 **Implemented, and pinned before any grammar can produce one:**
@@ -491,9 +525,15 @@ check starts holding this document to them. Item 0 has crossed over.
    retire: nothing about D1–D5, and it says nothing about a sum reaching the
    layout pass through real source, which is `chk_row_layout_src.asm`'s job
    once the CST parses one.
-1. **tests/unit/cst_typus_sum.asm** — D1's grammar: the two declarations of D1
-   parsed, the alias form still parsed (the one-token peek does not break it), a
-   payload-less variant, and `typus x = casus` unterminated as `EXS-E0202`.
+1. **`tests/unit/cst_typus_sum.asm`** — D1's grammar, **exists and runs**:
+   the two declarations of D1 parsed and built, the alias form still parsed
+   (the one-token peek does not break it), a payload-less variant as a
+   `Variant` with an empty list, four `AST_D_VARIANT` declarations parented in
+   pairs to their `typus`, and `typus x = casus` cut off at end of input as
+   `EXS-E0203`. This item predicted `EXS-E0202`; the parser's own end-of-input
+   rule (§8.6: 0202 for an unclosed bracket, block or `<…>`; 0203 inside any
+   other construct) says 0203, and no bracket is open there. Measured, and the
+   rule is right.
 2. **tests/unit/cst_pattern_ctor.asm** — D2: `casus prosperum(n)`, the bare-path
    form, and a nested pattern refused by name.
 3. **tests/unit/chk_ty_exhaustive.asm** — D3, both rules: a sum-typed `discerne`
@@ -513,7 +553,7 @@ check starts holding this document to them. Item 0 has crossed over.
 6. **A §14 entry** for the distinction in 5, appended and never inserted (§14's own
    rule), and only once 5 runs on both backends.
 
-Until 1–5 exist, §8.6's bullets cite **this document** and stay `[OPEN]`: a design
-is not evidence, and the difference is the whole of CLAUDE.md. Item 0 narrows
-the `[OPEN]` — the representation and the layout are measured — and does not
-lift it.
+Until 2–5 exist, §8.6's bullets cite **this document** and stay `[OPEN]`: a design
+is not evidence, and the difference is the whole of CLAUDE.md. Items 0 and 1
+narrow the `[OPEN]` — the grammar, the representation and the layout are
+measured — and do not lift it.
