@@ -2842,6 +2842,15 @@ proc __chk_walk, chk_c, chk_n, chk_pos
 	mov	rsi, r12
 	mov	rdx, CHK_FR_FN
 	call	__chk_frame_push
+	; `Fn.c` = `Generics` (typed-ast.md section 2.4's table) -- bind the
+	; function's own generic parameters into the `CHK_FR_FN` frame BEFORE the
+	; signature is walked, since a parameter type may name one (`.genparam:`
+	; already knows how to bind a single `GenericParam`; `__chk_walk`'s
+	; default `__chk_kids` fallback iterates the `Generics` list into it).
+	mov	rdi, rbx
+	mov	rsi, [chk_cc]
+	xor	rdx, rdx
+	call	__chk_walk		; the function's own generic parameters
 	mov	rdi, rbx
 	mov	rsi, [chk_a]
 	xor	rdx, rdx

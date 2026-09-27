@@ -59,12 +59,53 @@
 // `Type`/`GenericArgs`, not spelled for a value-returning `eventus`). Kept
 // as `-> mensura` here for exactly that reason, not overlooked.
 //
-// DEFERRED: needs the capability-bearing-type tracker and `dyn` bound
-// checker (§4), which needs the type checker (Stage 2), and needs the
-// implementation (§8.6 decision 4) and receiver (decision 8) machinery to
-// exist first, since both are new grammar this wave. compiler/x86_64/ast/
-// and cst/ are both still empty; `exsc aedifica`, run directly against this
-// file, exits 0 and reports nothing -- confirmed, not assumed.
+// STALE, corrected here: the paragraph this replaces said the capability
+// checker did not exist and that compiler/x86_64/ast/ and cst/ were both
+// still empty. Neither has been true for a while, and CLAUDE.md's evidence
+// discipline is explicit that a header misstating its own blocker is a false
+// claim, not a rounding error. Measured with a fresh `exsc` from the working
+// tree, `--diagnostica json`, against THIS file (the receiver-arity fix
+// above already applied): `{EXS-E0302, EXS-E0305, EXS-E0510}`. `EXS-E0510`
+// fires exactly at `s sicut dyn Scriptor`, span-correct (§4.4) -- the
+// capability-bearing-type tracker and `dyn` bound checker this entry tests
+// both exist and both work.
+//
+// FIXED here: `EXS-E0302` was `ast/from_cst.inc`'s `__ast_w_iface` (the
+// implementation branch) giving `AST_D_IMPL` the TRAIT's own name
+// (`Scriptor`) instead of no name, contradicting the invariant
+// `resolve.inc`'s `__chk_mods` states immediately above the check it
+// tripped ("an `Impl` head introduces no name") -- `interfacies Scriptor in
+// ScriptorRetis { ... }` collided with `Scriptor`'s own declaration. Fixed
+// in `from_cst.inc`; pinned by `tests/unit/ast_from_cst_impl_noname.asm`.
+// Same defect, same fix, as §14 entry 24's fixture.
+//
+// STILL BLOCKED, and NOT by the capability checker: `EXS-E0305`
+// ("operation not defined on the type"), TWICE over, both in
+// `checker/types/` (Stage 2), neither touched by this fix:
+//
+//   - `t.octeti().numerus()` -- `textus` has no method table at all in
+//     `checker/types/prim.inc`'s prelude (that file's own header lists
+//     `octeti`/`scalares`/`grapha` as spec §5.1 VIEWS with methods, but only
+//     the prelude `Scriptor` interface's methods are wired there today).
+//   - `s sicut dyn Scriptor` -- ALSO `EXS-E0305`, at the very same span
+//     `EXS-E0510` correctly fires at: `types.inc`'s `.cast:` dispatch checks
+//     the CAST SOURCE's kind first (`ScriptorRetis`, a struct) and sends any
+//     struct source straight to `__chk_ty_castagg`, which recognises only
+//     the one aggregate pair spec §5.2 admits (a `@transitus` struct and
+//     `acies<u8, sizeof>`) and rejects everything else -- including a struct
+//     cast to `dyn Trait`, which `.cast:`'s own comment says should reach
+//     `.cast_out` and let pass 3's `EXS-E0510` be the only verdict. It isn't
+//     yet, so a real `dyn` cast wrongly earns a type-mismatch diagnostic
+//     alongside the correct one.
+//
+// Both are Stage 2 gaps in `checker/types/`, not this agent's tree, and
+// neither is the capability checker (which this entry's whole point already
+// exercises correctly). DEFERRED, not flipped: `{EXS-E0305, EXS-E0510}` is
+// not the `{EXS-E0510}` §14 requires.
+//
+// DEFERRED: needs the type checker (Stage 2) to give `textus` its view
+// methods and to let `.cast:` recognise a struct-to-`dyn` cast as
+// structurally valid before `__chk_ty_castagg` ever sees it.
 
 interfacies Scriptor {
     functio scribe(s: Scriptor, t: textus) -> mensura
@@ -82,4 +123,4 @@ publica functio erade_potestatem(s: ScriptorRetis) -> dyn Scriptor {
     redde s sicut dyn Scriptor;
 }
 
-// TEST: entry=12 shape=code expect-code=EXS-E0510 status=deferred needs=capability_checker
+// TEST: entry=12 shape=code expect-code=EXS-E0510 status=deferred needs=type_checker

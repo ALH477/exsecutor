@@ -3712,11 +3712,15 @@ proc __ast_w_iface, w, red
 	call	__ast_w_lastname
 	mov	r13, rax
   .impl_noname:
+	; an `Impl` head introduces no name (resolve.inc's `.scoped:` invariant) --
+	; `r13` above is the TRAIT path's last segment, not this declaration's
+	; name; passing it here made `interfacies P in T { ... }` collide with
+	; `P`'s own module-scope declaration (spurious EXS-E0302).
 	mov	rdi, rbx
 	mov	rsi, r12
 	mov	rdx, AST_D_IMPL
 	xor	rcx, rcx
-	mov	r8, r13
+	xor	r8, r8
 	call	__ast_w_decl
 	mov	[wif_dec], rax
 	mov	eax, [rbx + AstWalk.parent]

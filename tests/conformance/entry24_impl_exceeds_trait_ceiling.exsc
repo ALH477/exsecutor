@@ -25,8 +25,52 @@
 // by `exsc aedifica --emitte ast` before this fix, not assumed from the
 // grammar alone. Same defect §14 entry 12's fixture had (checker.md
 // finding 6); the fix here is the same shape.
+//
+// FIXED, three more found by running (a fresh `exsc` from the working tree,
+// `--diagnostica json`, this file with `self`'s type already corrected):
+//
+//   - the fixture never declared `structura Right` at all -- used as the
+//     impl target and as `self`'s type, declared nowhere, which raised its
+//     own `EXS-E0301` at both uses independently of anything below. Added
+//     above with one plain field: the mark this entry tests is the impl
+//     HEAD's own declared row (`poscit alloc, rete` on line 41), never a
+//     struct's computed field mark (spec §4.3), so `Right` needs no
+//     capability-typed field of its own to make the point.
+//   - `ast/from_cst.inc`'s `__ast_w_iface` (the implementation branch) gave
+//     `AST_D_IMPL` the TRAIT's own last-segment name (`Summable`) instead of
+//     no name at all, contradicting the invariant `resolve.inc`'s
+//     `__chk_mods` states immediately above the check it tripped ("an
+//     `Impl` head introduces no name"): `interfacies Summable in Right
+//     poscit alloc, rete { ... }` collided with `Summable`'s own
+//     declaration -- a spurious `EXS-E0302`. Fixed in `from_cst.inc`;
+//     pinned by `tests/unit/ast_from_cst_impl_noname.asm`.
+//   - `resolve.inc`'s `.fn_open:` read `Fn.a` (signature) and `Fn.b` (body)
+//     but never `Fn.c` (`Generics`), so `total<T: Summable>`'s OWN `T` was
+//     never bound into its frame and fell through to a module-scope miss --
+//     a spurious `EXS-E0301` at `T`'s use in `(a: T, ...)`. Fixed by walking
+//     `Fn.c` into the `CHK_FR_FN` frame before the signature, reusing
+//     `.genparam:`'s existing single-parameter binder; pinned by
+//     `tests/unit/chk_genparam_fn_bind.asm`.
+//
+// Measured code set moved {EXS-E0301, EXS-E0302, EXS-E0510} ->
+// {EXS-E0303, EXS-E0510} -- NOT the `{EXS-E0510}` §14 requires, so this
+// entry stays `status=deferred`. The remaining `EXS-E0303` ("type mismatch")
+// is at `redde a.combine(b);`'s `a`, i.e. `total`'s own return-type check
+// against its declared `-> f32`: `checker/types/member.inc`'s
+// `__chk_ty_method` already has a `.bound:` case built exactly for a member
+// call through a generic parameter ("CHECKED AGAINST THE INTERFACE, NEVER AN
+// IMPL, WHEN THE RECEIVER IS GENERIC") and it DOES find `Summable.combine`,
+// but whatever computes the resulting CALL's type does not yet resolve to
+// `f32` through that path -- a Stage 2 generic-dispatch gap, not a
+// resolve.inc or AST one, and out of this fix's scope (`checker/types/` is
+// not this agent's tree). `EXS-E0510` fires exactly where and only where
+// §4.4 says it should either way.
+//
+// DEFERRED: needs the type checker (Stage 2) to type a member call reached
+// through a bound generic parameter's interface the same way it already
+// resolves the member itself.
 
-// TEST: entry=24 shape=code expect-code=EXS-E0510 status=deferred needs=capability_checker
+// TEST: entry=24 shape=code expect-code=EXS-E0510 status=deferred needs=type_checker
 
 interfacies Summable {
     functio combine(self: Summable, other: f32) -> f32 poscit alloc
@@ -35,6 +79,8 @@ interfacies Summable {
 functio usa_rete(x: f32) -> f32 poscit rete {
     redde x;
 }
+
+structura Right { n: mensura }
 
 interfacies Summable in Right poscit alloc, rete {
     functio combine(self: Right, other: f32) -> f32 {
