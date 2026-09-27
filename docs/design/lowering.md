@@ -440,6 +440,22 @@ references is copied as bytes plus one `retain` per reference field") is
 released field by field through `Ast.layout` — designed, no fixture,
 `[UNTESTED]`; the hello world's `Scriptor` has none.
 
+Evidence for the scalar case, and a defect it found:
+`tests/unit/lwr_refero_release.asm` lowers two functions from source and pins
+the printed IR — a borrowed initializer retaining, two bindings in one frame
+releasing in reverse initialisation order, `ref` and `refc` side by side, and
+an inner block releasing its own list before the outer block retains. It is
+the first test of any kind to reach a release from SOURCE rather than from a
+hand-written `.ir`, and the first one immediately failed: `lwr_frame_push`
+held `rels.len` in `rcx` across a `call vec_get`, which loads its own
+vector's length into `rcx` for the bounds `rassert`, so `LwrFrame.frelb` was
+written with the FRAME COUNT. The error was unreachable for exactly as long
+as nothing could enter a release list — every frame's `freln` was 0, so the
+wrong base was never added to an index — and became a `vec_get` bounds trap
+in the compiler on the first `refero` binding that could. Measured at
+`956cec5`: exit 132, `vec_get` <- `lwr_frame_release` <- `__lwr_release_to`
+<- `__lwr_redde`.
+
 Ownership at a binding: `own[init]` (CHK 2.5) says whether the initializer
 yields an owned reference (a call result, IR 2.9: "returned references
 owned") or a borrowed one (a parameter, another binding). Owned: the

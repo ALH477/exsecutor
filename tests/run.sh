@@ -92,11 +92,22 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # the Generics list). Both fixtures were run against the pre-fix code and
 # fail there, which is what makes them regression tests rather than
 # descriptions.
-# 193 -> 194 on 2026-09-27: chk_ty_cast_literal.asm, the pending literal on
-# the left of `sicut`. Same rule as the two above -- it was run against the
-# pre-fix checker and exits 12 there (row 2: `7 sicut f32` raised nothing),
-# so it is a regression test and not a description.
-UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-225}"
+# 193 -> 194 on 2026-09-26: lwr_refero_release.asm, the first fixture to reach
+# `retain`/`release` at a scope exit FROM SOURCE. 193 was the measured count
+# before it and 194 with it, so the floor is the count and not a margin. It
+# earns the line by killing a defect 2203 checks passed over: `lwr_frame_push`
+# held `rels.len` in `rcx` across `vec_get`, which loads its own vector's
+# length there, so `LwrFrame.frelb` was the FRAME COUNT. Unreachable for as
+# long as no source construct could put a binding on a release list -- every
+# frame's `freln` was 0 -- and a SIGILL in the compiler on the first one that
+# could. The fixture fails on the pre-fix code (exit 132, the crash itself),
+# which is what makes it a regression test rather than a description.
+# 225 -> 226 on 2026-10-10: merged on top of the cast-literal fix (193 -> 225
+# across the intervening commits), which added chk_ty_cast_literal.asm as a
+# regression fixture. Same rule -- it was run against the pre-fix checker and
+# exits 12 there (row 2: `7 sicut f32` raised nothing), so it is a regression
+# test and not a description.
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-226}"
 
 # The same guarantee for the two run phases below: tests/ir/*.ir fixtures,
 # and tests/programs/*/ directories. Same rule -- `found < floor` fails --

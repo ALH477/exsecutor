@@ -72,13 +72,22 @@ proc lwr_frame_push, lwrsp
 	call	vec_push
 	mov	ecx, [lwrcb]
 	mov	[rax + LwrFrame.fcapb], ecx
-	mov	rdi, [rbx + LwrState.rels]
-	mov	rcx, [rdi + Vec.len]
 	mov	rdi, [rbx + LwrState.scps]
 	mov	rax, [rdi + Vec.len]
 	dec	rax
 	mov	rsi, rax
 	call	vec_get
+	; `rels.len` is read AFTER the last call, never held across it. `vec_get`
+	; loads the vector's OWN length into `rcx` for its bounds `rassert`
+	; (rt/vec.inc), so reading `rels.len` into `rcx` before the call wrote
+	; the FRAME COUNT into `frelb` instead of the release-list base. It was
+	; invisible for as long as nothing entered a release list: `freln` stayed
+	; 0 in every frame, so the wrong base was never added to an index. The
+	; first `refero` binding to reach a scope exit turns it into a `vec_get`
+	; bounds trap -- `lwr_frame_release` asking for `rels[frelb + i]` past the
+	; end -- which is what tests/unit/lwr_refero_release.asm pins.
+	mov	rdi, [rbx + LwrState.rels]
+	mov	rcx, [rdi + Vec.len]
 	mov	[rax + LwrFrame.frelb], ecx
 	mov	dword [rax + LwrFrame.freln], 0
 	mov	dword [rax + LwrFrame.fpad], 0

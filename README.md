@@ -250,9 +250,10 @@ with no arguments prints its usage, its options, and its exit-status table.
 id: adr-count
 kind: glob_count
 glob: docs/decisions/0*.md
-equals: 19
+equals: 20
 -->
-`docs/decisions/` holds nineteen ADRs, `0001` through `0019`, immutable once
+`docs/decisions/` holds twenty ADRs — `0001` through `0019` plus the
+companion `0017-refero-expression-form` — immutable once
 written; superseded, never edited (a status line and an Open list may be
 updated).
 <!-- truth:end -->
@@ -260,7 +261,7 @@ updated).
 ```text truth:ignore
 compiler/           the compiler: x86_64/ is the machine-specific body, shared/ is not
 docs/spec/          the specification -- source of truth
-docs/decisions/     ADRs 0001-0019, immutable once written; superseded, never edited (a status line and an Open list may be updated)
+docs/decisions/     ADRs 0001-0019 plus 0017-refero-expression-form, immutable once written; superseded, never edited (a status line and an Open list may be updated)
 docs/design/        design documents: hypotheses with a status line, built against, and amended by what building found
 docs/asm-conventions.md   the binding rules for every line of assembly here
 examples/           the hello world, its golden output, HydraModem's transmitter and receiver, and their READMEs
@@ -641,7 +642,7 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   re-derived from the repository and a measured total cannot. Where the two
   differ the floor is deliberately behind: this tree's convention is that a
   floor rises when someone re-baselines it, not automatically, so drift there
-  costs precision and never the guarantee. 203 unit fixtures [194]; 78 IR
+  costs precision and never the guarantee. 226 unit fixtures [226]; 78 IR
   fixtures [78] and 147 Exsecutor programs [128], each compiled, assembled,
   **run**, and syscall-audited (70 of those programs are the receiver's
   impaired vectors);
@@ -678,7 +679,7 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   so that any floor moving fails this bullet with it:
 
 ```bash truth:id=suite-floors truth:kind=command truth:expect_exit=0 truth:expect_stdout=9
-grep -cE "FLOOR:-(225|78|192|236|119|476|83|17|6)\}" tests/run.sh
+grep -cE "FLOOR:-(226|78|192|236|119|476|83|17|6)\}" tests/run.sh
 ```
 
 - `tests/run.sh --device=amdgcn` (measured 2026-09-21, not part of the
