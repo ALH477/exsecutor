@@ -55,9 +55,12 @@
 // should report failure as `eventus<mensura>`, since a closed descriptor is
 // only discovered at the write and a bare `mensura` cannot report that --
 // but marks both `examples/imprime.exsc` and this entry `[OPEN]` until
-// `eventus`'s generic syntax exists (`<…>` is presently only attested on
-// `Type`/`GenericArgs`, not spelled for a value-returning `eventus`). Kept
-// as `-> mensura` here for exactly that reason, not overlooked.
+// `eventus` is inhabited. The spelling is not the obstacle (an earlier
+// version of this paragraph said it was): the checker interns `eventus<T>`
+// today; what it lacks is any variant, constructor, pattern or layout
+// (docs/design/sum-types.md section 2), and the prelude row still returns
+// the count. Kept as `-> mensura` here for exactly that reason, not
+// overlooked.
 //
 // STALE, corrected here: the paragraph this replaces said the capability
 // checker did not exist and that compiler/x86_64/ast/ and cst/ were both

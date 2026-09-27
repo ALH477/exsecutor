@@ -462,7 +462,7 @@ potestas Hospes = { alloc, archivum, horologium, ambitus }
 
 **Standard input, output and error belong to `ambitus`.** They are handed to a process by its environment, not found on a filesystem: a program that writes to its terminal has touched nothing under `archivum`, and borrowing that atom for it would over-grant in exactly the way §10.3's audit exists to expose. `examples/README.md` recorded this as `[OPEN]` when the companion program was written; it is closed by placing the streams, not by spending a root on a twelfth atom.
 
-**The streams' two prelude types.** Standard output is written through `Scriptor`, a capability-bearing `structura` with mark `{ambitus}`, obtained by `Scriptor.ad_exitum(a: ambitus) -> Scriptor` — an associated function with no receiver, total — and written one byte at a time by `s.scribe_octeto(b: u8) -> mensura` (`docs/design/wire-codec.md` D7; `tests/unit/prelude_scribe_octeto.asm`, `tests/programs/octeti/`) or as a `textus` by `s.scribe(t)` (§11). Standard input is read through **`Lector`**, the same record with the same mark, obtained by `Lector.ab_introitu(a: ambitus) -> Lector` and read one byte at a time by `l.lege_octeto() -> u16`: the byte, 0–255, or **256** at end of input and on a read error, the two undistinguished — provisional in exactly `scribe`'s way until `eventus` has syntax, when the call becomes `-> eventus<u8>`. `read(0)` is in `ambitus`'s admitted syscall set already; the compiler itself never issues it. `docs/design/receptor.md` D1 is the design; the routine is `compiler/x86_64/prelude/prelude.asm`'s `exsrt_lector_lege_octeto`, pinned by `tests/unit/prelude_lege_octeto.asm` (the four bytes `0x00 0x7f 0x80 0xff` in order, then 256 twice, then 256 on a refused descriptor) and run from source by `tests/programs/lector/` (`cat`, 41 bytes in and the same 41 out), `lector_numerus/` (the count as the exit status) and the receiver's `tests/programs/receptio_*/` (38,060 bytes a WAV). Because the prelude gates by atom and not by call, every binary whose closure holds `ambitus` carries the reader whether it reads or not. The part after the `_` in both constructors is a noun the preposition governs, and neither `ad` nor `ab` decomposes under §3.1 — recorded there as an open question for the lexicon, not resolved here.
+**The streams' two prelude types.** Standard output is written through `Scriptor`, a capability-bearing `structura` with mark `{ambitus}`, obtained by `Scriptor.ad_exitum(a: ambitus) -> Scriptor` — an associated function with no receiver, total — and written one byte at a time by `s.scribe_octeto(b: u8) -> mensura` (`docs/design/wire-codec.md` D7; `tests/unit/prelude_scribe_octeto.asm`, `tests/programs/octeti/`) or as a `textus` by `s.scribe(t)` (§11). Standard input is read through **`Lector`**, the same record with the same mark, obtained by `Lector.ab_introitu(a: ambitus) -> Lector` and read one byte at a time by `l.lege_octeto() -> u16`: the byte, 0–255, or **256** at end of input and on a read error, the two undistinguished — provisional in exactly `scribe`'s way until `eventus` is *inhabited* (§11: the spelling is interned today, the type has no variants, constructor, pattern or layout), when the call becomes `-> eventus<u8>`. `read(0)` is in `ambitus`'s admitted syscall set already; the compiler itself never issues it. `docs/design/receptor.md` D1 is the design; the routine is `compiler/x86_64/prelude/prelude.asm`'s `exsrt_lector_lege_octeto`, pinned by `tests/unit/prelude_lege_octeto.asm` (the four bytes `0x00 0x7f 0x80 0xff` in order, then 256 twice, then 256 on a refused descriptor) and run from source by `tests/programs/lector/` (`cat`, 41 bytes in and the same 41 out), `lector_numerus/` (the count as the exit status) and the receiver's `tests/programs/receptio_*/` (38,060 bytes a WAV). Because the prelude gates by atom and not by call, every binary whose closure holds `ambitus` carries the reader whether it reads or not. The part after the `_` in both constructors is a noun the preposition governs, and neither `ad` nor `ab` decomposes under §3.1 — recorded there as an open question for the lexicon, not resolved here.
 
 ## 4.7 The entry point
 
@@ -1706,9 +1706,9 @@ claiming a clean pattern over them would be reading one in.
   from morpheme-table roots. §3.8 and §15 #4 stay `[UNTESTED]`; `norma.algebra`
   is still the coinage process's first real test.
 - It spends root-space. Fourteen words here can never be roots (§8.4).
-- Numeric literal grammar beyond decimal and hexadecimal (§8.4 — binary,
-  separators, floats), and `sub`'s interaction with loop scopes, are
-  unsettled and deliberately not invented.
+- Numeric literal grammar beyond decimal, hexadecimal and floats (§8.4 —
+  binary and octal bases, digit separators), and `sub`'s interaction with
+  loop scopes, are unsettled and deliberately not invented.
 
 ## 8.6 Phrase grammar
 
@@ -2198,12 +2198,16 @@ refusing symbolic comparisons — is what makes that last one possible.
 
 ### Not settled here
 
-- `[OPEN]` Numeric literal grammar beyond decimal and hexadecimal (§8.4:
-  binary, separators and floats are open; hex is settled,
-  `tests/unit/lex_hex_literal.asm`) —
-  blocks the `..`/float rule above and the `HASH` token: `sha256-1a2b…` is
-  neither identifier nor literal under any settled rule, so `fontes` cannot
-  yet be lexed.
+- `[OPEN]` Numeric literal grammar beyond decimal, hexadecimal and floats
+  (§8.4: binary and octal bases and digit separators are open; hex and floats
+  are settled, `tests/unit/lex_hex_literal.asm`,
+  `tests/unit/lex_float_literal.asm`, and the float rule's "a fraction carries
+  at least one digit after the dot" is what lets `1..n` lex as `INT .. IDENT`).
+  The `HASH` token is a separate gap that no literal rule closes:
+  `sha256-1a2b…` is neither identifier nor literal under any rule, settled or
+  open, and needs its own token (`docs/design/phrase-grammar.md` H12), so
+  `fontes` cannot yet be lexed. An earlier version of this bullet listed
+  floats as open and said the literal grammar blocked `HASH`; neither held.
 - `[OPEN]` Sum types and constructor patterns; `discerne`'s exhaustiveness
   presupposes an enumeration the language does not yet declare. The natural
   home is `typus` — keyword-led, LL(1)-harmless — and **it is now decided as
@@ -2218,18 +2222,26 @@ refusing symbolic comparisons — is what makes that last one possible.
   it and its §6 what landing it costs. Recursive sum types, nested patterns,
   range patterns, `?`'s error conversion and the unreachable-arm rule are each
   deferred there by name rather than folded in.
-- `[OPEN]` **`?` parses and means nothing.** It is lexed (`PUN_QUESTION`,
+- `[OPEN]` **`?` is used by this document, checked by the compiler, and
+  defined by neither in the same way.** It is lexed (`PUN_QUESTION`,
   `compiler/x86_64/lexer/token.inc`), spelled in the CST's punctuation table,
-  admitted by `Suffix` in the grammar above, and named in §8.4's sigil table as
-  `E?`, "error propagation", citing §5.1 — and **no section of this document
-  says what it does.** §5.1 mentions `eventus` once and `?` not at all. That is
-  worse than an absent operator: a program can be written with it and nothing
-  defines the result. `docs/design/sum-types.md` D4 settles it as design — the
-  `prosperum` payload, or an early return of the `adversum` from an enclosing
-  function whose error type matches — with error *conversion* deferred, and
-  recommends that until it is implemented the checker refuse `?` rather than
-  accept it silently. What the checker does with one today is **unmeasured**:
-  no program or fixture in this tree contains a `?`.
+  admitted by `Suffix` in the grammar above, named in §8.4's sigil table as
+  `E?`, "error propagation", citing §5.1 — and §5.1 uses it twice in its own
+  illustrative block (`abassus.quaere("/")?`, `via.sectio(0..ubi)?`) without a
+  sentence anywhere in this document saying what it does. The checker has a
+  rule: `compiler/x86_64/checker/types/types.inc`'s `.try:` arm requires the
+  operand to be an `eventus` (`EXS-E0305` otherwise) and answers its first type
+  argument — an unconditional unwrap, with no enclosing-function check and no
+  early return. The lowering refuses the node by name
+  (`compiler/x86_64/lower/expr.inc`), so no program containing `?` has run.
+  `docs/design/sum-types.md` D4 settles the meaning as design — the `prosperum`
+  payload, or an early return of the `adversum` from an enclosing function
+  whose error type matches, with error *conversion* deferred — and that is
+  **not** what the checker's arm does today; D4 says the arm should refuse
+  until it can do the right thing. An earlier version of this bullet said `?`
+  "means nothing" and that the checker's behaviour was "unmeasured", inferring
+  the second from the corpus containing no `?`. It was wrong on both counts and
+  on §5.1; recorded here per the evidence note rather than overwritten.
 - `[OPEN]` Brand syntax `positio<'t>` (§5.1): `'` is not a §8.4 token.
 - `[OPEN]` Generic implementation heads: `interfacies Legibilis<T> in
   acies<T, N>` leaves `N` unbound.
@@ -2636,10 +2648,16 @@ A dependency that gains `rete` in a new version is a one-line diff in a checked-
   not exist in §7 and inventing them as a side effect of declaring a sum type
   is a second feature the first one does not need. So `eventus<mensura>` below,
   §4.6's `eventus<u8>`, and §5.1's bare `eventus` all become
-  `eventus<…, erratum>` when the syntax lands. They are `[OPEN]` already, which
-  is why this is a respelling and not a broken promise — recorded here so that
-  no fixture is written against the short form.
-- **I/O reports failure as `eventus`; a count is never silently short.** A closed descriptor is discovered at the write, which a bare `mensura` cannot report, so `Scriptor.scribe` returns `eventus<mensura>` (`docs/design/runtime.md`, finding 10); `examples/imprime.exsc` and §14 entry 12 write `-> mensura` and are `[OPEN]` until `eventus` has its syntax. `Lector.lege_octeto` (§4.6) is provisional the same way: its `-> u16` carries 256 for end of input and for an error alike (`tests/unit/prelude_lege_octeto.asm` pins both), and becomes `-> eventus<u8>` when the syntax exists.
+  `eventus<…, erratum>` when the type is inhabited. They are `[OPEN]` already,
+  which is why this is a respelling and not a broken promise — recorded here so
+  that no fixture is written against the short form. The spelling is not what
+  is missing: the checker interns `eventus<T>` today
+  (`compiler/x86_64/checker/types/sig.inc`), and because it counts generic
+  arguments from one side only it accepts the two-parameter spelling and the
+  bare one as well (`docs/design/sum-types.md` D5, a checker bug owed
+  independently). What is missing is a variant, a constructor, a pattern and a
+  layout; the type is uninhabited, not unspellable.
+- **I/O reports failure as `eventus`; a count is never silently short.** A closed descriptor is discovered at the write, which a bare `mensura` cannot report, so `Scriptor.scribe` returns `eventus<mensura>` (`docs/design/runtime.md`, finding 10); `examples/imprime.exsc` and §14 entry 12 write `-> mensura` and are `[OPEN]` until `eventus` is inhabited (the bullet above). `Lector.lege_octeto` (§4.6) is provisional the same way: its `-> u16` carries 256 for end of input and for an error alike (`tests/unit/prelude_lege_octeto.asm` pins both), and becomes `-> eventus<u8>` when it is.
 - Grapheme segmentation ships in the core, not a third-party package. This was Rust's mistake.
 - **The Unicode data version is a content-addressed dependency** of every `ego` transitively using text. `plica_unicode` is stable only against a pinned table.
 

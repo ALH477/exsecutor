@@ -275,12 +275,14 @@ CST node kinds are the nonterminals above plus `ERROR` and `MISSING`.
   position, so `lt`/`et`/… stay contextual; prefix not is `!` (section 2.6).
 - **H10 `in` in impl heads vs loops.** Both keyword-led; no shared position.
 - **H11 `..` vs `.` vs floats.** Lexer munches `..` before `.`; floats must
-  require a digit after `.` so `1..n` lexes `INT .. IDENT`. Depends on the
-  `[OPEN]` numeric literal grammar (spec §8.4).
+  require a digit after `.` so `1..n` lexes `INT .. IDENT`. Settled: spec §8.4's
+  float rule requires a fraction to carry at least one digit after the dot and
+  never lets a leading dot start a literal (`tests/unit/lex_float_literal.asm`).
 - **H12 ego hashes and target names.** `x86_64-linux` is
   `Target ::= IDENT ('-' IDENT)*` at grammar level. `sha256-1a2b…` needs a
-  `HASH` token — `1a2b…` is neither identifier nor literal under any settled
-  rule. `[OPEN]`.
+  `HASH` token — `1a2b…` is neither identifier nor literal under any rule,
+  settled or open, so no numeric-literal decision closes this; it is its own
+  token. `[OPEN]`.
 - **H13 patterns before `{`.** A struct pattern `Nomen { … }` would recreate
   H3 in `casus` position; not admitted. `aliter` is the catch-all arm, so no
   wildcard token is needed at arm level.

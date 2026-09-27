@@ -70,20 +70,47 @@ language has never had and had no code to report. D3 makes the sentence true; §
 below states what making it true costs, because four of that fixture's checks exist
 precisely to pin the behaviour D3 outlaws.
 
-**`?` is lexed, parsed, named — and undefined.** `PUN_QUESTION`
-(`lexer/token.inc:155`), emitted by `lexer/lex.inc:771`, spelled in the CST's
-punctuation table (`cst/parse.inc:282`), admitted by §8.6's grammar as
+**`?` is lexed, parsed, named, used — and checked, by a rule the spec never
+wrote.** `PUN_QUESTION` (`compiler/x86_64/lexer/token.inc`, emitted by
+`compiler/x86_64/lexer/lex.inc`), spelled in the CST's punctuation table
+(`compiler/x86_64/cst/parse.inc`), admitted by §8.6's grammar as
 
 ```
 Suffix ::= '.' IDENT | '(' [Expr (',' Expr)*] ')' | '[' Expr ']' | '?'
 ```
 
-and listed in §8.4's sigil table as `` `E?` | error propagation | §5.1 ``. **No
-section of the spec says what it does.** §5.1, which that table cites, mentions
-`eventus` once and `?` not at all. So the language has a postfix operator that
-parses, has a reserved sigil, has a name in a table, and has no semantics — the
-one combination that is worse than an absent feature, because a program can be
-written with it and nothing will say what it means. D4 settles it.
+listed in §8.4's sigil table as `` `E?` | error propagation | §5.1 ``, and
+**used twice in §5.1's own illustrative block** (`abassus.quaere("/")?`,
+`via.sectio(0..ubi)?`). No section of the spec says what it does. The checker
+does: `compiler/x86_64/checker/types/types.inc`'s `.try:` arm settles the
+operand, requires its kind to be `AST_TY_EVENTUS` — `EXS-E0305` otherwise — and
+answers the type's first argument (`AstType.a`). That is an **unconditional
+unwrap with no error branch**: no enclosing-function check, no early return,
+nothing that could carry an `adversum` anywhere. The lowering refuses the node
+by name (`compiler/x86_64/lower/expr.inc`'s dispatcher `rassert`s on `Try`), so
+no program containing `?` has ever run. So the language has a postfix operator
+with a reserved sigil, a name in a table, two uses in the normative text, no
+definition — and an implementation whose meaning is not the one D4 gives it.
+That is the contradiction to record: the spec relies on `?` and does not define
+it, and the checker defines it differently from this document. D4 settles the
+meaning; the checker's arm is what changes to match it.
+
+**`eventus` exists too, as an uninhabited builtin.** It is pool row
+`CHK_TY_P_EVENTUS` in `compiler/x86_64/checker/types/prim.inc`, interned by
+`compiler/x86_64/checker/types/sig.inc`'s `.eventus:` arm as a one-argument
+type (`AST_TY_EVENTUS`, `compiler/x86_64/ast/kinds.inc`) exactly as `refero<T>`
+is, and `compiler/x86_64/checker/rows/layout.inc` answers width 0 for it. A
+program can spell `eventus<mensura>` and the checker accepts it; nothing can
+construct one, match one, or lay one out. Four normative spec sections name
+the type (§4.6, §4.7, §5.1, §11); the two that state an obstacle (§4.6, §11:
+"until `eventus` has syntax") named the wrong one — the syntax is there, the
+*inhabitants* are not — and are respelled to say so.
+
+An earlier version of this section said `?` was "undefined" and its checker
+behaviour "unmeasured", inferring the second from the corpus containing no `?`.
+Absence of a fixture is not absence of an implementation; the sites above were
+there to be read. Recorded rather than silently corrected, per this project's
+evidence note.
 
 **No code exists for any of this.** §13 has nothing for a non-exhaustive
 `discerne`. That is not an oversight to route around: CLAUDE.md forbids inventing
@@ -144,6 +171,23 @@ arbor);` is infinitely sized and needs `refero` or a pointer to be representable
 Refusing it needs a reachability check the checker does not have, and admitting it
 needs a layout rule §6 does not give. **Not decided here**, and the first
 implementation must refuse it by name rather than compute a size for it.
+
+**What replacing the builtin costs, stated because it is easy to underestimate.**
+`eventus` is not a name waiting to be declared; it is a shipped primitive with
+five sites (§2): the pool row and `CHK_TY_P_EVENTUS` in
+`compiler/x86_64/checker/types/prim.inc`; the `.eventus:`/`.una:` arm in
+`compiler/x86_64/checker/types/sig.inc` that interns it with one argument; the
+`.try:` arm in `compiler/x86_64/checker/types/types.inc`, both its kind test and
+its `AstType.a` projection; the width-0 row in
+`compiler/x86_64/checker/rows/layout.inc`; and `AST_TY_EVENTUS` itself in
+`compiler/x86_64/ast/kinds.inc`, with the by-name refusal in
+`compiler/x86_64/lower/expr.inc` keyed off `Try`. Landing D1 as a prelude
+`typus` turns every one of those into a redirect or a deletion, and the order
+matters: **the builtin is not retired until its replacement is inhabited** —
+has variants, a constructor, a pattern and a layout — because four normative
+spec sections (§4.6, §4.7, §5.1, §11) name `eventus`, and a tree where the name
+resolves to nothing is further from the spec than one where it resolves to an
+uninhabited type. Retirement is the last commit of this design, not the first.
 
 ### D2 — Constructor patterns, flat and irrefutable-bound
 
@@ -230,17 +274,23 @@ is why the sigil is worth its permanent place in §8.4.
   `E` to some other error type is **`[OPEN]`**: conversion needs a trait and §7's
   dictionary passing to carry it, and inventing that here would be inventing a
   second feature to justify the first.
-- `?` anywhere else — on a non-`eventus` value, or in a function that does not
-  return `eventus` — is `EXS-E0307` (control flow misuse), reusing the code that
-  already covers `rumpe` outside a loop. It is the same class of mistake: a
-  construct that transfers control used where that transfer has nowhere to go.
-- **Until D4 is implemented, `?` should be refused at the checker rather than
-  parsed and ignored.** A token the parser accepts and nothing checks is the worst
-  of the three states, and it is the state the tree is in now (§2). Whether the
-  checker currently rejects, ignores, or asserts on a `?` is **unmeasured** — the
-  corpus contains no `?`, so nothing has ever exercised it. Measuring that is the
-  first task of implementing this decision, and it may itself be a defect of the
-  `SIGILL`-on-unsettled-node kind §8.4 already records for literal casts.
+- `?` on a non-`eventus` value is **already `EXS-E0305`** — the checker's
+  `.try:` arm raises it today (§2). Codes are permanent, so that half is settled
+  by the tree and is not renumbered here. The other half — `?` in a function
+  that does not return `eventus` — is the one nothing checks; the proposal is
+  `EXS-E0307` (control flow misuse), reusing the code that already covers
+  `rumpe` outside a loop, since it is the same class of mistake: a construct
+  that transfers control used where that transfer has nowhere to go. That
+  needs no §13 amendment; §13 has the code.
+- **Until D4 is implemented, the checker's present arm should refuse `?` rather
+  than unwrap it.** Measured (§2): the arm accepts `e?` on any `eventus`,
+  answers `T`, and has no error branch; only the lowering's by-name `rassert`
+  keeps such a program from being emitted. A program that type-checks and then
+  traps the compiler is the `SIGILL`-on-unsettled-node defect class §8.4
+  already records for literal casts, reached a different way. The honest
+  interim state is a diagnostic at the `?`; which existing code carries it is
+  the implementation commit's question, and §13 must not gain one for a
+  temporary state.
 
 ### D5 — `eventus` takes two type parameters, and the spec's three spellings are wrong
 
@@ -267,6 +317,21 @@ rather than a nuance: §11 writes `eventus<mensura>` twice, §4.6 writes
 Under D5 all four must be respelled. They are marked `[OPEN]` today, which is why
 this is a respelling and not a broken promise — but the arity is worth fixing in
 the same change that lands D1, so that no fixture is written against the short form.
+
+**The checker already accepts the two-parameter spelling — and the
+zero-parameter one — because it counts generic arguments from one side only.**
+`compiler/x86_64/checker/types/sig.inc`'s `__chk_ty_genarg` compares the
+argument count against the *index it is asked for* (`jbe .bad`), a lower
+bound: `eventus<mensura, erratum>` type-checks today and `erratum` is silently
+discarded, as are `textus<u8>` and `refero<A, B>` — the `.una:` arm reads
+argument 0 only, and the `.simple:` arm never reads the list at all. Bare
+`eventus` with no `<…>` takes `.none:`, which answers the error type **without
+raising**, so §5.1's spelling passes too. §7's item 4 (`eventus<mensura>` as
+`EXS-E0304`) therefore cannot be made to pass by anything in this design: the
+count must first be checked at both ends, at the `GenericArgs` node when there
+is one and at the path segment when there is not, raising the `EXS-E0304` the
+site already raises. That is a prerequisite owed by the checker independently
+of sum types — a real silent-acceptance bug today — not part of D5.
 
 ---
 
@@ -337,6 +402,21 @@ and each is deferred for the same reason: it is a second feature that the first 
 does not need, and this project's evidence note records three versions that asserted
 more than they had built.
 
+**A sum type has to be sized before it can be a local, a field or a parameter,
+and nothing in the tree sizes one.** `compiler/x86_64/checker/rows/layout.inc`'s
+header lists the kinds that answer width 0 — `eventus` among them — and says
+what happens to one inside a plain struct: it "gets a layout that is wrong
+rather than absent". The guard that keeps that from being observable is
+`@transitus`-only (`EXS-E0321` unannotated, `EXS-E0309` annotated); a plain
+struct has no diagnostic for it. And there is no discriminant concept anywhere
+— no tag width, no payload union, no `lwr_ty_size` arm. So D1 cannot land at
+the CST first and grow a layout later: a `typus` with variants admitted before
+layout answers a width is silently wrong at every field offset after it. **The
+first commit of this design is layout — tag plus the largest payload, with the
+tag's width and the payload alignment decided and pinned by a fixture — and
+the parser change comes after it.** This is the sixth cost, and it is the one
+that fixes the order.
+
 ---
 
 ## 7. Evidence plan — what would retire each `[UNTESTED]`
@@ -362,7 +442,9 @@ starts holding this document to them.
    pass. The code set must *equal* `{EXS-E0351}`, the way `run_conformance_tests`
    checks an entry, so a second unrelated diagnostic cannot hide in it.
 4. **tests/unit/chk_ty_eventus_arity.asm** — D5: `eventus<mensura>` with one
-   argument is `EXS-E0304`.
+   argument is `EXS-E0304`. **Blocked on the checker's one-sided count** (D5):
+   until `__chk_ty_genarg`'s test has an upper bound this fixture cannot pass,
+   and that fix is owed independently of this design.
 5. **tests/programs/eventus/** — D4 end to end on both backends: a program that
    reads with `lege_octeto`, propagates with `?`, and distinguishes end-of-input
    from a read error, which no program in this tree can currently do. This is the
