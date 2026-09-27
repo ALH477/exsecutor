@@ -513,3 +513,67 @@ This section said `make test` and `make reproduce` could not run because
 reproduce` was itself broken from the day exsc.asm gained an include until
 528fe7d, which is the kind of thing this file is for). Kept as a heading so a
 reader who remembers the limitation finds its retraction rather than silence.
+
+## Checks that pass without exercising their claim
+
+`tests/run.sh`'s own headers count **four** green checks this project has
+produced that saw nothing, and every floor in that file exists because of
+them. Those four were caught. The list below is the ones still standing: a
+check that passes for a reason unrelated to what it claims to test. They are
+gathered here because each was found in a different place — one in a design
+README, one in a commit message, two only in a session transcript — and a
+defect recorded four places is recorded nowhere.
+
+The shared cause is not carelessness. **It is that the harness cannot produce
+the input state the check covers**, so the check exercises the path and not
+the condition.
+
+1. **The float environment is unobservable.** Dirtying `MXCSR` to `FTZ|DAZ`
+   leaves all eleven `somnium` rendering fixtures byte-identical, because
+   FTZ/DAZ change a result only on a **subnormal** and no fixture produces
+   one. The goldens therefore cannot detect a float-environment regression.
+   Recorded as `[UNTESTED]` in `compiler/x86_64/prelude/README.md`. *Measuring
+   trap, paid once already:* the engine raises PE on its first multiply, so
+   the register reads `0x1fa0`, not `0x1f80` — a whole-register comparison
+   calls a correct reset a failure. Compare the bits that matter.
+2. **The bulk pair's partial-write loop** is `[UNTESTED]`: a short `write`
+   needs a full pipe, and this harness has no second process.
+3. **Its read-fully loop**, for the same reason: a short `read` needs a
+   fragmented input, which one process cannot produce.
+4. **`Lector.lege_octetos` has no caller in any shipped program.**
+   `examples/somnium/machina.exsc` calls the singular `lege_octeto` at all
+   three read sites. The row is **not under-tested** —
+   `tests/unit/prelude_lege_octetos.asm` pins it directly — the gap is that no
+   real workload exercises it. A signum request costs 44,819
+   `read(2)` calls (counted with `strace -c`) where the row exists to make it
+   one. Tested, never used — so a regression that appears only under a real
+   workload would not be caught.
+
+**What closes 1** is a golden whose expected output depends on a subnormal
+result, which then fails under a dirtied `MXCSR`. **4** is a two-line edit to
+`machina.exsc`'s read loops plus a re-measure.
+
+**2 and 3 may be much smaller than "a second process", and this is a lead
+rather than a result.** The shape that catches a swallowed partial failure is
+not a fragmented pipe: it is asserting a **bound** on bytes accepted after a
+refusal — never more than one frame's worth — instead of asserting that a
+short count eventually appears. A bound needs only a consumer that says no,
+which `tests/unit/` can build; the pipe is needed only to make the *partial*
+case arise naturally, and a descriptor that refuses after **N bytes** would
+construct it directly. Nobody has tried it, so the honest status of 2 and 3 is
+unchanged: **the bytes-moved-then-error path is unprovoked in this tree by
+anyone.** If the lead holds, the expensive part of the sizing — a harness-level
+second process — is not needed at all. Proposed by the Oligarchy session, who
+built the equivalent gate downstream and mutation-tested it.
+
+**One rule for writing any of them, and it is why the bound is the right
+assertion.** "The writer eventually reports a short count" is too weak when a
+construct has two emit call sites: a refusal swallowed at the first still
+surfaces at the second and reads as a working refusal. Assert *which* call
+refuses, or bound what may pass after one. Found by mutation testing, and it
+is the difference between a fixture that pins the rule and one that pins the
+symptom.
+
+Measured 2026-09-27 across three concurrent sessions. Adding to this list is
+better than leaving an instance in a transcript; removing a line from it
+requires the fixture, not an argument.
