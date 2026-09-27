@@ -367,7 +367,15 @@ EXS_IFACE_D_EXLEGE_OCTETO	= 18
 EXS_IFACE_D_SCRIPTORIUM		= 19
 EXS_IFACE_D_INSCRIBE		= 20
 EXS_IFACE_D_INSCRIBE_OCTETO	= 21
-EXS_IFACE_DECL_COUNT		= 22
+; spec §4.6: the bulk pair, APPENDED for the same reason as every row
+; above. `scribe_octetos` writes n bytes from a buffer to a Scriptor;
+; `lege_octetos` reads n bytes into one from a Lector. Both take a
+; `&acies<u8, 0>` (length-polymorphic, EXS-E0312 when n exceeds the
+; extent) and the length n. The authority is the RECEIVER's mark, same
+; as the one-byte pair, so the function rows bear no capability.
+EXS_IFACE_D_SCRIBE_OCTETOS	= 22
+EXS_IFACE_D_LEGE_OCTETOS	= 23
+EXS_IFACE_DECL_COUNT		= 24
 
 if defined EXS_IFACE_EMIT_DECLS
 
@@ -441,6 +449,13 @@ exsrt_iface_nomina:
   .inscribe_octeto	= $ - exsrt_iface_nomina
 	db 'inscribe_octeto'
   .inscribe_octeto_len	= $ - exsrt_iface_nomina - .inscribe_octeto
+  ; spec §4.6: the bulk pair's names. Appended, like every row.
+  .scribe_octetos	= $ - exsrt_iface_nomina
+	db 'scribe_octetos'
+  .scribe_octetos_len	= $ - exsrt_iface_nomina - .scribe_octetos
+  .lege_octetos		= $ - exsrt_iface_nomina
+	db 'lege_octetos'
+  .lege_octetos_len	= $ - exsrt_iface_nomina - .lege_octetos
   ; ---- prelude symbols. The label in the blob carries emit.inc's `bfausr_`
   ; prefix (runtime.md 2.2); the IR names the short form, and the emitter
   ; prints the prefix. These are the SHORT forms.
@@ -489,6 +504,12 @@ exsrt_iface_nomina:
   .sym_inscribe_octeto	= $ - exsrt_iface_nomina
 	db 'exsrt_scriptorium_inscribe_octeto'
   .sym_inscribe_octeto_len = $ - exsrt_iface_nomina - .sym_inscribe_octeto
+  .sym_scribe_octetos	= $ - exsrt_iface_nomina
+	db 'exsrt_scriptor_scribe_octetos'
+  .sym_scribe_octetos_len = $ - exsrt_iface_nomina - .sym_scribe_octetos
+  .sym_lege_octetos	= $ - exsrt_iface_nomina
+	db 'exsrt_lector_lege_octetos'
+  .sym_lege_octetos_len	= $ - exsrt_iface_nomina - .sym_lege_octetos
 EXS_IFACE_NOMINA_LEN = $ - exsrt_iface_nomina
 
 ; ---- signature pool ---------------------------------------------------------
@@ -544,6 +565,13 @@ exsrt_iface_signa:
   .inscribe_octeto	= $ - exsrt_iface_signa
 	db 3, EXS_IFACE_T_VOID, EXS_IFACE_T_PTR, EXS_IFACE_T_PTR, EXS_IFACE_T_U8
 								; (ret w b) -> void
+  ; spec §4.6: the bulk pair's signatures.
+  .scribe_octetos	= $ - exsrt_iface_signa
+	db 3, EXS_IFACE_T_U64, EXS_IFACE_T_PTR, EXS_IFACE_T_PTR, EXS_IFACE_T_U64
+						; (ptr ptr u64) -> u64
+  .lege_octetos		= $ - exsrt_iface_signa
+	db 3, EXS_IFACE_T_U64, EXS_IFACE_T_PTR, EXS_IFACE_T_PTR, EXS_IFACE_T_U64
+						; (ptr ptr u64) -> u64
 EXS_IFACE_SIGNA_LEN = $ - exsrt_iface_signa
 
 ; ---- the declarations -------------------------------------------------------
@@ -823,6 +851,32 @@ exsrt_iface_decls:
 	dd exsrt_iface_nomina.sym_inscribe_octeto, exsrt_iface_nomina.sym_inscribe_octeto_len
 	dd EXS_IFACE_D_SCRIPTORIUM
 	dd exsrt_iface_signa.inscribe_octeto
+	dd 0, 0
+
+; 22: functio scribe_octetos(s: Scriptor, b: &acies<u8, 0>, n: mensura) -> mensura
+;     spec §4.6: the bulk pair's write half. Writes up to n bytes from b to
+;     the Scriptor's descriptor; returns the count written (short only at
+;     end of capacity or error, like `inscribe`). The buffer's type is
+;     `&acies<u8, 0>` -- length-polymorphic: 0 means "any length", and
+;     the checker enforces n <= the array's extent (EXS-E0312).
+	db EXS_IFACE_K_FN, EXS_IFACE_F_PUBLICA or EXS_IFACE_F_APERTUM
+	db EXS_IFACE_CAP_NONE, 0
+	dd exsrt_iface_nomina.scribe_octetos, exsrt_iface_nomina.scribe_octetos_len
+	dd exsrt_iface_nomina.sym_scribe_octetos, exsrt_iface_nomina.sym_scribe_octetos_len
+	dd EXS_IFACE_D_SCRIPTOR
+	dd exsrt_iface_signa.scribe_octetos
+	dd 0, 0
+
+; 23: functio lege_octetos(l: Lector, b: &mutabilis acies<u8, 0>, n: mensura) -> mensura
+;     The mirror: reads up to n bytes into b from the Lector's descriptor;
+;     returns the count read (short at end of input). Loops until n bytes
+;     are in, the kernel returns 0, or a non-EINTR error.
+	db EXS_IFACE_K_FN, EXS_IFACE_F_PUBLICA or EXS_IFACE_F_APERTUM
+	db EXS_IFACE_CAP_NONE, 0
+	dd exsrt_iface_nomina.lege_octetos, exsrt_iface_nomina.lege_octetos_len
+	dd exsrt_iface_nomina.sym_lege_octetos, exsrt_iface_nomina.sym_lege_octetos_len
+	dd EXS_IFACE_D_LECTOR
+	dd exsrt_iface_signa.lege_octetos
 	dd 0, 0
 
 assert $ - exsrt_iface_decls = EXS_IFACE_DECL_COUNT * EXS_IFACE_DECL_SIZE

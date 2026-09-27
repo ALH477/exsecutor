@@ -319,12 +319,11 @@ Shadowing an ordinary name in an inner block is allowed
   byte-identical to the oracle (the status block).
 - ~~`[UNTESTED]`: frame time on either build.~~ Retired 2026-09-27; section
   10.
-- `[OPEN]`: a bulk-write prelude primitive, which would give the reference
-  build what `hospes.c` gives the C one. Reported to
-  `compiler/x86_64/prelude/`'s owner. **Section 10 puts a number on it: it
-  is worth 100× on seven of the nine somnia**, which is not a tuning
-  opportunity but the difference between the reference build being a
-  demonstration and being the thing you would actually run.
+- ~~`[OPEN]`: a bulk-write prelude primitive, which would give the reference
+  build what `hospes.c` gives the C one.~~ **Closed 2026-09-27.** Spec §4.6
+  gained `Scriptor.scribe_octetos` and `Lector.lege_octetos`;
+  `machina.exsc`'s `scribe_tabulam` is now one call, and section 10 has the
+  before and after. It was worth what the measurement said it was worth.
 - `[OPEN]`: `quisque` on the independent pixel loops, when a backend can
   dispatch it (section 6).
 
@@ -374,3 +373,42 @@ text (`sub rsp, 3031632` in `bfausr_machina`) rather than summed from the
 declarations. It is reserved for every somnium, including the eight that
 never touch the 3D engine's 512 × 512 frame and f64 z-buffer, because they
 are all one function's locals.
+
+### 10.1 After the bulk write
+
+Same machine, same day, same instrument. The only change is that
+`scribe_tabulam` is `s.scribe_octetos(fb, 48000)` instead of a
+`per i in 0..48000` of `scribe_octeto`. **All seventeen fixtures are still
+byte-identical**; the bytes written are the same bytes in the same order.
+
+| somnium | reference before | reference after | speedup | C after |
+|---|---|---|---|---|
+| `plasma` | 17.04 | **1.08** | 15.8× | 0.07 |
+| `ignis` | 17.16 | **0.84** | 20.4× | 0.06 |
+| `vita` | 17.38 | **1.37** | 12.7× | 0.13 |
+| `pluvia` | 16.61 | **0.64** | 26.0× | 0.04 |
+| `stellae` | 16.57 | **0.62** | 26.7× | 0.04 |
+| `cuniculus` | 16.82 | **0.85** | 19.8× | 0.08 |
+| `abyssus` | 27.79 | **12.88** | 2.2× | 1.71 |
+| `titulus` | 16.73 | **0.66** | 25.3× | 0.05 |
+| `signum` | 37.46 | **22.58** | 1.7× | 2.50 |
+
+**The floor is gone, and that is the result — not the speedups.** Before,
+seven somnia sat within 0.8 ms of each other because the syscalls dominated
+whatever they computed. After, they run from 0.62 to 22.58 ms, and *that
+spread is the effects*: `stellae` moves 256 stars and `signum` rasterizes
+512 × 512 in f64, and the measurement can finally tell them apart. A
+profile of this program taken before today would have said every effect
+cost the same, which was true and useless.
+
+Counted rather than inferred: `somnium_plasma`'s two frames went from
+**96,000 `write(2)` to 2** (`strace -c`), one per frame.
+
+The ratio between the columns fell from 75–119× to 7–27×, and what is left
+is the reference backend's codegen against the C backend's — the second
+fact section 10 separated out, now unobscured. `abyssus` and `signum` move
+least in relative terms because they were the two that were never on the
+floor.
+
+`scribe_tabulam`'s own stack frame went from 176 bytes to 48: the loop
+counter and the running total are gone with the loop.

@@ -1,6 +1,6 @@
 // examples/somnium/machina.exsc
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DeMoD LLC.
+// Copyright (C) 2026 The Exsecutor authors.
 // ---------------------------------------------------------------------------
 // The engine: read one request on stdin, then write frames on stdout until
 // the request is satisfied. This is where authority enters, once, as the
@@ -39,24 +39,36 @@ functio verbum(r: acies<u8, 17>, p: mensura) -> u32 {
         + (r[p + 3] sicut u32 sursum 24);
 }
 
-// One frame, byte by byte: 48,000 write(2) calls (somnium.exsc's header).
+// One frame, in ONE write(2) -- spec §4.6's `scribe_octetos`.
+//
+// This was a `per i in 0..48000` of `scribe_octeto`, and somnium.exsc's
+// header still explains why the frame is 160x100 rather than 320x200: at one
+// write(2) per byte, a bigger frame was unaffordable. docs/design/somnium.md
+// section 10 measured what that cost -- 16.6 to 17.4 ms a frame on the
+// reference build for SEVEN OF THE NINE somnia, whatever they computed,
+// because none of them was what the time was going on. The C build, whose
+// host buffers the frame, did the same work in 0.14 to 0.23 ms.
+//
+// The bulk row closes that. Nothing else in this file changes, and no
+// golden moves: the bytes written are the same bytes in the same order, and
+// tests/programs/somnium_*/ is what proves it rather than this comment.
+//
+// The count is still checked against 48,000 by the caller, so a short write
+// -- the only failure signal a count-returning call has -- still exits 2.
 functio scribe_tabulam(s: Scriptor, fb: acies<u8, 48000>) -> mensura {
-    mutabilis n: mensura = 0;
-    per i in 0..48000 {
-        n = n + s.scribe_octeto(fb[i]);
-    }
-    redde n;
+    redde s.scribe_octetos(fb, 48000);
 }
 
 functio machina(l: Lector, s: Scriptor) -> u8 {
     // ---- the request: 17 bytes, the model for somnium 8, then the end ------
+    // One read(2), not seventeen. A SHORT COUNT IS THE REFUSAL: `lege_octetos`
+    // reads fully (spec §4.6), so fewer than 17 bytes means the input ended --
+    // which is exactly what the per-byte loop this replaces was testing when
+    // it compared each `lege_octeto` against 256. `somnium_brevis` (16 bytes)
+    // is the fixture that holds it.
     mutabilis r: acies<u8, 17> = [0; 17];
-    per i in 0..17 {
-        firma o: u16 = l.lege_octeto();
-        si o ge 256 {
-            redde 1;
-        }
-        r[i] = o sicut u8;
+    si l.lege_octetos(r, 17) ne 17 {
+        redde 1;
     }
     si r[0] ne 0x53 { redde 1; }    // S
     si r[1] ne 0x4F { redde 1; }    // O
@@ -68,12 +80,14 @@ functio machina(l: Lector, s: Scriptor) -> u8 {
     }
     mutabilis exsg: acies<u8, 44801> = [0; 44801];
     si somnium eq 8 {
-        per i in 0..44801 {
-            firma o: u16 = l.lege_octeto();
-            si o ge 256 {
-                redde 1;
-            }
-            exsg[i] = o sicut u8;
+        // The 44,801-byte model in ONE read(2) rather than 44,801 of them.
+        // This is the call that made the read side worth changing: before it,
+        // a somnium 8 request cost 44,819 read(2) (strace -c, measured) while
+        // the whole frame path had already been reduced to one write(2).
+        // Short count = a truncated model = refused, and
+        // `somnium_signum_brevis` (one byte short) is the fixture for it.
+        si l.lege_octetos(exsg, 44801) ne 44801 {
+            redde 1;
         }
         // "EXSG", 1493 vertices, 2981 faces -- what signaculum_pingue
         // would refuse with 1 or 2 -- refused here, before any frame.

@@ -740,6 +740,17 @@ chk_row_pre_marks:
 	db AST_CAP_ARCHIVUM	; 20 `structura Scriptorium` -- mark {archivum}
 	db 0			; 21 `functio inscribe(w: Scriptorium, t: textus)`
 	db 0			; 22 `functio inscribe_octeto(w: Scriptorium, b: u8)`
+	db 0			; 23 `functio scribe_octetos(s: Scriptor, …)`
+				;   spec §4.6: the bulk pair's write half.
+				;   The authority is the RECEIVER's mark,
+				;   drawn through `Scriptor`'s row 1, so
+				;   this row bears nothing. A bulk write is
+				;   not a larger authority than a one-byte
+				;   write.
+	db 0			; 24 `functio lege_octetos(l: Lector, …)`
+				;   The mirror: the authority is the
+				;   RECEIVER's mark, drawn through
+				;   `Lector`'s row 9.
 assert $ - chk_row_pre_marks = CHK_TY_PRE_COUNT
 
 ; ---- spec §4.3: the atoms a TYPE bears -------------------------------------

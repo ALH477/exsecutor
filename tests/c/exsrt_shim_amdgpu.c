@@ -1,6 +1,6 @@
 /* tests/c/exsrt_shim_amdgpu.c -- the device phase's stand-in for a runtime.
  * SPDX-License-Identifier: GPL-3.0-or-later
- * Copyright (C) 2026 DeMoD LLC.
+ * Copyright (C) 2026 The Exsecutor authors.
  *
  * VERIFICATION-ONLY, exactly as exsrt_shim.c and exsrt_shim_mips.c beside it
  * are, and for the same reason: whole-program mode is a later milestone
@@ -253,6 +253,41 @@ uint64_t exsrt_lector_lege_octeto(unsigned char *lp)
     (void)l;                /* descriptor 0 is the only reader (point 2) */
     if (g_in_pos >= g_in_len) return 256;
     return g_in[g_in_pos++];
+}
+
+/* exsrt_scriptor_scribe_octetos(s: ptr, b: ptr, n: u64) -> u64 -- the bulk
+ * pair on a device that has no syscalls: a copy into the output buffer, with
+ * the same truncate-and-count behaviour scribe does above. A short return is
+ * the buffer filling, which is this shim's only failure. */
+uint64_t exsrt_scriptor_scribe_octetos(unsigned char *sp, unsigned char *b,
+                                        uint64_t n)
+{
+    ExsScriptor s;
+    uint64_t room, i, stored;
+    memcpy(&s, sp, sizeof s);
+    (void)s;
+    room = g_out_cap - g_out_pos;
+    stored = n < room ? n : room;
+    for (i = 0; i < stored; i++) g_out[g_out_pos + i] = b[i];
+    g_out_pos += stored;
+    g_dropped += n - stored;
+    return stored;
+}
+
+/* exsrt_lector_lege_octetos(l: ptr, b: ptr, n: u64) -> u64 -- reads fully
+ * from the input buffer; a short count is its end, this shim's EOF. */
+uint64_t exsrt_lector_lege_octetos(unsigned char *lp, unsigned char *b,
+                                    uint64_t n)
+{
+    ExsLector l;
+    uint64_t left, i, got;
+    memcpy(&l, lp, sizeof l);
+    (void)l;                /* descriptor 0 is the only reader (point 2) */
+    left = g_in_len - g_in_pos;
+    got = n < left ? n : left;
+    for (i = 0; i < got; i++) b[i] = g_in[g_in_pos + i];
+    g_in_pos += got;
+    return got;
 }
 
 /* ---- the kernel entry --------------------------------------------------- */

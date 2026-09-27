@@ -192,6 +192,8 @@ CHK_TY_PRE_EXLEGE_OCT	= EXS_IFACE_D_EXLEGE_OCTETO + 1
 CHK_TY_PRE_SCRIPTORIUM	= EXS_IFACE_D_SCRIPTORIUM + 1
 CHK_TY_PRE_INSCRIBE	= EXS_IFACE_D_INSCRIBE + 1
 CHK_TY_PRE_INSCRIBE_OCT	= EXS_IFACE_D_INSCRIBE_OCTETO + 1
+CHK_TY_PRE_SCRIBE_OCTS	= EXS_IFACE_D_SCRIBE_OCTETOS + 1
+CHK_TY_PRE_LEGE_OCTS	= EXS_IFACE_D_LEGE_OCTETOS + 1
 CHK_TY_PRE_COUNT	= EXS_IFACE_DECL_COUNT
 
 ; ---- the §5.1 TEXT-VIEW rows, which `prelude/interface.inc` DOES NOT HAVE ----
@@ -369,6 +371,8 @@ chk_ty_pre_names:
 	db 11,'Scriptorium'
 	db 8,'inscribe'
 	db 15,'inscribe_octeto'
+	db 14,'scribe_octetos'
+	db 12,'lege_octetos'
 	db 13,'plica_unicode'
 	db 13,'plica_sermone'
 	db 6,'octeti'
@@ -378,8 +382,10 @@ assert CHK_TY_PRE_ALLOC = 7
 assert CHK_TY_PRE_SCRIBE_OCT = 8
 assert CHK_TY_PRE_LEGE_OCT = 11
 assert CHK_TY_PRE_INSCRIBE_OCT = 22
-assert CHK_TY_PRE_COUNT = 22
-assert CHK_TY_PRE_NUMERUS = 26
+assert CHK_TY_PRE_SCRIBE_OCTS = 23
+assert CHK_TY_PRE_LEGE_OCTS = 24
+assert CHK_TY_PRE_COUNT = 24
+assert CHK_TY_PRE_NUMERUS = 28
 
 ; `arborea` and `ordinata` -- spec §5.4's two reduction shapes, §8.6's
 ; `['forma' IDENT [INT]]`. Not keywords (lexer/keywords.inc does not know
@@ -886,6 +892,46 @@ proc __chk_ty_mensura, chkt_wm
 	return
 endp
 
+; __chk_ty_bulkbuf(w, mut) -> rax = the type id of `&acies<u8, 0>` when `mut`
+; is 0, `&mutabilis acies<u8, 0>` when it is 1.
+;
+; §4.6's two bulk rows spell their buffer this way and nothing else does. The
+; ZERO EXTENT is the whole trick: an `acies`'s length is part of its type and
+; §8.6 makes it a literal, so a prelude row with a real extent would serve one
+; buffer size and refuse every other. Zero is the extent no array literal can
+; produce -- `[0; 0]` is `EXS-E0308`, measured -- so the spelling cannot
+; collide with any buffer a program actually has, and
+; `checker/types/member.inc`'s `__chk_ty_bulkparam` can read it as "any
+; extent" without that reading ever applying to a real type.
+;
+; THE ELEMENT IS `u8` AND `nativus`: a byte has no order, as row 7's `b: u8`
+; already says. So this and `scribe_octeto`'s parameter agree about what a
+; byte is, which is what keeps the one-byte and bulk rows one family rather
+; than two spellings of neighbouring ideas.
+proc __chk_ty_bulkbuf, chkt_wbb, chkt_mbb
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [chkt_wbb]
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, AST_SIGN_U
+	mov	rdx, 8
+	mov	rcx, AST_ORD_NATIVUS
+	call	ast_type_int
+	mov	r12, rax
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, AST_TY_ACIES
+	mov	rdx, r12
+	xor	rcx, rcx			; the extent: 0, deliberately
+	call	ast_type_una
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	mov	rdx, [chkt_mbb]
+	call	ast_type_borrow
+	return
+endp
+
+
 ; __chk_ty_simple(w, kind) -> rax = the id of a field-less type kind.
 proc __chk_ty_simple, chkt_ws, chkt_ks
 	locals
@@ -1044,6 +1090,10 @@ proc chk_ty_prelude_type, chkt_wp, chkt_kp
 	je	.fn_inscribe
 	cmp	r12, CHK_TY_PRE_INSCRIBE_OCT
 	je	.fn_inscribe_oct
+	cmp	r12, CHK_TY_PRE_SCRIBE_OCTS
+	je	.fn_scribe_octs
+	cmp	r12, CHK_TY_PRE_LEGE_OCTS
+	je	.fn_lege_octs
 	cmp	r12, CHK_TY_PRE_PLICA_UNI
 	je	.fn_plica_uni
 	cmp	r12, CHK_TY_PRE_PLICA_SERM
@@ -1519,6 +1569,94 @@ proc chk_ty_prelude_type, chkt_wp, chkt_kp
 	mov	rdi, rbx
 	mov	rsi, [chkt_ep]
 	mov	rdx, 2
+	call	__chk_ty_fn_empty
+	return
+
+  .fn_scribe_octs:
+	; functio scribe_octetos(s: Scriptor, b: &acies<u8, 0>, n: mensura)
+	;     -> mensura
+	; The borrow is IMMUTABLE -- this reads the buffer and writes a
+	; descriptor. `&` and `&mutabilis` intern as distinct type ids
+	; (`ast_type_borrow`'s `mut` travels in the `sign` byte), so the two
+	; rows cannot be confused for one another by the acceptance rule.
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	call	ast_list_mark
+	mov	[chkt_np], rax
+	mov	rdi, rbx
+	mov	rsi, CHK_TY_PRE_SCRIPTOR
+	call	chk_ty_prelude_type
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, rbx
+	xor	rsi, rsi			; mut = 0
+	call	__chk_ty_bulkbuf
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, rbx
+	call	__chk_ty_mensura
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, rbx
+	call	__chk_ty_mensura
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_np]
+	call	ast_list_emit
+	mov	[chkt_ep], rax
+	mov	rdi, rbx
+	mov	rsi, [chkt_ep]
+	mov	rdx, 3
+	call	__chk_ty_fn_empty
+	return
+
+  .fn_lege_octs:
+	; functio lege_octetos(l: Lector, b: &mutabilis acies<u8, 0>,
+	;     n: mensura) -> mensura
+	; THE RESULT IS `mensura` AND THERE IS NO 256 SENTINEL, where
+	; `lege_octeto` above returns `u16` and uses one. A byte has no value
+	; left to mean "the input ended", a COUNT has -- a short one. So this
+	; returns the count, and `count < n` means end of input or error, the
+	; two undistinguished exactly as row 10's 256 leaves them.
+	;
+	; The borrow is `&mutabilis`: this one writes the buffer, so ADR 0016
+	; requires a `mutabilis` root at the call site.
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	call	ast_list_mark
+	mov	[chkt_np], rax
+	mov	rdi, rbx
+	mov	rsi, CHK_TY_PRE_LECTOR
+	call	chk_ty_prelude_type
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, rbx
+	mov	rsi, 1				; mut = 1
+	call	__chk_ty_bulkbuf
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, rbx
+	call	__chk_ty_mensura
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, rbx
+	call	__chk_ty_mensura
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_np]
+	call	ast_list_emit
+	mov	[chkt_ep], rax
+	mov	rdi, rbx
+	mov	rsi, [chkt_ep]
+	mov	rdx, 3
 	call	__chk_ty_fn_empty
 	return
 
