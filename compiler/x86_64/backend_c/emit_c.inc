@@ -847,7 +847,8 @@ endp
 
 ; __bfc_emit_bin(ctx, module, func, instid) -- one statement, three shapes:
 ;
-;   HELPER  vK = exsi_<op>_<u|i>(A, B, N);     add sub mul adds subs shl shr
+;   HELPER  vK = exsi_<op>_<u|i>(A, B, N);     add sub mul div rem adds
+;                                             subs shl shr
 ;   WRAP    vK = exsi_norm_<u|i>(A <op> B, N); addw subw mulw
 ;   PLAIN   vK = A <op> B;                     and or xor
 ;
@@ -855,6 +856,14 @@ endp
 ; or product are the low N bits of the true one, so wrapping needs no helper
 ; -- only the normalisation that puts the result back in canonical form.
 ; The PLAIN row needs neither: canonical in, canonical out, for all three.
+;
+; `div`/`rem` ARE ORDINARY HELPER ROWS HERE and nothing about this shape
+; changes for them, which is the point: the two checks spec 5.4 asks for (a
+; zero divisor, and T_MIN / -1) live inside `exsi_div_*`/`exsi_rem_*`, ahead
+; of the division rather than after it -- see the prologue, which argues why
+; the order is forced. A `div` reaching here is one call, exactly as an `add`
+; is, and the reference's branchless test-and-jump pair is the same function
+; spelled in the other language.
 proc __bfc_emit_bin, ctx, module, func, instid
 	uses	rbx
 	locals
@@ -1017,6 +1026,10 @@ proc __bfc_emit_helpername, ctx, op
 	je	.h_sub
 	cmp	dword [op], BFA_OP_MUL
 	je	.h_mul
+	cmp	dword [op], BFA_OP_DIV
+	je	.h_div
+	cmp	dword [op], BFA_OP_REM
+	je	.h_rem
 	cmp	dword [op], BFA_OP_ADDS
 	je	.h_adds
 	cmp	dword [op], BFA_OP_SUBS
@@ -1032,6 +1045,12 @@ proc __bfc_emit_helpername, ctx, op
 	return
   .h_mul:
 	__bfc_emtxt "exsi_mul"
+	return
+  .h_div:
+	__bfc_emtxt "exsi_div"
+	return
+  .h_rem:
+	__bfc_emtxt "exsi_rem"
 	return
   .h_adds:
 	__bfc_emtxt "exsi_adds"
@@ -3905,12 +3924,11 @@ endp
 ; ============================================================================
 
 ; __bfc_refuse(op) -- never returns. One message per REASON, not one per
-; opcode: c-backend.md D4's table gives 14 refused opcodes in eight classes
-; (nop is the 15th, opcode 0, outside the 1..60 numbering), and a reader who
+; opcode: c-backend.md D4's table gives 12 refused opcodes in seven classes
+; (nop is the 13th, opcode 0, outside the 1..60 numbering), and a reader who
 ; meets one wants to know why the backend has no lowering, which is a
 ; property of the class.
 ;
-;   div rem                  no reference lowering exists (ssa-ir.md 2.3)
 ;   muls addov subov mulov   no reference lowering exists (spec 5.4 has no
 ;                            such operator or predicate)
 ;   fma                      no lowering in EITHER backend (spec 5.4
@@ -3918,7 +3936,18 @@ endp
 ;                            asked for, never made)
 ;   bitcast                  nothing in-tree produces it; its semantics
 ;                            are [OPEN] (ssa-ir.md 2.3)
-;   redinit contrib redfin   reductions have no reference lowering
+;   redinit contrib redfin   no lowering HERE; the reference has had one
+;                            since 2026-09-25 -- owed work, not parity.
+;                            THIS ARM IS UNREACHABLE for well-formed IR:
+;                            the `red.F` handle has no C type name, so
+;                            __bfc_ctype dies first, and a `redinit`
+;                            precedes every `contrib`/`redfin` of its
+;                            handle. Measured 2026-09-26 -- emit_c.asm
+;                            over red_ordinata_f32.ir exits 4 with the
+;                            TYPE message, not this one. Kept, not
+;                            deleted: it is the arm a reduction row
+;                            without a `red` result would fall to, and
+;                            silent fall-through is the worse failure.
 ;   retain release           no object header exists in library mode
 ;   callind                  a function value's closure layout is [OPEN]
 ;   nop                      verifier rule 9 refuses it
@@ -3928,13 +3957,18 @@ endp
 ; cannot: D1 withholds the runtime that owns an object header. That
 ; asymmetry is the one place the two backends' verdicts legitimately
 ; differ, and it is what D6's `c-emit-exit=` key exists for.
+;
+; `div` AND `rem` LEFT THIS SET, and the shape of their leaving is the rule
+; the invariant above predicts. The reference gained them on 2026-09-25
+; (emit.inc's __bfa_emit_divrem, spec 5.4); for one commit the C backend
+; still refused them here, which is the ONE state this table does not
+; describe -- a refusal whose stated reason had stopped being true. They are
+; now `exsi_div_*`/`exsi_rem_*` helper rows in __bfc_emit_bin, and the six
+; tests/ir/ fixtures that carried `c-emit-exit=4` for that one commit carry
+; it no longer: they are built four ways and agree.
 proc __bfc_refuse, op
 	locals
 	endl
-	cmp	dword [op], BFA_OP_DIV
-	je	.divrem
-	cmp	dword [op], BFA_OP_REM
-	je	.divrem
 	cmp	dword [op], BFA_OP_MULS
 	je	.nolowering
 	cmp	dword [op], BFA_OP_ADDOV
@@ -3969,14 +4003,6 @@ proc __bfc_refuse, op
 	mov	rsi, .after_m0 - .m0
 	call	__bfc_die
 
-  .divrem:
-	jmp	.after_m1
-  .m1 db "div/rem: no reference lowering exists (ssa-ir.md 2.3); refused rather than guessed"
-  .after_m1:
-	lea	rdi, [.m1]
-	mov	rsi, .after_m1 - .m1
-	call	__bfc_die
-
   .nolowering:
 	jmp	.after_m2
   .m2 db "muls/addov/subov/mulov: no reference lowering exists (spec 5.4 has no such operator); these enter BOTH backends in one later milestone, with a fixture each"
@@ -4003,7 +4029,7 @@ proc __bfc_refuse, op
 
   .reduction:
 	jmp	.after_m5
-  .m5 db "redinit/contrib/redfin: reductions have no reference lowering (ssa-ir.md 2.6: the reference's lowering of arborea is the definition)"
+  .m5 db "redinit/contrib/redfin: this backend has no lowering for the reductions; the REFERENCE has had one since 2026-09-25 (ssa-ir.md 2.6: its lowering of arborea is the definition), so this is the one asymmetry that is not library mode's -- it is owed work, not a refusal in both backends"
   .after_m5:
 	lea	rdi, [.m5]
 	mov	rsi, .after_m5 - .m5
@@ -4067,12 +4093,16 @@ proc __bfc_emit_inst, ctx, module, func, instid
 	call	__bfc_emit_iconst
 	return
   .n_iconst:
-	; add sub mul addw subw mulw adds subs and or xor shl shr
+	; add sub mul div rem addw subw mulw adds subs and or xor shl shr
 	cmp	dword [op], BFA_OP_ADD
 	je	.dobin
 	cmp	dword [op], BFA_OP_SUB
 	je	.dobin
 	cmp	dword [op], BFA_OP_MUL
+	je	.dobin
+	cmp	dword [op], BFA_OP_DIV
+	je	.dobin
+	cmp	dword [op], BFA_OP_REM
 	je	.dobin
 	cmp	dword [op], BFA_OP_ADDW
 	je	.dobin

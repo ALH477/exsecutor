@@ -20,10 +20,42 @@
 ; Code produced by this compiler is not covered by the GPL --
 ; see Exception A in LICENSE.EXCEPTION.
 ; -----------------------------------------------------------------------------
-; checker fixture -- the typing rules of `aut`, `sursum`, `deorsum` (spec
+; checker fixture -- the typing rules of `aut`, `atque`, `sive`, `sursum`,
+; `deorsum` (spec
 ; §5.4, Integers; docs/design/wire-codec.md D1; the spec cites this fixture
 ; as what exercises those rules), through the whole front end: checker/types/types.inc's `.bitop`
 ; arm and `__chk_ty_expect`'s `.bin` arm.
+;
+; `atque` AND `sive` JOINED THIS FIXTURE ON 2026-09-25, with §5.4's amendment
+; that defines them as "arithmetic on unsigned integers under exactly the
+; rules `aut` has above". THAT is what rows b01..b10 and g01..g07 below pin,
+; and they pin it the only way the claim can be checked: each is `aut`'s own
+; row with the word swapped, expecting the same count, the same code and the
+; same offset. One rule, five words -- so a second copy of the rule that
+; drifted from the first fails here rather than in a program.
+;
+; TWO OF THE NEW ROWS ARE A DEFECT'S GRAVE, not a restatement. Until the
+; checker arm widened, `__chk_ty_expect`'s `.bin_aut` tested
+; `AST_OP_AUT .. AST_OP_DEORSUM` (17..19) and fell through for anything above
+; it -- and `atque`/`sive` are 22/23, because ast/kinds.inc is appended to and
+; `/` (20) and `residuum` (21) sit between the two ranges. So the PENDING case
+; of a bitwise word reached `.bin_push` with no admissibility test at all.
+; Measured against the pre-fix compiler, 2026-09-26:
+;   b05  `redde 1 atque 2;` -> i8   compiled CLEAN, exit 0, and emitted an
+;                                   `and` on signed operands -- silently the
+;                                   thing §5.4 forbids
+;   b06  `redde 1 sive 2;`  -> i8   the same, exit 0
+;   b07  `redde 1.5 atque 2.5;` -> f64
+;                                   reached the BACKEND and died there:
+;                                   `bfa: emitter: unsupported type (an
+;                                   integer uN/iN, or a 64-bit address)`,
+;                                   exit 4 -- a compiler failure where a
+;                                   diagnostic was owed
+; All three are now one `EXS-E0305`, and the loud half of the same gap (the
+; `rassert` in `__chk_ty_binary`, which is what a SETTLED `atque` tripped) is
+; gone with them. The quiet half outlived the loud one precisely because it
+; was quiet; that is why these three rows exist and not merely the settled
+; ones.
 ;
 ; EVERY REJECTED ROW PINS THE COUNT, THE CODE AND THE OFFSET, and every rule
 ; has an accepted twin, so a checker that rejected everything fails the
@@ -42,6 +74,32 @@
 ;   the result is the operand type               u8 aut u8 -> u16 u8 aut u8 -> u8
 ;   a literal takes the other side's type        u16 aut 65536    u16 aut 65535
 ;
+; and the same table again for the two words §5.4 added on 2026-09-25, whose
+; rows are `aut`'s with the word swapped and the expectation unchanged:
+;
+;   rule                                         rejected           accepted
+;   unsigned operands only (E0305)               u8 atque i8 (b01)  u8 atque u8 (g01)
+;     ... each operand judged on its own         i8 sive i8 (b02, 2) u8 sive u8 (g02)
+;     ... a float is not an unsigned integer     u32 sive f32 (b04)
+;     ... an EXPECTATION is judged too           1 atque 2 -> i8 (b05)  -> u8 (g06)
+;                                                1 sive 2 -> i8 (b06)
+;                                                1.5 atque 2.5 -> f64 (b07)
+;   one type both sides (E0303)                  u8 atque u16 (b03) u1 atque u1 (g03)
+;     ... mensura is its own type                mensura atque u64 (b10) mensura sive 1 (g04)
+;   E0305 before E0303                           u8 atque i8 (b01, one diagnostic)
+;   the result is the operand type               u8 sive u8 -> u16 (b09)
+;   a literal takes the other side's type        u16 atque 65536 (b08) u16 atque 65535 (g05)
+;
+; g07 IS THE ONE ROW WITH NO `aut` TWIN: `(a atque b) sive 1`, two different
+; bitwise words in one expression, PARENTHESISED. §5.4 refuses the bare chain
+; `a atque b sive 1` as `EXS-E0201` at the second word -- but that is a PARSE
+; refusal (cst/parse.inc's `__cst_xor` simply stops at a different word;
+; tests/unit/cst_bitand_or.asm rows 3, 4 and 5 pin it), and a front-end
+; diagnostic makes `fx_run` answer -1 rather than testing the checker. So the
+; bare chain is deliberately NOT a row here, and g07 is the other half of
+; §5.4's sentence: once the brackets are written, the checker types the nest
+; like any other, and "parenthesise" is advice a program can actually take.
+;
 ; `u8 aut i8` is BOTH the E0305 row and the ordering row: spec §5.4 says it is
 ; "`EXS-E0305` at the `i8`, not `EXS-E0303`; one diagnostic". A checker that
 ; paired first would report 303; one that did both would report two.
@@ -58,8 +116,15 @@
 ; It remains its own type, so pairing it with `u64` is E0303.
 ;
 ; Exit 0 = every check passed; 10+N = table row N failed (the diagnostics the
-; row did produce are rendered first); 41 = the literal is not the Binary's
-; type, 42 = that type is not u16; 99 = setup.
+; row did produce are rendered first); 201 = the literal is not the Binary's
+; type, 202 = that type is not u16; 99 = setup.
+;
+; THE TYPE-CHECK CODES WERE 41 AND 42 AND MOVED TO 201/202 when `atque` and
+; `sive` brought the table to 34 rows. `10+N` then reaches 44, so 41 and 42 had
+; become ambiguous between "row 30 failed" and "the literal took the wrong
+; type" -- a fixture whose failure code does not say what failed. Any table
+; growing past 31 rows has this collision; 201/202 clears it with room for 190
+; rows, and an exit status is a `u8` so nothing above 255 is available anyway.
 ;
 ; TEST: run=yes expect-exit=0 audit=pass
 
@@ -152,10 +217,10 @@ segment readable executable
 	xor	edi, edi
 	call	sys_exit_group
   .fail41:
-	mov	edi, 41
+	mov	edi, 201
 	call	sys_exit_group
   .fail42:
-	mov	edi, 42
+	mov	edi, 202
 	call	sys_exit_group
   .fail99:
 	mov	edi, 99
@@ -407,6 +472,28 @@ segment readable
   fx_src fx_a06, 'publica functio f(a: u1, b: u1) -> u1 {',            'redde a aut b;'
   fx_src fx_a07, 'publica functio f(a: u8, b: u8) -> u8 {',            'redde a aut b;'
 
+  ; `atque` and `sive` (§5.4, 2026-09-25) -- `aut`'s rows with the word
+  ; swapped. Offsets were read off the real compiler's JSON spans
+  ; (`--diagnostica json`, `span.start`) on these exact sources, not counted
+  ; by hand.
+  fx_src fx_b01, 'publica functio f(a: u8, b: i8) -> u8 {',            'redde a atque b;'
+  fx_src fx_b02, 'publica functio f(a: i8, b: i8) -> i8 {',            'redde a sive b;'
+  fx_src fx_b03, 'publica functio f(a: u8, b: u16) -> u8 {',           'redde a atque b;'
+  fx_src fx_b04, 'publica functio f(x: f32, y: u32) -> u32 {',         'redde y sive x;'
+  fx_src fx_b05, 'publica functio f() -> i8 {',                        'redde 1 atque 2;'
+  fx_src fx_b06, 'publica functio f() -> i8 {',                        'redde 1 sive 2;'
+  fx_src fx_b07, 'publica functio f() -> f64 {',                       'redde 1.5 atque 2.5;'
+  fx_src fx_b08, 'publica functio f(c: u16) -> u16 {',                 'redde c atque 65536;'
+  fx_src fx_b09, 'publica functio f(a: u8, b: u8) -> u16 {',           'redde a sive b;'
+  fx_src fx_b10, 'publica functio f(n: mensura, x: u64) -> mensura {', 'redde n atque x;'
+  fx_src fx_g01, 'publica functio f(a: u8, b: u8) -> u8 {',            'redde a atque b;'
+  fx_src fx_g02, 'publica functio f(a: u8, b: u8) -> u8 {',            'redde a sive b;'
+  fx_src fx_g03, 'publica functio f(a: u1, b: u1) -> u1 {',            'redde a atque b;'
+  fx_src fx_g04, 'publica functio f(n: mensura) -> mensura {',         'redde n sive 1;'
+  fx_src fx_g05, 'publica functio f(c: u16) -> u16 {',                 'redde c atque 65535;'
+  fx_src fx_g06, 'publica functio f() -> u8 {',                        'redde 1 sive 2;'
+  fx_src fx_g07, 'publica functio f(a: u8, b: u8) -> u8 {',            'redde (a atque b) sive 1;'
+
   fx_tab:
 	; u8 aut i8: E0305 at the `i8` and NOTHING ELSE -- not E0303 (§5.4)
 	dq fx_c01, fx_c01_LEN
@@ -453,7 +540,60 @@ segment readable
 	dd 0, 0, 0, 0, 0, 0
 	dq fx_a07, fx_a07_LEN
 	dd 0, 0, 0, 0, 0, 0
+
+	; ---- `atque` and `sive`: the same rules, the same codes, the same
+	; offsets (§5.4, 2026-09-25) ----------------------------------------
+	; u8 atque i8: E0305 at the `i8`, one diagnostic -- the ordering row
+	dq fx_b01, fx_b01_LEN
+	dd 1, 305, 58, 0, 0, 0
+	; i8 sive i8: both operands wrong on their own -- one each
+	dq fx_b02, fx_b02_LEN
+	dd 2, 305, 50, 305, 57, 0
+	; u8 atque u16: E0303 at the right operand
+	dq fx_b03, fx_b03_LEN
+	dd 1, 303, 59, 0, 0, 0
+	; u32 sive f32: a float is not an unsigned integer
+	dq fx_b04, fx_b04_LEN
+	dd 1, 305, 60, 0, 0, 0
+	; 1 atque 2 where i8 is expected: E0305 at the operator, once. THE
+	; PENDING ROW -- exit 0 and a signed `and` before the fix
+	dq fx_b05, fx_b05_LEN
+	dd 1, 305, 38, 0, 0, 0
+	; 1 sive 2 where i8 is expected: the second word, same answer
+	dq fx_b06, fx_b06_LEN
+	dd 1, 305, 38, 0, 0, 0
+	; 1.5 atque 2.5 where f64 is expected: E0305 at the operator. Before
+	; the fix this reached the emitter -- "unsupported type", exit 4
+	dq fx_b07, fx_b07_LEN
+	dd 1, 305, 39, 0, 0, 0
+	; u16 atque 65536: the literal took u16 and does not fit it
+	dq fx_b08, fx_b08_LEN
+	dd 1, 308, 53, 0, 0, 0
+	; u8 sive u8 is u8, so returning it as u16 is E0303
+	dq fx_b09, fx_b09_LEN
+	dd 1, 303, 51, 0, 0, 0
+	; mensura atque u64: two unsigned integers, two types
+	dq fx_b10, fx_b10_LEN
+	dd 1, 303, 69, 0, 0, 0
+	; the accepted twins
+	dq fx_g01, fx_g01_LEN
+	dd 0, 0, 0, 0, 0, 0
+	dq fx_g02, fx_g02_LEN
+	dd 0, 0, 0, 0, 0, 0
+	dq fx_g03, fx_g03_LEN
+	dd 0, 0, 0, 0, 0, 0
+	dq fx_g04, fx_g04_LEN
+	dd 0, 0, 0, 0, 0, 0
+	dq fx_g05, fx_g05_LEN
+	dd 0, 0, 0, 0, 0, 0
+	dq fx_g06, fx_g06_LEN
+	dd 0, 0, 0, 0, 0, 0
+	; the parenthesised mix -- §5.4's "parenthesise", taken
+	dq fx_g07, fx_g07_LEN
+	dd 0, 0, 0, 0, 0, 0
   FX_NROWS = ($ - fx_tab) / FX_ROW
+  ; a row of the wrong width would shift every row after it
+  assert ($ - fx_tab) mod FX_ROW = 0
 
 segment readable writeable
   fx_arena:	rb sizeof.Arena

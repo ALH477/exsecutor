@@ -731,7 +731,12 @@ endp
 
 ; __lwr_arith_op(st, lwrao, lwrt) -> eax = the BFA opcode for AST operator
 ; `lwrao` at AST type `lwrt`. Spec section 5.4's three families are three
-; opcodes, never a flag: `+` traps, `+%` wraps, `+|` saturates. The wrapping
+; opcodes, never a flag: `+` traps, `+%` wraps, `+|` saturates. `/`,
+; `residuum`, `atque` and `sive` joined the table with section 5.4's
+; 2026-09-25 amendment: `/` picks `div` or `fdiv` off the operand kind like
+; `+` picks `add` or `fadd`, `residuum` is `rem`, integer-only (see `.div`
+; and `.rem`), and `atque`/`sive` are `and`/`or` beside `aut`'s `xor` (see
+; `.band` and `.bor`). The wrapping
 ; and saturating spellings on a FLOAT are the checker's `EXS-E0305` -- which
 ; WAS A FINDING, not a fact: until the float wave no raise site existed
 ; anywhere, and this comment's predecessor asserted a refusal that did not
@@ -763,6 +768,12 @@ proc __lwr_arith_op, lwrsp, lwrao, lwrt
 	je	.mul
 	cmp	eax, AST_OP_DIV
 	je	.div
+	cmp	eax, AST_OP_REM
+	je	.rem
+	cmp	eax, AST_OP_BAND
+	je	.band
+	cmp	eax, AST_OP_BOR
+	je	.bor
 	cmp	eax, AST_OP_ADDW
 	je	.addw
 	cmp	eax, AST_OP_SUBW
@@ -797,13 +808,35 @@ proc __lwr_arith_op, lwrsp, lwrao, lwrt
 	mov	eax, BFA_OP_FMUL
 	jmp	.out
   .div:
-	; `/` -- FLOAT ONLY, by construction rather than by test here: the
-	; checker's `.div` arm (and `.bin_div` for the pending case) refused
-	; every non-float operand type with `EXS-E0305`, so an integer pair
-	; cannot arrive. Spec §5.4's integer division and remainder are
-	; `[OPEN]`; this arm is deliberately one opcode with no integer
-	; twin to grow into.
+	; `/` -- TWO opcodes since §5.4's 2026-09-25 amendment, chosen by the
+	; operand kind exactly as `+ - *` above choose theirs: `fdiv` on a
+	; float pair (the IEEE-754 quotient, never-traps), `div` on an integer
+	; or `mensura` pair (truncated toward zero, trapping on a zero divisor
+	; and on T_MIN / -1 -- the reference emitter's `__bfa_emit_divrem` IS
+	; that definition, ADR 0012). `lwrf` was already computed for the
+	; three arms above; nothing else about this dispatch changed.
+	;
+	; This arm's predecessor said "FLOAT ONLY, by construction" and had no
+	; integer twin, because until the amendment the checker refused every
+	; non-float operand. Both halves moved in one change
+	; (checker/types/types.inc's `__chk_ty_divadm`); a `.div` that still
+	; answered `fdiv` while the checker admitted `u8` would be the wrong
+	; opcode on a valid program, which is why they cannot move separately.
+	mov	eax, BFA_OP_DIV
+	cmp	dword [lwrf], 0
+	je	.out
 	mov	eax, BFA_OP_FDIV
+	jmp	.out
+  .rem:
+	; `a residuum b` -- INTEGER ONLY, and here by test rather than by
+	; construction: the checker's `.rem` arm and `.bin_div` admit no float
+	; operand (`__chk_ty_divadm`; the IR has no `frem`), so a float
+	; reaching this arm is a checker bug and must not silently become an
+	; integer remainder of two IEEE bit patterns. The `rassert` is the same
+	; one an unknown operator trips, one arm further in.
+	mov	eax, [lwrf]
+	rassert	eax eq 0
+	mov	eax, BFA_OP_REM
 	jmp	.out
   .addw:
 	mov	eax, BFA_OP_ADDW
@@ -817,15 +850,34 @@ proc __lwr_arith_op, lwrsp, lwrao, lwrt
   .subs:
 	mov	eax, BFA_OP_SUBS
 	jmp	.out
-  ; spec §5.4's exclusive or and the two shifts, one IR opcode each
+  ; spec §5.4's three bitwise words and the two shifts, one IR opcode each
   ; (ssa-ir.md 2.3's bitwise row). The checker admits only unsigned integer
   ; operands of one type (checker/types/types.inc, `.bitop`), so there is no
   ; float form and `shr` is always the logical one; significance, not
   ; direction, is the language's word, and on the IR's integer values "more
   ; significant" IS `shl`. A count >= the width is the IR's trap, not this
   ; pass's (ssa-ir.md 2.3: `shl`/`shr` are side-effecting for that reason).
+  ;
+  ; `atque` AND `sive` ARE WHERE THE THREE WORDS DIFFER, and it is only here.
+  ; §5.4's amendment of 2026-09-25 gives them `aut`'s rules exactly, so the
+  ; checker has one arm for all three and this table has three rows -- the
+  ; opcode is the entire distinction, which is why widening `.bitop` and
+  ; adding these two lines is the whole of the source-level settlement.
+  ;
+  ; NONE OF THE THREE TRAPS, and nothing here has to say so: `and`, `or` and
+  ; `xor` cannot leave the range of an unsigned N-bit operand, so they are in
+  ; ssa-ir.md 2.3's pure group and need no `__bfa_emit_normcheck` the way `+`
+  ; does. Both operands are always evaluated (§5.4 -- these are arithmetic,
+  ; not `et`/`vel`), which is a property of `__lwr_binop`'s caller emitting
+  ; both operand trees before asking for an opcode, not of this table.
   .aut:
 	mov	eax, BFA_OP_XOR
+	jmp	.out
+  .band:
+	mov	eax, BFA_OP_AND
+	jmp	.out
+  .bor:
+	mov	eax, BFA_OP_OR
 	jmp	.out
   .sursum:
 	mov	eax, BFA_OP_SHL

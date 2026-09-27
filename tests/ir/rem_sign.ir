@@ -1,4 +1,4 @@
-; TEST: expect-exit=100 c-emit-exit=4
+; TEST: expect-exit=100
 ;
 ; The two halves of spec 5.4's division decision (2026-09-25), checked as
 ; PROPERTIES rather than as tabulated constants:
@@ -33,8 +33,12 @@
 ; rdx when the divisor is negative) -> exit 4. `rem` lowered as
 ; `a - (a/b)*b` with a FLOOR division -> exit 2.
 ;
-; `c-emit-exit=4`: the C backend refuses `div`/`rem` by name (c-backend.md
-; D4 rows 4 and 5), so the differential phase checks parity of the refusal.
+; NO `c-emit-exit=`: the C backend lowers both opcodes (c-backend.md D4 rows
+; 4 and 5), so the identity above is computed FIVE times per pair of signs --
+; once by the reference and once by each of the four C builds -- and every one
+; must reach 100. The C helpers divide MAGNITUDES and put the sign back
+; (`exsi_mul_i`'s idiom), which is a different computation from the
+; reference's IDIV; that they agree on all ten checks is the claim.
 
 functio @initium (ptr) -> u8 {
 b0:

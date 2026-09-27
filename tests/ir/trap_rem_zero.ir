@@ -1,4 +1,4 @@
-; TEST: abort=1 c-emit-exit=4
+; TEST: abort=1
 ;
 ; `rem u32 %x 0` with the divisor an INLINE IMMEDIATE: the zero-divisor
 ; check is the same two lines for `rem` as for `div` (trap_div_zero.ir),
@@ -15,8 +15,13 @@
 ; Mutation (run): the `test`/`jz` pair dropped -> SIGFPE (signal 8), which
 ; is neither this tree's numeric trap nor the expected SIGILL.
 ;
-; `c-emit-exit=4`: the C backend refuses `rem` by name (c-backend.md D4
-; row 5).
+; NO `c-emit-exit=`: the C backend lowers `rem` too (`exsi_rem_u`/
+; `exsi_rem_i`, c-backend.md D4 row 5), so this fixture is BUILT four ways
+; -- gcc and clang, -O0 and -O2 -- and each build must trap with the same
+; kind on the same input. The helper's check PRECEDES its division: under
+; `-fsanitize=undefined -fno-sanitize-recover=all` a division that executed
+; first would abort inside UBSan and never reach `exsrt_abortus`, which is a
+; different program from the one this fixture pins.
 
 functio @initium (ptr) -> u8 {
 b0:

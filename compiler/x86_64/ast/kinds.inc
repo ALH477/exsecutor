@@ -233,15 +233,27 @@ AST_ABI_COUNT		= 3
 ; the grouping), and ast/from_cst.inc asserts the one ordering that IS read --
 ; the word table and this list advancing in step.
 ;
-; APPENDING PAST `AST_OP_DIV` IS A LOUD FAILURE UNTIL THE CHECKER CATCHES UP,
+; APPENDING TO THIS LIST IS A LOUD FAILURE UNTIL THE CHECKER CATCHES UP,
 ; deliberately: checker/types/types.inc's binary rule `rassert`s that what
 ; reaches its integer-arithmetic arm is at most `AST_OP_MUL`, having peeled off
-; the bit operators and `/` by value first. So `AST_OP_REM`, `AST_OP_BAND` and
-; `AST_OP_BOR` trap there rather than being silently typed as `+`, and a source
-; program using them traps in the checker until that arm is widened. That is
+; by value every operator numbered above it that HAS an arm. So a newly
+; appended operator traps there rather than being silently typed as `+`, and a
+; source program using it traps in the checker until an arm is written. That is
 ; the intended order of work, not an oversight: the CST and this list carry the
 ; syntax first (tests/unit/cst_intdiv_rem.asm, cst_bitand_or.asm,
 ; ast_from_cst_newops.asm), and no fixture of theirs runs the checker.
+;
+; `AST_OP_REM` LEFT THAT SENTENCE ON 2026-09-25, with the checker arm and the
+; lowering §5.4's integer-division amendment asked for: checker/types/types.inc
+; has a `.rem` arm beside `.div` (`__chk_ty_divadm` is the shared operand rule,
+; and `__chk_ty_expect`'s `.bin_div` judges the pending case), lower/expr.inc
+; picks `BFA_OP_REM` for it and `BFA_OP_DIV`/`BFA_OP_FDIV` for `/` by operand
+; kind, and the two are exercised from SOURCE by tests/unit/chk_ty_intdiv.asm
+; and tests/programs/numerus_decimalis/. `AST_OP_BAND` and `AST_OP_BOR` left it
+; in the same wave, through `.bitop` (tests/unit/chk_ty_bitops.asm's added
+; rows). So 17..23 all have arms today and the `rassert` guards only the NEXT
+; append -- which is exactly what it is for; it must not be widened to
+; `AST_OP_MAX` to make that append quiet.
 AST_OP_VEL	= 1
 AST_OP_ET	= 2
 AST_OP_LT	= 3

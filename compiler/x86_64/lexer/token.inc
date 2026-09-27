@@ -142,11 +142,15 @@ TOK_PUNCT   = 6
 ; `-` is here (tier B, §10.1's `x86_64-linux`); a bare `/` WAS not (every `/`
 ; in the spec's Exsecutor source was half of a `//` comment), and `%` and `|`
 ; exist only inside `+%` and `+|`. The float wave changes `/`: it is the
-; float-only quotient operator (§5.4's `/` on floats, grammar in the TOK_NUMBER
-; note above), so `a / b` must reach the parser as a token and it is tier A of
-; this wave's §8.4 amendment, not a guess. `%` and `|` alone stay
-; `EXS-E0201` -- guessing at `-%`-style spellings for a float remainder is
-; still §8.4's to settle, and integer `/` and remainder stay `[OPEN]`.
+; quotient operator (§5.4, grammar in the TOK_NUMBER note above), so `a / b`
+; must reach the parser as a token and it is tier A of that wave's §8.4
+; amendment, not a guess. It arrived FLOAT-ONLY and is no longer: §5.4's
+; 2026-09-25 amendment gave it the integer quotient as well, and the
+; remainder its own contextual WORD, `residuum` (§8.4 tier 2, so no glyph is
+; needed for it and none was invented). `%` and `|` alone stay `EXS-E0201`:
+; there is no `/%` or `/|` (§5.4 says why), and `-%`-style spellings for a
+; float remainder are still §8.4's to settle -- a float remainder does not
+; exist at all (checker/types/types.inc, `__chk_ty_divadm`).
 ;                                        ; tier  glyph  first shown
 PUN_AMP      = 1                         ; A     &      §8.4, §10.1  (&T)
 PUN_STAR     = 2                         ; A     *      §8.4, §5.3   (*T)
@@ -172,7 +176,9 @@ PUN_EQ       = 21                        ; B     =      examples/imprime.exsc (f
 PUN_MINUS    = 22                        ; A     -      §8.4, §5.4   trapping
 PUN_MINUSPCT = 23                        ; A     -%     §8.4, §5.4   wrapping
 PUN_MINUSBAR = 24                        ; A     -|     §8.4, §5.4   saturating
-PUN_SLASH    = 25                        ; A     /      §5.4's float-only quotient
+PUN_SLASH    = 25                        ; A     /      §5.4's quotient: float,
+                                         ;              and, since 2026-09-25,
+                                         ;              integer
 PUN_COUNT    = 25
 
 ; PUN_MINUS was tier B and justified only by §10.1's `x86_64-linux` hyphen;

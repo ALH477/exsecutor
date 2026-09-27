@@ -1,0 +1,92 @@
+# The three reduction shapes, from source: §14 entry 28.
+#
+# `contractio.exsc` sums the SAME twenty `f32` values three times --
+# `forma ordinata`, `forma arborea 8`, `forma arborea 4` -- and writes the
+# three results as little-endian scaled `i64`s. The claim is that they are
+# three DIFFERENT bit patterns and that each is exactly the bits §5.4's
+# group-and-fold definition gives. Measured 2026-09-26:
+#
+#   ordinata   121209096   f32 0x41673021
+#   arborea 8  121209080   f32 0x4167301F
+#   arborea 4  121209088   f32 0x41673020
+#
+# Two ulps end to end, three distinct patterns. The declared shape is
+# observable, which is why it has to be declared.
+#
+# THE INPUT is a committed file, not an `acies` literal, so that the
+# oracle and the compiled program are fed the identical bytes by this
+# harness and a mutation to the program cannot move the input with it:
+#
+#   python3 prototypes/contractio_oracle.py --gen > tests/data/contractio_viginti.bin
+#
+# 80 bytes, twenty little-endian signed 32-bit integers, each meaning
+# n / 8388608.0 (2^-23: exact, so the input reaches the reduction
+# unrounded and every rounding the program performs belongs to a shape).
+#
+# THE GOLDEN IS THE ORACLE'S, produced by the same script from that file
+# and never by this compiler -- the not-our-own-bug check, the way
+# pictura_triangulum/ uses prototypes/pictura_oracle.py:
+#
+#   python3 prototypes/contractio_oracle.py \
+#       < tests/data/contractio_viginti.bin \
+#       > tests/programs/contractio/expected.out
+#
+# 24 bytes. The oracle implements §5.4's "What a group computes, and how
+# groups combine" paragraph in Python from the paragraph and nothing of
+# the compiler, so byte-identity is two independent readings of §5.4
+# landing on the same bits. (No `stdout=`: expected.out IS the reference,
+# and naming both is run.sh's "which of the two governs?" failure.)
+#
+# MEASURED, 2026-09-26, by hand at 747fa30 plus the working tree's
+# uncommitted §5.4 amendment, `build/exsc` of that content:
+#
+#   exsc aedifica --hospes x86_64-linux tests/programs/contractio/contractio.exsc -o c.asm   -> 0
+#   fasmg c.asm c.bin                                                                        -> 0
+#   c.bin < tests/data/contractio_viginti.bin > out                                          -> exit 0, empty stderr
+#   cmp out tests/programs/contractio/expected.out                                           -> identical
+#   tools/syscall-audit.sh c.bin                                                             -> PASS: read(0), write(1), exit_group
+#
+# MUTATIONS (run, on copies outside the tree; each changed the bytes):
+#   * the middle loop's `forma arborea 8` -> `forma ordinata`: result 2
+#     becomes result 1 (121209096 twice). The shape, and only the shape,
+#     is what makes them differ.
+#   * the first loop's `so = xs[i]` -> `so = xs[19 - i]`: result 1 alone
+#     moves, to 121209072. `ordinata` is a fold IN INDEX ORDER, and the
+#     order is part of it.
+#   * the sign fix-up `si n ge 2147483648` disarmed: all three results
+#     move together (to 17301213184) and become equal -- the four
+#     negatives turned into values near 2^32, which dominate the sum so
+#     completely that the shapes stop disagreeing. A fixture whose input
+#     decode is wrong can accidentally stop testing what it is for; this
+#     is that failure, observed.
+# Edge inputs (run): 79 bytes -> exit 1, nothing written; empty stdin ->
+# exit 1, nothing written; 81 bytes -> exit 0 and the same 24 bytes, the
+# surplus byte never read.
+#
+# `c-exsc-exit=4` -- THE C BACKEND REFUSES THIS MODULE, and that is a
+# finding rather than a workaround. `exsc --emitte c` exits 4 with
+#
+#   bfc: emitter: unsupported type: library mode holds an integer
+#   (uN/iN), an address (ptr/ref/refc), a float (f32/f64) or a vector
+#   float (vf32.N/vf64.N) and nothing else (c-backend.md D4, D8)
+#
+# -- the `red.F` handle type, refused one step before D4 rows 36-38's
+# by-opcode-name refusal of `redinit`/`contrib`/`redfin` is ever reached.
+# The seven `tests/ir/red_*.ir` fixtures carry `c-emit-exit=4` for the
+# same reason. So this directory declares the refusal and the
+# differential phase checks PARITY of it, exactly as those fixtures do;
+# it is not `c-differentia=emitter-refusal`, because a named ineligibility
+# would stop saying anything about the C backend at all, and there is
+# something true to say: it refuses, deliberately, at a stated place.
+#
+# NOT `cross=yes`, and this is the same finding. The cross phase goes
+# through `--emitte c` as well (`exsc --hospes mips64-none-o64 --emitte
+# c`, measured: exit 4, the identical message), so opting in would not
+# produce a big-endian run, it would produce a phase failure. §14 entry
+# 28's "byte-identical between the reference and C backends" and
+# "byte-identical cross-run big-endian" clauses are therefore UNMEASURED
+# at this content -- they will hold the day the C backend gains the three
+# reduction opcodes, and this directory is the cross-check waiting for
+# it, but today the entry asserts more than the tree can show. Reported
+# to the orchestrator with the amendment text.
+TEST: expect-exit=0 stdin=tests/data/contractio_viginti.bin c-exsc-exit=4

@@ -1,0 +1,221 @@
+// contractio -- §5.4's three reduction shapes over ONE input, from source.
+//
+// WHAT THIS PROGRAM IS FOR. §14 entry 28's claim is that a declared
+// reduction shape is OBSERVABLE: the same twenty `f32` values, summed
+// under `forma ordinata`, `forma arborea 8` and `forma arborea 4`, give
+// three DIFFERENT bit patterns, and each is exactly the bits §5.4's
+// group-and-fold definition gives. A shape that could not change the
+// answer would not need declaring, and a language that let the machine
+// pick it would be the ambient state §1 exists to remove. So this
+// program computes all three in one process, over one array, and writes
+// all three out; `expected.out` decides whether they are the RIGHT three.
+//
+// Measured, 2026-09-26, on tests/data/contractio_viginti.bin:
+//
+//   shape        scaled i64    the f32 result     its bits
+//   ordinata      121209096    14.4492502...     0x41673021
+//   arborea 8     121209080    14.4492483...     0x4167301F
+//   arborea 4     121209088    14.4492493...     0x41673020
+//
+// Three distinct patterns, two ulps apart end to end: `arborea 4` sits
+// one ulp below `ordinata` and `arborea 8` one ulp below that. Nothing
+// about the VALUES is special -- twenty ordinary dyadic rationals,
+// fourteen of them between 0.037 and 1.77 and six of a few 2^-23 units,
+// four of the twenty negative -- and nothing about the sum is near an
+// edge: no infinity, no NaN, no subnormal, no cancellation. The shapes
+// disagree because float addition is not associative, which is the
+// whole of §5.4.
+//
+// THE GOLDEN IS NOT OURS. expected.out is produced by
+// prototypes/contractio_oracle.py, which implements §5.4's paragraph in
+// Python from the paragraph and nothing of this compiler -- the
+// "not our own bug" check, the way tests/programs/pictura_triangulum/
+// uses prototypes/pictura_oracle.py. If the compiler and the oracle
+// agree byte for byte, two independent readings of §5.4 landed on the
+// same bits; if they disagree, one of them misread the section, and
+// which one is a question with an answer.
+//
+// THE WIRE FORMAT is the oracle's docstring, and this file is the other
+// half of it:
+//
+//   stdin   twenty values, each a little-endian signed 32-bit integer n
+//           with |n| < 2^24, meaning the `f32` value n / 8388608.0
+//           (2^-23 scaling: exact, a power of two, so no rounding
+//           happens on the way in and the input is the input).
+//   stdout  three little-endian signed 64-bit integers,
+//           ordinata / arborea 8 / arborea 4, each ftoi(r * 8388608.0).
+//           Exact for every r with |r| >= 1 and |r| < 2^40: r's ulp is
+//           then at least 2^-23, so r * 2^23 is an integer and the
+//           scaling is an exponent change. The fixed input's r is
+//           about 14.45, whose ulp is 2^-20, so each result is an exact
+//           multiple of 8 -- 121209096 and its two neighbours below.
+//
+// An integer wire rather than raw f32 bytes is deliberate: `@transitus`
+// has no float row this program could lean on, and a scaled integer is
+// byte-order-explicit at the one place it matters (the `deorsum` /
+// `sicut u8` extraction below), which is what makes the same golden the
+// right answer on a big-endian host.
+//
+// WHY THE INPUT IS A FILE AND NOT A LITERAL. An `acies` literal would
+// make the twenty values part of the program, and then a mutation to the
+// program could change the input along with the shape. Reading them from
+// tests/data/contractio_viginti.bin -- the file the ORACLE generated --
+// means the compiled program and the oracle are fed the identical bytes
+// by the harness, and neither can move them.
+//
+// WHAT IS NOT CLAIMED HERE: nothing about the C backend. It refuses this
+// module (exit 4, `bfc: emitter: unsupported type`, the `red.F` handle
+// type reaching library mode, which holds integers, addresses and
+// floats and nothing else -- c-backend.md D4/D8), so the TEST directive
+// carries `c-exsc-exit=4` and the differential phase checks the refusal
+// rather than a second set of bits, and the directory is NOT `cross=yes`
+// -- the cross phase goes through `--emitte c` too and would fail at the
+// same refusal. §14 entry 28's two backend-parity clauses are
+// unmeasured; see this directory's TEST file.
+
+// scribe_octo -- one i64, little-endian, on the writer. Eight bytes, low
+// significance first, extracted with `deorsum` and a narrowing cast:
+// §5.4 makes the shift unsigned-only and same-type including the count
+// (hence `sicut u64` on both sides), and §5.4's narrowing rule makes
+// `sicut u8` the low eight bits of the two's-complement representation,
+// never a trap -- which is exactly "write this byte". The count runs
+// 0, 8 .. 56, all below 64, so the trap on a count at or above the
+// width is never armed.
+//
+// `q sicut u64` is the equal-width signed-to-unsigned reinterpretation
+// (§5.4): the same bits read as unsigned, so a negative result would
+// come out as its two's-complement image, which IS its little-endian
+// encoding. The fixed input's three results are all positive, so that
+// path is exercised by none of them -- said here rather than implied.
+//
+// Private, so §4.1 rule 5 infers the capability row from the body:
+// `s.scribe_octeto(b)` draws the writer's own mark, the shape
+// tests/programs/lector_numerus/ writes.
+functio scribe_octo(s: Scriptor, q: i64) -> mensura {
+    firma u: u64 = q sicut u64;
+    mutabilis n: mensura = 0;
+    per k in 0..8 {
+        firma sh: u64 = (k sicut u64) * 8;
+        n = n + s.scribe_octeto((u deorsum sh) sicut u8);
+    }
+    redde n;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma l = Lector.ab_introitu(a);
+    firma s = Scriptor.ad_exitum(a);
+
+    // The twenty values, decoded once. `mutabilis` because the
+    // reductions below read it and nothing else writes it after this
+    // loop; the repeat form zero-fills it (§8.6), as
+    // examples/pictura/pictura.exsc's framebuffer does.
+    mutabilis xs: acies<f32, 20> = [0.0; 20];
+
+    // `defectus` rather than an early `redde`: the read loop must
+    // consume its four bytes per value whatever it finds, so that a
+    // short input is ONE verdict at the end and not a partial read
+    // whose position depends on where the truncation was.
+    // `lege_octeto` answers 256 at end of input and on an I/O error
+    // alike (the prelude's documented hole, `eventus` being spec §11's
+    // and not yet syntax), so this program cannot tell a truncated
+    // input from a broken pipe -- both are exit 1, which is the honest
+    // answer for a fixture whose input is a committed file.
+    mutabilis defectus: u8 = 0;
+
+    per i in 0..20 {
+        // Little-endian, four bytes, then the sign. The bytes occupy
+        // disjoint bit positions, so `+` and `*` on `i64` reassemble
+        // the value with no overflow to trap on -- the largest term is
+        // 255 * 16777216 and the largest total 2^32 - 1, and even the
+        // 256 end-of-input sentinel, which makes the term 2^32 and the
+        // total a little above it, is far inside `i64`. That is why no
+        // bitwise word appears here: the arithmetic is exact, and `sive`
+        // would say the same thing with one more contextual word in the
+        // fixture.
+        mutabilis n: i64 = 0;
+        mutabilis scala: i64 = 1;
+        per k in 0..4 {
+            firma c: u16 = l.lege_octeto();
+            si c ge 256 {
+                defectus = 1;
+            }
+            n = n + (c sicut i64) * scala;
+            scala = scala * 256;
+        }
+        // Unsigned 32-bit reading to signed. Done in `i64` arithmetic
+        // rather than by an equal-width `sicut i32` reinterpretation so
+        // that the decode is a value computation and not a claim about
+        // the host's word: the same two statements give the same number
+        // where `mensura` is 32 bits and where it is 64.
+        si n ge 2147483648 {
+            n = n - 4294967296;
+        }
+        // Both steps exact: |n| < 2^24 needs at most 24 significant
+        // bits, so `sicut f32` (itof i64 -> f32; the refused direction
+        // is u64 -> f32, ssa-ir.md 2.6) rounds nothing, and dividing by
+        // 2^23 is an exponent change. The input reaches the reduction
+        // unrounded, so every rounding this program performs belongs to
+        // a reduction, which is what makes the three answers a
+        // statement about the shapes.
+        xs[i] = (n sicut f32) / 8388608.0;
+    }
+    si defectus ne 0 {
+        redde 1;
+    }
+
+    // THE THREE REDUCTIONS. One array, three declared shapes, three
+    // `contrahe` accumulators. `quisque` and not `per`: the iterations
+    // do not observe one another, which is §8.5's independence claim and
+    // the half of §5.5's bit-identity that `contrahe ... forma` does not
+    // supply by itself. Writing to the accumulator IS the contribution
+    // (§5.4); the body names it once and never reads it, and reading it
+    // would be EXS-E0341. There is no `rumpe` here and could not be --
+    // EXS-E0342.
+    //
+    // Each accumulator's element type F is the first contribution's
+    // right-hand type, `f32` from `xs[i]`; nothing annotates it. After
+    // the loop it is an ordinary immutable binding of F, which is what
+    // the writes below read.
+    quisque i in 0..20
+        contrahe so: +
+        forma ordinata
+    {
+        so = xs[i];
+    }
+
+    // `arborea 8` over twenty values is groups [0..8) [8..16) [16..20) --
+    // §5.4's own worked example, remainder group included, and the
+    // reason twenty is the count.
+    quisque i in 0..20
+        contrahe s8: +
+        forma arborea 8
+    {
+        s8 = xs[i];
+    }
+
+    // `arborea 4` divides twenty exactly: five full groups, no
+    // remainder. Beside `arborea 8` it separates "the width matters"
+    // from "the remainder rule matters" -- two claims that one shape
+    // could not tell apart.
+    quisque i in 0..20
+        contrahe s4: +
+        forma arborea 4
+    {
+        s4 = xs[i];
+    }
+
+    // ftoi truncates toward zero inside `sicut i64`; each product is an
+    // exact integer-valued f32 (see the header), so truncation has
+    // nothing to remove and the byte-identity with the oracle does not
+    // rest on a rounding mode.
+    mutabilis w: mensura = 0;
+    w = w + scribe_octo(s, (so * 8388608.0) sicut i64);
+    w = w + scribe_octo(s, (s8 * 8388608.0) sicut i64);
+    w = w + scribe_octo(s, (s4 * 8388608.0) sicut i64);
+    si w ne 24 {
+        redde 2;
+    }
+    redde 0;
+}

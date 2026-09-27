@@ -808,6 +808,44 @@ implementation would put the machine back in charge of what is computed, which
 is the one thing this section exists to prevent. `summa_arborea(v, 8)` on a
 20-element vector is groups `[0..8) [8..16) [16..20)`, in that order, always.
 
+**What a group computes, and how groups combine** — settled 2026-09-25, when
+the lowering landed; before that this paragraph named the groups and not the
+tree inside them, and the IR contract recorded the gap. The reference
+lowering is the definition (ADR 0012), and it is this:
+- Inside a group of `k ≤ w` elements, adjacent pairs are combined left to
+  right, an odd trailing element passes up unchanged, and that repeats until
+  one value remains: for `k = 8`, `((s0+s1)+(s2+s3))+((s4+s5)+(s6+s7))`; for
+  `k = 5`, `((s0+s1)+(s2+s3))+s4`.
+- Each completed group's value is folded into a running result **left to
+  right, in index order**, starting from the operator's identity (`0` for
+  the additive words, `1` for `*`). A tree over the groups was the other
+  reading, and it is refused because it would hold `n/w` live partials —
+  unbounded state for a streaming loop — and the machine, not the
+  declaration, would then decide when to combine them. `w` slots, one
+  accumulator and a count are the whole state; groups are independent, which
+  is the parallelism, and the fold is fixed, which is the determinism.
+- `ordinata` is that fold with every element its own group: strictly left
+  to right from the identity, so zero contributions yield the identity, and
+  the first contribution is `identity op x` — for floats, `0.0 + x`, which
+  is `x` for every `x` but `-0.0`. That is the definition, recorded rather
+  than special-cased.
+- An integer operator traps, wraps or saturates inside the tree exactly as
+  the standalone operator would.
+Evidence: `tests/ir/red_arborea_f32.ir` (`w = 8` over twenty values, the
+example above, with the remainder group of four), `red_ordinata_f32.ir`,
+`red_empty.ir`, `red_w1.ir`, `red_arborea_int_trap.ir`, and from source
+`tests/programs/contractio/`, whose three shapes over one input give three
+different bit patterns — `0x41673021` (`ordinata`), `0x4167301F`
+(`arborea 8`), `0x41673020` (`arborea 4`): three **adjacent** representables,
+two ulps end to end — each byte-identical to an oracle that implements this
+paragraph independently (`prototypes/contractio_oracle.py`; §14 entry 28).
+**Byte-identity between the two backends is not measured, and this sentence
+claimed it for one day.** Library mode has no lowering for the reduction
+opcodes and refuses any module carrying one (`docs/design/c-backend.md` D4
+rows 36–38), so that program runs on the reference backend alone and neither
+the differential nor the cross phase reaches its bits — `[UNTESTED]`, and
+the thing it waits on is named in §9.2.
+
 **A running accumulator is not readable inside the reduction body**
 (`contrahe`, §8.5). If the body could observe the partial total, the summation
 order would be observable, and no tree shape but strictly-left-to-right would
@@ -957,6 +995,60 @@ scales.
     answer to an out-of-range count is target-dependent — x86 masks the
     count — and a target-dependent answer is the ambient state §1 exists
     to remove.
+- **Integer division and remainder** (settled 2026-09-25; both had been
+  `[OPEN]` since the float wave settled `/` for floats only). `a / b` on two
+  integers of one type `T` (`uN`, `iN`, `mensura`; the same-type rule as `+`,
+  a pending literal takes the other side's type) is the quotient **truncated
+  toward zero**, of type `T`. `a residuum b` is the remainder, of type `T`,
+  with the **sign of the dividend**, so that `a eq (a / b) * b + (a residuum
+  b)` holds for every pair that does not trap. Both **trap** on a zero
+  divisor and, for signed `T`, on `T`'s minimum divided by −1 — the two
+  inputs with no in-range answer; trapping is this section's default for
+  `+`, and a quotient that wrapped would be an operation with a failure mode
+  its type does not show. There is no `/%` or `/|`: the only case they could
+  change is that minimum, and no program has asked for it (`[OPEN]`). Why
+  truncation and not the floored quotient: it is what the x86 `idiv` and C99
+  `/` both compute, so the reference and reach backends agree by
+  construction rather than by a fix-up in each — and the reference
+  lowering is the definition (ADR 0012). `residuum` is a contextual word
+  (§8.4 tier 2) at the multiplicative level (§8.6); in operand position it
+  is an identifier, which is how `examples/hydramodem/receptor.exsc`'s
+  function of that name keeps it. Evidence: `tests/ir/divrem.ir`,
+  `trap_div_zero.ir`, `trap_rem_zero.ir`, `trap_div_minneg1.ir`,
+  `rem_sign.ir` at the IR; `tests/unit/chk_ty_intdiv.asm` for the typing;
+  from source, `tests/programs/numerus_decimalis/`, the first program in
+  this tree that prints a number.
+- **Bitwise and and or** are the contextual words `atque` and `sive`
+  (settled 2026-09-25 with the program §8.6 asked for). They are arithmetic
+  on unsigned integers under exactly the rules `aut` has above — unsigned
+  operands only (`EXS-E0305` per operand), both operands the same type
+  (`EXS-E0303`), the result that type, both operands always evaluated —
+  and lower to one `and` / `or`. `et` and `vel` stay logical and
+  short-circuit; `aut` stays exclusive. The three bitwise words share one
+  precedence level (§8.6, 5b): a chain of one word is left-associative, and
+  **mixing two different bitwise words without parentheses is
+  `EXS-E0201`** at the second word, by the mechanism that rejects
+  `a sursum 1 sursum 2`. That is deliberate: C's `& ^ |` order is a
+  documented source of bugs, and this section already refuses to let a
+  shift chain for the same reason. Evidence: `tests/unit/cst_bitand_or.asm`
+  (the chains), `tests/unit/chk_ty_bitops.asm` (the added rows),
+  `tests/ir/bitwise.ir` (the opcodes, which both backends had lowered since
+  the DeModFrame wave with nothing in the language able to reach them), and
+  `tests/programs/basis64/`, a Base64 encoder whose 167 bytes are
+  byte-identical to GNU coreutils 9.11's `base64` — host and, cross-compiled,
+  big-endian. **That encoder is evidence for `atque` and not for `sive`**, and
+  the distinction was found by running the mutation rather than by reading the
+  program: replacing every `sive` with `aut` leaves the output **byte-identical
+  to the golden**, because every join in Base64 is between *disjoint* bit
+  ranges, where inclusive and exclusive or agree. Its masks have no such
+  substitute, so `atque` is pinned by the encoder itself. `sive`'s semantics
+  are pinned by the same directory's separate fold over deliberately
+  *overlapping* operands, where the three words give three different answers
+  (`sive` 0xff, `atque` 0x00, `aut` 0x09) — and it is that fold, not the
+  Base64 bytes, that makes the `sive`-to-`aut` mutant fail (exit 6, measured
+  2026-09-26). A program can be byte-perfect against an external reference and
+  still not exercise the operator it was written for; this bullet said "the
+  program that needed them" of both words until the mutation was run.
 
 ---
 
@@ -1285,6 +1377,10 @@ ordinary identifiers everywhere else.
 - exclusive or and shifts (§5.4, §8.6): `aut` `sursum` `deorsum` — on the
   same rule (`docs/design/wire-codec.md` D1; `tests/unit/cst_shift_xor.asm`:
   `firma aut = 1;` binds a name, and `autem` is not `aut`)
+- remainder and bitwise and/or (§5.4, §8.6): `residuum` `atque` `sive` —
+  the same rule again (`tests/unit/cst_intdiv_rem.asm`,
+  `tests/unit/cst_bitand_or.asm`; `receptor.exsc` calls a function named
+  `residuum`, in operand position, and it stays a call)
 - byte order (§5.2): `maior` `minor` `nativus`; FFI (§5.3): `abi`
 
 These are contextual on purpose. `versio`, `numeri` and `forma` are good Latin
@@ -1333,17 +1429,20 @@ the exclusive-or and shift words (`aut sursum deorsum`) are **contextual** —
 operator position is never operand position. Shifts and exclusive or are
 settled as those words (§5.4, §8.6; `docs/design/wire-codec.md` D1;
 `tests/unit/cst_shift_xor.asm`, `tests/programs/redundantia/`), and shifts
-did not become `<<`/`>>` tokens. Remainder,
-the `*%`/`*|` families, and bitwise and/or remain `[OPEN]`. Negation left
+did not become `<<`/`>>` tokens. Remainder and bitwise and/or left this
+list on 2026-09-25 as the contextual words `residuum`, `atque` and `sive`
+(§5.4, §8.6; `tests/unit/cst_intdiv_rem.asm`, `tests/unit/cst_bitand_or.asm`);
+the `*%`/`*|` families remain `[OPEN]`. Negation left
 this list when the lowering landed: unary `-` checks and lowers — on an
 integer to a trapping `sub T 0 x`, on a float to `fneg`
 (`compiler/x86_64/lower/expr.inc`) — and the float wave's programs exercise
 it end-to-end on both backends (`float_constants/`'s `negatum()`,
-`float_division/`'s `negativa()`). `/` left the list with the same wave:
-it is the IEEE-754 quotient on two float operands, the one division the
-language has — on anything else it is `EXS-E0305`
-(`tests/unit/chk_ty_floatops.asm` pins the refusal; integer `/` and
-remainder stay `[OPEN]`). The numeric literal grammar is settled for
+`float_division/`'s `negativa()`). `/` left the list with the same wave
+as the IEEE-754 quotient on two float operands, and on 2026-09-25 gained
+its integer reading — the truncated quotient, trapping on a zero divisor
+and on the signed minimum over −1 (§5.4; `tests/unit/chk_ty_intdiv.asm`;
+`tests/unit/chk_ty_floatops.asm` still pins that a float and an integer do
+not mix). The numeric literal grammar is settled for
 hexadecimal and for floats (below); binary and octal bases and digit
 separators remain `[OPEN]`.
 
@@ -1701,10 +1800,10 @@ Precedence climbing over a fixed table, one-token peek per step.
 | 1 postfix | `.f` `(…)` `[…]` `?` `<…>` `{…}` (struct literal, not in `ExprNS`; `tests/unit/cst_structlit.asm`) | left |
 | 2 prefix | `-` `&` `*` | — |
 | 3 cast | `sicut Type` | left |
-| 4 multiplicative | `*` `/` — the `*%` `*\|` overflow forms and remainder are `[OPEN]` (this row used to include `/` in that marker; float `/` is settled in §8.4 and the clause is amended so the two readings cannot merge — the `[OPEN]` is about integers only) | left |
+| 4 multiplicative | `*` `/` `residuum` — `/` on floats since the float wave, on integers and `residuum` since 2026-09-25, parsed *and typed and lowered* (§5.4; `tests/unit/cst_intdiv_rem.asm` for the parse, `tests/unit/chk_ty_intdiv.asm` for the typing, `tests/programs/numerus_decimalis/` from source on both backends and big-endian); the `*%` `*\|` overflow forms are `[OPEN]` | left |
 | 5 additive | `+` `+%` `+\|` `-` `-%` `-\|` | left |
 | 5a shift | `sursum` `deorsum` — §5.4; `tests/unit/cst_shift_xor.asm` | none |
-| 5b exclusive or | `aut` — §5.4; `tests/unit/cst_shift_xor.asm` | left — `[UNTESTED]`: no fixture chains `a aut b aut c` |
+| 5b bitwise | `aut` `atque` `sive` — §5.4; `tests/unit/cst_shift_xor.asm`, `tests/unit/cst_bitand_or.asm` for the parse, `tests/unit/chk_ty_bitops.asm` for the typing (unsigned-only, same-type), `tests/programs/basis64/` from source | left within one word; two different words in one chain is `EXS-E0201` at the second (parenthesise) |
 | 6 range | `..` | none |
 | 7 comparison | `lt` `le` `gt` `ge` `eq` `ne` | none |
 | 8 conjunction | `et` | left, short-circuit |
@@ -2082,20 +2181,55 @@ refusing symbolic comparisons — is what makes that last one possible.
   yet be lexed.
 - `[OPEN]` Sum types and constructor patterns; `discerne`'s exhaustiveness
   presupposes an enumeration the language does not yet declare. The natural
-  home is `typus` — keyword-led, LL(1)-harmless — but it is not decided.
+  home is `typus` — keyword-led, LL(1)-harmless — and **it is now decided as
+  design**: `docs/design/sum-types.md` D1 puts variants under `typus`, led by
+  the already-reserved `casus` (no new keyword, and no new sigil — `,`
+  separates variants, for the reason shifts never became `<<`), and D2 adds
+  `Path '(' IDENT (',' IDENT)* ')'` to `Pattern` on a one-token peek at `(`.
+  This bullet's prediction held: the peek after `typus IDENT [GenericParams]
+  '='` is one token, at `casus`, which no enclosing production can want.
+  Still `[OPEN]` as a claim about the language, because nothing is
+  implemented — that document's §7 lists the five fixtures that would retire
+  it and its §6 what landing it costs. Recursive sum types, nested patterns,
+  range patterns, `?`'s error conversion and the unreachable-arm rule are each
+  deferred there by name rather than folded in.
+- `[OPEN]` **`?` parses and means nothing.** It is lexed (`PUN_QUESTION`,
+  `compiler/x86_64/lexer/token.inc`), spelled in the CST's punctuation table,
+  admitted by `Suffix` in the grammar above, and named in §8.4's sigil table as
+  `E?`, "error propagation", citing §5.1 — and **no section of this document
+  says what it does.** §5.1 mentions `eventus` once and `?` not at all. That is
+  worse than an absent operator: a program can be written with it and nothing
+  defines the result. `docs/design/sum-types.md` D4 settles it as design — the
+  `prosperum` payload, or an early return of the `adversum` from an enclosing
+  function whose error type matches — with error *conversion* deferred, and
+  recommends that until it is implemented the checker refuse `?` rather than
+  accept it silently. What the checker does with one today is **unmeasured**:
+  no program or fixture in this tree contains a `?`.
 - `[OPEN]` Brand syntax `positio<'t>` (§5.1): `'` is not a §8.4 token.
 - `[OPEN]` Generic implementation heads: `interfacies Legibilis<T> in
   acies<T, N>` leaves `N` unbound.
-- `[OPEN]` Operators: remainder, logical negation, the `*%` `*|`
-  family, and **bitwise and/or**. This list used to lead with `/`;
-  float `/` is settled (§8.4, `float_division/` runs it end to end), and
-  the integer quotient and remainder are the part that stays open —
-  which no program has needed. The DeModFrame codec
-  (`docs/design/wire-codec.md`) needed none of them — `@transitus` field
-  access is the mask and shift machinery, so and/or wait for a program that
-  does need them. Shifts and exclusive or are settled above as `sursum`
-  `deorsum` `aut` (`tests/unit/cst_shift_xor.asm`), and did not become
-  `<<`/`>>` tokens.
+- `[OPEN]` Operators: logical negation and the `*%` `*|` family. This
+  list used to lead with `/`, then with remainder and **bitwise and/or**;
+  float `/` was settled by the float wave (`float_division/`); the integer
+  quotient, `residuum`, `atque` and `sive` were parsed and lowered at the IR
+  on 2026-09-25 and became reachable **from source** on 2026-09-26, when the
+  checker's typing arms and `__lwr_binop`'s opcode map were widened (§5.4,
+  §8.4; `tests/unit/cst_intdiv_rem.asm` and `cst_bitand_or.asm` for the
+  parse, `tests/unit/chk_ty_intdiv.asm` and `chk_ty_bitops.asm` for the
+  typing) — by the programs this bullet said to wait for: a decimal printer
+  (`tests/programs/numerus_decimalis/`) and a Base64 encoder
+  (`tests/programs/basis64/`). **For one day the spec claimed the settlement
+  and the compiler refused all four**: `a / b` on two integers was
+  `EXS-E0305` and `residuum`, `atque` and `sive` killed `exsc` with a
+  checker `rassert`. The programs could not be written, which is how the
+  gap was found — and `atque` and `sive` had a quieter half, admitted
+  unchecked on the pending-literal path, so `firma q: i8 = 1 atque 2;`
+  compiled clean on signed operands (both measured and now refused; §5.4's
+  bitwise bullet records what the Base64 encoder does and does not pin). The DeModFrame codec
+  (`docs/design/wire-codec.md`) had needed none of them — `@transitus`
+  field access is the mask and shift machinery. Shifts and exclusive or
+  were settled earlier as `sursum` `deorsum` `aut`
+  (`tests/unit/cst_shift_xor.asm`), and none of these became symbol tokens.
 - `[OPEN]` The `refero` EXPRESSION form — how a program CONSTRUCTS one. The
   TYPE form `refero<T>` is settled above (`tests/unit/cst_refero_type.asm`,
   `tests/unit/chk_ty_e0520_refero_source.asm`); this bullet used to say
@@ -2185,13 +2319,28 @@ capabilities so §10.3's audit holds of the binary — is a later milestone.
 The lowering of each opcode is tabulated row by row in
 `docs/design/c-backend.md` (D4), and the two backends' refusal-by-name sets
 are maintained as ONE set — drift between them is a finding. The float wave
-of 2026-09-13 lowered the eleven float opcodes in both backends (the
-reference now lowers 48 of 60 rows, the C backend 46 — `retain`/`release`
-are the reference's alone, library mode having no object header), so the
-refusals that remain are: `div`/`rem`/`muls` and the overflow predicates
-(§5.4 leaves them `[OPEN]`), `fma` (the SSE2 baseline has no fused op, and
+of 2026-09-13 lowered the eleven float opcodes in both backends. **The
+figures: 64 rows, of which the reference lowers 57 and the C backend 52**
+(`retain`/`release` are the reference's alone, library mode having no object
+header; the three reductions are the reference's too, as above). Those three
+numbers were "48 of 60 rows, the C backend 46" until 2026-09-26, stale since
+Stage 5.1 appended `vadd`/`vsub`/`vmul`/`vdiv` as rows 61–64 and again since
+the reduction and `div`/`rem` waves — `docs/design/c-backend.md`'s D4 table
+had been recounted each time and this sentence had not, which is drift between
+a spec figure and the design document the spec defers to. Recounted from the
+emitters on 2026-09-26, not from the prose: `ir.inc` defines 65 `BFA_OP_*`
+of which `nop` is opcode 0 and outside the row numbering, and the reference's
+dispatcher refuses exactly seven by name (`muls`, the three `*ov`, `callind`,
+`fma`, `bitcast`) while the C backend's refuses those plus `retain`/`release`
+plus the three reductions. So the
+refusals that remain are: `muls` and the overflow predicates
+(§5.4 leaves them `[OPEN]`; `div`/`rem` left the set on 2026-09-25 when
+§5.4 settled integer division — `tests/ir/divrem.ir`), `fma` (the SSE2 baseline has no fused op, and
 contraction is what §5.4 says must be asked for, never made), `bitcast`
-(`[OPEN]`), the reductions (no consumer yet), `callind`, and — the C
+(`[OPEN]`), the reductions — `redinit`/`contrib`/`redfin`, which the
+reference gained on 2026-09-25 and the C backend has not, so the refusal
+stands while its stated reason ("no reference lowering") does not, and
+`tests/ir/red_*.ir` carry `c-emit-exit=4` for it — `callind`, and — the C
 backend only — `retain`/`release`. This sentence previously said "the
 twenty-three the C backend refuses by name"; the count was wrong by two
 before the float wave and is not repeated as a number here on purpose —
@@ -2701,9 +2850,9 @@ recoverable and over-committing is not. `0204`-`0209`, `0211`-`0219` and
 
 # 14. Conformance suite
 
-Ships with v1. Twenty of the twenty-seven entries must **fail to compile**.
-The other seven must compile and are judged by what they
-produce: 15 by a runtime abort, 16, 17, 25, 26 and 27 by byte-identical output, and 23 by
+Ships with v1. Twenty of the twenty-eight entries must **fail to compile**.
+The other eight must compile and are judged by what they
+produce: 15 by a runtime abort, 16, 17, 25, 26, 27 and 28 by byte-identical output, and 23 by
 byte-identical agreement with an external certificate. `tests/run.sh`'s five
 fixture shapes — `code`, `nocap`, `abort`, `bytes`, `cert` — are exactly this
 partition. (This sentence previously excepted only 16 and 17, which was false
@@ -2711,7 +2860,8 @@ for 15 since it was written and for 23 since it was added;
 `docs/design/wire-codec.md`, finding 1. The "twenty-five" count was stale
 from the moment entry 25 appended; entry 26 appended with the float wave's
 RGB triangle, entry 27 with Stage 5's lane rasterizers, and both counts are
-settled here at twenty-seven with seven running.)
+settled at twenty-seven with seven running, and entry 28 appended on
+2026-09-25 with the reduction wave — twenty-eight, eight running.)
 
 1. Turkish dotless-ı case fold in program logic → `plica_sermone` without `sermo`
 2. Index computed on a folded copy, applied to the original → `EXS-E0332`
@@ -2740,6 +2890,7 @@ settled here at twenty-seven with seven running.)
 25. `exsc aedifica --hospes mips64-none-o64 --emitte c` over the StreamDB reader, cross-compiled and run big-endian with 32-bit addresses → stdout byte-identical to the reference backend's over `vendor/streamdb-v3/`
 26. An RGB triangle over `f64` — float literals, `/`, `fneg`, ordered `fcmp`, `itof`/`ftoi`, incremental edge-function rasterization to a binary P6 image on stdout → byte-identical between the reference and C backends, byte-identical to an independently computed oracle (`prototypes/pictura_oracle.py`, which mirrors the program's f64 operation order, the agreement §9.3's determinism law turns into a byte claim), and — since 2026-09-14 — byte-identical cross-run big-endian on `mips64-none-o64` under emulation, the first big-endian `f64` execution of anything this compiler produces (amended: the sentence used to read "NOT in the cross phase — big-endian f64 execution on mips64 is unmeasured, so `§9.5`'s mips64 float row stays `[UNTESTED]`"; `tests/programs/pictura_triangulum/` and `tests/programs/signaculum/`, the logo renderer, now both carry `cross=yes` and agree byte for byte under qemu-mipsn32). Carried by `tests/programs/pictura_triangulum/` through the run, differential and cross phases
 27. Lane-parallel rasterization over `acies<f32, 8>` — whole-acy arithmetic on two acies of one float element type is the elementwise operation, one IEEE rounding per lane and nothing combined across lanes (§5.4's admission law; every refusal pinned by `tests/unit/chk_ty_aciesops.asm`, the lowering by `tests/unit/lwr_aciesops.asm`), so a pixel loop's edge accumulators step **one packed op per edge per 8-pixel group** — to a binary P6 image on stdout → byte-identical between the reference and C backends, byte-identical to an independently computed oracle that mirrors the written operation order in numpy `float32` elementwise (`prototypes/pictura_octonaria_oracle.py`), and byte-identical cross-run big-endian on `mips64-none-o64` under emulation — the C backend's soft `vector_size` lowering reproducing every lane's bits on a target with no SSE. The census is measured over the emitted fasmg text and recorded in the program's TEST header: exactly four divisions, all in setup (three per-vertex reciprocals and one reciprocal of the determinant), zero in any pixel loop; twelve `addps` and six `mulps` (each packed op emitting its two SSE2 halves), no `subps`, no `divps`. Carried by `tests/programs/pictura_octonaria/` — the entry-26 triangle rebuilt at 960×540 with 2×2 supersampled coverage, eight f32 lanes at a time — through the run, differential and cross phases; its f64-lane companion is `tests/programs/signaculum/`, the logo at 512×512 over `acies<f64, 8>`, whose `addpd`/`mulpd`/`zero-divpd` census its own TEST header records.
+28. A reduction whose shape is declared — `contrahe s: + … forma arborea 8` over the same twenty `f32` values as `forma ordinata` and `forma arborea 4` — produces three **different** bit patterns (the shape is observable, which is the claim), each of them exactly the bits §5.4's group-and-fold definition gives, and byte-identical to an oracle that implements the definition independently (`prototypes/contractio_oracle.py`, which mirrors §5.4's paragraph and nothing of the compiler). Measured 2026-09-26 over `tests/data/contractio_viginti.bin`: `ordinata` 121209096, `arborea 8` 121209080, `arborea 4` 121209088 in units of 2⁻²³ — f32 `0x41673021`, `0x4167301F`, `0x41673020`, three adjacent representables, two ulps end to end. Carried by `tests/programs/contractio/` through the **run phase**, and by the differential phase as a **refusal-parity** check alone: the C backend has no lowering for `redinit`/`contrib`/`redfin`, so `--emitte c` refuses the module — at the `red.F` handle type, one step before `docs/design/c-backend.md` D4 rows 36–38's by-name refusal is reached — and the cross phase, which emits C too, refuses identically on `--hospes mips64-none-o64`. So unlike 25–27, this entry's **backend parity and big-endian cross run are `[UNTESTED]`**: the directory is the check that waits for the day the C backend gains the three opcodes, and until then the reference backend alone executes it. This entry was written on 2026-09-25 asserting both, which was false from the moment it was written and is corrected here rather than left standing. The IR-level fixtures under `tests/ir/red_*.ir` pin each shape's value at the opcode layer, where the reference lowering is the definition (ADR 0012); seven of them carry `c-emit-exit=4` for the identical reason.
 
 Entries 18-20 close a gap: §8.1 defines six source-policy codes and only three
 of them (`E0102`, `E0103`, `E0105`) had an entry, while `E0101`, `E0104` and
@@ -2788,7 +2939,7 @@ a referenced list is the same mistake as renumbering an error code (§8.3).
 6. **Generator model coverage** (§9.4). "No build scripts" may not survive real FFI binding generation.
 7. **Generated-C debug info** (§9.2). If stepping through Exsecutor is unusable, QBE moves earlier.
 8. **Ecosystem bootstrapping.** Unaddressed by anything in this document, and the actual reason languages die.
-9. **Phrase grammar.** `[UNTESTED]` §8.6 now states it as normative — items, statements, the expression precedence table, types, `poscit` attachment, the lambda, `sub`'s two forms, `interfacies … in …` and the `sicut` cast, the `ego` entry point, every peek and every synchronisation set. That closes what this item originally recorded: there *is* a grammar, and it is the one the CST is built against. It did not close the item when written: nothing had parsed anything, §9.1's CST did not exist. The CST now exists (`compiler/x86_64/cst/`) and parses every fixture and program in the tree; what stays `[UNTESTED]` is the LL(1) claim as a property — no peek outside the listed set has been *needed*, which is evidence and not proof — and the recovery design beyond the Stage 1 sample. §8.6's own list is still open: numeric literals and the `HASH` token, sum types and constructor patterns, brand syntax, generic implementation heads, the operators §8.4 lacks, and `sub` inside loop bodies. It also found three contradictions it did not paper over, all since fixed: §4.2's and §5.1's illustrative blocks and `examples/saluta.exsc` omitted the `;` §8.6 requires; §8.4 still marked the comparison words `[OPEN]` and lacked their tier-2 entries; and §4.4 wrote `dyn Trait poscit P` bare, which is not a form that parses. The canonical program gaining a semicolon is the useful one — `tests/unit/lexer_tokens.asm` pins its token count precisely so a change there is a deliberate edit, and the assert caught it. Position in this list is chronological, per the note above. Later, the DeModFrame codec design (`docs/design/wire-codec.md`, M0) settled three items from that list — hexadecimal literals, shifts, and struct literals — and added exclusive or; each has since been parsed, typed, lowered and run by the fixtures §8.4–§8.6 now cite, and §14 entry 23 runs on all four; `/`, remainder, negation, the `*%`/`*|` family, bitwise and/or, and the rest of the numeric grammar remain open.
+9. **Phrase grammar.** `[UNTESTED]` §8.6 now states it as normative — items, statements, the expression precedence table, types, `poscit` attachment, the lambda, `sub`'s two forms, `interfacies … in …` and the `sicut` cast, the `ego` entry point, every peek and every synchronisation set. That closes what this item originally recorded: there *is* a grammar, and it is the one the CST is built against. It did not close the item when written: nothing had parsed anything, §9.1's CST did not exist. The CST now exists (`compiler/x86_64/cst/`) and parses every fixture and program in the tree; what stays `[UNTESTED]` is the LL(1) claim as a property — no peek outside the listed set has been *needed*, which is evidence and not proof — and the recovery design beyond the Stage 1 sample. §8.6's own list is still open: numeric literals and the `HASH` token, sum types and constructor patterns, brand syntax, generic implementation heads, the operators §8.4 lacks, and `sub` inside loop bodies. It also found three contradictions it did not paper over, all since fixed: §4.2's and §5.1's illustrative blocks and `examples/saluta.exsc` omitted the `;` §8.6 requires; §8.4 still marked the comparison words `[OPEN]` and lacked their tier-2 entries; and §4.4 wrote `dyn Trait poscit P` bare, which is not a form that parses. The canonical program gaining a semicolon is the useful one — `tests/unit/lexer_tokens.asm` pins its token count precisely so a change there is a deliberate edit, and the assert caught it. Position in this list is chronological, per the note above. Later, the DeModFrame codec design (`docs/design/wire-codec.md`, M0) settled three items from that list — hexadecimal literals, shifts, and struct literals — and added exclusive or; each has since been parsed, typed, lowered and run by the fixtures §8.4–§8.6 now cite, and §14 entry 23 runs on all four; `/`, remainder, negation, the `*%`/`*|` family, bitwise and/or, and the rest of the numeric grammar remained open — until the float wave took `/` and negation, and 2026-09-25 took the integer quotient, `residuum`, `atque` and `sive` (§5.4); the `*%`/`*|` family and the rest of the numeric grammar are what is left.
 
 ---
 

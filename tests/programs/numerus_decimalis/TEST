@@ -1,0 +1,57 @@
+# The first program in this tree that prints a number: an unsigned decimal
+# printer built on `/ 10` and `residuum 10` (spec §5.4, settled 2026-09-25).
+# numerus_decimalis.exsc's header lists what each printed number is there to
+# catch; 1-21 name the first line whose BYTE COUNT was wrong, 0 is all right.
+#
+# TWO INDEPENDENT ASSERTIONS, and both have to hold:
+#   the BYTES   expected.out, compared by check_run with `cmp`
+#   the LENGTHS the exit status -- every `scribe_lineam` call's return is
+#               checked against the number of digits that number has, so a
+#               stray leading zero or a dropped digit fails as a status and
+#               not only as a diff. A golden alone would pass a printer that
+#               wrote the right characters while miscounting them, and a
+#               status alone would pass one that counted right and emitted
+#               the wrong digits.
+#
+# HOW expected.out WAS PRODUCED -- not by this program, which is the point of
+# a golden. Python, whose `//` and `%` are FLOOR division, which coincides
+# with §5.4's truncation toward zero for these operands because every one of
+# them is non-negative (the two differ only at mixed signs; the signed cases
+# are pinned at the IR by tests/ir/rem_sign.ir and divrem.ir, and in the
+# checker by tests/unit/chk_ty_intdiv.asm):
+#
+#   python3 -c "
+#   vals=[0,7,9,10,11,99,100,255,256,65535,65536,4294967295,4294967296,
+#         9223372036854775807,9223372036854775808,18446744073709551615,
+#         1000000//7,1000000%7,1000000//7,1000000%7]
+#   import sys
+#   sys.stdout.write(''.join('%d\n'%v for v in vals))
+#   " > tests/programs/numerus_decimalis/expected.out
+#
+# 140 bytes, 20 lines. The last four are 1000000/7 and 1000000%7 twice: once
+# at `u64` and once at `mensura`, which is the pair `cross=yes` below exists
+# for.
+#
+# cross=yes IS LOAD-BEARING HERE, not extra coverage. `mensura` is 64 bits on
+# x86_64-linux and 32 on mips64-none-o64 (ADR 0015), so the program's two
+# `mensura` lines emit `exsi_div_u(v139, v140, 32)` / `exsi_rem_u(..., 32)` in
+# the cross unit where the host unit emits `..., 64` -- a different call at a
+# different width from the same source line, running big-endian -- and both
+# must print the same six digits and the same one digit. Verified by reading
+# the two emitted units: the `, 32)` call appears in the
+# `--hospes mips64-none-o64` unit and in no other.
+#
+# MEASURED 2026-09-26 (reference backend, then the differential and cross
+# phases driven by hand, one program at a time -- tests/run.sh was not run):
+#   reference   exit 0, 140 bytes, byte-identical to expected.out
+#   gcc   -O0   exit 0, 140 bytes, identical    (UBSan on, -fno-sanitize-recover)
+#   gcc   -O2   exit 0, 140 bytes, identical
+#   clang -O0   exit 0, 140 bytes, identical
+#   clang -O2   exit 0, 140 bytes, identical
+#   cross       clang --target=mips64-unknown-linux-musl -mabi=n32, run under
+#               qemu-mipsn32: exit 0, 140 bytes, identical. readelf confirms
+#               "2's complement, big endian".
+#
+# No stdin=: the program reads nothing. It draws `ambitus` only (spec §4.6),
+# so its syscall set is write and exit_group.
+TEST: expect-exit=0 cross=yes

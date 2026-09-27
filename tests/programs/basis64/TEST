@@ -1,0 +1,67 @@
+# A Base64 encoder held byte-identical to coreutils' -- the program spec §5.4's
+# `atque` and `sive` were waited on for (settled 2026-09-25).
+# basis64.exsc's header says what each part is for; 1-8 name the first check
+# that failed, 0 is all right.
+#
+# THE INPUT is tests/data/lector_intra.bin, the same 41-byte file
+# tests/programs/lector and lector_numerus read, reused rather than copied so
+# no second file can drift. It is BINARY -- 0x00, 0xff, a lone 0x80, a CR --
+# and .gitattributes marks tests/data/*.bin `-text`, so no checkout normalises
+# it. An encoder tested only on printable ASCII is not tested on the bytes
+# that break one.
+#
+# ALL THREE PADDING CASES IN ONE RUN. The program prints three lines: the
+# encoding of all 41 bytes, of the first 40, and of the first 39.
+# 41 = 3*13+2 -> one `=`; 40 = 3*13+1 -> `==`; 39 = 3*13 -> no padding. An
+# encoder can be wrong in two of those three ways and still match a
+# single-length golden.
+#
+# HOW expected.out WAS PRODUCED -- by coreutils, not by this program. Run from
+# the repository root, inside `nix develop` (GNU coreutils 9.11; the host's
+# 9.8 was checked against it and produced the same 167 bytes):
+#
+#   { base64 -w0 < tests/data/lector_intra.bin;            echo
+#     head -c 40 tests/data/lector_intra.bin | base64 -w0; echo
+#     head -c 39 tests/data/lector_intra.bin | base64 -w0; echo
+#   } > tests/programs/basis64/expected.out
+#
+# 167 bytes, three lines. `-w0` because coreutils wraps at 76 columns by
+# default and this program emits no line breaks inside a line; the `echo`
+# after each supplies the newline the program writes itself. Standard
+# alphabet, `+` and `/`, `=` padding -- RFC 4648 §4, which is `base64`'s
+# default and not the URL-safe variant.
+#
+# THE THREE CONSTANTS at the bottom of basis64.exsc (0xff, 0x00, 0x09) are the
+# fold of the same file's bytes under or, and and xor, computed from the file:
+#
+#   python3 -c "
+#   d=open('tests/data/lector_intra.bin','rb').read()
+#   u=0; c=255; x=0
+#   for b in d: u|=b; c&=b; x^=b
+#   print(u, c, x)"          ->  255 0 9
+#
+# They are there because THE ENCODER ITSELF DOES NOT DISTINGUISH `sive` FROM
+# `aut`: every join it makes is between disjoint bit ranges, where or and xor
+# agree. Measured -- replacing that `sive` with `aut` still prints all 167
+# golden bytes, exit 0. The three-accumulator loop folds overlapping operands
+# instead, where the three words give three pairwise-different answers, and
+# mutations there DO fail: `sive`->`aut` in the union line exits 6,
+# `atque`->`sive` in the intersection line exits 7. This is the part of the
+# directory that is evidence for `sive`'s semantics; the golden is evidence
+# for `atque`'s masks and for the encoder.
+#
+# MEASURED 2026-09-26 (each phase driven by hand, one program at a time --
+# tests/run.sh was not run):
+#   reference   exit 0, 167 bytes, byte-identical to expected.out
+#   gcc   -O0   exit 0, 167 bytes, identical   (UBSan on, -fno-sanitize-recover)
+#   gcc   -O2   exit 0, 167 bytes, identical
+#   clang -O0   exit 0, 167 bytes, identical
+#   clang -O2   exit 0, 167 bytes, identical
+#   cross       clang --target=mips64-unknown-linux-musl -mabi=n32 -march=mips3,
+#               run under qemu-mipsn32: exit 0, 167 bytes, identical -- the
+#               masks and shifts extract the same bit fields big-endian, with
+#               `mensura` 32 bits instead of 64 for every index and count
+#
+# stdin= is required: without it a program test's stdin is /dev/null, and this
+# program would exit 2 (fewer than two bytes) having printed nothing.
+TEST: expect-exit=0 stdin=tests/data/lector_intra.bin cross=yes

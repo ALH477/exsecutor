@@ -1,0 +1,184 @@
+// The first program in this tree that PRINTS A NUMBER.
+//
+// Everything before it either returned its answer as an exit status
+// (tests/programs/lector_numerus counts stdin's bytes into `initium`'s `u8`)
+// or wrote bytes it already had (tests/programs/lector copies stdin;
+// tests/programs/saluta writes a literal). A decimal printer is the first
+// thing that has to TURN a number INTO bytes, and the two operators that do
+// it are the two spec 5.4 settled on 2026-09-25: `/ 10` to drop a digit and
+// `residuum 10` to take one. Without a remainder there is no digit; without
+// a truncating quotient there is no next digit. That is why this program is
+// the evidence 5.4 cites for the integer quotient from source, and why it
+// could not be written before the checker and the lowering carried them
+// (the arms are `__chk_ty_divadm` in checker/types/types.inc and `.div`/`.rem`
+// in lower/expr.inc).
+//
+// WHAT IT PRINTS: the numbers below, one per line, `\n` after each. The list
+// is not decorative -- each row is a place a wrong division shows:
+//
+//    0                      the ONE-DIGIT case, and the only one that does
+//                           not recurse: `si n ge 10` is false, so the whole
+//                           answer is `0 residuum 10`. A printer that looped
+//                           `dum n ne 0` prints nothing here, which is the
+//                           classic bug and is why 0 leads the list.
+//    7                      a single digit that is not zero
+//    9, 10, 11              the carry boundary of `/ 10`: 9 -> "9",
+//                           10 -> "1" then "0". Truncation toward zero is
+//                           what makes 10 / 10 exactly 1 and 11 / 10 also 1.
+//    99, 100                two digits to three
+//    255, 256               the u8 boundary
+//    65535, 65536           the u16 boundary
+//    4294967295, 4294967296 the u32 boundary. A division done at 32 bits
+//                           wraps here; the value is a `u64` and the
+//                           quotient must be too.
+//    9223372036854775807    i64 max -- the last value a SIGNED division
+//                           still gets right
+//    9223372036854775808    i64 max + 1, AND THIS IS THE ROW THAT MATTERS:
+//                           read as a signed 64-bit integer this is
+//                           negative, so an `idiv` here answers a negative
+//                           quotient and the printer emits garbage. It must
+//                           be `div`. spec 5.4's quotient is the one for the
+//                           operands' OWN type, and `u64`'s is unsigned.
+//    18446744073709551615   u64 max, 20 digits -- the longest line, and the
+//                           same claim as the row above at the extreme
+//    142857                 NOT a literal: `1000000 / 7`, so the quotient
+//                           appears as a computed value and not only as the
+//                           printer's own internal step
+//    1                      `1000000 residuum 7` -- likewise the remainder,
+//                           used for its own sake rather than to peel a digit
+//
+// THE LAST TWO LINES ARE WHERE `residuum` IS THE SUBJECT rather than the
+// mechanism. Everything above them would still print correctly if `residuum`
+// were only ever applied to 10; `1000000 residuum 7` is a remainder at a
+// divisor the printer never uses, and `identitas()` below checks spec 5.4's
+// identity `a eq (a / b) * b + (a residuum b)` on that same pair, so a
+// remainder that followed the quotient's sign rather than the dividend's
+// fails the program rather than the eye.
+//
+// EVERY LINE IS ALSO COUNTED. `scribe_decimale` returns how many bytes it
+// wrote and `initium` checks each count against the digits that number has,
+// so a printer that emitted the right digits in the wrong number of bytes --
+// a stray leading zero, a dropped digit -- fails with an exit status and not
+// only with a diff. The golden expected.out is the bytes; the exit status is
+// the lengths. Both have to hold.
+//
+// WHY THE ROW IS INFERRED AND NOT DECLARED. `scribe_decimale` is private, so
+// spec 4.1 rule 5 infers its row from its body -- `s.scribe_octeto(...)`
+// draws the writer's own mark -- exactly as tests/programs/lector_numerus's
+// `octeti_numera` does. IT IS NOT A STYLE CHOICE HERE: the declared form
+// `poscit sicut s` on a SELF-RECURSIVE function is EXS-E0421 in this
+// compiler (measured 2026-09-26; the same declaration on a non-recursive
+// function is clean, and the same recursion with an inferred row is clean).
+// That is a defect in the row pass, reported and not worked around anywhere
+// but here; when it is fixed this function may declare its row like
+// tests/programs/lector's `lege` does.
+//
+// `mensura` FOR COUNTS, `u64` FOR VALUES, deliberately. `scribe_octeto`
+// answers a `mensura`, so the running total is one; the numbers themselves
+// are `u64` so that the u32 and i64 boundaries above mean the same thing on
+// every target. `mensura` is 64 bits on x86_64-linux and 32 on
+// mips64-none-o64 (ADR 0015), so a value held in a `mensura` would be a
+// different value per target and the two runs could not be compared byte for
+// byte -- which is exactly what the cross phase asks of this program.
+//
+// Mutations, all three RUN on 2026-09-26, with the exit statuses MEASURED
+// rather than predicted (an earlier draft of this comment guessed 1, 1 and 6,
+// and all three guesses were wrong -- the counts catch these at different
+// rows than the eye expects):
+//   `n / 10` -> `n / 9`      exit 6, stdout differs. Not exit 1: 0, 7 and 9
+//                            are single digits either way, 10 and 11 still
+//                            take two, and 99 is the first number whose digit
+//                            COUNT changes (99/9 = 11, so three bytes).
+//   `residuum 10` -> `- 10`  exit 132, nothing printed. A runtime TRAP, not a
+//                            wrong answer: `n - 10` on a `u64` where n < 10
+//                            underflows, and spec 5.4's `-` traps. The
+//                            mutation cannot even reach a digit.
+//   `si n ge 10` -> `gt 10`  exit 4, and stdout is exactly "0\n7\n9\n0\n":
+//                            the recursion stops one step early at n = 10, so
+//                            the whole number is `10 residuum 10` -- the
+//                            single byte "0", not "1" -- and the count check
+//                            on the 10 row, the fourth, is what fails.
+
+// One decimal number, most significant digit first, no leading zeros.
+// Returns the bytes written.
+functio scribe_decimale(s: Scriptor, n: u64) -> mensura {
+    mutabilis scripta: mensura = 0;
+    si n ge 10 {
+        scripta = scribe_decimale(s, n / 10);
+    }
+    firma digitus: u64 = n residuum 10;
+    scripta = scripta + s.scribe_octeto((digitus + 48) sicut u8);
+    redde scripta;
+}
+
+// `scribe_decimale` then a newline. The count excludes the newline, so
+// `initium`'s expectations below are digit counts.
+functio scribe_lineam(s: Scriptor, n: u64) -> mensura {
+    firma scripta: mensura = scribe_decimale(s, n);
+    si s.scribe_octeto(10) ne 1 {
+        redde 0;
+    }
+    redde scripta;
+}
+
+// spec 5.4's identity, at a divisor the printer never uses: 1 when
+// `a eq (a / b) * b + (a residuum b)` holds, else 0. A remainder carrying
+// the quotient's sign instead of the dividend's breaks this; so does a
+// quotient that floored rather than truncated, since the two halves have to
+// agree for the sum to come back.
+functio identitas(a: u64, b: u64) -> u8 {
+    firma q: u64 = a / b;
+    firma r: u64 = a residuum b;
+    si q * b + r ne a {
+        redde 0;
+    }
+    redde 1;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma s = Scriptor.ad_exitum(a);
+
+    si scribe_lineam(s, 0) ne 1 { redde 1; }
+    si scribe_lineam(s, 7) ne 1 { redde 2; }
+    si scribe_lineam(s, 9) ne 1 { redde 3; }
+    si scribe_lineam(s, 10) ne 2 { redde 4; }
+    si scribe_lineam(s, 11) ne 2 { redde 5; }
+    si scribe_lineam(s, 99) ne 2 { redde 6; }
+    si scribe_lineam(s, 100) ne 3 { redde 7; }
+    si scribe_lineam(s, 255) ne 3 { redde 8; }
+    si scribe_lineam(s, 256) ne 3 { redde 9; }
+    si scribe_lineam(s, 65535) ne 5 { redde 10; }
+    si scribe_lineam(s, 65536) ne 5 { redde 11; }
+    si scribe_lineam(s, 4294967295) ne 10 { redde 12; }
+    si scribe_lineam(s, 4294967296) ne 10 { redde 13; }
+    si scribe_lineam(s, 9223372036854775807) ne 19 { redde 14; }
+    si scribe_lineam(s, 9223372036854775808) ne 19 { redde 15; }
+    si scribe_lineam(s, 18446744073709551615) ne 20 { redde 16; }
+
+    // the quotient and the remainder as values, not as the printer's steps
+    firma mille: u64 = 1000000;
+    firma septem: u64 = 7;
+    si scribe_lineam(s, mille / septem) ne 6 { redde 17; }
+    si scribe_lineam(s, mille residuum septem) ne 1 { redde 18; }
+
+    // spec 5.4's identity at that same pair
+    si identitas(mille, septem) ne 1 { redde 19; }
+
+    // THE SAME DIVISION AT `mensura`, which is what makes the cross phase's
+    // `cross=yes` more than extra coverage. `mensura` is 64 bits on
+    // x86_64-linux and 32 on mips64-none-o64 (ADR 0015), so these two source
+    // lines emit `exsi_div_u(a, b, 64)`/`exsi_rem_u(a, b, 64)` in one C unit
+    // and `...(a, b, 32)` in the other -- a DIFFERENT call from the same
+    // line, at a different width, on a big-endian target -- and they must
+    // print the digits the `u64` rows above already printed. 1000000 and 7
+    // are chosen to be the same values there: four divisions of one pair, at
+    // two widths, on two byte orders, one answer.
+    firma mille_m: mensura = 1000000;
+    firma septem_m: mensura = 7;
+    si scribe_lineam(s, (mille_m / septem_m) sicut u64) ne 6 { redde 20; }
+    si scribe_lineam(s, (mille_m residuum septem_m) sicut u64) ne 1 { redde 21; }
+
+    redde 0;
+}

@@ -496,8 +496,8 @@ after the table; the C1 status column says what C1 does with the row.
 | 1 | `add T a b` | `vk = exsi_add_u(a, b, N)` / `exsi_add_i` — trap on overflow, `exsrt_abortus(1)` | lowered |
 | 2 | `sub T a b` | `exsi_sub_u` / `exsi_sub_i` | lowered |
 | 3 | `mul T a b` | `exsi_mul_u` / `exsi_mul_i` — one rule at every width, by division; no `__int128` (finding 5) | lowered |
-| 4 | `div T a b` | refused: `bfc: emitter: div: no reference lowering exists (ssa-ir.md 2.3); refused rather than guessed` | refused |
-| 5 | `rem T a b` | refused, as `div` | refused |
+| 4 | `div T a b` | `exsi_div_u` / `exsi_div_i` — spec 5.4 as settled 2026-09-25: quotient truncated toward zero, trap on a zero divisor and on T_MIN / −1 (T's own T_MIN, not `INT64_MIN`). BOTH CHECKS PRECEDE THE DIVISION: `rem`'s result cannot show the overflow, and under the harness's `-fsanitize=undefined -fno-sanitize-recover=all` a division that ran first would abort inside UBSan instead of at `exsrt_abortus(1)`. The signed pair divides MAGNITUDES and restores the sign (`exsi_mul_i`'s idiom), so no signed C division and no implementation-defined `uint64_t` → `int64_t` conversion is involved | lowered |
+| 5 | `rem T a b` | `exsi_rem_u` / `exsi_rem_i` — remainder takes the DIVIDEND's sign; traps on T_MIN / −1 too, though its value there is 0, because it is the remainder of a division that does not exist and the pair must agree (`tests/ir/rem_sign.ir` computes `a == (a/b)*b + (a rem b)` at every pair of signs) | lowered |
 | 6 | `addw T a b` | `vk = norm(a + b, N)` | lowered |
 | 7 | `subw T a b` | `vk = norm(a - b, N)` | lowered |
 | 8 | `mulw T a b` | `vk = norm(a * b, N)` — the low N bits of a modular 64-bit product are the low N bits of the true product | lowered |
@@ -528,8 +528,8 @@ after the table; the C1 status column says what C1 does with the row.
 | 33 | `itof F a` | source unsigned: `vk = (T)a;`; source signed: `vk = (T)exsi_i64_from_bits(a);` — the bit-cast helper, because `uint64_t → int64_t` is implementation-defined in C and the reference defines it as the two's-complement reinterpretation. `u64 → f32` refused: `bfc: emitter: itof: u64 -> f32 is not implemented (the reference refuses it too: no correctly-rounded one-step sequence at its baseline -- a naive (float)(double) double-rounds)`; `u64 → f64` is lowered | lowered |
 | 34 | `ftoi T a` | dest `uN`: `vk = (uint64_t)a;`; dest `iN`: `vk = (uint64_t)(int64_t)a;` — C's float→integer conversion truncates toward zero, the reference's `cvttsd2si` rule. NaN and out-of-range are `[OPEN]` in the reference; on the C side UBSan's float-cast-overflow aborts them under the harness flags — the documented C-side twin of the same `[OPEN]`, said so in a comment at the emission site | lowered |
 | 35 | `bitcast T a` | refused: `bfc: emitter: bitcast: nothing in-tree produces it and its semantics are [OPEN] (ssa-ir.md 2.3); fconst's bits-to-float path is a prologue helper, not this opcode` | refused |
-| 36 | `redinit F op shape w` | refused: `bfc: emitter: redinit: reductions have no reference lowering (ssa-ir.md 2.6: the reference's lowering of arborea is the definition)` | refused |
-| 37 | `contrib h v` | refused, as `redinit` | refused |
+| 36 | `redinit F op shape w` | refused, and **not by the message this row used to quote.** Measured 2026-09-26 (`tests/ir/emit_c.asm < tests/ir/red_ordinata_f32.ir`, exit 4): the refusal is the TYPE refusal, `bfc: emitter: unsupported type: library mode holds an integer (uN/iN), an address (ptr/ref/refc), a float (f32/f64) or a vector float (vf32.N/vf64.N) and nothing else (c-backend.md D4, D8)`, raised when the C type name of the `red.F` handle is wanted — one step before the dispatcher could reach `__bfc_refuse`. The by-name arm in `__bfc_refuse` is therefore **unreachable for well-formed IR** (a `redinit` precedes every `contrib` and `redfin` of its handle, so the handle's declaration always dies first); it is kept as the arm a future `red`-less reduction row would need, and says so at the site. This row quoted the by-name message, and its stated reason — "reductions have no reference lowering" — had ALSO stopped being true on 2026-09-25, when the reference gained all three | refused |
+| 37 | `contrib h v` | refused, as `redinit`, by the same type refusal reached through its handle operand | refused |
 | 38 | `redfin F h` | refused, as `redinit` | refused |
 | 39 | `slot n align → ptr` | at function top: `_Alignas(align) unsigned char sk[n];`; at the instruction: `vk = sk;`. Alignment a power of two 1..16, as the reference requires | lowered |
 | 40 | `load T p off o` | integer `T`, whole bytes `k = N/8`: `nativus` → `vk = normT(exsi_ld_n(p + off, k), N)`; `maior` → `exsi_ld_be`; `minor` → `exsi_ld_le`; `k == 1` all three are one byte. `T = ptr`: `vk = (unsigned char *)(uintptr_t)exsi_ld_n(p + off, sizeof(void *))`. Not whole bytes: refused, as the reference does. `T = f64/f32`, `nativus` only (the verifier refuses an order before either backend): `vk = exsi_f64_from_bits(exsi_ld_n(p + off, 8))` / `exsi_f32_from_bits((uint32_t)exsi_ld_n(p + off, 4))` — the bits through the integer byte helper and back through the `__builtin_memcpy` bit-cast, both halves byte-order-explicit; a float's IR width field is 0, so the byte count comes from the kind | lowered |
@@ -569,12 +569,28 @@ Not in the table: `nop` (op 0; verifier rule 9 refuses it, `verify.inc`
 finding 2) and `faddr` (IR 2.3, `[UNIMPLEMENTED]` in `ir.inc`); both are
 refused by the emitter if met, by name.
 
-Count: **50 of the 64 rows are lowered** — 49 by statement, `phi` at the
-edges — and **14 are refused**, of which 12 because the reference refuses
-them too (`div`, `rem`, `muls`, the three `*ov`, the three reductions,
-`callind`, and `fma` and `bitcast`, refused in both backends in the
-same change) and 2 (`retain`, `release`) because library mode has no
-runtime. The float wave of 2026-09-13 moved eleven rows from refused to
+Count: **52 of the 64 rows are lowered** — 51 by statement, `phi` at the
+edges — and **12 are refused**: 7 because the reference refuses them too
+(`muls`, the three `*ov`, `callind`, and `fma` and `bitcast`, refused in
+both backends in the same change), 2 (`retain`, `release`) because library
+mode has no runtime, and **3 — the reductions, `redinit`/`contrib`/`redfin`
+— for neither reason.** That third group was counted in the first here
+until 2026-09-26, and it does not belong there: the reference gained all
+three on 2026-09-25 (`emit.inc`'s `__bfa_emit_redinit`/`__bfa_emit_redfin`,
+ssa-ir.md 2.6, whose lowering of `arborea` is the definition) and this
+backend did not follow. So they are the SECOND asymmetry between the two
+backends, and unlike `retain`/`release` — which library mode can never have,
+D1 — this one is simply **owed work**. The consequence is not confined to
+this document: a program using `contrahe` cannot be emitted as C at all, so
+it has no differential leg and no cross leg either (the cross phase goes
+through `--emitte c`), which is why spec §14 entry 28 cannot claim what
+entries 25–27 claim. `tests/ir/red_*.ir`'s seven `c-emit-exit=4` keys are
+the standing measurement of it. 50/14 → 52/12 is `div` and `rem`: the reference settled them on
+2026-09-25 and this backend followed, which is the only order the invariant
+above permits — a refusal here must be a refusal there, so for the one commit
+between the two changes rows 4 and 5 were refusals whose stated reason had
+already stopped being true, and the six `tests/ir/` fixtures carried
+`c-emit-exit=4` to say so. They carry it no longer. The float wave of 2026-09-13 moved eleven rows from refused to
 lowered; Stage 5.1 (same day) appended `vadd`/`vsub`/`vmul`/`vdiv` as
 rows 61–64, all lowered in both backends in the one change with the one
 refusal set. A row-by-row recount in that change also corrected the figures
@@ -991,7 +1007,7 @@ them `[OPEN]`; the emitter refuses the predicate word by name); `fma` and
 `minor` — byte order is an integer surface (spec 5.2), refused by the
 verifier and by both emitters (`tests/ir/reject_verify_float_load_ord.ir`);
 the honouring of a declared `numeri` (finding 23); the three reduction
-opcodes — what `@dot` still trips; `div`/`rem`, `muls`,
+opcodes — what `@dot` still trips; `muls` and
 the three `*ov` predicates — integer opcodes the
 reference lacks, which enter **both** backends in one later milestone
 with fixtures for each; ARC — no object header exists in library mode;
@@ -1350,7 +1366,11 @@ C1 is done; C2's harness landed with it. What each says now:
 | **C3** the reader — **host half DONE** | `examples/streamdb/` in Exsecutor, `tests/programs/streamdb_*/` driving it from `initium` over `vendor/streamdb-v3/` on stdin, **both backends**; the Python expectation. The reference half landed with section 6; the C half is section 6.7 | D7 (host half), section 6, and what C2 owed | the semantic stream of section 6 — every key byte-exact with CRC verified, the counts, the error outcomes — **identical under both backends** on all four containers under all sixteen C builds, and equal to the expectation; five mutants, three of which the corpus catches and two of which need hand-made input (section 6.4) |
 | **C4** the N64 cross-compile — **DONE** | `--hospes mips64-none-o64` accepted: the row's width to `chk_set_target` (one call site, which had been a literal 64), a `== 4` arm in `program_c.inc`, and a refusal by name in the reference emitter so a narrow address is named rather than mis-described. **Nothing in `lower/` and nothing in `ir.inc`** — ADR 0015 decision 2. The certificate is `tests/run.sh`'s cross phase: six `cross=yes` directories emitted for the row, cross-compiled `-mabi=n32 -march=mips3` and RUN under `qemu-mipsn32`, held to the reference's three observables. Closure cost `lld` + `qemu-user`, both cached; not a cross GCC | D7 (target half), D2's o64 row | **met.** §14 entry 25 `status=run`; six directories agree byte for byte, `forma` among them, so `@transitus` byte order is exercised big-endian. Kiln's own `mips64-elf-gcc` 14.4.0 compiles the o64 reader clean at `-Wall -Wextra -Werror` with its ROM flags **plus `-fno-fast-math`** — 14,616 bytes, `nm -u` = `{exsrt_abortus, memset}` (**`memset`**, not `memcpy`: `-ftrivial-auto-var-init=pattern` produces it), zero FP-register references. **Linked into a Kiln ROM and run**, 2026-09-12. Kiln's `examples/exsec-streamdb-demo/` checks the o64 reader in as generated C, runs it on a 32,768-byte libdragon kthread, and compares every key with Kiln's own `streamdb-embedded` reader on the same container; `./dev shot` in Ares shows open verdict 0, 2 documents (Kiln 2), 29 trie nodes, both present keys found at 56 and 78 bytes, the absent key absent, and BOTH READERS AGREE. It fits because the traversal frame fell from 127,184 to 20,680 bytes (ADR 0016). Not gated: an emulator run on a live display is a recorded measurement, not a check. Two things the first runs found belong to the ROM's side and are recorded in that example: libdragon's `kthread_join` cannot block (a thread must be joined after it has finished), and `n64.mk` compiles an object with the HOST compiler unless it is a prerequisite of the `.z64` |
 
-Later, not scheduled: `div`/`rem`/`muls`/`*ov` in both backends; the
+Later, not scheduled: `muls`/`*ov` in both backends (`div`/`rem` left this
+list on 2026-09-25 for the reference and with rows 4/5 above for C);
+**`redinit`/`contrib`/`redfin` in THIS backend only** — the reference has
+them, so this row is parity work rather than a design question, and it is
+what §14 entry 28's differential and cross legs wait on; the
 unordered `fcmp` predicates, `fma`, float load/store and `numeri` honouring
 (`EXS-E0701` becomes reachable when the driver wires it) — the float
 opcodes themselves are no longer on this list; whole-program mode with a C

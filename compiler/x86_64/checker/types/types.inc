@@ -620,7 +620,11 @@ proc __chk_ty_expect, chkt_wX, chkt_nX, chkt_tX
 	;     addition);
 	;   * `aut`/`sursum`/`deorsum` -- the original `.bitop` rule, an
 	;     unsigned type or `EXS-E0305` (`__chk_ty_unsigned`);
-	;   * `/` -- float-only, a float expectation or `EXS-E0305`.
+	;   * `/` and `residuum` -- `__chk_ty_divadm`'s rule on the
+	;     expectation: an integer or `mensura` for either, a float for `/`
+	;     alone (`/` was FLOAT-ONLY here until §5.4's 2026-09-25
+	;     amendment, which is why `firma q: u8 = 6 / 3;` used to be
+	;     `EXS-E0305` and is now clean).
 	;
 	; Each failed group replaces the expectation with the error type
 	; before `.bin_push` hands it down, so nothing inside gets a second
@@ -650,10 +654,34 @@ proc __chk_ty_expect, chkt_wX, chkt_nX, chkt_tX
 	mov	[chkt_tX], rax
 	jmp	.bin_push
   .bin_aut:
+	; `aut` `sursum` `deorsum` (17..19) and, since §5.4's 2026-09-25
+	; amendment, `atque` `sive` (22..23) -- the bitwise words, one rule,
+	; `__chk_ty_unsigned` on the expectation that is about to settle both
+	; sides. THE TWO RANGES ARE NOT CONTIGUOUS: `/` (20) and `residuum`
+	; (21) sit between them in ast/kinds.inc, because that list is appended
+	; to and never reordered (its header says why), so this is two range
+	; tests and not one. A single `cmp ecx, AST_OP_BOR / jbe` would hand
+	; `/` and `residuum` the unsigned rule and refuse `i32 / i32`.
+	;
+	; THE FALL-THROUGH THIS CLOSES WAS A REAL DEFECT, not a gap waiting on
+	; a decision. Until this edit the second test read `ja .bin_div`, so
+	; `atque` and `sive` -- above `deorsum`, and not `/` or `residuum` when
+	; `.bin_div` looked -- reached `.bin_push` with NO admissibility test at
+	; all: an expectation of any kind was pushed down to both operands and
+	; the pending case of a bitwise word was simply unchecked. It was quiet
+	; where `__chk_ty_binary`'s `rassert` was loud, which is why it outlived
+	; the loud one; `tests/unit/chk_ty_bitops.asm`'s pending rows (a float
+	; and a signed expectation under `atque`/`sive`) are what now hold it
+	; shut, and they fail against the old code with zero diagnostics.
 	cmp	ecx, AST_OP_AUT
 	jb	.bin_div
 	cmp	ecx, AST_OP_DEORSUM
+	jbe	.bin_bitadm
+	cmp	ecx, AST_OP_BAND
+	jb	.bin_div
+	cmp	ecx, AST_OP_BOR
 	ja	.bin_div
+  .bin_bitadm:
 	mov	rdi, rbx
 	mov	rsi, [chkt_tX]
 	call	__chk_ty_unsigned
@@ -668,15 +696,31 @@ proc __chk_ty_expect, chkt_wX, chkt_nX, chkt_tX
 	mov	[chkt_tX], rax
 	jmp	.bin_push
   .bin_div:
+	; `/` and `residuum` (§5.4's 2026-09-25 amendment). ONE rule for both,
+	; `__chk_ty_divadm`, which is also `__chk_ty_binary`'s: an integer or
+	; `mensura` expectation for either, a float one for `/` alone.
+	; `rcx` still holds the operator -- the two arms above it either did
+	; not run or ran no call -- and is handed on as the third argument, so
+	; the asymmetry lives in one place rather than being restated here.
+	;
+	; `1 / 2` with a `u8` expectation now PUSHES `u8` down and types both
+	; literals (it was EXS-E0305 at the operator until the amendment), and
+	; `1.5 / 2.5` with a `u8` expectation is two EXS-E0308 at the
+	; literals instead of one EXS-E0305 here: the operand kind is no
+	; longer what is wrong with it, the literal CLASS is (§8.4 admits no
+	; coercion between classes, `__chk_ty_fits`), and that is the same
+	; answer `1.5 + 2.5` at `u8` has always given.
 	cmp	ecx, AST_OP_DIV
+	je	.bin_divadm
+	cmp	ecx, AST_OP_REM
 	jne	.bin_push
+  .bin_divadm:
 	mov	rdi, rbx
 	mov	rsi, [chkt_tX]
-	call	__chk_ty_kindof
-	cmp	rax, AST_TY_FLOAT
-	je	.bin_push
-	cmp	rax, AST_TY_ERROR
-	je	.bin_push			; no cascade
+	mov	rdx, rcx
+	call	__chk_ty_divadm
+	test	eax, eax
+	jnz	.bin_push
 	mov	rdi, rbx
 	mov	rsi, 305
 	mov	rdx, r12
@@ -2176,6 +2220,62 @@ proc __chk_ty_bitadm, chkt_wQ2, chkt_tQ2, chkt_nQ2
 	return
 endp
 
+; __chk_ty_divadm(w, t, op) -> eax = 1 if type `t` may be an operand of `op`,
+; where `op` is `AST_OP_DIV` (`/`) or `AST_OP_REM` (`residuum`). Spec §5.4 as
+; amended 2026-09-25, which gave `/` its integer reading and `residuum` its
+; first one.
+;
+; `/` ADMITS ONE KIND MORE THAN `residuum` DOES, and that asymmetry is the
+; whole content of this routine:
+;   - `uN` and `iN` at every admitted width (`u1` included) and `mensura` are
+;     admitted by BOTH. The integer quotient and remainder are the amendment;
+;     `mensura` is an unsigned integer -- spec §5.2 calls it `usize` -- and
+;     nothing in §5.4 carves it out, exactly as `__chk_ty_unsigned` admits it
+;     for the bit operators. It keeps its own id, so `n / 10` types the `10`
+;     as `mensura` and `n / x` with `x: u64` is `EXS-E0303`.
+;   - `f32`/`f64` are admitted by `/` ALONE -- the float wave's IEEE-754
+;     quotient, unchanged by the amendment. §5.4 defines the remainder as the
+;     INTEGER one ("the remainder, of type `T`, with the sign of the
+;     dividend", in the paragraph that names `uN`, `iN` and `mensura`), the IR
+;     has no `frem` opcode for it to lower to (backend_fasmg/ir.inc's opcode
+;     list), and a float remainder that silently truncated its operands would
+;     be an invention rather than a reading. So `x residuum y` on two floats
+;     is `EXS-E0305`, at the operator, and stays that until §5.4 says
+;     otherwise.
+;   - the ERROR type, so that one failure does not cascade (typed-ast.md
+;     section 2.2).
+; Everything else -- `textus`, pointers, aggregates, `unit` -- answers 0. An
+; `acies` never reaches here: `__chk_ty_binary`'s `.settled` routes one to
+; `__chk_ty_aciesbin` before the pairing rule, and that routine's own operator
+; list is `+ - * /` on a FLOAT element (a `residuum` on an acies is its
+; `EXS-E0305` at the operator, and an integer-element `/` likewise).
+proc __chk_ty_divadm, chkt_wDV, chkt_tDV, chkt_oDV
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [chkt_wDV]
+	mov	r12, [chkt_tDV]
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_ERROR
+	je	.yes
+	cmp	rax, AST_TY_MENSURA
+	je	.yes
+	cmp	rax, AST_TY_INT
+	je	.yes
+	cmp	rax, AST_TY_FLOAT
+	jne	.no
+	cmp	qword [chkt_oDV], AST_OP_DIV
+	jne	.no
+  .yes:
+	mov	eax, 1
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
 ; __chk_ty_aciesbin(w, op, lt, rt, n) -> rax = the type of a binary operator
 ; application KNOWN to have an `acies` operand, or the error type after
 ; raising `EXS-E0305` AT THE OPERATOR `n`. `.settled` routes here before the
@@ -2321,14 +2421,36 @@ proc __chk_ty_binary, chkt_wB, chkt_nB
 	call	__chk_ty_expr
 	mov	[chkt_rB], rax
 
-	; `aut` `sursum` `deorsum` have rules of their own and are checked in
-	; their own arm, BEFORE a pending literal adopts anything -- see `.bitop`.
-	; They used to fall through to `.arith` below because they did not exist;
-	; an op this routine does not name must never land there by default.
+	; `aut` `sursum` `deorsum` and -- since §5.4's 2026-09-25 amendment --
+	; `atque` `sive` have rules of their own and are checked in their own
+	; arm, BEFORE a pending literal adopts anything: see `.bitop`, whose
+	; rule 1 judges each operand on the type it has ON ITS OWN, which an
+	; adoption would have erased. `aut` `sursum` `deorsum` used to fall
+	; through to `.arith` below because they did not exist; an op this
+	; routine does not name must never land there by default.
+	;
+	; TWO RANGES, NOT ONE, and for the reason ast/kinds.inc's header gives:
+	; that list is APPENDED to so nothing already numbered moves, so the
+	; five bitwise words are 17..19 and 22..23 with `/` (20) and `residuum`
+	; (21) between them. Merging the tests into `AST_OP_AUT .. AST_OP_BOR`
+	; would send the quotient and the remainder to `.bitop` and refuse
+	; `i32 / i32` as a signed operand of a bit operator -- the one mistake
+	; this shape is arranged to make impossible.
+	;
+	; `atque` and `sive` REACH `.bitop` RATHER THAN HAVING AN ARM: §5.4 says
+	; they are "arithmetic on unsigned integers under exactly the rules
+	; `aut` has", so a second arm would be a second copy of one rule, and
+	; the two copies would drift. What distinguishes the three words is the
+	; IR opcode alone (lower/expr.inc, `.aut`/`.band`/`.bor`), which is
+	; where their difference actually lives.
 	mov	rcx, [chkt_oB]
 	cmp	rcx, AST_OP_AUT
 	jb	.not_bitop
 	cmp	rcx, AST_OP_DEORSUM
+	jbe	.bitop
+	cmp	rcx, AST_OP_BAND
+	jb	.not_bitop
+	cmp	rcx, AST_OP_BOR
 	jbe	.bitop
   .not_bitop:
 
@@ -2466,12 +2588,26 @@ proc __chk_ty_binary, chkt_wB, chkt_nB
 	jbe	.relational
 	cmp	rcx, AST_OP_RANGE
 	je	.range
-	; `.bitop` took 17..19 before anything here ran, `.div` takes 20
-	; below, so what reaches `.arith` is exactly the integer arithmetic
-	; block of ast/kinds.inc -- and an op appended after DIV traps here
-	; instead of being typed as `+`.
+	; `.bitop` took 17..19 AND 22..23 before anything here ran, `.div` takes
+	; 20 and `.rem` 21 below, so what reaches `.arith` is exactly the
+	; integer arithmetic block of ast/kinds.inc -- 10..16 -- and an op
+	; appended after `AST_OP_BOR` traps here instead of being typed as `+`.
+	; THE RASSERT IS NOT RETIRED BY EITHER SETTLEMENT, only stepped past:
+	; widening it to `AST_OP_MAX` would make the NEXT operator appended to
+	; that list silently arithmetic, which is precisely the failure the
+	; list's header exists to prevent. Each new operator peels itself off
+	; by value, as `/`, `residuum`, `atque` and `sive` do.
+	;
+	; NOTHING VALID REACHES IT ANY MORE, which is the point: with 17..23 all
+	; peeled, `rcx le AST_OP_MUL` holds for every operator the CST can
+	; produce today, so no program a user can write trips it. It is a guard
+	; on the NEXT edit to ast/kinds.inc, not on this one -- and that is the
+	; difference between a `rassert` and a diagnostic (§8.3: a `rassert` is
+	; a compiler bug reaching the user, never a message for them).
 	cmp	rcx, AST_OP_DIV
 	je	.div
+	cmp	rcx, AST_OP_REM
+	je	.rem
 	rassert	rcx le AST_OP_MUL
   .arith:
 	; `+ +% +| - -% -| *` -- the operand type, unchanged. No `acies`
@@ -2517,24 +2653,60 @@ proc __chk_ty_binary, chkt_wB, chkt_nB
 	mov	rax, r13
 	return
   .div:
-	; `/` -- the FLOAT-ONLY quotient (§5.4, this wave). Integer division
-	; and remainder are `[OPEN]` and are not invented here. An `acies`
-	; operand is decided upstream (`__chk_ty_aciesbin` -- `acies<f32,
-	; N>`/`acies<f64, N>` with N in {2, 4, 8} are ADMITTED there, elementwise),
-	; so a "non-float operand" here means a non-float SCALAR. One is EXS-E0305 AT THE OPERATOR, never at an operand:
-	; the pairing rule above already made the two one type, so neither
-	; is wrong on its own -- `x / 2` with `x: i32` would double-blame --
-	; and `__chk_ty_expect`'s `.bin_div` judged the pending case the same
-	; way before either literal took the type. The error type is
+	; `/` -- the quotient, on two FLOATS (the float wave's IEEE-754
+	; division) or, since §5.4's 2026-09-25 amendment, on two INTEGERS
+	; (truncated toward zero; the lowering is ADR 0012's definition, and
+	; the trap on a zero divisor and on T_MIN / -1 is the run time's, not
+	; a typing rule -- nothing here can see either operand's value). The
+	; operand rule itself is `__chk_ty_divadm`, shared with `.rem` below
+	; and with `__chk_ty_expect`'s `.bin_div`, which judges the pending
+	; case on the expectation before either literal takes it.
+	;
+	; An `acies` operand is decided upstream (`__chk_ty_aciesbin` --
+	; `acies<f32, N>`/`acies<f64, N>` with N in {2, 4, 8} are ADMITTED
+	; there, elementwise), so an inadmissible operand here is always a
+	; SCALAR one: a `textus`, a pointer, an aggregate, `unit`. It is
+	; EXS-E0305 AT THE OPERATOR, never at an operand: the pairing rule
+	; above already made the two one type, so neither is wrong on its own
+	; -- `x / 2` with `x: textus` would double-blame. The error type is
 	; admitted silently (no cascade), and the result of a legal division
 	; is the operand type, like every other arithmetic op.
+	;
+	; WHAT THIS ARM STOPPED REFUSING is the whole of the amendment: it
+	; used to demand `AST_TY_FLOAT` here, so `6 / 3` at `u8` was
+	; EXS-E0305 and the integer quotient was unreachable from source at
+	; all. tests/unit/chk_ty_intdiv.asm's accepted rows are that
+	; refusal's grave, and chk_ty_floatops.asm's two `/` rows changed
+	; their expectation in the same commit.
 	mov	rdi, rbx
 	mov	rsi, r13
-	call	__chk_ty_kindof
-	cmp	rax, AST_TY_FLOAT
-	je	.div_ok
-	cmp	rax, AST_TY_ERROR
-	je	.div_ok			; no cascade
+	mov	rdx, AST_OP_DIV
+	call	__chk_ty_divadm
+	test	eax, eax
+	jnz	.div_ok
+	jmp	.div_bad
+  .rem:
+	; `a residuum b` -- the remainder, §5.4's 2026-09-25 amendment, INTEGER
+	; operands only (`__chk_ty_divadm` says why a float is not one). Same
+	; shape as `.div` in every other respect: the pairing rule above made
+	; the two operands one type, the result IS that type, and a bad operand
+	; is one EXS-E0305 at the operator.
+	;
+	; The sign of the result and the trap on a zero divisor and on
+	; T_MIN / -1 are run-time properties of the emitted code
+	; (backend_fasmg/emit.inc's `__bfa_emit_divrem`, which ADR 0012 makes
+	; the definition; tests/ir/rem_sign.ir, trap_rem_zero.ir,
+	; trap_rem_minneg1.ir). NOTHING HERE DIAGNOSES THEM: a divisor is an
+	; expression, this pass has no value for it (`konst` is set on
+	; literals only), and a rule that caught `x residuum 0` while missing
+	; `x residuum (y - y)` would be a rule the type system cannot keep.
+	mov	rdi, rbx
+	mov	rsi, r13
+	mov	rdx, AST_OP_REM
+	call	__chk_ty_divadm
+	test	eax, eax
+	jnz	.div_ok
+  .div_bad:
 	mov	rdi, rbx
 	mov	rsi, 305
 	mov	rdx, r12
@@ -2574,9 +2746,14 @@ proc __chk_ty_binary, chkt_wB, chkt_nB
 	return
 
   .bitop:
-	; `a aut b`, `a sursum n`, `a deorsum n` -- spec §5.4, Integers, and
-	; docs/design/wire-codec.md D1. The spec cites this fixture as the one
-	; that exercises the rules: tests/unit/chk_ty_bitops.asm. Four rules,
+	; `a aut b`, `a atque b`, `a sive b`, `a sursum n`, `a deorsum n` --
+	; spec §5.4, Integers, and docs/design/wire-codec.md D1. `atque` and
+	; `sive` joined the arm with §5.4's 2026-09-25 amendment, which defines
+	; them as "arithmetic on unsigned integers under exactly the rules `aut`
+	; has above", so they are five words at ONE rule and not two rules that
+	; happen to agree; the whole of their difference is the IR opcode
+	; (lower/expr.inc). The spec cites this fixture as the one that
+	; exercises the rules: tests/unit/chk_ty_bitops.asm. Four rules,
 	; IN THIS ORDER:
 	;
 	;   1. ADMISSIBILITY, per operand, on the type it has on its own:

@@ -565,6 +565,7 @@ no `copy`, which is the IR RT 5 writes down.
 | `Unary` `&x` | `x` is address-taken, hence a slot: the slot `ptr` (`addr %s 0` when an offset is needed) |
 | `Unary` `*p` | `load T %p 0 nativus` (scalar pointee) or `%p` itself (aggregate) |
 | `Binary` `+ - *` and the `%`/`\|` forms | `add sub mul` / `addw subw mulw` / `adds subs muls`; float `+ - *` → `fadd fsub fmul`, the wrapping and saturating forms on a float are the checker's `E0305` |
+| `Binary` `/` and `residuum` | integer or `mensura`: `div` / `rem`, both trapping on a zero divisor and on `T_MIN / -1`; float `/` → `fdiv`, and a float `residuum` is the checker's `E0305` (spec §5.4's 2026-09-25 amendment; the operand rule is `__chk_ty_divadm`, the opcode choice `__lwr_arith_op`'s `.div`/`.rem`). This row did not exist while `/` was float-only and `residuum` reached no rule at all |
 | `Binary` `lt le gt ge eq ne` | `cmp.pred T` / `fcmp.pred F` by operand type; signedness is the type's |
 | `Binary` `et` / `vel` | **short-circuit**: `br` into a second block that evaluates the rhs, a join, and a phi over a synthetic variable written in both — spec §8.6 lists them as operators and gives no evaluation rule (section 8, finding 13); short-circuit is what the whole lineage does and what a condition with a call in its right operand needs |
 | `Binary` `..` | only as `For.a`; elsewhere the checker's |

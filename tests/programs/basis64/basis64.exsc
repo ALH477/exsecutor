@@ -1,0 +1,224 @@
+// Base64, held byte-identical to coreutils' -- the program spec 5.4's
+// bitwise words were waited on for.
+//
+// spec 8.6's open-problems list said, of bitwise and and or, that
+// "`@transitus` field access is the mask and shift machinery, so and/or wait
+// for a program that does need them". This is that program. A Base64 encoder
+// is the minimal honest one: three input bytes become four six-bit groups,
+// and every group but the first and last is ASSEMBLED FROM TWO BYTES -- you
+// take the low bits of one with `atque`, move them up with `sursum`, take the
+// high bits of the next with `deorsum`, and join the two halves with `sive`:
+//
+// WHAT THE ENCODER DOES AND DOES NOT PROVE. `atque` has no substitute here:
+// the masks are the operation, and nothing else in the language takes the low
+// two bits of a byte. `sive` is the right SPELLING for the join and its
+// semantics are NOT tested by the encoder -- every join is between disjoint
+// bit ranges, and `or` and `xor` agree on disjoint ranges. Measured
+// 2026-09-26: replacing that `sive` with `aut` still prints all 167 bytes of
+// the coreutils golden. An earlier draft of this comment asserted the
+// opposite ("`aut` would corrupt the join wherever both halves had a bit
+// set") -- true in general, false of this program, since the halves never
+// overlap. `initium`'s three-accumulator loop at the bottom of this file is
+// what actually distinguishes the three words, on overlapping operands where
+// they give three different answers; it was added when the mutation came back
+// IDENTICAL. Recording that rather than deleting it: it is the difference
+// between a program that uses an operator and a test that pins it.
+//
+//     c0 =  b0 deorsum 2
+//     c1 = ((b0 atque 0x03) sursum 4) sive (b1 deorsum 4)
+//     c2 = ((b1 atque 0x0f) sursum 2) sive (b2 deorsum 6)
+//     c3 =   b2 atque 0x3f
+//
+// Read those four lines as the specification of Base64 and they are also the
+// specification of `atque` and `sive`: mask, shift, join. spec 5.4 settled
+// them on 2026-09-25 with `aut`'s exact rules -- unsigned operands only, one
+// type both sides, both operands always evaluated -- and every expression
+// above is `u8` throughout, which is the whole of the typing story. Nothing
+// here can overflow: `b0 atque 0x03` is at most 3 and `sursum 4` takes it to
+// 48; `b1 atque 0x0f` is at most 15 and `sursum 2` takes it to 60; each
+// `sive` joins disjoint bit ranges, so every result is at most 63 and every
+// one of them indexes the alphabet.
+//
+// THE PARENTHESES ARE REQUIRED, and that is spec 5.4 too. The three bitwise
+// words share level 5b, and MIXING TWO OF THEM UNPARENTHESISED IS
+// `EXS-E0201` at the second word -- so `(b0 atque 0x03) sursum 4 sive
+// b1 deorsum 4` does not parse and is not meant to. C's `& ^ |` precedence
+// order is a documented source of bugs; this language refuses the chain
+// instead of ranking it, and this program is what taking that refusal looks
+// like in practice (tests/unit/cst_bitand_or.asm rows 3, 4 and 5 pin the
+// rule; row g07 of tests/unit/chk_ty_bitops.asm is the parenthesised form
+// reaching the checker).
+//
+// WHAT IT READS AND WHAT IT WRITES. Standard input, into a 64-byte buffer,
+// then THREE base64 lines: the encoding of all n bytes, of the first n-1, and
+// of the first n-2. The input is tests/data/lector_intra.bin, 41 bytes, so
+// those lengths are 41, 40 and 39 -- and 41 = 3*13+2, 40 = 3*13+1,
+// 39 = 3*13 -- which is EVERY PADDING CASE in one run:
+//
+//   39 bytes   3*13 exactly     no `=`     the tail branch is not taken
+//   40 bytes   3*13 + 1         `==`       two padding characters
+//   41 bytes   3*13 + 2         `=`        one padding character
+//
+// One run, three lines, three tails. A program encoding one length can be
+// wrong in two of the three ways and still pass; this one cannot. The input
+// file is reused rather than copied (the same reason tests/programs/lector
+// gives): it is BINARY -- 0x00, 0xff, a lone 0x80, a CR -- and
+// .gitattributes marks tests/data/*.bin `-text`, so no checkout normalises
+// it. A base64 encoder tested only on printable ASCII is not tested on the
+// bytes that break it.
+//
+// THE ALPHABET IS COMPUTED, NOT TABULATED, and the four ranges are written
+// out because the standard alphabet's boundaries are exactly where an
+// off-by-one lives: 0..25 -> 'A'..'Z' (+65), 26..51 -> 'a'..'z' (-26 then
+// +97), 52..61 -> '0'..'9' (-52 then +48), 62 -> '+', 63 -> '/'. The two
+// last rows are the two characters that differ between the standard alphabet
+// and the URL-safe one, and this is the standard one (RFC 4648 section 4),
+// which is what `base64` writes.
+//
+// `codifica` TAKES THE BUFFER BY VALUE. A 64-byte copy per call is not the
+// efficient shape and is the honest one for a test: three calls, three
+// copies, and no question of whether the encoder mutated what it read. Its
+// row is INFERRED, not declared -- it is private, so spec 4.1 rule 5 reads
+// it off `s.scribe_octeto(...)` -- for the reason
+// tests/programs/numerus_decimalis's header records at length: `poscit
+// sicut s` on a self-recursive function is EXS-E0421 in this compiler, and
+// although `codifica` is not recursive, its two helpers and it are written
+// to one style so the file does not look as if the difference meant
+// something.
+//
+// Mutations, all four RUN on 2026-09-26 and reported as measured, including
+// the one that came back green:
+//   `sive` -> `aut` in the c1 line      exit 0, stdout IDENTICAL -- the
+//                                       finding above; the joins are over
+//                                       disjoint bits. This is why the
+//                                       three-accumulator loop exists, and
+//                                       the same mutation in THAT loop's
+//                                       `unio` line exits 6.
+//   `atque 0x3f` -> `atque 0x7f` in c3  exit 0, stdout differs (alphabetum
+//                                       is handed indices above 63)
+//   `deorsum 2` -> `deorsum 3`          exit 0, stdout differs (every first
+//                                       character of every group)
+//   `si resta eq 1` never taken         exit 4, stdout differs -- the
+//                                       40-byte line loses its `==` and the
+//                                       length check catches it before the
+//                                       diff does
+
+// One six-bit group to its Base64 character -- RFC 4648 section 4, the
+// standard alphabet with `+` and `/`.
+functio alphabetum(i: u8) -> u8 {
+    si i lt 26 { redde i + 65; }
+    si i lt 52 { redde (i - 26) + 97; }
+    si i lt 62 { redde (i - 52) + 48; }
+    si i eq 62 { redde 43; }
+    redde 47;
+}
+
+// buf[0..n) as Base64, then a newline. Returns the bytes written, newline
+// included, so a caller can check the length RFC 4648 requires: 4 characters
+// per 3 input bytes, rounded up.
+functio codifica(s: Scriptor, buf: acies<u8, 64>, n: mensura) -> mensura {
+    mutabilis scripta: mensura = 0;
+    mutabilis i: mensura = 0;
+
+    // the full three-byte groups
+    dum i + 3 le n {
+        firma b0: u8 = buf[i];
+        firma b1: u8 = buf[i + 1];
+        firma b2: u8 = buf[i + 2];
+        scripta = scripta + s.scribe_octeto(alphabetum(b0 deorsum 2));
+        scripta = scripta + s.scribe_octeto(alphabetum(((b0 atque 0x03) sursum 4) sive (b1 deorsum 4)));
+        scripta = scripta + s.scribe_octeto(alphabetum(((b1 atque 0x0f) sursum 2) sive (b2 deorsum 6)));
+        scripta = scripta + s.scribe_octeto(alphabetum(b2 atque 0x3f));
+        i = i + 3;
+    }
+
+    // the tail: 0, 1 or 2 bytes left, padded to four characters with `=`
+    firma resta: mensura = n - i;
+    si resta eq 1 {
+        firma b0: u8 = buf[i];
+        scripta = scripta + s.scribe_octeto(alphabetum(b0 deorsum 2));
+        scripta = scripta + s.scribe_octeto(alphabetum((b0 atque 0x03) sursum 4));
+        scripta = scripta + s.scribe_octeto(61);
+        scripta = scripta + s.scribe_octeto(61);
+    }
+    si resta eq 2 {
+        firma b0: u8 = buf[i];
+        firma b1: u8 = buf[i + 1];
+        scripta = scripta + s.scribe_octeto(alphabetum(b0 deorsum 2));
+        scripta = scripta + s.scribe_octeto(alphabetum(((b0 atque 0x03) sursum 4) sive (b1 deorsum 4)));
+        scripta = scripta + s.scribe_octeto(alphabetum((b1 atque 0x0f) sursum 2));
+        scripta = scripta + s.scribe_octeto(61);
+    }
+
+    scripta = scripta + s.scribe_octeto(10);
+    redde scripta;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma l = Lector.ab_introitu(a);
+    firma s = Scriptor.ad_exitum(a);
+
+    // all of standard input into the buffer. 64 is the capacity, and an
+    // input that would overrun it is an ERROR rather than a truncation: a
+    // silently shortened encoding is exactly the bug a golden would not
+    // catch, since the shorter output is itself well-formed Base64.
+    mutabilis buf: acies<u8, 64> = [0; 64];
+    mutabilis n: mensura = 0;
+    mutabilis c: u16 = l.lege_octeto();
+    dum c ne 256 {
+        si n ge 64 {
+            redde 1;
+        }
+        buf[n] = c sicut u8;
+        n = n + 1;
+        c = l.lege_octeto();
+    }
+
+    // the three padding cases need at least two bytes to take away
+    si n lt 2 {
+        redde 2;
+    }
+
+    // 41 bytes -> 56 characters + newline; 40 -> 56 + newline; 39 -> 52 + 1
+    si codifica(s, buf, n) ne 57 { redde 3; }
+    si codifica(s, buf, n - 1) ne 57 { redde 4; }
+    si codifica(s, buf, n - 2) ne 53 { redde 5; }
+
+    // THREE WORDS OVER ONE DATA SET, THREE DIFFERENT ANSWERS. The encoder
+    // above does NOT distinguish `sive` from `aut`, and saying so is worth
+    // more than leaving it implied: every join it makes is between DISJOINT
+    // bit ranges -- bits 4..5 of one byte beside bits 0..3 of the next -- and
+    // on disjoint ranges `or` and `xor` are the same function. Measured: with
+    // `sive` replaced by `aut` in the `c1` line the program still prints all
+    // 167 bytes of the coreutils golden. So the encoder is evidence for
+    // `atque` (its masks have no substitute) and for the SPELLING of `sive`,
+    // and not for `sive`'s semantics.
+    //
+    // This loop is. It folds every input byte three ways over OVERLAPPING
+    // operands, where the three words really are three functions:
+    //   `sive`  the union of the bits any byte set          -> 0xff
+    //   `atque` the bits every byte set                     -> 0x00
+    //   `aut`   the parity of each bit position             -> 0x09
+    // The three constants are the three answers for
+    // tests/data/lector_intra.bin, computed from the file and not from this
+    // program (see TEST). Swap any one word for either other and exactly one
+    // of the three checks below fails -- 0xff, 0x00 and 0x09 are pairwise
+    // different, which is the property that makes the test a test.
+    mutabilis unio: u8 = 0;
+    mutabilis communis: u8 = 255;
+    mutabilis differentia: u8 = 0;
+    mutabilis k: mensura = 0;
+    dum k lt n {
+        unio = unio sive buf[k];
+        communis = communis atque buf[k];
+        differentia = differentia aut buf[k];
+        k = k + 1;
+    }
+    si unio ne 255 { redde 6; }
+    si communis ne 0 { redde 7; }
+    si differentia ne 9 { redde 8; }
+
+    redde 0;
+}

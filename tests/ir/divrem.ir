@@ -1,4 +1,4 @@
-; TEST: expect-exit=100 c-emit-exit=4
+; TEST: expect-exit=100
 ;
 ; `div`/`rem` at u8, i8, u32, i64, u64 and u1 -- spec 5.4 as decided
 ; 2026-09-25 and lowered by backend_fasmg/emit.inc's __bfa_emit_divrem:
@@ -45,11 +45,21 @@
 ; the narrow signed cases where a stray `shl`/`sar` pair or a missing one
 ; would show: the 64-bit `cmp.eq` sees the whole register.
 ;
-; THE DIFFERENTIAL PHASE DOES NOT BUILD THIS ONE. `c-emit-exit=4`: the C
-; backend refuses `div`/`rem` by name (c-backend.md D4 rows 4 and 5), so
-; parity here is parity of the REFUSAL, checked by that exit status. When
-; the C backend gains the two opcodes, drop the key and this fixture starts
-; being built four ways.
+; THE DIFFERENTIAL PHASE BUILDS THIS ONE, and the `c-emit-exit=4` that said
+; otherwise is gone. The C backend gained both opcodes as helper rows
+; (`exsi_div_u`/`exsi_div_i`/`exsi_rem_u`/`exsi_rem_i`, c-backend.md D4 rows
+; 4 and 5), so all seventeen checks above are now computed five times -- by
+; the reference, and by gcc and clang at -O0 and -O2 -- and every one of the
+; five must exit 100.
+;
+; THE TWO BACKENDS DO NOT COMPUTE IT THE SAME WAY, which is what makes the
+; agreement worth having. The reference is x86 IDIV/DIV, whose truncation and
+; remainder sign ARE the decision above. The C helpers cannot use a signed C
+; division (the carrier is a uint64_t, and its conversion to int64_t is
+; implementation-defined), so they divide magnitudes unsigned and put the
+; sign back. Checks 3-8 are the four sign combinations where those two
+; routes could disagree and must not; check 17's `u1` is the narrowest width
+; either one runs at.
 ;
 ; Mutation (run): `idiv` emitted as `div` -> exit 3 (i8 -7 / 2 as an
 ; unsigned division of 2^64-7). `mov rax, rdx` dropped from the `rem` arm

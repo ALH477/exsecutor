@@ -36,9 +36,11 @@
 ;
 ; Mutation (run): __bfc_refuse's `.arc` arm deleted so `retain` falls through
 ; to `.other` -> still exit 4, but the message names no opcode; the arm
-; pointed at `.divrem` -> exit 4 with a message naming an opcode that is not
+; pointed at `.reduction` -> exit 4 with a message naming opcodes that are not
 ; here. Neither is caught by an exit status alone, which is why the refusal
-; text is printed into the run log and read there.
+; text is printed into the run log and read there. (The second mutation used to
+; name `.divrem`; that arm is gone -- the C backend lowers `div`/`rem` now --
+; and `.reduction` is the surviving arm that makes the same point.)
 
 functio @arca (refc) -> void {
 b0:

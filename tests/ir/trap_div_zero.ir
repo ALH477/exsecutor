@@ -1,4 +1,4 @@
-; TEST: abort=1 c-emit-exit=4
+; TEST: abort=1
 ;
 ; `div u8 5 0`: a zero divisor traps at every width and both signs (spec
 ; 5.4, "trapping `+ - * /`, zero divisor" -- prelude/README.md's abort kind
@@ -23,8 +23,13 @@
 ;
 ; If nothing traps the function returns 7.
 ;
-; `c-emit-exit=4`: the C backend refuses `div` by name (c-backend.md D4 row
-; 4), so the differential phase checks parity of that refusal.
+; NO `c-emit-exit=`: the C backend lowers `div` too (`exsi_div_u`/
+; `exsi_div_i`, c-backend.md D4 row 4), so this fixture is BUILT four ways
+; -- gcc and clang, -O0 and -O2 -- and each build must trap with the same
+; kind on the same input. The helper's check PRECEDES its division: under
+; `-fsanitize=undefined -fno-sanitize-recover=all` a division that executed
+; first would abort inside UBSan and never reach `exsrt_abortus`, which is a
+; different program from the one this fixture pins.
 
 functio @initium (ptr) -> u8 {
 b0:

@@ -1,4 +1,4 @@
-; TEST: abort=1 c-emit-exit=4
+; TEST: abort=1
 ;
 ; `rem i64 -9223372036854775808 -1`: the T_MIN / -1 trap for `rem`, at
 ; width 64, where T_MIN really is INT64_MIN.
@@ -25,8 +25,16 @@
 ; (SIGFPE) instead of SIGILL. The same check removed at width 64 on the
 ; theory that the hardware covers it -> the same signal 8.
 ;
-; `c-emit-exit=4`: the C backend refuses `rem` by name (c-backend.md D4
-; row 5).
+; NO `c-emit-exit=`: the C backend lowers `rem` too (`exsi_rem_u`/
+; `exsi_rem_i`, c-backend.md D4 row 5), so this fixture is BUILT four ways
+; -- gcc and clang, -O0 and -O2 -- and each build must trap with the same
+; kind on the same input. The helper's check PRECEDES its division: under
+; `-fsanitize=undefined -fno-sanitize-recover=all` a division that executed
+; first would abort inside UBSan and never reach `exsrt_abortus`, which is a
+; different program from the one this fixture pins.
+; And this is where the C side's `rem` is held to trapping on an overflow its
+; own RESULT cannot show: `exsi_rem_i` checks T_MIN / -1 before dividing, not
+; after, because T_MIN rem -1 is 0 and 0 is a perfectly good value of T.
 
 functio @initium (ptr) -> u8 {
 b0:

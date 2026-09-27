@@ -23,11 +23,25 @@
 ; checker fixture -- this wave's OPERATOR half (spec §5.4 as amended by the
 ; float wave), from REAL SOURCE, through the whole front end to `chk_run`:
 ;
-;   `/` is the IEEE-754 quotient on FLOAT OPERANDS ONLY. Integer div and
-;   rem STAY [OPEN] -- an integer `/` is EXS-E0305, and so is a `/` whose
-;   operands never settle to floats (a float-typed initializer on an `u8`
-;   firma: the literals fit `u8`'s... no, they are refused; the point is
-;   the OPERAND rule, not the literal rule).
+;   `/` is the IEEE-754 quotient on FLOAT operands. It is NO LONGER
+;   float-ONLY: spec §5.4's 2026-09-25 amendment gave `/` its integer
+;   reading, so rows 1 and 7 -- the two rows that pinned the refusal --
+;   changed their expectation in the commit that widened the checker
+;   (`__chk_ty_divadm`), and tests/unit/chk_ty_intdiv.asm is where the
+;   integer quotient's own rules are pinned. What THIS fixture still pins
+;   about `/` is the float side and the NON-MIXING of the two:
+;     - row 1, `firma q: u8 = 6 / 3;`, is now CLEAN. It was 1 x E0305. The
+;       row is kept rather than deleted because a checker that lost the
+;       integer arm again would fail it, which is more than its deletion
+;       would have said.
+;     - row 7, `firma q: u8 = 1.5 / 2.5;`, is now 2 x E0308 -- one at each
+;       literal -- where it was 1 x E0305 at the operator. The operand KIND
+;       is no longer what is wrong with it; the literal CLASS is (§8.4
+;       admits no coercion between classes, `__chk_ty_fits`), which is the
+;       same answer `1.5 + 2.5` under a `u8` expectation has always given.
+;       This is the row spec §8.4 cites for "a float and an integer do not
+;       mix", and it still says so -- at the literals, by the rule that
+;       actually refuses it.
 ;
 ;   The WRAPPED ops (`+%`, `-%`, ...) are integer-only and always were --
 ;   spec §5.4: floats have no overflow behaviour, so wrapping is not a
@@ -49,13 +63,16 @@
 ; count is nonzero -- every code was pinned by running the real compiler on
 ; the same source first):
 ;
-;   `firma q: u8 = 6 / 3;`            1 x E0305 -- integer operands
+;   `firma q: u8 = 6 / 3;`            0          -- integer operands: LEGAL
+;                                                since §5.4's 2026-09-25
+;                                                amendment (was 1 x E0305)
 ;   `redde a / b;` (f64 firmas)       0          -- the accepted quotient
 ;   `redde a / b;` (f32 firmas)       0          -- both widths
 ;   `redde a +% b;` (f64 firmas)      1 x E0305 -- settled, arith table
 ;   `redde -a +% a;` (f64 firma)      1 x E0305 -- pending, cascade guard
 ;   `firma q: u8 = 6 +% 3;`           0          -- integer +% UNCHANGED
-;   `firma q: u8 = 1.5 / 2.5;`        1 x E0305 -- non-float expectation
+;   `firma q: u8 = 1.5 / 2.5;`        2 x E0308 -- float literals, integer
+;                                                expectation (was 1 x E0305)
 ;   `@transitus structura {f32}`      1 x E0321 -- wire structs refuse
 ;   `acies<f64, 4> = [1.5; 4]`        0          -- float elements ADMITTED
 ;   `acies<f64, 1.5> = [1.5; 2]`      2, first E0304 -- length must be an
@@ -311,7 +328,7 @@ segment readable
   ; call and bare `db` lines measures only the macro's part, and the checker
   ; reads a file truncated to its first line: found by running)
 
-  ; integer operands: the quotient is not defined on them (spec §5.4 [OPEN])
+  ; integer operands: the quotient IS defined on them (spec §5.4, 2026-09-25)
   fx_src fx_s01, 'functio f() -> u8 {', 10, 9, 'firma q: u8 = 6 / 3;', 10, 9, 'redde 0;', 10, '}', 10
 
   ; the accepted quotient, f64
@@ -329,8 +346,9 @@ segment readable
   ; the INTEGER wrapped op is unchanged -- the regression pin
   fx_src fx_s06, 'functio f() -> u8 {', 10, 9, 'firma q: u8 = 6 +% 3;', 10, 9, 'redde 0;', 10, '}', 10
 
-  ; a `/` whose expectation is not float-typed: E0305, not a literal fit
-  ; error -- the literals settle to nothing here, and the OPERAND rule fires
+  ; a `/` whose expectation is an INTEGER one: the operand rule now admits
+  ; it (§5.4, 2026-09-25) and pushes `u8` down, so what refuses the row is
+  ; the literal-class rule, once per float literal -- 2 x E0308, not E0305
   fx_src fx_s07, 'functio f() -> u8 {', 10, 9, 'firma q: u8 = 1.5 / 2.5;', 10, 9, 'redde 0;', 10, '}', 10
 
   ; a float field of a @transitus structura: still refused (§5.2) -- the
@@ -351,13 +369,14 @@ segment readable
   end macro
 
   fx_tab:
-	fx_row fx_s01, 1, 305	; integer `/`
+	fx_row fx_s01, 0, 0	; integer `/` -- admitted since 2026-09-25
 	fx_row fx_s02, 0, 0	; f64 quotient
 	fx_row fx_s03, 0, 0	; f32 quotient
 	fx_row fx_s04, 1, 305	; `+%` on settled floats
 	fx_row fx_s05, 1, 305	; `+%` on pending floats
 	fx_row fx_s06, 0, 0	; integer `+%` -- unchanged
-	fx_row fx_s07, 1, 305	; `/` under a non-float expectation
+	fx_row fx_s07, 2, 308	; `/` under an INTEGER expectation: the
+				;   float literals do not fit it
 	fx_row fx_s08, 1, 321	; @transitus float field
 	fx_row fx_s09, 0, 0	; acies<f64, 4> -- admitted
 	fx_row fx_s10, 2, 304	; acies<f64, 1.5> -- E0304, then E0303

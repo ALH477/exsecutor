@@ -13,7 +13,14 @@ calls):
    four fixtures.
 2. **`tests/conformance/`** — spec §14's suite: 28 entries, 26 with a
    fixture file here (27 and 28 are carried by `tests/programs/`
-   directories, below). **18 run as of 2026-09-25.** `exsc` now exists, so the entries the lexer can
+   directories, below). **17 of the 26 fixtures run, and 9 are `DEFERRED`;
+   with entries 27 and 28, which have no fixture and are carried by
+   `tests/programs/`, 19 of the spec's 28 entries run.** This said "18 run as
+   of 2026-09-25" until 2026-09-26, which was wrong twice over: 17 fixtures
+   carry `status=run` (`grep -l` says so, and `tests/run.sh`'s own
+   `run_floor=17` agreed with the tree while this sentence did not — two
+   committed documents disagreeing about the same fact on the same day), and
+   "18 run, 9 DEFERRED" does not sum to 26 either way. `exsc` now exists, so the entries the lexer can
    decide are checked against a real diagnostic: 3 (bidi in a comment,
    `EXS-E0103`), 5 (non-NFC, `E0102`), 18 (BOM, `E0101`), 19 (mixed-script,
    `E0104`), 20 (CRLF, `E0106`). The wire-codec branch's `@transitus`
@@ -63,8 +70,18 @@ calls):
    emitted unit, cross-compiled and executed big-endian with 32-bit
    addresses, against the reference backend). 27 (`pictura_octonaria/`)
    and 28 (`contractio/`, the reduction shapes) have no fixture file at
-   all; `run_conformance_tests` never sees them, and the run, differential
-   and cross phases are what carry them.
+   all; `run_conformance_tests` never sees them, and the program phases are
+   what carry them — **but not the same phases.** 27 goes through the run,
+   differential and cross phases, as 25 and 26 do. 28 goes through the
+   **run phase only**: the C backend has no lowering for
+   `redinit`/`contrib`/`redfin`, so `contractio/` carries `c-exsc-exit=4`
+   and the differential phase checks its REFUSAL rather than its bytes,
+   while the cross phase — which emits C too — cannot reach it at all and
+   the directory carries no `cross=yes`. This paragraph said "the run,
+   differential and cross phases" of both until 2026-09-26, which was
+   false for 28 from the day it was written; spec §14 entry 28 now records
+   the same correction, and marks that entry's backend parity and
+   big-endian run `[UNTESTED]`.
 
    The other 9 — 1, 2, 4, 12, 14, 15, 16, 17, 24 — report **`DEFERRED`**
    with what they wait on, each fixture's header naming the current
@@ -211,7 +228,10 @@ a shipped artifact, and is checked every time it is built instead.
 ## What is deliberately absent
 
 - **`tests/conformance/` entries that run.** See above: 28 entries, 26 with
-  a fixture file, 18 run, 9 `DEFERRED` on a named component. (This item was written
+  a fixture file, **17 of those running and 9 `DEFERRED`** on a named
+  component, plus entries 27 and 28 carried by `tests/programs/` — 19 of 28.
+  (This bullet also said 18 until 2026-09-26; corrected with the paragraph
+  above, and for the same reason.) (This item was written
   when `exsc` did not exist and said what each of the 24 rows would need: a
   source fixture plus an expectation — a diagnostic code for most; byte-
   identical output under varied conditions for #16, which is what

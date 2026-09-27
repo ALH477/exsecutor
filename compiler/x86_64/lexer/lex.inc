@@ -263,8 +263,11 @@ proc lex_tokenize, lx
 	;
 	; The two-character-first rule still decides what a `/` IS: `//` is a
 	; comment (§8.4) and only a `/` that is not the first half of one is
-	; the float-only quotient operator, PUN_SLASH (token.inc's PUN table
-	; records why `/` is now attested where it used to be EXS-E0201).
+	; the quotient operator, PUN_SLASH -- float when this arm was written,
+	; float or integer since §5.4's 2026-09-25 amendment, which is a
+	; question for the checker and changes nothing here (token.inc's PUN
+	; table records why `/` is attested at all where it used to be
+	; EXS-E0201).
   .slash:
 	mov	rax, r14
 	inc	rax

@@ -44,6 +44,12 @@ the answer it gives" is the bar — not "good enough to maintain."
   (`EXS-E0510`); two are found and reproduced as sound negatives, one
   reproducing the original closure-capture defect's shape one level up
   (a type parameter rather than a value). See `gendict/README.md`.
+- **`contractio_oracle.py`** — spec §5.4's reduction shapes (`ordinata`,
+  `arborea w`: the 2026-09-25 group-and-fold definition) implemented from the
+  paragraph alone, in binary32 with one rounding per operation; produces the
+  fixed twenty-value input and the three expected results for
+  `tests/programs/contractio/` (§14 entry 28). The input was found by search
+  as the first on which the three shapes disagree in their last bits.
 - **`dec754/`** — oracle for the float-literal conversion's unit fixture:
   the expected IEEE-754 bits of every `tests/unit/dec754_golden.asm` row,
   computed by Python's `float()` (itself correctly rounded, so agreement

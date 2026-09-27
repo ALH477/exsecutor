@@ -1,4 +1,4 @@
-; TEST: abort=1 c-emit-exit=4
+; TEST: abort=1
 ;
 ; `div i8 -128 -1`: the ONE overflow case a division has. -128 / -1 is 128,
 ; and no `i8` holds 128, so it traps -- kind 1, the shared `bfausr_trap`,
@@ -25,8 +25,17 @@
 ; Mutation (run): the T_MIN literal taken as INT64_MIN -> exit 7, nothing
 ; trapped, 128 sitting in an `i8` slot.
 ;
-; `c-emit-exit=4`: the C backend refuses `div` by name (c-backend.md D4
-; row 4).
+; NO `c-emit-exit=`: the C backend lowers `div` too (`exsi_div_u`/
+; `exsi_div_i`, c-backend.md D4 row 4), so this fixture is BUILT four ways
+; -- gcc and clang, -O0 and -O2 -- and each build must trap with the same
+; kind on the same input. The helper's check PRECEDES its division: under
+; `-fsanitize=undefined -fno-sanitize-recover=all` a division that executed
+; first would abort inside UBSan and never reach `exsrt_abortus`, which is a
+; different program from the one this fixture pins.
+; This is the fixture that pins T_MIN AT T'S OWN WIDTH in BOTH backends: the
+; C helper compares against `0 - (UINT64_C(1) << (n - 1))` with the operand
+; type's own n, so a helper that compared against INT64_MIN instead would
+; return 7 here exactly as the mis-emitted reference would.
 
 functio @initium (ptr) -> u8 {
 b0:

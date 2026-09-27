@@ -81,7 +81,18 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # wave's four: lex_float_literal.asm, lwr_float.asm, chk_ty_floatlit.asm,
 # chk_ty_floatops.asm. 176 -> 178 is Stage 5.2's pair: chk_ty_aciesops.asm
 # (the whole-acy admission gate) and lwr_aciesops.asm (the lowering it admits).
-UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-190}"
+# 190 -> 191 is chk_ty_intdiv.asm, the typing of integer `/` and `residuum`
+# (spec 5.4's 2026-09-25 amendment reaching the front end). Measured 190 before
+# it and 191 with it, so the floor is the count, not a margin.
+# 191 -> 193 on 2026-09-26: ast_from_cst_impl_noname.asm (an `Impl` head
+# introduces no name -- resolve.inc stated the invariant and from_cst.inc
+# violated it, giving every impl a spurious EXS-E0302 against its own
+# trait) and chk_genparam_fn_bind.asm (a function's own generic parameters
+# bind in its frame; `.fn_open:` walked the signature and body and never
+# the Generics list). Both fixtures were run against the pre-fix code and
+# fail there, which is what makes them regression tests rather than
+# descriptions.
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-193}"
 
 # The same guarantee for the two run phases below: tests/ir/*.ir fixtures,
 # and tests/programs/*/ directories. Same rule -- `found < floor` fails --
@@ -118,15 +129,30 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-190}"
 # trap_div_minneg1, trap_rem_minneg1) and the REDUCTIONS -- redinit/contrib/
 # redfin in both shapes (red_ordinata_f32, red_ordinata_i64, red_arborea_f32,
 # red_arborea_int_trap, red_empty, red_w1, red_mul, reject_verify_red_width).
-# Thirteen of the fourteen carry `c-emit-exit=4`: the C backend refuses both
-# opcode groups by name (c-backend.md D4 rows 4, 5 and 36-38), so they add
-# rejection-parity checks and no differential BUILDS -- DIFFERENTIAL_BUILD_FLOOR
-# below is unchanged on purpose, and rises when the C backend gains them.
+# Thirteen of the fourteen carried `c-emit-exit=4` when they landed: the C
+# backend refused both opcode groups by name (c-backend.md D4 rows 4, 5 and
+# 36-38), so they added rejection-parity checks and no differential BUILDS,
+# and DIFFERENTIAL_BUILD_FLOOR below was left unchanged on purpose against
+# the day the C backend gained them. THAT DAY HAS COME FOR `div` AND `rem`:
+# the C backend lowers both (exsi_div_*/exsi_rem_* in prologue.c.in), the six
+# fixtures carry no `c-emit-exit=` any more, and the floor below rose by their
+# 6 x 4 = 24 builds. Seven of the fourteen still carry the key -- the
+# reductions, D4 rows 36-38 -- and the same sentence still stands for them.
 # Programs 104 -> 126: the musical HydraModem examples (transmitter melos/
 # bassus/bicinium, receiver auditus, streaming receiver auditus_fluxus), set to
 # the count measured with them in.
+# Programs 126 -> 128: numerus_decimalis/, the decimal printer -- the first
+# .exsc source in the tree whose `/` and `residuum` are INTEGER ones (spec 5.4,
+# 2026-09-25) -- and basis64/, a Base64 encoder held byte-identical to GNU
+# coreutils 9.11, the program `atque` was needed for. Raised by exactly the two
+# directories added; it read 127 for one of them for part of 2026-09-26. Note the drift this
+# floor's header licenses: the phase discovered 144 directories that run before
+# that addition and 145 after, so 127 is a long way below the real count. That
+# is the documented trade (drift costs precision, not the guarantee); whoever
+# re-baselines the 18 directories nobody re-bumped for should do it as its own
+# change and say so, rather than have it ride along with a new fixture.
 IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-78}"
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-126}"
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-128}"
 
 # The differential phase (run_differential_tests, below), which compiles the
 # C backend's emitted units and runs them against the same expectations the
@@ -140,7 +166,13 @@ PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-126}"
 # 46 lowerable x 4 builds = 184 (the vec_arith/vec_mem pair plus float-wave
 # fixtures the floor had not been re-bumped for); the floor is the measured
 # count now, not the arithmetic above, which stays as the arithmetic.
-DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-184}"
+# 184 -> 208 is `div`/`rem` in the C backend: the six fixtures of the 2026-09-25
+# settlement (divrem, rem_sign, trap_div_zero, trap_rem_zero,
+# trap_div_minneg1, trap_rem_minneg1) dropped their `c-emit-exit=4` and became
+# lowerable, 52 x 4 = 208. The reference's verdict on all six is unchanged --
+# it has executed them since the day they landed -- so this is a phase GAINING
+# 24 agreements, not any fixture changing its mind.
+DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-208}"
 
 # The same phase over tests/programs/. Two floors, because the claim has two
 # halves and a floor on either alone reads green while the other collapses:
@@ -174,8 +206,23 @@ DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-184}"
 #     bassus_*, bicinium_*, auditus_*, auditus_fluxus_*), eligible and
 #     agreeing under all four builds; the floors are set to the counts
 #     measured with them in (56 directories, 224 runs).
-DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-56}"
-DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-224}"
+#     56 -> 58 and 224 -> 232: numerus_decimalis/ (spec 5.4's integer `/` and
+#     `residuum` from source) and basis64/ (its `atque` masks), each its own
+#     unit, both eligible, four builds apiece -- byte-identical across gcc and
+#     clang at -O0 and -O2 under `-fsanitize=undefined
+#     -fno-sanitize-recover=all`, and against the reference. TWO directories,
+#     so +2 and +8, the arithmetic this block's header states.
+#
+#     These read 57 and 228 for part of 2026-09-26, provisioned for one
+#     directory when two landed, and the sentence above claimed
+#     numerus_decimalis printed "536 bytes of ASCII decimal". It prints 140
+#     (`wc -c`, measured 2026-09-26; basis64 prints 167). A floor comment
+#     asserting a measurement nobody made is the same defect this wave found
+#     in the spec, one file further down -- recorded here rather than quietly
+#     corrected, because a harness that misreports its own numbers is worse
+#     placed than a document to be caught doing it.
+DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-58}"
+DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-232}"
 
 # The cross phase's own floor, deliberately NOT folded into the differential
 # numbers above: a cross-compiled, emulated run of a 32-bit-`mensura` unit is
@@ -187,7 +234,18 @@ DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-224}"
 # 9 -> 10 is pictura_octonaria/ (cross=yes, Stage 5.3): the same soft
 # lowering reproduces a whole 960x540 SSAA image on the big-endian run,
 # ~1.9 s measured against the 120 s budget.
-CROSS_PROGRAM_FLOOR="${CROSS_PROGRAM_FLOOR:-10}"
+# 10 -> 11 is numerus_decimalis/ (cross=yes), and here the key is load-bearing
+# rather than extra coverage: `mensura` is 64 bits on the host row and 32 on
+# mips64-none-o64, so that program's `mensura` divisions are
+# `exsi_div_u(a, b, 64)` in one emitted unit and `exsi_div_u(a, b, 32)` in the
+# other -- a different call from the same source line, which must print the
+# same digits. Measured on the big-endian qemu run: 140 bytes identical (this
+# line said 536, a number the program has never printed).
+# 11 -> 12 is basis64/ (cross=yes): 167 bytes identical big-endian, which also
+# says its `atque` masks and `deorsum`/`sursum` shifts carry no byte-order
+# assumption -- the encoder reassembles 24-bit groups arithmetically, so a
+# big-endian run agreeing is the evidence that it never leaned on the host's.
+CROSS_PROGRAM_FLOOR="${CROSS_PROGRAM_FLOOR:-12}"
 
 # The device phase's floor (Stage 6 G2): programs carrying `device=amdgcn`,
 # each built as one translation unit with tests/c/exsrt_shim_amdgpu.c and

@@ -226,6 +226,74 @@ static inline uint64_t exsi_mul_i(uint64_t a, uint64_t b, unsigned n)
   if (ma != 0 && mb > lim / ma) exsrt_abortus(1);
   { uint64_t p = ma * mb; return neg ? 0 - p : p; } }   /* canonical by construction */
 
+/* div and rem -- spec 5.4 as decided 2026-09-25: the quotient TRUNCATED
+ * TOWARD ZERO and the remainder's sign FOLLOWING THE DIVIDEND, so that
+ * `a == (a/b)*b + (a rem b)` holds at every pair of signs. Both trap on a
+ * zero divisor, and both trap on T_MIN / -1 -- `rem` included, whose
+ * mathematical value there is 0: it is the remainder OF a division that
+ * does not exist, and a `rem` answering 0 where its own `div` traps would
+ * falsify the identity at the one pair of operands two instructions can
+ * check it on. emit.inc's __bfa_emit_divrem argues the same two paragraphs
+ * for the reference; these helpers are the same function, not a second
+ * opinion about it.
+ *
+ * THE CHECKS PRECEDE THE DIVISION, where every other trapping helper above
+ * checks after, and they have to for two independent reasons. The semantic
+ * one: `rem`'s result carries no trace of the overflow (T_MIN rem -1 is 0,
+ * a perfectly good value of T), so there is nothing to check afterwards.
+ * The harness one: every fixture is compiled `-fsanitize=undefined
+ * -fno-sanitize-recover=all`, so a helper that DIVIDED first would abort
+ * inside UBSan -- wrong status, wrong text, exsrt_abortus never reached --
+ * on precisely the two inputs whose trap is the thing being tested.
+ *
+ * T_MIN IS T'S OWN, NOT INT64_MIN. In `i8`, -128 / -1 is 128, which no
+ * `i8` holds, and the 64-bit division of a sign-extended -128 by -1
+ * computes it without a murmur; tests/ir/trap_div_minneg1.ir is that case
+ * and nothing else. So the comparison is against -2^(N-1) for the operand
+ * type's own N. At N = 64 the same line also stands in for the hardware's
+ * divide error, which the reference likewise turns into kind 1 rather than
+ * a second signal that depends on the width.
+ *
+ * NO SIGNED C DIVISION ANYWHERE. The signed pair divides MAGNITUDES and
+ * puts the sign back, exactly as exsi_mul_i does, so the carrier's
+ * implementation-defined uint64_t -> int64_t conversion is never needed
+ * (this file relies on it nowhere but exsi_i64_from_bits, and then through
+ * memcpy) and UBSan's signed-overflow check is never armed. `0 - x` on a
+ * uint64_t is modular C, not overflow. The magnitude of T_MIN is 2^63,
+ * which `0 - a` leaves as 2^63 -- still the right unsigned magnitude.
+ *
+ * NO NORMALISATION, and the proof rather than the habit. With a zero
+ * divisor and T_MIN / -1 excluded the result is ALREADY a value of T:
+ * |a/b| <= |a| for |b| >= 1, so the only out-of-range quotient is -T_MIN,
+ * which is precisely the case just excluded; and |a rem b| < |b| <=
+ * 2^(N-1), in range at every sign. `0 - q` on an in-range magnitude leaves
+ * the value sign-extended, which is the canonical form (ssa-ir.md 2.2).
+ *
+ * n IS UNUSED IN THE UNSIGNED PAIR and the parameter still stays. A uN
+ * quotient is at most the dividend and a uN remainder is less than the
+ * divisor, so neither can leave the type, and unsigned division has no
+ * T_MIN case to exclude -- but the emitter writes ONE call shape for every
+ * row of the helper table, so the argument is passed and discarded the way
+ * exsi_subs_u discards it. */
+static inline uint64_t exsi_div_u(uint64_t a, uint64_t b, unsigned n)
+{ (void)n; if (b == 0) exsrt_abortus(1); return a / b; }
+static inline uint64_t exsi_rem_u(uint64_t a, uint64_t b, unsigned n)
+{ (void)n; if (b == 0) exsrt_abortus(1); return a % b; }
+static inline uint64_t exsi_div_i(uint64_t a, uint64_t b, unsigned n)
+{ if (b == 0) exsrt_abortus(1);
+  if (a == 0 - (UINT64_C(1) << (n - 1)) && b == UINT64_MAX) exsrt_abortus(1);
+  { uint64_t sa = a >> 63, sb = b >> 63;
+    uint64_t ma = sa ? 0 - a : a, mb = sb ? 0 - b : b;   /* magnitudes; 2^63 stays 2^63 */
+    uint64_t q = ma / mb;
+    return (sa ^ sb) ? 0 - q : q; } }                    /* canonical by construction */
+static inline uint64_t exsi_rem_i(uint64_t a, uint64_t b, unsigned n)
+{ if (b == 0) exsrt_abortus(1);
+  if (a == 0 - (UINT64_C(1) << (n - 1)) && b == UINT64_MAX) exsrt_abortus(1);
+  { uint64_t sa = a >> 63, sb = b >> 63;
+    uint64_t ma = sa ? 0 - a : a, mb = sb ? 0 - b : b;
+    uint64_t r = ma % mb;
+    return sa ? 0 - r : r; } }                           /* the DIVIDEND's sign */
+
 static inline uint64_t exsi_adds_u(uint64_t a, uint64_t b, unsigned n)
 { uint64_t t = a + b; return (n == 64 ? t < a : t > exsi_mask(n)) ? exsi_mask(n) : t; }
 static inline uint64_t exsi_subs_u(uint64_t a, uint64_t b, unsigned n)
