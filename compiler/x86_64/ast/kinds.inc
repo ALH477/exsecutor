@@ -114,7 +114,18 @@ AST_FIELDINIT	= 52
 ; against one element and one count -- and `ast_roles` below is per kind.
 AST_ARRAYLIT	= 53
 AST_ARRAYREP	= 54
-AST_KIND_MAX	= 54
+; docs/design/sum-types.md D1, landed LAYOUT FIRST (its D6 and §6): a `typus`
+; whose body is a variant list. `Typus.a` then holds a `SumBody` where an
+; alias holds a `Ty*` node -- the child's KIND is the discriminator, with no
+; `aux` bit that could fall out of step with it -- and every variant is a
+; `Variant` that owns a declaration (AST_D_VARIANT), because a variant name
+; is a name in scope (D2: it collides with a constant, `EXS-E0302`). Two
+; kinds and not one, for ArrayLit/ArrayRep's reason: a `Variant` carries a
+; NAME, a LIST and a DECL and a `SumBody` a LIST and a COUNT, and
+; `ast_roles` is per kind.
+AST_SUMBODY	= 55
+AST_VARIANT	= 56
+AST_KIND_MAX	= 56
 
 ; ---- operand roles ---------------------------------------------------------
 ; What one of `a b c d` holds, for one kind. `AST_R_LIST` and `AST_R_LIST2`
@@ -159,7 +170,13 @@ AST_D_LAMBDA	= 17
 AST_D_CAPATOM	= 18	; a capability ATOM of spec §4.6 -- the one declaration
 			; kind with no declaration SITE. See "capability atoms",
 			; below, and ast/build.inc's `ast_cap_push`.
-AST_DECL_MAX	= 18
+AST_D_VARIANT	= 19	; one variant of a sum `typus` (sum-types.md D1):
+			; `parent` is the `typus` declaration, `node` its
+			; `Variant`. Stage 2 fills `ty` (a constructor's `fn`
+			; type, or the sum itself for a payload-less variant);
+			; pass 4 gives it a layout entry holding its payload's
+			; byte offset (D6).
+AST_DECL_MAX	= 19
 
 ; ---- declaration flags -----------------------------------------------------
 ; `AstDecl.flags` is one byte and typed-ast.md section 2.4 names exactly eight
@@ -332,7 +349,15 @@ AST_TY_CAP	= 24	; `a` = the atom's declaration (AST_D_CAPATOM). NOT in
 			; annotations and had no kind at all, and a `sub`'s
 			; `Decl.ty` needs one too. docs/design/checker.md
 			; section 9, finding 1.
-AST_TY_MAX	= 24
+AST_TY_SUM	= 25	; `a` = the sum `typus` declaration: nominal, like
+			; `struct`. Its OWN kind, not `alias` with a differently
+			; shaped declaration behind it: an alias is TRANSPARENT
+			; (checker/types/sig.inc's `__chk_ty_typus`) and a sum
+			; must never be, and a sum that reaches a struct-only
+			; switch must fail there loudly rather than be sized as
+			; something it is not -- node.inc's argument for
+			; `borrow`'s sign byte, run the other way.
+AST_TY_MAX	= 25
 
 ; `AstType.sign`, `.order`, `.place`. Byte order and placement are FIELDS OF
 ; THE TYPE NODE and part of the interning key: that is what makes spec §5.2's
@@ -485,6 +510,13 @@ ast_roles:
 	; (spec §5.4) and a type may not depend on a value. `b` is an `Error`
 	; node when the parser refused what stood there.
 	db AST_R_NODEQ, AST_R_NODEQ, AST_R_NONE,  AST_R_NONE	; 54 ArrayRep
+	; `SumBody.a`/`b` are the `Variant`s in SOURCE order, which is TAG
+	; order: docs/design/sum-types.md D6 makes the tag the variant's index.
+	db AST_R_LIST,  AST_R_COUNT, AST_R_NONE,  AST_R_NONE	; 55 SumBody
+	; `Variant.a` the variant's name, `b`/`c` its payload TYPE nodes in
+	; source order (an empty list for a payload-less variant), `d` its
+	; declaration.
+	db AST_R_NAME,  AST_R_LIST,  AST_R_COUNT, AST_R_DECL	; 56 Variant
 AST_ROLES_LEN = $ - ast_roles
 assert AST_ROLES_LEN = AST_KIND_MAX * 4
 
@@ -557,6 +589,8 @@ ast_kind_names:
 	db 9,'FieldInit'
 	db 8,'ArrayLit'
 	db 8,'ArrayRep'
+	db 7,'SumBody'
+	db 7,'Variant'
 AST_KIND_NAMES_LEN = $ - ast_kind_names
 
 ast_dkind_names:
@@ -578,6 +612,7 @@ ast_dkind_names:
 	db 5,'Accum'
 	db 6,'Lambda'
 	db 7,'CapAtom'
+	db 7,'Variant'
 AST_DKIND_NAMES_LEN = $ - ast_dkind_names
 
 ; Lower case, matching typed-ast.md section 2.5's own table and
@@ -607,6 +642,7 @@ ast_tkind_names:
 	db 3,'red'
 	db 4,'unit'
 	db 3,'cap'
+	db 3,'sum'
 AST_TKIND_NAMES_LEN = $ - ast_tkind_names
 
 ; ---- capability atoms ------------------------------------------------------

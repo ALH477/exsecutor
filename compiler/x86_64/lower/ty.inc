@@ -261,9 +261,12 @@ endp
 ; of `T`'s size at `T`'s alignment -- no padding between them, which is what
 ; `__lwr_elem`'s `index %p %i stride` already assumes when it strides by `T`'s
 ; size alone, and what the one aggregate cast needs (`acies<u8, 17>` is
-; exactly `DeModFrame`'s seventeen bytes, spec §5.2). Anything else is
-; `[UNIMPLEMENTED]` and traps rather than guessing a number the emitter would
-; then carve a frame from.
+; exactly `DeModFrame`'s seventeen bytes, spec §5.2). A sum type reads
+; `Ast.layout` at its `typus` declaration exactly as a struct does
+; (docs/design/sum-types.md D6: tag, then the largest payload, packed; pass 4
+; writes the size into that entry). Anything else is `[UNIMPLEMENTED]` and
+; traps rather than guessing a number the emitter would then carve a frame
+; from.
 proc lwr_ty_size, lwrsp, lwrt
 	uses	rbx, r12
 	locals
@@ -282,6 +285,8 @@ proc lwr_ty_size, lwrsp, lwrt
 	je	.struc
 	cmp	eax, AST_TY_ACIES
 	je	.acies
+	cmp	eax, AST_TY_SUM
+	je	.sum
 	; scalars can be address-taken and then need a slot too
 	mov	rdi, rbx
 	mov	esi, [lwrt]
@@ -331,6 +336,21 @@ proc lwr_ty_size, lwrsp, lwrt
 	mov	esi, [lwrd]
 	call	ast_layout_at
 	mov	ecx, [rax + AstLayout.off]	; a struct's SIZE
+	movzx	edx, byte [rax + AstLayout.algn]
+	mov	rax, rcx
+	return
+  .sum:
+	; never prelude-tagged today: `eventus` is still the width-0 builtin,
+	; not sum-types.md's prelude `typus`; when it becomes one, this arm
+	; grows `.prestruct`'s tag test and reads the row's extent the same way
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, [lwrt]
+	call	ast_type_at
+	mov	ecx, [rax + AstType.a]
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, ecx
+	call	ast_layout_at
+	mov	ecx, [rax + AstLayout.off]	; the sum's SIZE
 	movzx	edx, byte [rax + AstLayout.algn]
 	mov	rax, rcx
 	return

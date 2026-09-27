@@ -2217,10 +2217,20 @@ refusing symbolic comparisons — is what makes that last one possible.
   `Path '(' IDENT (',' IDENT)* ')'` to `Pattern` on a one-token peek at `(`.
   This bullet's prediction held: the peek after `typus IDENT [GenericParams]
   '='` is one token, at `casus`, which no enclosing production can want.
-  Still `[OPEN]` as a claim about the language, because nothing is
-  implemented — that document's §7 lists the five fixtures that would retire
-  it and its §6 what landing it costs. Recursive sum types, nested patterns,
-  range patterns, `?`'s error conversion and the unreachable-arm rule are each
+  **What is implemented is the representation and the layout, and nothing
+  above them.** The tree has the kinds (`AST_SUMBODY`, `AST_VARIANT`,
+  `AST_D_VARIANT`, `AST_TY_SUM`, `compiler/x86_64/ast/kinds.inc`) and pass 4
+  lays a sum out by that document's D6 — the tag at byte 0, the variant's
+  index in declaration order, one byte up to 256 variants; then the widest
+  payload, packed; alignment 1; `:nativus`, so a sum on the wire is
+  `EXS-E0321` through §5.2's existing rule — measured by
+  `tests/unit/chk_row_layout_sum.asm` over hand-built trees, because that
+  document's §6 required the layout to be pinned before any grammar could
+  produce one. Still `[OPEN]` as a claim about the language: no grammar, no
+  checker rule and no lowering exists, and §7 there lists the fixtures that
+  would retire it. Recursive sum types (pass 4 breaks the cycle at width 0
+  and does not diagnose it; the types pass must), nested patterns, range
+  patterns, `?`'s error conversion and the unreachable-arm rule are each
   deferred there by name rather than folded in.
 - `[OPEN]` **`?` is used by this document, checked by the compiler, and
   defined by neither in the same way.** It is lexed (`PUN_QUESTION`,

@@ -92,7 +92,7 @@ reads one flag and never re-derives it (AST 2.12's row for `Decl.flags`).
 | `mensura` | `u64` (`x86_64-linux`, RT 2.3) | yes |
 | `ptr` `borrow` `cap` `fn` | `ptr` | yes (`fn` is a closure `ptr`, IR 2.9) |
 | `ref` `refc` | `ref`/`refc` | yes; released at scope exit (section 2.6) |
-| `textus` (16 bytes, RT 2.3), `struct`, `acies`, `dyn` (two `ptr`s), `octeti`/`scalares`/`grapha`, `eventus`, `brand` | bytes behind a `ptr` | no: `slot size align`, `load`/`store` |
+| `textus` (16 bytes, RT 2.3), `struct`, `sum` (its `typus` decl's `Ast.layout` size, sum-types.md D6), `acies`, `dyn` (two `ptr`s), `octeti`/`scalares`/`grapha`, `eventus`, `brand` | bytes behind a `ptr` | no: `slot size align`, `load`/`store` |
 | `red` | `red.F` | neither: the accumulator is a loop-stack record (section 2.5) |
 | `unit` | — | — |
 

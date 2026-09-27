@@ -88,8 +88,10 @@ emits them from these slots (section 2.12); they are never nodes.
 
 Terminals are spec §8.6's nonterminals; `id` is an intern id; `T` a type
 node; `E` an expression node; `B` a `Block`. Kinds absent from spec §8.6 are
-absent here — sum types, struct literals, labelled jumps, `si` as an
-expression are all `[OPEN]` there and add kinds only by amending this table.
+absent here — labelled jumps and `si` as an expression are `[OPEN]` there
+and add kinds only by amending this table. Struct literals (`StructLit`,
+`FieldInit`), array literals and sum types (`SumBody`, `Variant`) were added
+that way, appended after `Error`.
 
 | kind | a | b | c | d | aux |
 |---|---|---|---|---|---|
@@ -101,7 +103,9 @@ expression are all `[OPEN]` there and add kinds only by amending this table.
 | `Struct` `Interface` `Potestas` | members | count | `Generics` or 0 | decl | `transitus` |
 | `Impl` | `ImplHead` | fns | count | decl | — |
 | `ImplHead` | interface `Path` | target `T` | `Row` or 0 | — | — |
-| `Typus` | `T` | — | `Generics` or 0 | decl | — |
+| `Typus` | `T`, or a `SumBody` (docs/design/sum-types.md D1: the child's kind decides; no `aux` bit) | — | `Generics` or 0 | decl | — |
+| `SumBody` | `Variant` list, in source order = tag order (sum-types.md D6) | count | — | — | — |
+| `Variant` | name id | payload `T` list (empty for a payload-less variant) | count | decl (`AST_D_VARIANT`) | — |
 | `Externus` | fns (`Fn`, body 0) | count | library id | decl | abi enum: 0 unrecognised, 1 `sysv_amd64`, 2 `aapcs64`, 3 `lp64d` (spec §5.3); dumped by name |
 | `Binding` | `T` or 0 | init `E` or 0 | — | decl | `mutabilis` |
 | `Row` | items (`RowItem`) | count | — | — | — |
@@ -145,7 +149,8 @@ Every name-introducing construct pushes one `Decl` in **source order**:
 functions, parameters, generic parameters, structs, fields, `typus`,
 interfaces, members, implementations, `potestas`, `externus` blocks and their
 functions, `firma`/`mutabilis`, `sub`, loop variables, `contrahe`
-accumulators, lambdas. `Decl.parent` is the enclosing `Decl` (module = 0),
+accumulators, lambdas, and the variants of a sum `typus` (their `parent` is
+the `typus`). `Decl.parent` is the enclosing `Decl` (module = 0),
 `Decl.node` the introducing node. `Decl.flags`: `publica`, `mutabilis`,
 `transitus`, `nucleus`, `externus`, `capability_bearing` (spec §4.3, Stage
 2), `address_taken`, `memory_resident` (Stage 2; the two facts IR 2.5 reads).
@@ -176,6 +181,7 @@ their bytes, id = first-use index — the same scheme as IR 2.2, richer:
 | `borrow` | `a` = T | `&T` is an **immutable** borrow, `&mutabilis T` a mutable one (spec §8.6, ADR 0016). The `[OPEN]` that stood here — "spec §7.2 defers ownership, so what `&` means beyond address-of is not settled" — is closed for parameters: `&` means address-of plus a write permission, and ownership stays deferred because neither form transfers one. A mutable borrow in a **function type** is still `[OPEN]`: `AST_TY_FN` has nowhere to record a per-parameter bit |
 | `acies` | `a` = T, `width` = N | spec §5.4, lane count in the type |
 | `struct` `alias` `iface` `param` | `a` = decl | nominal; `alias` (`typus`) as alias-or-new-type is `[OPEN]` |
+| `sum` | `a` = the sum `typus` decl | nominal (sum-types.md D1). Its own kind, not `alias`: an alias is transparent (`__chk_ty_typus`) and a sum never is, and a sum reaching a struct-only switch must fail there loudly. Laid out by pass 4 (D6, section 2.8); constructors, patterns and lowering `[OPEN]` |
 | `fn` | `a` = extra (params… result), `width` = param count, `b` = row | spec §4.2: the row is *in the type* |
 | `dyn` | `a` = interface decl, `b` = row | spec §4.4 |
 | `eventus` | `a` = T | the `?` operand `[OPEN]`, with `+?` (IR 6) |
@@ -261,6 +267,14 @@ by the same pass with padding permitted; `mensura` is concrete because spec
 `loadbits`/`storebits` operands and nothing else. Spec §5.2's four rules are
 the checker's; the tree guarantees only that their facts sit in one place
 with spans.
+
+A sum `typus` is laid out by the same pass (docs/design/sum-types.md D6):
+the `typus` decl's entry carries the size (tag plus the widest payload,
+packed, alignment 1) and each `Variant` decl's entry carries its payload's
+byte offset, which is the tag width. Element offsets within a payload are
+not stored — payload elements have no decl to index by — and are the
+running sum of the preceding elements' sizes, as `acies` elements are.
+`tests/unit/chk_row_layout_sum.asm` pins the rule.
 
 ### 2.9 ARC: not in the tree; the tree carries what lowering needs
 

@@ -141,7 +141,7 @@ visit.
 | 1 | resolve | `resolve.inc` | one walk | `Seg.d` `Path.d` `RowItem.d` `Sub` frames, `Decl.flags` `address_taken` | shadowing, unresolved, duplicate (no code) — **not `E0500`**, see below |
 | 2 | types | `types.inc` | signatures loop, then one walk | `Ast.types`, `Node.ty`, `Decl.ty`, `Member.d`, `konst`, `own`, `memory_resident` | `E0311` `E0332` `E0341` `E0342` `E0520`; mismatch etc. (no code) |
 | 3 | rows | `rows.inc` | intern API (used by 2); one walk building a use list; **fixpoint over the list**; one check loop | `Ast.rows`, fn/dyn `TypeNode.b`, `Decl.flags` `capability_bearing` | `E0421` `E0500` `E0501` `E0510` |
-| 4 | layout | `layout.inc` | loop over struct decls in decl order | `Ast.layout` | `E0321` `E0322` |
+| 4 | layout | `layout.inc` | loop over struct decls and sum `typus` decls in decl order (sum-types.md D6) | `Ast.layout` | `E0321` `E0322` |
 | 5 | lexicon | `lexicon.inc` | loop over public decls in decl order | — | `E0601` `E0602` `E0603` `E0610` |
 | 6 | verify | `verify.inc` | AST section 3's Stage 2 list | — | `rassert` only |
 

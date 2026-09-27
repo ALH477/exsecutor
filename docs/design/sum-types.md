@@ -333,6 +333,61 @@ is one and at the path segment when there is not, raising the `EXS-E0304` the
 site already raises. That is a prerequisite owed by the checker independently
 of sum types — a real silent-acceptance bug today — not part of D5.
 
+### D6 — Layout: the tag, then the largest payload, packed
+
+**Implemented, and pinned before any grammar can produce one:**
+`compiler/x86_64/checker/rows/layout.inc`'s `__chk_lay_sum`, sized by
+`compiler/x86_64/lower/ty.inc`'s `lwr_ty_size`, measured by
+`tests/unit/chk_row_layout_sum.asm`. This is §6's "layout first", paid.
+
+- **The tag is at byte 0 and is the variant's index in declaration order.**
+  Its width is the smallest of 1, 2 or 4 bytes that holds the variant count
+  (one byte up to 256 variants), and it is never elided: a one-variant sum is
+  still a byte, because a value with no bytes has no address and §5.5's
+  placement rules speak of addresses. No diagnostic is needed for "too many
+  variants" and none is invented: the count is a 32-bit field and the tag
+  widens to hold it.
+- **Every payload starts at the byte after the tag.** A payload's elements
+  pack in source order by the rule a struct's fields do (§5.2 as amended:
+  offset = sum of the preceding widths), the payload is rounded up to whole
+  bytes, and the sum's size is the tag plus the widest payload. Alignment is
+  1, as for every aggregate the pass lays out.
+- **Byte order is `:nativus`.** A sum is an in-process type. §5.2 admits
+  nothing but unsigned integers into a `@transitus` struct, so a sum-typed
+  field there is `EXS-E0321` (or `EXS-E0309` if annotated) through the pass's
+  existing kind test, with no sum-specific rule — the fixture's check 6.
+- **What `Ast.layout` holds:** the `typus` declaration's entry carries the
+  size and alignment, as a struct's does; each variant's declaration
+  (`AST_D_VARIANT`) carries its payload's byte offset — the tag width, the
+  same for every variant, written per variant so the lowering reads the
+  table and derives nothing (typed-ast.md section 2.8). Element offsets *within* a
+  payload are not stored: payload elements have no declaration to index by,
+  and under packing they are the running sum of the preceding elements'
+  sizes, which is how `acies` elements are already placed.
+- **The tree's shape:** `Typus.a` holds an `AST_SUMBODY` node where an alias
+  holds a type node — the child's kind is the discriminator, with no `aux`
+  bit to fall out of step with it — and each `AST_VARIANT` carries its name,
+  its payload type nodes and its declaration. The type is `AST_TY_SUM`, its
+  own kind and not `alias` with a differently shaped declaration behind it,
+  because an alias is transparent (`__chk_ty_typus`) and a sum never is.
+- **A recursive sum lays out as tag + 0 and is not diagnosed by this pass.**
+  `typus arbor = casus folium, casus nodus(arbor);` is an infinite type; pass
+  4 breaks the cycle with width 0 exactly as it does for a self-containing
+  struct, and the fixture's check 8 pins that value as the *cycle-break
+  value*, not as a size anyone may rely on. The refusal by name (D1) belongs
+  to the types pass, next to `__chk_ty_typus`'s `EXS-E0303` for an alias
+  cycle. Finding, while pinning it: both aggregate arms of `__chk_lay_ty`
+  used to *read* the in-progress entry rather than answer 0, which gave 0 on
+  the compiler's single run of the pass and the previous run's size on any
+  second run over the same tree — invisible to `exsc`, visible to a fixture.
+  Both arms now test the pass's own busy mark.
+
+**Not decided by D6, and named:** whether the tag participates in `discerne`'s
+lowering as a `loadbits` of width 8/16/32 or as an integer load (the lowering
+owner's, D3), how a payload is *written* (a constructor is a call in D2's
+grammar and needs a store per element; `[OPEN]`), and whether a sum with
+exactly one variant and no payload should be admitted at all.
+
 ---
 
 ## 4. What this unblocks, and what each site becomes
@@ -402,20 +457,18 @@ and each is deferred for the same reason: it is a second feature that the first 
 does not need, and this project's evidence note records three versions that asserted
 more than they had built.
 
-**A sum type has to be sized before it can be a local, a field or a parameter,
-and nothing in the tree sizes one.** `compiler/x86_64/checker/rows/layout.inc`'s
-header lists the kinds that answer width 0 — `eventus` among them — and says
-what happens to one inside a plain struct: it "gets a layout that is wrong
-rather than absent". The guard that keeps that from being observable is
-`@transitus`-only (`EXS-E0321` unannotated, `EXS-E0309` annotated); a plain
-struct has no diagnostic for it. And there is no discriminant concept anywhere
-— no tag width, no payload union, no `lwr_ty_size` arm. So D1 cannot land at
-the CST first and grow a layout later: a `typus` with variants admitted before
-layout answers a width is silently wrong at every field offset after it. **The
-first commit of this design is layout — tag plus the largest payload, with the
-tag's width and the payload alignment decided and pinned by a fixture — and
-the parser change comes after it.** This is the sixth cost, and it is the one
-that fixes the order.
+**A sum type has to be sized before it can be a local, a field or a parameter
+— and this is the cost that was paid first.** When this section was written,
+`compiler/x86_64/checker/rows/layout.inc`'s header listed the kinds that answer
+width 0 — `eventus` among them — and said what happens to one inside a plain
+struct: it "gets a layout that is wrong rather than absent", with the only
+guard being `@transitus`-only (`EXS-E0321`, `EXS-E0309`). There was no
+discriminant concept anywhere. So D1 could not land at the CST first and grow
+a layout later: a `typus` with variants admitted before layout answers a width
+would be silently wrong at every field offset after it. **The first commit of
+this design was therefore layout — D6, tag plus the largest payload, pinned by
+`tests/unit/chk_row_layout_sum.asm` — and the parser change comes after it.**
+This is the sixth cost, and it is the one that fixed the order.
 
 ---
 
@@ -424,13 +477,20 @@ that fixes the order.
 Nothing below exists. This is the refutation condition for §3, in the order it
 should be built.
 
-**The five paths below are written without backticks on purpose.** Backticks are
-what make a path a citation, and `tools/spec-check.sh`'s check 5 fails the build
-over a citation to something absent — correctly, since that is the defect it was
-added for. A fixture a design *owes* is not evidence it *has*, so it is named in
-plain text until it exists, at which point the backticks go on and the check
-starts holding this document to them.
+**The owed paths below are written without backticks on purpose.** Backticks
+are what make a path a citation, and `tools/spec-check.sh`'s check 5 fails the
+build over a citation to something absent — correctly, since that is the defect
+it was added for. A fixture a design *owes* is not evidence it *has*, so it is
+named in plain text until it exists, at which point the backticks go on and the
+check starts holding this document to them. Item 0 has crossed over.
 
+0. **`tests/unit/chk_row_layout_sum.asm`** — D6, **exists and runs**: eight
+   checks over hand-built trees (the tree is built by hand for the same reason
+   `chk_row_layout.asm` builds `Decl.ty` by hand — no grammar produces one
+   yet, and the layout had to be pinned before one does). What it does *not*
+   retire: nothing about D1–D5, and it says nothing about a sum reaching the
+   layout pass through real source, which is `chk_row_layout_src.asm`'s job
+   once the CST parses one.
 1. **tests/unit/cst_typus_sum.asm** — D1's grammar: the two declarations of D1
    parsed, the alias form still parsed (the one-token peek does not break it), a
    payload-less variant, and `typus x = casus` unterminated as `EXS-E0202`.
@@ -454,4 +514,6 @@ starts holding this document to them.
    rule), and only once 5 runs on both backends.
 
 Until 1–5 exist, §8.6's bullets cite **this document** and stay `[OPEN]`: a design
-is not evidence, and the difference is the whole of CLAUDE.md.
+is not evidence, and the difference is the whole of CLAUDE.md. Item 0 narrows
+the `[OPEN]` — the representation and the layout are measured — and does not
+lift it.

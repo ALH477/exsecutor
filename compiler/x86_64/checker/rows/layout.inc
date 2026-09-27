@@ -88,6 +88,11 @@ include 'compute.inc'
 ;
 ; `Scriptor` is the one struct with no `AstDecl`, and it is SIZED, not
 ; width 0: `.prestruc` below.
+;
+; A SUM TYPE (`AST_TY_SUM`, docs/design/sum-types.md D6) is sized too: its
+; `typus` declaration is laid out on demand by `__chk_lay_sum`, below, and
+; `.sum` reads the size back exactly as `.struc` does. `eventus` stays width
+; 0 until it is that document's prelude `typus` rather than the builtin.
 proc __chk_lay_ty, chkl_wk, chkl_ty, chkl_dp
 	uses	rbx, r12, r13
 	locals
@@ -124,6 +129,8 @@ proc __chk_lay_ty, chkl_wk, chkl_ty, chkl_dp
 	je	.struc
 	cmp	ecx, AST_TY_ACIES
 	je	.acies
+	cmp	ecx, AST_TY_SUM
+	je	.sum
 	; a kind `__chk_lay_ty` cannot size -- `textus` `octeti` `scalares`
 	; `grapha` `eventus` `iface` `dyn` `fn` `param` `brand` `red`, and
 	; anything else outside this switch -- has no fixed WIDTH, but its
@@ -158,11 +165,29 @@ proc __chk_lay_ty, chkl_wk, chkl_ty, chkl_dp
 	mov	rdx, [chkl_dp]
 	inc	rdx
 	call	__chk_lay_struct
+	; A struct still marked IN PROGRESS here is one that reached itself
+	; -- an infinite type, the types pass's diagnostic. Its entry is not
+	; written yet, so it is answered as width 0 EXPLICITLY rather than
+	; read: reading it gave 0 on the compiler's single run of this pass
+	; and the previous run's size on any second run over the same tree,
+	; which is what a fixture does (`tests/unit/chk_row_layout_sum.asm`,
+	; check 8, found it on the sum arm below; the struct arm had the same
+	; latent read).
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wlay
+	mov	rsi, r12
+	call	__chk_row_g1
+	cmp	rax, 2
+	jne	.cycle
 	mov	rdi, r13
 	mov	rsi, r12
 	call	ast_layout_at
 	mov	eax, [rax + AstLayout.off]	; a struct's SIZE, in bytes
 	shl	rax, 3
+	xor	edx, edx
+	return
+  .cycle:
+	xor	eax, eax
 	xor	edx, edx
 	return
   .prestruc:
@@ -206,6 +231,30 @@ proc __chk_lay_ty, chkl_wk, chkl_ty, chkl_dp
 	inc	rdx
 	call	__chk_lay_ty
 	imul	rax, r12
+	return
+  .sum:
+	; a sum's size is its `typus` declaration's entry, written by
+	; `__chk_lay_sum` (sum-types.md D6) -- pulled forward here exactly as a
+	; struct named before its declaration is, and laid out once.
+	mov	r12d, [rax + AstType.a]		; the `typus` DECLARATION
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, [chkl_dp]
+	inc	rdx
+	call	__chk_lay_sum
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wlay
+	mov	rsi, r12
+	call	__chk_row_g1
+	cmp	rax, 2
+	jne	.cycle				; reached itself: width 0, as
+						; `.struc` says
+	mov	rdi, r13
+	mov	rsi, r12
+	call	ast_layout_at
+	mov	eax, [rax + AstLayout.off]	; the sum's SIZE, in bytes
+	shl	rax, 3
+	xor	edx, edx
 	return
 endp
 
@@ -564,6 +613,195 @@ proc __chk_lay_struct, chkl_wk, chkl_sd, chkl_dp
 	return
 endp
 
+; ---- one sum type ----------------------------------------------------------
+;     __chk_lay_sum(wk, typus decl, depth)
+;
+; docs/design/sum-types.md D6, the rule this pass implements for a `typus`
+; whose body is a `SumBody`: TAG, THEN THE LARGEST PAYLOAD, PACKED.
+;
+;   - The tag is at byte 0 and is the variant's index in declaration order.
+;     Its width is the smallest of 1, 2 or 4 bytes that holds the variant
+;     count (one byte up to 256 variants), and it is never elided: a
+;     one-variant sum is still a byte, because a value with no bytes has no
+;     address and spec §5.5's placement rules speak of addresses.
+;   - Every payload starts at the byte after the tag. A payload's elements
+;     pack in source order by the rule a struct's fields do (this file's
+;     header: offset = sum of the preceding widths), the payload is rounded
+;     up to whole bytes, and the sum's size is the tag plus the widest
+;     payload. Alignment is 1, as for every aggregate here.
+;   - Byte order is `:nativus`: a sum is an in-process type. Spec §5.2
+;     admits nothing but unsigned integers into a `@transitus` struct, so a
+;     sum-typed field there is `EXS-E0321`/`EXS-E0309` through
+;     `__chk_lay_struct`'s existing kind test, with no rule of its own.
+;
+; What is written: the `typus` declaration's entry carries the SIZE (in
+; `off`) and the alignment, as a struct's does; every `Variant` declaration's
+; entry carries its payload's byte offset in `off` -- the tag width, the same
+; for every variant, written per variant anyway so that the lowering reads
+; `Ast.layout` and derives nothing (typed-ast.md section 2.8). Element
+; offsets WITHIN a payload are not stored: payload elements have no
+; declaration to index by, and under packing they are the running sum of
+; `lwr_ty_size` over the preceding elements, which is how `acies` elements
+; are already placed.
+;
+; Idempotent and cycle-breaking exactly as `__chk_lay_struct` is: a sum that
+; reaches itself through a payload (`typus arbor = casus nodus(arbor)`) is an
+; infinite type, gets width 0 for the inner occurrence, and is NOT diagnosed
+; here -- D1 says the first implementation refuses it by name, and the place
+; for that is the types pass, where `__chk_ty_typus` already raises
+; `EXS-E0303` for an alias cycle. Until that arm exists a recursive sum lays
+; out as tag + 0, which `tests/unit/chk_row_layout_sum.asm` pins as the
+; cycle-break value and not as a size anyone may rely on.
+;
+; A payload type node pass 2 never typed (`AstNode.ty` = 0) contributes
+; width 0 and is skipped, as a field with no declaration is above.
+proc __chk_lay_sum, chkl_wk, chkl_sd, chkl_dp
+	uses	rbx, r12, r13, r14
+	locals
+		slot chkl_vi,  dq
+		slot chkl_vn,  dq
+		slot chkl_nv,  dq
+		slot chkl_max, dq
+		slot chkl_tag, dq
+		slot chkl_pi,  dq
+		slot chkl_pn,  dq
+		slot chkl_pb,  dq
+		slot chkl_vd,  dq
+	endl
+	mov	rbx, [chkl_wk]
+	mov	r14, [rbx + ChkRowWork.wtree]
+	mov	r12, [chkl_sd]
+	mov	rax, [chkl_dp]
+	mov	rcx, CHK_ROW_DEPTH_MAX
+	rassert	rax le rcx
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wlay
+	mov	rsi, r12
+	call	__chk_row_g1
+	test	rax, rax
+	jnz	.done				; laid out, or a cycle
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wlay
+	mov	rsi, r12
+	mov	rdx, 1
+	call	__chk_row_s1
+
+	mov	qword [chkl_nv], 0
+	mov	qword [chkl_vi], 0
+	mov	qword [chkl_max], 0
+	mov	rdi, r14
+	mov	rsi, r12
+	call	ast_decl_at
+	mov	ecx, [rax + AstDecl.node]
+	test	rcx, rcx
+	jz	.count
+	mov	rdi, r14
+	mov	rsi, rcx
+	call	ast_node_at
+	mov	ecx, [rax + AstNode.a]		; `Typus.a`: the `SumBody`
+	test	rcx, rcx
+	jz	.count
+	mov	rdi, r14
+	mov	rsi, rcx
+	call	ast_node_at
+	movzx	ecx, word [rax + AstNode.kind]
+	rassert	rcx eq AST_SUMBODY		; the caller dispatched on it
+	mov	ecx, [rax + AstNode.a]
+	mov	[chkl_vi], rcx
+	mov	ecx, [rax + AstNode.b]
+	mov	[chkl_nv], rcx
+  .count:
+	; the tag: the smallest of 1, 2, 4 bytes that holds the variant count
+	mov	rax, [chkl_nv]
+	mov	qword [chkl_tag], 1
+	cmp	rax, 256
+	jbe	.variants
+	mov	qword [chkl_tag], 2
+	cmp	rax, 65536
+	jbe	.variants
+	mov	qword [chkl_tag], 4
+  .variants:
+	mov	rax, [chkl_nv]
+	mov	[chkl_vn], rax
+  .variant:
+	cmp	qword [chkl_vn], 0
+	jle	.finish
+	mov	rdi, r14
+	mov	rsi, [chkl_vi]
+	call	ast_extra_at
+	mov	rdi, r14
+	mov	rsi, rax
+	call	ast_node_at
+	mov	r13, rax			; the `Variant` node
+	mov	ecx, [r13 + AstNode.d]
+	mov	[chkl_vd], rcx
+	mov	ecx, [r13 + AstNode.b]
+	mov	[chkl_pi], rcx
+	mov	ecx, [r13 + AstNode.c]
+	mov	[chkl_pn], rcx
+	mov	qword [chkl_pb], 0
+  .payload:
+	cmp	qword [chkl_pn], 0
+	jle	.payload_done
+	mov	rdi, r14
+	mov	rsi, [chkl_pi]
+	call	ast_extra_at
+	mov	rdi, r14
+	mov	rsi, rax
+	call	ast_node_at
+	mov	esi, [rax + AstNode.ty]		; pass 2's type of the element
+	mov	rdi, rbx
+	mov	rdx, [chkl_dp]
+	inc	rdx
+	call	__chk_lay_ty			; 0 for an untyped node
+	add	[chkl_pb], rax
+	inc	qword [chkl_pi]
+	dec	qword [chkl_pn]
+	jmp	.payload
+  .payload_done:
+	mov	rax, [chkl_pb]
+	add	rax, 7
+	shr	rax, 3				; whole bytes per payload
+	cmp	rax, [chkl_max]
+	jbe	.record
+	mov	[chkl_max], rax
+  .record:
+	cmp	qword [chkl_vd], 0
+	je	.variant_next
+	mov	rdi, r14
+	mov	rsi, [chkl_vd]
+	call	ast_layout_at
+	mov	rcx, [chkl_tag]
+	mov	[rax + AstLayout.off], ecx	; the payload's byte offset
+	mov	byte [rax + AstLayout.bitoff], 0
+	mov	byte [rax + AstLayout.width], 0
+	mov	byte [rax + AstLayout.order], AST_ORD_NATIVUS
+	mov	byte [rax + AstLayout.algn], 1
+  .variant_next:
+	inc	qword [chkl_vi]
+	dec	qword [chkl_vn]
+	jmp	.variant
+
+  .finish:
+	mov	rdi, r14
+	mov	rsi, r12
+	call	ast_layout_at
+	mov	rcx, [chkl_tag]
+	add	rcx, [chkl_max]
+	mov	[rax + AstLayout.off], ecx	; the sum's SIZE, in bytes
+	mov	byte [rax + AstLayout.bitoff], 0
+	mov	byte [rax + AstLayout.width], 0
+	mov	byte [rax + AstLayout.order], AST_ORD_NATIVUS
+	mov	byte [rax + AstLayout.algn], 1	; PACKED, as every aggregate
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wlay
+	mov	rsi, r12
+	mov	rdx, 2
+	call	__chk_row_s1
+  .done:
+	return
+endp
+
 ; Raise `chkl_c2` against the `Field` node at `Ast.extra` index `chkl_ix`.
 ; The span is the FIELD, which is what checker.md section 2.4's table asks
 ; for and what makes the diagnostic point at the annotation the programmer
@@ -594,10 +832,13 @@ endp
 ; forbids defaulting to the build platform, so the one place that knows must
 ; say. Requested as a `ChkCtx` field; `[OPEN]` until the driver can answer.
 ;
-; Structs are laid out in DECLARATION order, and a field naming a struct
-; declared later pulls that one forward -- so the ORDER of the work is not
-; declaration order, but the RESULT is, because each struct is laid out
-; exactly once and its answer does not depend on when.
+; Structs and sum `typus` declarations are laid out in DECLARATION order, and
+; a field or payload naming one declared later pulls that one forward -- so
+; the ORDER of the work is not declaration order, but the RESULT is, because
+; each is laid out exactly once and its answer does not depend on when. An
+; alias `typus` owns no layout: it is transparent (checker/types/sig.inc's
+; `__chk_ty_typus`), and only a `typus` whose body is a `SumBody` is
+; dispatched (sum-types.md D1/D6).
 proc chk_layout, chkw_c2, chkw_b2
 	uses	rbx, r12, r13, r14
 	locals
@@ -633,7 +874,30 @@ proc chk_layout, chkw_c2, chkw_b2
 	call	ast_decl_at
 	movzx	ecx, byte [rax + AstDecl.kind]
 	cmp	ecx, AST_D_STRUCT
+	je	.struc
+	cmp	ecx, AST_D_TYPUS
 	jne	.next
+	mov	ecx, [rax + AstDecl.node]
+	test	rcx, rcx
+	jz	.next
+	mov	rdi, r13
+	mov	rsi, rcx
+	call	ast_node_at
+	mov	ecx, [rax + AstNode.a]		; `Typus.a`: `SumBody` or `Ty*`
+	test	rcx, rcx
+	jz	.next
+	mov	rdi, r13
+	mov	rsi, rcx
+	call	ast_node_at
+	movzx	ecx, word [rax + AstNode.kind]
+	cmp	ecx, AST_SUMBODY
+	jne	.next
+	mov	rdi, rbx
+	mov	rsi, r12
+	xor	rdx, rdx
+	call	__chk_lay_sum
+	jmp	.next
+  .struc:
 	mov	rdi, rbx
 	mov	rsi, r12
 	xor	rdx, rdx
