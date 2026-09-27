@@ -113,7 +113,18 @@ Rejecting bidi at the lexer is correct and cheap. **It is not a differentiator.*
 
 # 3. The lexicon
 
-**This is where the Latin/Greek is load-bearing.** Prototype: `prototypes/lexicon/lexicon.py`.
+**This is where the Latin/Greek is load-bearing.** Materials:
+`prototypes/lexicon/` — the affix table, twenty roots, twenty derivation
+tasks, the English control and the scoring rubric for §16's derivation
+test. `[UNTESTED]`: prepared and piloted by the author, **never
+administered to a human subject**, so §3 has no measured derivation
+accuracy behind it. Until 2026-09-26 this line read "Prototype:
+prototypes/lexicon/lexicon.py" — a file that has never existed in this tree.
+The citation named a program where the directory holds documents, which is
+the class of claim check 5 of `tools/spec-check.sh` now fails the build over.
+The retired path is written here without backticks on purpose: backticks are
+what make a path a citation, so quoting a dead one inside them would make the
+check fail over the sentence that records its death.
 
 ## 3.1 Rule
 
@@ -344,7 +355,16 @@ the reviewer; the arithmetic does not.
 
 # 4. Capabilities
 
-Prototype: `prototypes/capcheck/exsecutor_check.py`, 468 lines, validated against six attacks and two legitimate programs. `[UNREPRODUCED]` — that artifact is absent from the tree. The checker is being rebuilt from this section, which is a re-derivation, not a restoration.
+Prototype: `prototypes/capcheck/exsecutor_check.py`, 446 lines, over the
+nine cases in `prototypes/capcheck/cases/` — six attacks and three
+legitimate programs. **This is the rebuild, not the artifact this line used to
+name.** `[UNREPRODUCED]`: the v0.2 probe was 468 lines and was said to be
+validated against six attacks and two legitimate programs, and it is absent
+from the tree — its six attacks were never enumerated anywhere, so the
+rebuilt probe **chose** six and says which (§15 #1). A re-derivation is not a
+restoration, and the figure that cannot be re-measured is the old one.
+Amended 2026-09-26: until then this line cited the path and then said the
+path was absent, which stopped being true when the rebuild landed.
 
 ## 4.1 Rules
 
@@ -715,7 +735,12 @@ Explicit ABI and layout; no "whatever C does." The frontend implements the C ABI
 
 **Non-atomic `refero` may not cross an `externus` boundary** (`EXS-E0520`) — see §6.4.
 
-Minimum ABI coverage for v1: SysV AMD64, AArch64 AAPCS, RISC-V lp64d. Their spellings in `externus(…, abi: X)` are **`sysv_amd64`**, **`aapcs64`** and **`lp64d`**, and the set is closed: the AST stores the ABI as a small enumeration, not an interned name, so an unknown one is `EXS-E0309` at the `externus` head rather than a value that overflows a 16-bit slot (`tests/unit/ast_from_cst_abi_overflow.asm` is the trap that stood in for this sentence).
+Minimum ABI coverage for v1: SysV AMD64, AArch64 AAPCS, RISC-V lp64d. Their spellings in `externus(…, abi: X)` are **`sysv_amd64`**, **`aapcs64`** and **`lp64d`**, and the set is closed: the AST stores the ABI as a small enumeration, not an interned name, so an unknown one is `EXS-E0309` at the `externus` head rather than a value that overflows a 16-bit slot (`tests/unit/ast_from_cst_abi.asm` walks all four rows — the three
+admitted spellings and one unknown — through the whole front end; it
+replaced ast_from_cst_abi_overflow.asm (unbackticked: a retired path is
+not a citation), whose premise the closed
+enumeration removed, and says so in its own header. This sentence cited
+the deleted name until 2026-09-26).
 
 ## 5.4 Numeric semantics
 

@@ -9,10 +9,24 @@
 #   3. marker discipline                               -- [OPEN]/[UNTESTED]/
 #                                                         [UNREPRODUCED]
 #   4. §8.4 keywords <-> compiler/x86_64/lexer/keywords.inc -- keyword sync
+#   5. artifact-citation validity                      -- every cited PATH
+#                                                         exists
 #
 # Checks 1 and 4 are the same arrangement: a spec table is the normative
 # source, the .inc is generated from it, and drift is a build failure rather
 # than something a reader is expected to notice.
+#
+# Check 5 was added on 2026-09-26, and it was added because the thing it
+# checks had already gone wrong: an amendment declared integer division,
+# `residuum` and the bitwise words settled and cited three program
+# directories and a unit fixture as the evidence, and none of the four
+# existed in the tree. Check 2 passed it -- every SECTION reference resolved.
+# CLAUDE.md's evidence discipline ("never report a benchmark you did not run,
+# or a test you did not see pass") had no mechanical half, so a false
+# evidence citation was exactly as cheap to write as a true one. This is the
+# mechanical half, and it stands in the same relation to the evidence rule
+# that `make audit` stands in to the socket prohibition: the contract becomes
+# checkable rather than promised (§9.3).
 #
 # Read-only. Touches nothing, builds nothing, needs no toolchain.
 #
@@ -257,6 +271,187 @@ spec_keywords_raw_dupes() {
     | grep -o '`[^`]*`' | tr -d '`' | sort | uniq -d
 }
 
+# ---------------------------------------------------------------------------
+# 5. Artifact-citation validity
+#
+# The spec cites evidence by path -- a fixture, a program directory, an
+# oracle, a compiler module -- and CLAUDE.md makes an unbacked claim a
+# marked one. A citation to a path that is not there is an unbacked claim
+# wearing evidence's clothes, and unlike marker PLACEMENT (check 3) it is
+# not a judgement call: the file is present or it is not. So this FAILS.
+#
+# Extraction: backticked runs whose first segment is a real top-level
+# directory of the tree. The directory list is read from git rather than
+# hardcoded, so adding one does not silently narrow the check. A `*` makes
+# the citation a glob and at least one match is required. Placeholder
+# spellings (`tests/programs/<name>/`) cannot match the token pattern and
+# are not scanned, which is right -- they cite a shape, not an artifact.
+#
+# One convention this imposes on the prose: backticks are what make a path a
+# citation, so a RETIRED path -- one a sentence names in order to record that
+# it is gone -- is written without them. §3's and §5.3's amendments of
+# 2026-09-26 do exactly that, and say why.
+#
+# Deliberately-absent artifacts go in ABSENT_BY_DESIGN below, each with the
+# reason. It is an allowlist and not a filter: adding a line to it is a
+# recorded decision that the spec is claiming something it cannot show.
+#
+# Scope is the spec, which is this script's subject. The same scan over
+# docs/design/ and docs/decisions/ is reported as a note, not a failure, and
+# that split is a measurement rather than a convenience. All twelve absent
+# paths those documents named on 2026-09-26 were triaged, and not one is a
+# false evidence claim -- they are three other things:
+#
+#   - a HYPOTHETICAL tree. `compiler/aarch64/` in ADRs 0002 and 0003 and in
+#     asm-conventions.md, each time as "a future" or "the eventual" one.
+#   - ANOTHER PROJECT'S path. HydraModem's tests/test_loopback.c (ADR 0014,
+#     receptor.md) and Kiln's examples/exsec-streamdb-demo/ (ADR 0015,
+#     c-backend.md) are repo-relative in THEIR trees, not this one.
+#   - A PLAN'S OWN SPELLING, recorded beside what landed instead. receptor.md
+#     names tests/programs/hydramodem_rx_caput/ and then says "As landed: the
+#     header directory is `receptio_caput/`"; it names
+#     hydramodem_rx_plenus/ and says, in bold, "not written". lowering.md's
+#     and runtime.md's per-module tables and c-backend.md's
+#     tests/unit/bfc_emit_float.asm are the same: a fixture the design OWES,
+#     said in prose to be owed.
+#
+# So the docs' prose is already honest where the spec's was not, and the
+# backtick convention above is the only thing out of step. Promoting this
+# half to a failure means editing six historical documents to satisfy a lint
+# whose finding is that they are correct, which is the wrong way round. It
+# reports, the list stays visible, and a document that starts claiming
+# evidence it does not have is one grep from being seen.
+# ---------------------------------------------------------------------------
+ABSENT_BY_DESIGN=(
+  # (empty) -- every path the spec cites is in the tree. Keep it that way:
+  # a new entry here is a claim the spec cannot back, and it needs the
+  # marker discipline of check 3 in the prose as well as a line here.
+)
+
+# Backticked path-shaped citations in one file, one per line.
+cited_paths() {
+  local file="$1" tops
+  # Top-level directories that actually exist, as an alternation.
+  tops="$(cd "$REPO_ROOT" && git ls-files 2>/dev/null \
+          | awk -F/ 'NF>1{print $1}' | sort -u | paste -sd'|' -)"
+  [[ -n "$tops" ]] || return 0
+  # `|| true`: a file with no path citations is not an error, and under
+  # `set -o pipefail` a grep that matches nothing would abort the caller's
+  # assignment. melos.md found that on this check's first run.
+  grep -ohE '`[A-Za-z0-9_.@/*-]+`' "$file" | tr -d '`' \
+    | grep -E "^($tops)/" | sort -u || true
+}
+
+# Echoes each path in the list that resolves to nothing.
+dangling_paths() {
+  local p
+  while read -r p; do
+    [[ -n "$p" ]] || continue
+    case "$p" in
+      # Glob citation: at least one match required. Expanded with `nullglob`
+      # in a subshell rather than `compgen -G`, which this line used until
+      # 2026-09-26 and which is NOT dependably present in a non-interactive
+      # shell -- run straight from a terminal it worked, run under `make` it
+      # printed "compgen: command not found" five times and reported every
+      # glob in the spec as absent. A check whose verdict depends on how the
+      # shell was started is not a check; this file already pins LC_ALL for
+      # the same reason, one environment variable over.
+      *'*'*) ( cd "$REPO_ROOT" && shopt -s nullglob && set -- $p \
+                 && [ "$#" -gt 0 ] ) || echo "$p" ;;
+      # A cited DIRECTORY must hold something git tracks. An empty directory
+      # satisfied this check on its first day -- `tests/programs/basis64/` was
+      # cited by §5.4 as "a Base64 encoder held byte-identical to coreutils'"
+      # while being an empty directory, and existence alone passed it. A
+      # citation names evidence, and an empty directory is not evidence; an
+      # untracked one is not evidence either, since it would not survive a
+      # clone. Found by a whole-tree audit on 2026-09-26, which is the sort of
+      # gap a mechanical check has and a reader does not.
+      */)    if [[ ! -d "$REPO_ROOT/$p" ]]; then
+               echo "$p"
+             elif [[ -z "$(cd "$REPO_ROOT" && git ls-files -- "$p" 2>/dev/null | head -1)" ]]; then
+               # Present but holding nothing git tracks. Two different
+               # situations with two different fixes, so they are reported
+               # apart: EMPTY needs the evidence written, UNTRACKED needs
+               # `git add` and is one command from correct.
+               if [[ -z "$(ls -A "$REPO_ROOT/$p" 2>/dev/null)" ]]; then
+                 echo "$p	EMPTY"
+               else
+                 echo "$p	UNTRACKED"
+               fi
+             fi ;;
+      *)     [[ -e "$REPO_ROOT/$p" ]] || echo "$p" ;;
+    esac
+  done
+}
+
+check_artifact_citations() {
+  echo "== 5. artifact-citation validity =="
+
+  local all n_all dangling
+  all="$(cited_paths "$SPEC")"
+  n_all="$(printf '%s\n' "$all" | grep -c . || true)"
+  if [[ "$n_all" -eq 0 ]]; then
+    bad "the spec parsed to zero path citations -- this extractor is wrong,"
+    bad "and a check measuring nothing reads the same as a check passing"
+    return 0
+  fi
+
+  dangling="$(printf '%s\n' "$all" | dangling_paths)"
+
+  # Subtract the allowlist, and say so for each one taken out.
+  local a p kept=""
+  while read -r p; do
+    [[ -n "$p" ]] || continue
+    local excused=0 bare="${p%%$'\t'*}"
+    for a in ${ABSENT_BY_DESIGN[@]+"${ABSENT_BY_DESIGN[@]}"}; do
+      [[ "$bare" == "$a" ]] && excused=1
+    done
+    if [[ "$excused" == "1" ]]; then
+      note "$p: absent by design (ABSENT_BY_DESIGN)"
+    else
+      kept+="$p"$'\n'
+    fi
+  done <<< "$dangling"
+
+  if [[ -n "${kept//[$'\n']/}" ]]; then
+    bad "the spec cites artifacts it cannot show:"
+    while read -r p; do
+      [[ -n "$p" ]] || continue
+      local why="${p##*$'\t'}" path="${p%%$'\t'*}"
+      case "$why" in
+        EMPTY)     echo "           $path  EXISTS BUT IS EMPTY -- cited as evidence, holds none" ;;
+        UNTRACKED) echo "           $path  UNTRACKED -- would not survive a clone; git add it" ;;
+        *)         path="$p"; echo "           $path  not in the tree" ;;
+      esac
+      echo "             cited at:"
+      grep -nF "$path" "$SPEC" | cut -d: -f1 \
+        | sed "s|^|               $(basename "$SPEC"):|"
+    done <<< "$kept"
+  else
+    ok "$n_all distinct paths cited by the spec, all present"
+  fi
+
+  # The same scan over the design documents and ADRs. A note: these are not
+  # the spec, and their drift is a separate change.
+  local other f od
+  other=0
+  for f in "$REPO_ROOT"/docs/design/*.md "$REPO_ROOT"/docs/decisions/*.md; do
+    [[ -f "$f" ]] || continue
+    od="$(cited_paths "$f" | dangling_paths)"
+    while read -r p; do
+      [[ -n "$p" ]] || continue
+      other=$((other + 1))
+      note "docs/${f#"$REPO_ROOT"/docs/}: $p (not in the tree)"
+    done <<< "$od"
+  done
+  if [[ "$other" -eq 0 ]]; then
+    note "docs/design/ and docs/decisions/ cite no absent paths either"
+  else
+    note "$other absent-path citation(s) outside the spec -- reported, not failed"
+  fi
+  return 0
+}
+
 check_registry_sync
 echo
 check_citations
@@ -264,6 +459,8 @@ echo
 check_markers
 echo
 check_keyword_sync
+echo
+check_artifact_citations
 echo
 echo "== summary =="
 if [[ "$FAIL" -eq 0 ]]; then
