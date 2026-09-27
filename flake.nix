@@ -34,9 +34,21 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # The README gate (CONTRIBUTING.md, "The README gate"): github.com/ALH477/
+    # TrvthNvke, the same evidence discipline as `make audit` applied to
+    # prose. A flake INPUT, as its README prescribes for DeMoD trees, not a
+    # vendored package. `follows` keeps it on this flake's nixpkgs so it adds
+    # no second Python; its own flake-utils dependency is locked transitively
+    # and used by nothing here -- this flake still enumerates one system by
+    # hand. Verification-only, like python3 below: it is in the devShell and
+    # in `checks.readme`, and on no package's build closure.
+    trvthnvke = {
+      url = "github:ALH477/TrvthNvke";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, trvthnvke }:
     let
       system = "x86_64-linux"; # spec §18.2: buildPlatform pinned here, deliberately.
       pkgs = import nixpkgs { inherit system; };
@@ -588,6 +600,10 @@
           pkgs.qemu-user
           pkgs.gnumake
           pkgs.file
+          # verification-only: the README gate. `trvthnvke verify --fail` is
+          # what hooks/pre-commit runs and what `checks.readme` below runs in
+          # the sandbox; `trvthnvke-mcp` is the agent server .mcp.json starts.
+          trvthnvke.packages.${system}.default
         ];
         shellHook = ''
           REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
@@ -599,6 +615,22 @@
       };
 
       checks.${system} = {
+        # The README gate as a Nix check, equivalent to `trvthnvke verify
+        # --fail` (TrvthNvke's own consumer template, adapted to this flake's
+        # one-system layout). The policy's command allowlist runs only `grep`
+        # and `wc`, which runCommand's stdenv provides; the lock must match
+        # the policy or this fails, exactly as the hook and CI do.
+        readme = pkgs.runCommand "check-trvthnvke-readme" {
+          nativeBuildInputs = [ trvthnvke.packages.${system}.default ];
+          src = self;
+        } ''
+          cp -r "$src"/. .
+          chmod -R u+w .
+          trvthnvke verify --fail
+          mkdir -p "$out"
+          echo ok > "$out/receipt"
+        '';
+
         # Assembles the verified smoke fixture inside a sandboxed derivation
         # (store INCLUDE path, no network, no ambient state) and checks that
         # the toolchain is actually live: it runs, exits 0, produces the

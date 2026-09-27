@@ -8,6 +8,10 @@ __pycache__/
 # Nix
 result
 result-*
+
+# TrvthNvke receipts (`trvthnvke verify --receipt`); CI uploads them as an
+# artifact, they are never committed
+.trvthnvke/
 .direnv/
 
 # TrvthNvke run receipt (trvthnvke verify --receipt); not a source file.

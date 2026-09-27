@@ -20,6 +20,13 @@ fi
 if python3 -c 'import trvthnvke' >/dev/null 2>&1; then
   exec python3 -m trvthnvke verify --fail
 fi
+# The tool is a flake input (flake.nix), so a commit made outside `nix
+# develop` can still be gated by entering it for the one command. Slower by
+# the shell's start-up, and still a refusal -- never a skip -- if nix or the
+# flake is missing.
+if command -v nix >/dev/null 2>&1 && [ -f flake.nix ]; then
+  exec nix develop -c trvthnvke verify --fail
+fi
 echo "pre-commit: the README gate cannot run -- TrvthNvke is not installed." >&2
 echo "  Install it (see CONTRIBUTING.md, \"The README gate\"), or remove" >&2
 echo "  .git/hooks/pre-commit if you do not want the gate locally. CI runs it" >&2

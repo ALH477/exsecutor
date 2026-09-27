@@ -62,6 +62,28 @@ CRLF should not ship with CRLF in it.
 first module depends on it, changes go through review — a macro change is a
 whole-tree change. Conventions are in `docs/asm-conventions.md` and are binding.
 
+## The README gate
+
+`README.md` is claim-gated by TrvthNvke (github.com/ALH477/TrvthNvke; policy
+`.trvthnvke.toml`; see CONTRIBUTING.md, "The README gate"). The tool is a
+flake input: it is on `PATH` inside `nix develop`, `hooks/pre-commit` runs it,
+and `nix flake check` runs it as `checks.readme`.
+
+- **Do not freehand-rewrite `README.md`.** Change the code first, then change
+  the claim the code made false: `trvthnvke extract` to see the claims, the
+  MCP's `trvthnvke_propose_edit` / `trvthnvke_apply_edit` (`.mcp.json` starts
+  the server; apply reverts on a failing gate), or an edit inside the claim's
+  own block. Run `trvthnvke verify --fail` before committing. Do not push on
+  a failing gate.
+- A sentence that cannot be checked stays prose, or is marked `kind: prose`.
+  Never invent a `command` claim you have not run.
+- Claim ids are stable, like error codes. Do not rename one.
+- `.trvthnvke.lock` is `trvthnvke lock`'s output, never hand-edited; a policy
+  change without it fails every gate as `policy_drift`.
+- **A gate that skipped itself is no gate.** If the tool is missing, the hook
+  refuses the commit rather than passing it. Do not commit with `--no-verify`
+  to get past it; enter `nix develop` or run the hook's own fallback.
+
 ## Scope
 
 Each agent owns its directory. Do not edit another agent's tree; report the

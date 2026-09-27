@@ -205,12 +205,29 @@ role `[OPEN]`/`[UNTESTED]`/`[UNREPRODUCED]` play above) rather than left
 silently unbound, or is left as ordinary prose and reported only as a
 coverage warning.
 
-Verify locally with `trvthnvke verify --fail` (install into a virtualenv --
-`pip install git+https://github.com/ALH477/TrvthNvke` -- this tool is not part
-of the devShell). Install the pre-commit gate with
-`cp hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit`,
-or `trvthnvke install-hook` once it is on `PATH`; `.github/workflows/trvthnvke.yml`
-runs the same check in CI.
+Verify locally with `trvthnvke verify --fail`. The tool is a flake input
+(`flake.nix`: `inputs.trvthnvke`, following this flake's nixpkgs), so it is
+on `PATH` inside `nix develop` and `nix flake check` runs the same gate
+sandboxed as `checks.readme`; outside the devShell,
+`pip install git+https://github.com/ALH477/TrvthNvke` into a virtualenv works
+too. Install the pre-commit gate with
+`cp hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit`
+(or `trvthnvke install-hook`); the hook falls back to `nix develop -c` when
+the tool is not on `PATH`, and refuses -- never skips -- when nothing can run
+it. `.github/workflows/trvthnvke.yml` runs the same check in CI, and writes
+a receipt to `.trvthnvke/` (ignored, uploaded as an artifact).
+
+Agents get the same gate as a tool: `.mcp.json` starts TrvthNvke's stdio MCP
+server (`trvthnvke_list_claims`, `trvthnvke_propose_edit`,
+`trvthnvke_apply_edit` -- which reverts if the gate fails -- and
+`trvthnvke_verify`), and CLAUDE.md's "The README gate" section is the
+contract: change the code first, then the claim the code made false; never
+rewrite the README freehand.
+
+Until 2026-09-27 the tool was installed nowhere on the development machine
+and the hook was not installed in the checkout, so the gate ran for no local
+commit -- CI would have caught it, and CI was blocked. The flake input and
+the hook's fallback exist so that cannot recur silently.
 
 ## Running the whole suite
 

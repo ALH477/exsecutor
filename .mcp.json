@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "trvthnvke": {
+      "command": "nix",
+      "args": ["develop", "-c", "trvthnvke-mcp"]
+    }
+  }
+}
