@@ -459,12 +459,59 @@ suppresses diagnostics on its operands (AST 2.2, H3 — `[UNTESTED]`).
 `textus` `octeti` `scalares` `grapha` are four `AstType` kinds (kinds.inc)
 with no fields, so they are four ids and nothing coerces (spec §5.1);
 `t[0]` with `t: textus` is `EXS-E0311` at the `Index` node before the index
-is typed. `octeti()`, `scalares()`, `quaere`, `sectio`, `plica_unicode` are
-*methods*, resolved as every method is — through impls for the receiver's
-type id (section 2.7) — and **no declaration of them exists in this tree**:
-there is no standard library and no import (spec §8.6 decision 5), so §14
-entries 2 and 8's methods resolve to nothing until a prelude exists
-(finding 14). `E0311` needs none of them.
+is typed. `E0311` needs none of their methods.
+
+**These methods are not resolved through impls, and cannot be.** This section
+used to say `octeti()`, `scalares()`, `quaere`, `sectio` and `plica_unicode`
+were "resolved as every method is — through impls for the receiver's type id"
+and that "no declaration of them exists in this tree". Both sentences are now
+false, and the first was never right: an impl lookup keys on a *declaration*,
+and these four kinds have none — `__chk_ty_method`'s impl scan had nothing to
+scan, so every §5.1 text operation was `EXS-E0305`, "operation not defined on
+the type". The lookup that works is **keyed on the receiver's type kind**, in
+`__chk_ty_pre_member`'s `.views:` arm, against four prelude rows that
+`checker/types/prim.inc` holds and `prelude/interface.inc` does not (rows
+12–15; that file's constant block says why, and which three row-count bounds
+it leaves intact):
+
+| row | signature | receiver kind |
+|---|---|---|
+| `plica_unicode` | `(t: textus) -> textus` | `textus` |
+| `plica_sermone` | `(t: textus, s: sermo) -> textus` | `textus` |
+| `octeti` | `(t: textus) -> octeti` | `textus` |
+| `numerus` | `(b: octeti) -> mensura` | `octeti` |
+
+The kind still *decides*, which is the invariant the prelude rows above already
+hold: `numerus` on a `textus` is `EXS-E0305`, and so is `octeti` on an
+`octeti`. `plica_sermone` takes the capability as parameter 1 rather than in a
+row, because spec §5.1's own code block writes `"I".plica_sermone(sermo)` and
+§14 entry 1's whole subject is that a function with no `sermo` in scope has no
+value to pass. (§10.1 spells the same function `-> textus poscit sermo` with
+one parameter. The spec holds two signatures for one name; the checker follows
+§5.1 and entry 1, because entry 1 is the fixture that runs against it.
+`[OPEN]`, reported rather than reconciled here.) `numerus` returns `mensura`,
+not `u64`: §9.5 forbids defaulting to the build platform, and a count of
+elements in a host-side view is the target's own width by construction.
+
+**`scalares` and `grapha` still have no methods, and `quaere`/`sectio` none on
+any receiver.** §5.1 writes `numerus` on all three views; one prelude row is
+one `fn` type, and a concrete receiver is compared by identity at the call
+site, so a single `numerus` row cannot serve three receiver types. Three rows
+per operation, or a receiver-polymorphic prelude form, is the fix and neither
+shipped; `[OPEN]`. `quaere` and `sectio` stay `[OPEN]` for three reasons that
+are each independently sufficient — the brand syntax `positio<'t>` does not
+parse (below), `?` has no defined meaning in the language (spec §8.6), and
+`eventus` is uninhabited (`docs/design/sum-types.md` section 2) so
+`eventus<positio<'t>>` is a type nothing can produce a value of. That is why
+§14 entry 2 remains deferred while entries 1 and 12 no longer are.
+
+**Nothing below the checker can emit any of them.** `lower/expr.inc` refuses
+all four by name at `__lwr_call_member`'s `.prelude:` — a `rassert`, not a
+diagnostic, because no registered code means "unimplemented" and §8.3 makes
+codes permanent (`docs/design/lowering.md`'s expression table carries the row).
+A `shape=code` conformance fixture never lowers, so this costs those fixtures
+nothing; it does mean no `tests/programs/` directory may call these four until
+the runtime has a UTF-8 case folder and a view type.
 
 **Brands.** `brand` is a type kind with `a` = the *declaration* of the
 buffer (AST 2.5): two `positio` values are the same type iff they were
@@ -743,7 +790,15 @@ Numbered; each names the section and the sentence. Not edited here.
     example is wrong; section 2.2 pass 4 implements packed.
 14. **Spec §5.1's methods have no declaration site** (`octeti` `quaere`
     `sectio` `plica_unicode`) and no import exists; §14 entries 2 and 8's
-    fixtures call them undeclared. Entry 8 still reaches `E0311`. **Nor do
+    fixtures call them undeclared. Entry 8 still reaches `E0311`.
+    **Narrowed, not closed.** Four of them now have a declaration site —
+    `checker/types/prim.inc` rows 12–15, `plica_unicode`, `plica_sermone`,
+    `octeti` and `numerus`, looked up by the receiver's type *kind* (section
+    2.6) — which is what let §14 entries 1 and 12 stop reporting a spurious
+    `EXS-E0305`. What still has none: `quaere`, `sectio`, `scalares()`,
+    `grapha()`, and `numerus` on any view but `octeti`. Nothing below the
+    checker can emit even the four; the lowering refuses them by name.
+    **Nor do
     its type names**: `i32`, `f32`, `textus`, `mensura`, `octeti`,
     `scalares`, `grapha` all parse as `TyPath → Path → Seg` and nothing in
     the repository declares them — not the module, not

@@ -576,6 +576,7 @@ no `copy`, which is the IR RT 5 writes down.
 | `Call` | section 2.7 |
 | `Try` `?` | `eventus` representation `[OPEN]` (IR 6); `rassert` in the first slice |
 | `Lambda` | section 2.7 |
+| `Member` call of `plica_unicode` `plica_sermone` `octeti` `numerus` | **refused by name**, `rassert` at `__lwr_call_member`'s `.prelude:`. Spec §5.1's text operations are resolved by the checker (`checker/types/prim.inc` rows 12–15) and have no `prelude/interface.inc` part B record — no symbol, no IR signature, nothing to call — so `__lwr_pre_row` answers 0 and the trap fires. Not a diagnostic: no registered code means "unimplemented", §8.3 makes codes permanent, and inventing one is forbidden. Consequence: a `shape=code` conformance fixture never lowers and is unaffected, and **no `tests/programs/` directory may call these four** until the runtime has a UTF-8 case folder and a view type |
 
 **Bytes emitted for a string literal today.** `Lit.a` interns the source
 text *with its quotes and with escapes undecoded* (AST 2.3), because spec

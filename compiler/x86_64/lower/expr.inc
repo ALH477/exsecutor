@@ -2016,11 +2016,32 @@ proc __lwr_call_member, lwrsp, lwrn, lwrdst
 	return
 
   .prelude:
+	; `plica_unicode` `plica_sermone` `octeti` `numerus` ARE REFUSED HERE BY
+	; NAME, the way `lwr_expr` refuses `Try` and `Lambda`: the checker resolves
+	; them (checker/types/prim.inc rows 12..15, spec §5.1's text operations)
+	; and this pass cannot emit them. `__lwr_pre_row` looks a member up in
+	; `exsrt_iface_nomina`, and those four have no `prelude/interface.inc`
+	; part B record at all -- no symbol, no IR signature, nothing to call -- so
+	; it answers 0 and the `rassert` below traps. That is deliberate and it is
+	; the honest outcome: there is no standard library (§8.6 decision 5), the
+	; runtime has no UTF-8 case folder and no view type, and `lwr_ty_size`
+	; would reach its own `[UNIMPLEMENTED]` on `octeti` a moment later anyway.
+	;
+	; IT IS STILL A `ud2` AND NOT A DIAGNOSTIC, which is a choice about codes,
+	; not about kindness: no registered code means "this compiler does not
+	; implement that yet", §8.3 makes codes permanent, and CLAUDE.md forbids
+	; inventing one. So the refusal is a named trap rather than a message. The
+	; consequence is written down in docs/design/lowering.md's expression
+	; table: a `shape=code` conformance fixture never lowers, and NO
+	; `tests/programs/` directory may call these four until the runtime has
+	; them.
+	;
+	; An UNRESOLVED member is a different thing and is `EXS-E0301` in Stage 2,
+	; never here.
 	mov	rdi, rbx
 	mov	esi, [lwrnm]
 	call	__lwr_pre_row
-	rassert	eax ne 0		; an unresolved member is `EXS-E0301`,
-					; raised in Stage 2 -- never here
+	rassert	eax ne 0
 	mov	[lwrk], eax
 	mov	rdi, rax
 	call	__lwr_pre_decl

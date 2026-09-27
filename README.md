@@ -629,7 +629,7 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   corpus — `docs/design/diagnostics-review.md`, final section, and
   `tests/diagnostics/`. Stage 2's (`sub` resolution needing a search) does not
   fire, argued first in `docs/design/checker.md` §2.1.
-- `tests/run.sh`: **2,213 checks, 0 fail**, measured on this commit's tree. (It
+- `tests/run.sh`: **2,217 checks, 0 fail**, measured on this commit's tree. (It
   read "2,203 … at `af354b0`" until a fixture was added above that floor; the
   hash is dropped rather than left to go stale, because the tree a total belongs
   to is the commit the line is read from.) Each count below is
@@ -638,7 +638,7 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   re-derived from the repository and a measured total cannot. Where the two
   differ the floor is deliberately behind: this tree's convention is that a
   floor rises when someone re-baselines it, not automatically, so drift there
-  costs precision and never the guarantee. 196 unit fixtures [193]; 78 IR
+  costs precision and never the guarantee. 197 unit fixtures [193]; 78 IR
   fixtures [78] and 147 Exsecutor programs [128], each compiled, assembled,
   **run**, and syscall-audited (70 of those programs are the receiver's
   impaired vectors);
@@ -655,10 +655,10 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   the lane rasterizers too (the soft `vector_size` lowering keeps every
   lane's bits), and the thing
   that finally tests §9.5's standing claim that the emitted text assumes
-  nothing about byte order. 18 of the 26 conformance FIXTURES run, each
-  required to emit exactly its expected code and nothing else, and 8 report
+  nothing about byte order. 19 of the 26 conformance FIXTURES run, each
+  required to emit exactly its expected code and nothing else, and 7 report
   `DEFERRED` and are never counted as passing; with entries 27 and 28, which
-  have no fixture and are carried by program directories, 20 of the spec's 28
+  have no fixture and are carried by program directories, 21 of the spec's 28
   entries run. 0 program directories deferred.
 
   This bullet read "1564 pass — 178 unit fixtures; 64 IR fixtures and 104

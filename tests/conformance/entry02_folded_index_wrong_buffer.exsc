@@ -15,11 +15,32 @@
 // uploaded .txt"). §5.1: "This makes CVE-2026-24895's class
 // unrepresentable rather than discouraged."
 //
-// DEFERRED, current blocker: the brand syntax this entry depends on,
-// `positio<'t>`, is `[OPEN]` in §8.6 -- no grammar exists for a lifetime-
-// style brand parameter. EXS-E0332 itself is implemented, but unreachable
-// through this fixture's shape until the brand syntax parses
-// (`docs/design/checker.md` section 2.6).
+// DEFERRED, and the blockers are THREE, each independently sufficient. Named
+// separately because one of them just moved and the other two did not:
+//
+//   1. The brand syntax this entry depends on, `positio<'t>`, is `[OPEN]` in
+//      §8.6 -- no grammar exists for a lifetime-style brand parameter.
+//      `EXS-E0332` itself is implemented, but unreachable through this
+//      fixture's shape until the brand syntax parses
+//      (`docs/design/checker.md` section 2.6).
+//   2. `quaere` and `sectio` have no declaration site. `plica_unicode` now
+//      does -- a `checker/types/prim.inc` prelude row keyed on the receiver's
+//      type kind -- so `firma abassus = via.plica_unicode();` type-checks and
+//      `abassus` is a `textus` rather than the error type. That is a real
+//      move and it changes nothing here: `quaere` and `sectio` need brand
+//      syntax in their own signatures, so they cannot be written down as
+//      ordinary prelude rows the way the four text operations were.
+//   3. `?` has no meaning the LANGUAGE defines (§8.6) and `eventus` is
+//      uninhabited (`docs/design/sum-types.md` section 2), so
+//      `eventus<positio<'t>>` is a type nothing can produce a value of.
+//
+// Measured with a fresh `exsc` from the working tree, `--diagnostica json`,
+// against THIS file: `{EXS-E0305}` twice, unchanged in COUNT and changed in
+// LOCATION. Before the text-method rows the two were `via.plica_unicode()`
+// and `via.sectio(...)`, with `abassus.quaere(...)` silent because its
+// receiver was already the error type (no cascade). Now they are
+// `abassus.quaere` and `via.sectio` -- the two this entry is actually waiting
+// on. Still not the `{EXS-E0332}` §14 requires.
 
 publica functio corrige(via: textus) -> textus poscit alloc {
     firma abassus = via.plica_unicode();

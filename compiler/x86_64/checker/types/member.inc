@@ -115,11 +115,63 @@ proc __chk_ty_pre_member, chkt_wPM, chkt_tPM, chkt_mPM
 	mov	rsi, AST_CAP_MUNDUS
 	call	__chk_ty_atom
 	cmp	rax, r12
-	jne	.scriptor
+	jne	.views
 	cmp	r13, CHK_TY_PRE_AMBITUS
 	jne	.no
 	mov	rax, r13
 	return
+
+  ; ---- spec §5.1's text views: KEYED ON THE RECEIVER'S KIND ------------------
+  ; THIS ARM EXISTS BECAUSE ITS RECEIVERS HAVE NO `AstDecl`. Every other member
+  ; lookup in this file compares an interned nominal TYPE ID -- `Mundus` above,
+  ; `Scriptor` and `Lector` below -- because those have a declaration (or a
+  ; tagged prelude reference standing in for one) and a type id per program.
+  ; `textus` `octeti` `scalares` `grapha` are `AstType` KINDS with no fields
+  ; (ast/kinds.inc), so there is no declaration to compare and no impl to scan:
+  ; `__chk_ty_method`'s impl loop had nothing to loop over and every §5.1 text
+  ; operation was `EXS-E0305`. The KIND is the key because the kind is all
+  ; there is.
+  ;
+  ; AND THE KIND STILL DECIDES, which is the invariant this file's header
+  ; states for the rows above and which must not weaken here: `numerus` on a
+  ; `textus` is not a member (§5.1 writes it on the VIEWS), and `octeti` on an
+  ; `octeti` is not either. The name pool answers one row; this arm asks
+  ; whether that row belongs to this receiver.
+  ;
+  ; `scalares` AND `grapha` FALL THROUGH WITH NOTHING, deliberately and
+  ; visibly. §5.1 gives them `numerus` exactly as `octeti` has it, but one
+  ; prelude row is one `fn` type and a concrete receiver is compared by
+  ; identity (`__chk_ty_call`'s `.args:`), so a single `numerus` row cannot
+  ; serve three receiver types. Three rows per operation, or a
+  ; receiver-polymorphic prelude form, is the fix; this wave shipped neither
+  ; rather than half of one, so a `scalares` or `grapha` receiver still gets
+  ; `EXS-E0305` -- which is what it got before, unchanged, and why §14 entry 2
+  ; is still deferred. `[OPEN]`; prim.inc's `.fn_numerus` says the same.
+  .views:
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_TEXTUS
+	je	.v_textus
+	cmp	rax, AST_TY_OCTETI
+	je	.v_octeti
+	cmp	rax, AST_TY_SCALARES
+	je	.no
+	cmp	rax, AST_TY_GRAPHA
+	je	.no
+	jmp	.scriptor
+  .v_textus:
+	cmp	r13, CHK_TY_PRE_PLICA_UNI
+	je	.yes
+	cmp	r13, CHK_TY_PRE_PLICA_SERM
+	je	.yes
+	cmp	r13, CHK_TY_PRE_OCTETI
+	je	.yes
+	jmp	.no
+  .v_octeti:
+	cmp	r13, CHK_TY_PRE_NUMERUS
+	je	.yes
+	jmp	.no
 
   .scriptor:
 	mov	rdi, rbx

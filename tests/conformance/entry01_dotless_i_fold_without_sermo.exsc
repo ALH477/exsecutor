@@ -28,11 +28,33 @@
 // new is an open implementation question, not something this fixture can
 // settle by construction.
 //
-// DEFERRED, current blocker: the runner has no `nocap` shape implemented,
-// and §5.1's `textus` methods (`plica_sermone` among them) have no
-// declaration site (`docs/design/checker.md` finding 14) -- so running
-// this fixture today draws a spurious EXS-E0305 (unknown method) rather
-// than the capability-absence this entry is actually about.
+// DEFERRED, and the blocker is now ONE thing rather than two: the runner has
+// no `nocap` shape implemented.
+//
+// The second half is closed. §5.1's `textus` methods had no declaration site
+// (`docs/design/checker.md` finding 14), so running this fixture drew a
+// spurious `EXS-E0305` (unknown method) on top of -- and ahead of -- the
+// capability-absence this entry is actually about. `plica_sermone` now has a
+// declaration: `checker/types/prim.inc`'s prelude row, looked up by the
+// receiver's type KIND, with `sermo` as parameter 1 rather than a row,
+// because §5.1's own code block passes the capability as a value and this
+// entry's whole subject is that a function with no `sermo` in scope has no
+// value to pass.
+//
+// Measured with a fresh `exsc` from the working tree, `--diagnostica json`,
+// against THIS file: exactly `{EXS-E0421}`, at `sermo` in
+// `s.plica_sermone(sermo)`, with the machine fix ` poscit sermo` attached.
+// That is the mechanism this header predicted -- "caught the same way
+// EXS-E0421 catches any other undeclared-capability use" -- reached for the
+// first time. It is still not graded here, because §2.4's table spends no
+// code on this row and CLAUDE.md forbids inventing one; grading it needs the
+// `nocap` shape, which decides on the ABSENCE of a registered code.
+//
+// (§10.1 spells this function `plica_sermone(t: &textus) -> textus poscit
+// sermo` -- one parameter, authority in the row. §5.1 and this entry spell it
+// with the capability as an argument. The spec holds both; the checker
+// follows §5.1 because this fixture is what runs against it. `[OPEN]`,
+// reported, not reconciled in a fixture header.)
 
 publica functio normaliza(s: textus) -> textus {
     redde s.plica_sermone(sermo);

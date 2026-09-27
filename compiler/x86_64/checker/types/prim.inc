@@ -179,6 +179,44 @@ CHK_TY_PRE_AB_INTROITU	= EXS_IFACE_D_AB_INTROITU + 1
 CHK_TY_PRE_LEGE_OCT	= EXS_IFACE_D_LEGE_OCTETO + 1
 CHK_TY_PRE_COUNT	= EXS_IFACE_DECL_COUNT
 
+; ---- the §5.1 TEXT-VIEW rows, which `prelude/interface.inc` DOES NOT HAVE ----
+; Spec §5.1's `t.octeti().numerus()` and `"I".plica_unicode()` are methods on
+; types that have no `AstDecl` and no `Impl` -- `textus` and its views are
+; `AstType` KINDS (ast/kinds.inc), so `__chk_ty_method`'s impl scan has nothing
+; to scan and every such call was `EXS-E0305`, "operation not defined on the
+; type". docs/design/checker.md section 2.6 said these were "resolved as every
+; method is -- through impls"; they cannot be.
+;
+; THEY ARE ROWS 12..15 OF THIS FILE'S POOL AND OF NOTHING ELSE, and that
+; asymmetry is the point to notice before adding another. Rows 1..11 are
+; `prelude/interface.inc` part B's, index-for-index (`EXS_IFACE_D_* + 1`), and
+; three other tables are keyed on that correspondence:
+;
+;   * `checker/rows/compute.inc`'s `chk_row_pre_marks` -- one byte per part-B
+;     row, `assert $ - chk_row_pre_marks = CHK_TY_PRE_COUNT`, read ONLY by
+;     `__chk_row_tyatoms`'s `.pre` arm and only for an `AST_TY_STRUCT` whose
+;     `a` carries the prelude tag. No row below ever becomes a struct's `a`
+;     (all four are `fn` types), so that arm cannot see 12..15 and its
+;     `rassert rsi le CHK_TY_PRE_COUNT` stays true;
+;   * `lower/expr.inc`'s `__lwr_pre_decl`, same bound, reached only after
+;     `__lwr_pre_row` has FOUND a name in `exsrt_iface_nomina` -- which these
+;     four are not in, so it answers 0 and the lowering refuses the call by
+;     name before any bound is tested (that file says so at the site);
+;   * `__chk_ty_pre_is_type`, which answers "not a type" for every member row
+;     and needs no edit.
+;
+; So `CHK_TY_PRE_COUNT` keeps meaning "part B's row count" and is NOT the pool
+; length. `CHK_TY_PRE_NAMES_LEN` is the pool's extent and is what every lookup
+; passes. A row that needs a part-B record -- a symbol, an IR signature,
+; anything the lowering must EMIT rather than refuse -- belongs in
+; `prelude/interface.inc` instead, and then here as row 12 with everything
+; shifted; these four are checker-only by construction, because §5.1's text
+; operations have no implementation anywhere in this tree.
+CHK_TY_PRE_PLICA_UNI	= CHK_TY_PRE_COUNT + 1
+CHK_TY_PRE_PLICA_SERM	= CHK_TY_PRE_COUNT + 2
+CHK_TY_PRE_OCTETI	= CHK_TY_PRE_COUNT + 3
+CHK_TY_PRE_NUMERUS	= CHK_TY_PRE_COUNT + 4
+
 ; ---- primitive pool indices ------------------------------------------------
 CHK_TY_P_MENSURA	= 1
 CHK_TY_P_TEXTUS		= 2
@@ -276,10 +314,14 @@ chk_ty_prim_names:
 CHK_TY_PRIM_NAMES_LEN = $ - chk_ty_prim_names
 
 ; ---- the prelude name pool -------------------------------------------------
-; SAME ORDER AS `prelude/interface.inc` PART B's rows, so the pool index IS
-; `EXS_IFACE_D_* + 1` and a tagged `d` needs no second table to print. That
-; correspondence is asserted, not assumed: `CHK_TY_PRE_SCRIBE_OCT` is the last
-; row and the pool has exactly that many entries.
+; ROWS 1..11 ARE IN THE SAME ORDER AS `prelude/interface.inc` PART B's rows, so
+; the pool index IS `EXS_IFACE_D_* + 1` and a tagged `d` needs no second table
+; to print. That correspondence is asserted, not assumed: `CHK_TY_PRE_LEGE_OCT`
+; is part B's last row and 11 is its count.
+;
+; ROWS 12..15 ARE THIS FILE'S ALONE -- spec §5.1's text operations, which part B
+; has no record of. The `CHK_TY_PRE_*` block above says in full why they are
+; here and not there, and which three bounds that leaves intact.
 chk_ty_pre_names:
 	db 8,'Scriptor'
 	db 1,'a'
@@ -292,11 +334,16 @@ chk_ty_pre_names:
 	db 6,'Lector'
 	db 11,'ab_introitu'
 	db 11,'lege_octeto'
+	db 13,'plica_unicode'
+	db 13,'plica_sermone'
+	db 6,'octeti'
+	db 7,'numerus'
 CHK_TY_PRE_NAMES_LEN = $ - chk_ty_pre_names
 assert CHK_TY_PRE_ALLOC = 7
 assert CHK_TY_PRE_SCRIBE_OCT = 8
 assert CHK_TY_PRE_LEGE_OCT = 11
 assert CHK_TY_PRE_COUNT = 11
+assert CHK_TY_PRE_NUMERUS = 15
 
 ; `arborea` and `ordinata` -- spec §5.4's two reduction shapes, §8.6's
 ; `['forma' IDENT [INT]]`. Not keywords (lexer/keywords.inc does not know
@@ -931,6 +978,14 @@ proc chk_ty_prelude_type, chkt_wp, chkt_kp
 	je	.fn_abintroitu
 	cmp	r12, CHK_TY_PRE_LEGE_OCT
 	je	.fn_lege_oct
+	cmp	r12, CHK_TY_PRE_PLICA_UNI
+	je	.fn_plica_uni
+	cmp	r12, CHK_TY_PRE_PLICA_SERM
+	je	.fn_plica_serm
+	cmp	r12, CHK_TY_PRE_OCTETI
+	je	.fn_octeti
+	cmp	r12, CHK_TY_PRE_NUMERUS
+	je	.fn_numerus
 	mov	rdi, rbx
 	call	__chk_ty_err
 	return
@@ -1017,9 +1072,15 @@ proc chk_ty_prelude_type, chkt_wp, chkt_kp
 	; functio scribe(s: Scriptor, t: textus) -> mensura
 	; [OPEN] spec §11 as amended says this returns `eventus<mensura>`;
 	; prelude/interface.inc row 5 is marked EXS_IFACE_F_APERTUM for exactly
-	; that reason and returns the COUNT until `eventus` has syntax. This
-	; table follows the row, not the amendment, so that the two cannot
-	; disagree silently.
+	; that reason and returns the COUNT until `eventus` is INHABITED
+	; (docs/design/sum-types.md section 2). NOT "until `eventus` has syntax":
+	; `eventus<mensura>` is a spelling this pass interns today -- sig.inc's
+	; `.eventus:` arm, `AST_TY_EVENTUS`, and since the generic-arity commit it
+	; is the ONLY admitted spelling. What is missing is a variant, a
+	; constructor, destructuring and a layout, so the type has no value; a
+	; result type nothing can produce would be worse than a count. This table
+	; follows the row, not the amendment, so that the two cannot disagree
+	; silently.
 	mov	rdi, [rbx + ChkTyWork.wtre]
 	call	ast_list_mark
 	mov	[chkt_np], rax
@@ -1185,6 +1246,172 @@ proc chk_ty_prelude_type, chkt_wp, chkt_kp
 	mov	rdx, 16
 	mov	rcx, AST_ORD_NATIVUS
 	call	ast_type_int
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_np]
+	call	ast_list_emit
+	mov	[chkt_ep], rax
+	mov	rdi, rbx
+	mov	rsi, [chkt_ep]
+	mov	rdx, 1
+	call	__chk_ty_fn_empty
+	return
+
+  ; ---- spec §5.1's text operations ------------------------------------------
+  ; PARAMETER 0 IS THE RECEIVER, spelled as the receiver's own type, exactly as
+  ; `scribe(s: Scriptor, …)` is: §8.6 decision 8 spends no keyword on a
+  ; receiver, so a method's first parameter IS it, and `__chk_ty_call`'s
+  ; `.args:` compares it by identity for a concrete receiver. `textus` and
+  ; `octeti` are concrete, so the spelling has to be exact.
+  ;
+  ; §10.1 WRITES `plica_unicode(t: &textus)`, A BORROW, AND THIS TABLE DOES
+  ; NOT, and that is a recorded difference rather than an oversight. Every
+  ; existing row here spells its receiver plainly (`scribe(s: Scriptor, …)`,
+  ; `lege_octeto(l: Lector)`), a borrow parameter would be BOUND by
+  ; `__chk_ty_borrowparam` instead of compared, and ADR 0016 admits
+  ; `&mutabilis` on aggregates only -- `textus` is a two-word value (§5.1). The
+  ; plain spelling is what the rest of the table does; `[OPEN]` whether §10.1's
+  ; `&` is a borrow in the ADR 0016 sense or predates it.
+
+  .fn_plica_uni:
+	; functio plica_unicode(t: textus) -> textus
+	; §5.1: "total and locale-free ... always, no capability, no locale", so
+	; the EMPTY row is the honest one and `__chk_ty_fn_empty` gives it.
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	call	ast_list_mark
+	mov	[chkt_np], rax
+	mov	rdi, rbx
+	mov	rsi, AST_TY_TEXTUS
+	call	__chk_ty_simple
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, rbx
+	mov	rsi, AST_TY_TEXTUS
+	call	__chk_ty_simple
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_np]
+	call	ast_list_emit
+	mov	[chkt_ep], rax
+	mov	rdi, rbx
+	mov	rsi, [chkt_ep]
+	mov	rdx, 1
+	call	__chk_ty_fn_empty
+	return
+
+  .fn_plica_serm:
+	; functio plica_sermone(t: textus, s: sermo) -> textus
+	;
+	; THE CAPABILITY IS THE ARGUMENT, NOT A ROW, and §5.1's own code block is
+	; why: `"I".plica_sermone(sermo)` passes `sermo` as a value, and §14 entry
+	; 1's whole point is that "a function with no `sermo` in scope has no
+	; value to pass" -- which is what makes the CVE-2025-49003 class a
+	; signature error rather than a lint. The row stays empty because the
+	; authority travels in parameter 1's TYPE (§4.2: rows travel with a
+	; value's type), so nothing is lost by it.
+	;
+	; §10.1 SPELLS THE SAME FUNCTION `-> textus poscit sermo`, WITH ONE
+	; PARAMETER. Those are two different signatures for one name and the spec
+	; holds both; this table follows §5.1 and §14 entry 1, because entry 1 is
+	; the conformance fixture that has to run against it. Reported, not
+	; silently reconciled -- `docs/spec/` is not edited from here.
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	call	ast_list_mark
+	mov	[chkt_np], rax
+	mov	rdi, rbx
+	mov	rsi, AST_TY_TEXTUS
+	call	__chk_ty_simple
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, rbx
+	mov	rsi, AST_CAP_SERMO
+	call	__chk_ty_atom
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, rbx
+	mov	rsi, AST_TY_TEXTUS
+	call	__chk_ty_simple
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_np]
+	call	ast_list_emit
+	mov	[chkt_ep], rax
+	mov	rdi, rbx
+	mov	rsi, [chkt_ep]
+	mov	rdx, 2
+	call	__chk_ty_fn_empty
+	return
+
+  .fn_octeti:
+	; functio octeti(t: textus) -> octeti
+	; §5.1: "`octeti`, `scalares`, `grapha` are distinct types, not coercing
+	; views", so the result is the `octeti` KIND and nothing converts back.
+	; `scalares()` and `grapha()` are the same shape and are NOT written here
+	; -- see `__chk_ty_pre_member`'s arm for what that costs and why the two
+	; were left out of this wave rather than guessed at.
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	call	ast_list_mark
+	mov	[chkt_np], rax
+	mov	rdi, rbx
+	mov	rsi, AST_TY_TEXTUS
+	call	__chk_ty_simple
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, rbx
+	mov	rsi, AST_TY_OCTETI
+	call	__chk_ty_simple
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_np]
+	call	ast_list_emit
+	mov	[chkt_ep], rax
+	mov	rdi, rbx
+	mov	rsi, [chkt_ep]
+	mov	rdx, 1
+	call	__chk_ty_fn_empty
+	return
+
+  .fn_numerus:
+	; functio numerus(b: octeti) -> mensura
+	;
+	; `mensura`, NOT `u64`: §5.2 makes `mensura` the target's own width and
+	; §9.5 forbids defaulting to the build platform, so a COUNT of elements in
+	; a host-side view is a `mensura` by construction. Answering `u64` would
+	; hard-code a 64-bit host into every `t.octeti().numerus()` and §5.2's
+	; "mixing it with a fixed-width type requires an explicit widening" would
+	; have nothing left to require.
+	;
+	; PARAMETER 0 IS `octeti` AND ONLY `octeti`, and §5.1 writes `numerus` on
+	; all three views (`t.scalares().numerus()`, `t.grapha().numerus()`). One
+	; prelude row is one `fn` type, and a concrete receiver is compared by
+	; identity, so one row cannot serve three receivers. `scalares` and
+	; `grapha` therefore still answer `EXS-E0305` for every method; closing
+	; that needs either three rows per operation or a receiver-polymorphic
+	; form this table has no shape for, and this wave chose neither rather
+	; than half of one. `[OPEN]`, and `__chk_ty_pre_member` names it too.
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	call	ast_list_mark
+	mov	[chkt_np], rax
+	mov	rdi, rbx
+	mov	rsi, AST_TY_OCTETI
+	call	__chk_ty_simple
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, rbx
+	call	__chk_ty_mensura
 	mov	rdi, [rbx + ChkTyWork.wtre]
 	mov	rsi, rax
 	call	ast_list_push

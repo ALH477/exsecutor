@@ -82,33 +82,43 @@
 // in `from_cst.inc`; pinned by `tests/unit/ast_from_cst_impl_noname.asm`.
 // Same defect, same fix, as §14 entry 24's fixture.
 //
-// STILL BLOCKED, and NOT by the capability checker: `EXS-E0305`
-// ("operation not defined on the type"), TWICE over, both in
-// `checker/types/` (Stage 2), neither touched by this fix:
+// WAS BLOCKED BY TWO `EXS-E0305`s, BOTH NOW CLOSED, and the record of each
+// because both were Stage 2 gaps that this fixture is what found:
 //
-//   - `t.octeti().numerus()` -- `textus` has no method table at all in
-//     `checker/types/prim.inc`'s prelude (that file's own header lists
-//     `octeti`/`scalares`/`grapha` as spec §5.1 VIEWS with methods, but only
-//     the prelude `Scriptor` interface's methods are wired there today).
+//   - `t.octeti().numerus()` -- `textus` had no method table at all in
+//     `checker/types/prim.inc`'s prelude. `octeti`/`scalares`/`grapha` are
+//     spec §5.1 VIEWS with methods, and only the prelude `Scriptor`
+//     interface's methods were wired there. Closed by four checker-only
+//     prelude rows (`plica_unicode`, `plica_sermone`, `octeti`, `numerus`)
+//     looked up by the RECEIVER'S TYPE KIND -- these kinds have no `AstDecl`,
+//     which is why an impl scan could never have found them. `numerus`
+//     answers `mensura` (§9.5: no defaulting to the build platform).
 //   - `s sicut dyn Scriptor` -- ALSO `EXS-E0305`, at the very same span
-//     `EXS-E0510` correctly fires at: `types.inc`'s `.cast:` dispatch checks
-//     the CAST SOURCE's kind first (`ScriptorRetis`, a struct) and sends any
+//     `EXS-E0510` correctly fires at: `types.inc`'s `.cast:` dispatch checked
+//     the CAST SOURCE's kind first (`ScriptorRetis`, a struct) and sent any
 //     struct source straight to `__chk_ty_castagg`, which recognises only
 //     the one aggregate pair spec §5.2 admits (a `@transitus` struct and
 //     `acies<u8, sizeof>`) and rejects everything else -- including a struct
-//     cast to `dyn Trait`, which `.cast:`'s own comment says should reach
-//     `.cast_out` and let pass 3's `EXS-E0510` be the only verdict. It isn't
-//     yet, so a real `dyn` cast wrongly earns a type-mismatch diagnostic
-//     alongside the correct one.
+//     cast to `dyn Trait`, which `.cast:`'s own comment said should reach
+//     `.cast_out` and let pass 3's `EXS-E0510` be the only verdict. Closed by
+//     testing the TARGET for `dyn` before that dispatch;
+//     `tests/unit/chk_ty_cast_dyn.asm` pins it, including that a `dyn`
+//     SOURCE is still refused.
 //
-// Both are Stage 2 gaps in `checker/types/`, not this agent's tree, and
-// neither is the capability checker (which this entry's whole point already
-// exercises correctly). DEFERRED, not flipped: `{EXS-E0305, EXS-E0510}` is
-// not the `{EXS-E0510}` §14 requires.
+// Measured with a fresh `exsc` from the working tree, `--diagnostica json`,
+// against THIS file: `{EXS-E0510}`, twice -- at the implementation head
+// (§4.4's ceiling on any implementation, boxed or not) and at
+// `s sicut dyn Scriptor`, span-correct. §14 asks for the code SET and that
+// set is now exactly `{EXS-E0510}`, so `status=run`. The measurement was
+// taken BEFORE this directive was flipped, which is the only order in which
+// flipping it proves anything.
 //
-// DEFERRED: needs the type checker (Stage 2) to give `textus` its view
-// methods and to let `.cast:` recognise a struct-to-`dyn` cast as
-// structurally valid before `__chk_ty_castagg` ever sees it.
+// `t.octeti().numerus()` TYPE-CHECKS AND STILL CANNOT BE EMITTED: the
+// lowering refuses all four text methods by name (`lower/expr.inc`'s
+// `__lwr_call_member`, and `docs/design/lowering.md`'s expression table),
+// because there is no standard library and no runtime case folder or view
+// type. This fixture is `shape=code`, so it never lowers and is unaffected --
+// but that is why no `tests/programs/` directory may call them.
 
 interfacies Scriptor {
     functio scribe(s: Scriptor, t: textus) -> mensura
@@ -126,4 +136,4 @@ publica functio erade_potestatem(s: ScriptorRetis) -> dyn Scriptor {
     redde s sicut dyn Scriptor;
 }
 
-// TEST: entry=12 shape=code expect-code=EXS-E0510 status=deferred needs=type_checker
+// TEST: entry=12 shape=code expect-code=EXS-E0510 status=run
