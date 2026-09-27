@@ -2682,8 +2682,13 @@ ego norma.textus {
                         // `(t: &textus) -> textus poscit sermo` until
                         // 2026-09-27 -- two signatures for one name; the
                         // checker's prelude table follows the one the
-                        // conformance fixture runs against. `textus` is a
-                        // value (§5.1), so the receiver is not borrowed.
+                        // conformance fixture runs against, and §14 entry 1
+                        // RUNS as of 2026-09-27, so the suite re-measures on
+                        // every run that a caller holding no `sermo` is
+                        // refused here with exactly `{EXS-E0421}` and the fix
+                        // ` poscit sermo`. This row is pinned, not asserted.
+                        // `textus` is a value (§5.1), so the receiver is not
+                        // borrowed.
 
     exitus [ lib, dev, doc ]
 }
