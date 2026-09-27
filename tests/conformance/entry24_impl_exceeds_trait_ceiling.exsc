@@ -52,25 +52,36 @@
 //     `.genparam:`'s existing single-parameter binder; pinned by
 //     `tests/unit/chk_genparam_fn_bind.asm`.
 //
-// Measured code set moved {EXS-E0301, EXS-E0302, EXS-E0510} ->
-// {EXS-E0303, EXS-E0510} -- NOT the `{EXS-E0510}` §14 requires, so this
-// entry stays `status=deferred`. The remaining `EXS-E0303` ("type mismatch")
-// is at `redde a.combine(b);`'s `a`, i.e. `total`'s own return-type check
-// against its declared `-> f32`: `checker/types/member.inc`'s
-// `__chk_ty_method` already has a `.bound:` case built exactly for a member
-// call through a generic parameter ("CHECKED AGAINST THE INTERFACE, NEVER AN
-// IMPL, WHEN THE RECEIVER IS GENERIC") and it DOES find `Summable.combine`,
-// but whatever computes the resulting CALL's type does not yet resolve to
-// `f32` through that path -- a Stage 2 generic-dispatch gap, not a
-// resolve.inc or AST one, and out of this fix's scope (`checker/types/` is
-// not this agent's tree). `EXS-E0510` fires exactly where and only where
-// §4.4 says it should either way.
+// RESOLVED, and the record of how. The measured code set moved
+// {EXS-E0301, EXS-E0302, EXS-E0510} -> {EXS-E0303, EXS-E0510} ->
+// {EXS-E0510}. The middle state stood for one wave and the `EXS-E0303` in it
+// was diagnosed here as "whatever computes the resulting CALL's type does not
+// yet resolve to `f32`". That reading was wrong in its location, and worth
+// keeping so the next person does not re-derive it: the code was NOT at the
+// call's result. It was at `a`, the RECEIVER, and it came from
+// `__chk_ty_call`'s `.args:` comparing parameter 0 by identity.
+// `__chk_ty_method`'s `.bound:` arm falls through into `.iface:`, so a
+// `T: Summable` receiver finds `combine` on the INTERFACE, whose parameter 0
+// is spelled `Summable` -- meaning "the implementing type" (§8.6 decision 8:
+// no `self`, no `Self`). Comparing `T` against `Summable` is comparing a type
+// parameter against the interface that bounds it, which is exactly what
+// checker.md section 2.7 calls correct resolution. The call's type WAS `f32`
+// all along; `tests/unit/chk_ty_method_bound.asm`'s row b01 pins that
+// separately, because "no diagnostic" would also be the answer of a checker
+// that had given up on the call.
 //
-// DEFERRED: needs the type checker (Stage 2) to type a member call reached
-// through a bound generic parameter's interface the same way it already
-// resolves the member itself.
+// Fixed by skipping that one comparison when the receiver's own type kind is
+// `AST_TY_PARAM` or `AST_TY_DYN` -- one guard, one cause, both kinds.
+// `EXS-E0510` fires exactly where and only where §4.4 says it should, as it
+// did through every one of those three states.
+//
+// Measured with a fresh `exsc` from the working tree, `--diagnostica json`,
+// against THIS file: `{EXS-E0510}`, once, at the implementation head
+// `interfacies Summable in Right poscit alloc, rete` -- which is §4.4's
+// ceiling check on an implementation reached only through a generic, the rule
+// this entry exists for. `status=run`.
 
-// TEST: entry=24 shape=code expect-code=EXS-E0510 status=deferred needs=type_checker
+// TEST: entry=24 shape=code expect-code=EXS-E0510 status=run
 
 interfacies Summable {
     functio combine(self: Summable, other: f32) -> f32 poscit alloc

@@ -950,11 +950,41 @@ proc __chk_ty_call, chkt_wCL, chkt_nCL
 	call	__chk_ty_borrowparam
 	test	eax, eax
 	jnz	.written
+	; A RECEIVER REACHED THROUGH AN INTERFACE IS NOT COMPARED BY IDENTITY,
+	; and there is one cause for both kinds that skip: `__chk_ty_method`'s
+	; `.bound:` arm falls through into `.iface:`, so a `T: Trait` receiver
+	; and a `dyn Trait` receiver BOTH find the member on the interface
+	; declaration -- whose parameter 0 is spelled with the interface's own
+	; name, meaning "the implementing type" (spec §8.6 decision 8: there is
+	; no `self` and no `Self`). Comparing `T` against `Summable` is comparing
+	; a type parameter against the interface that bounds it, which is exactly
+	; what checker.md section 2.7 says is CORRECT resolution; it was
+	; `EXS-E0303` at the receiver of every generic method call. §14 entry 24's
+	; header recorded it as a Stage 2 generic-dispatch gap. Measured.
+	;
+	; WHAT THIS GIVES UP, said plainly rather than left to be discovered: a
+	; MALFORMED interface member -- `combine(self: u32, …)` written inside the
+	; `interfacies` -- is no longer caught at the call site, because the call
+	; site is no longer where parameter 0's type is judged. It never should
+	; have been: the rule is a declaration-site one, and it is owed in
+	; `sig.inc`. docs/design/checker.md section 2.7 carries the named non-goal
+	; and the design question. No code is invented for it here.
+	;
+	; `__chk_ty_borrowparam` above is untouched: a `&mutabilis` receiver is
+	; BOUND, not compared, and that is a different rule reached first.
 	mov	rdi, rbx
 	mov	rsi, [chkt_rCL]
 	call	__chk_ty_ty
+	mov	r13, rax
 	mov	rdi, rbx
-	mov	rsi, rax
+	mov	rsi, r13
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_PARAM
+	je	.written
+	cmp	rax, AST_TY_DYN
+	je	.written
+	mov	rdi, rbx
+	mov	rsi, r13
 	mov	rdx, r14
 	mov	rcx, [chkt_rCL]
 	call	__chk_ty_same

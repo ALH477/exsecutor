@@ -509,6 +509,31 @@ first parameter is the receiver and `x.m(a…)` passes `x` first; the tree
 has no receiver syntax and no `Self` (finding 6), and the probe's untyped
 `self` does not parse under §8.6.
 
+**Parameter 0 is not compared at the call site when the receiver is generic,
+and that is a narrowing with a named cost.** `__chk_ty_method`'s `.bound:` arm
+falls through into `.iface:`, so both a `T: Trait` receiver and a `dyn Trait`
+receiver resolve the member on the *interface* declaration — whose parameter 0
+is spelled with the interface's own name. `__chk_ty_call`'s `.args:` used to
+hand that parameter and the receiver to `__chk_ty_same`, which made `a.combine(b)`
+with `a: T`, `T: Summable` an `EXS-E0303` at `a`: a type parameter compared
+against the interface that bounds it, on code this section calls correctly
+resolved. §14 entry 24 carried it as a blocker and now runs. The comparison is
+skipped when the receiver's own type kind is `param` or `dyn`; a concrete
+receiver is still compared by identity (`tests/unit/chk_ty_method_bound.asm`).
+
+**Named non-goal.** A *malformed interface member* — `combine(self: u32, …)`
+written inside the `interfacies` itself — is no longer caught at the call
+site, because the call site is no longer where parameter 0's type is judged.
+That check never belonged there: the rule is a declaration-site one, *parameter
+0 of an `interfacies` member must be the interface's own name*, and it belongs
+in `sig.inc`'s signature loop alongside the other shape rules. It is not
+implemented. The candidate code is `EXS-E0303` (§13: type mismatch), which
+would make the diagnostic move from the use to the declaration rather than
+disappear — but whether a *declaration* shape rule should reuse the type-mismatch
+code or whether §13 owes a distinct one is a design question, and CLAUDE.md is
+explicit that a new code is a spec amendment first. `[OPEN]`; no code is
+invented here.
+
 What Stage 2 records for Stage 3's dictionary layout (spec §15 item 5): per
 `Impl`, its methods in **the interface's member order** (stable across
 impls — gendict answer 2, and what §7.2's "never change representation"
