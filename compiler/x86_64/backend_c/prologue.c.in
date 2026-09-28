@@ -4,7 +4,12 @@
  * reference backend's prelude blob is. */
 #include <stdint.h>
 #include <limits.h>
+#ifndef EXS_NEED_FLOAT
+#define EXS_NEED_FLOAT 1
+#endif
+#if EXS_NEED_FLOAT
 #include <float.h>
+#endif
 
 #if !defined(__GNUC__) && !defined(__clang__)
 # error "exsecutor: the emitted C is C11 plus a GCC/Clang extension set (ADR 0012)"
@@ -19,6 +24,7 @@
 # error "exsecutor: -ffinite-math-only is refused (spec 5.4)"
 #endif
 
+#if EXS_NEED_FLOAT
 /* ---- IEEE binary32/64: the numeric subset's one target (spec 5.4) -------
  * ADR 0012's rung (b), spelled with <float.h> exactly as ADR 0012 names it
  * -- freestanding-safe, unlike __STDC_IEC_559__ (which a freestanding
@@ -59,6 +65,7 @@ _Static_assert(FLT_MAX_EXP == 128 && DBL_MAX_EXP == 1024,
 #if defined(__GNUC__) && !defined(__clang__)
 # pragma GCC optimize("fp-contract=off")
 #endif
+#endif /* EXS_NEED_FLOAT */
 
 _Static_assert(CHAR_BIT == 8, "exsecutor: CHAR_BIT must be 8");
 _Static_assert((-1 & 3) == 3, "exsecutor: two's complement");
@@ -82,6 +89,7 @@ static inline uint64_t exsi_norm_u(uint64_t x, unsigned n)
 static inline uint64_t exsi_norm_i(uint64_t x, unsigned n)
 { uint64_t s = UINT64_C(1) << (n - 1); return ((x & exsi_mask(n)) ^ s) - s; }
 
+#if EXS_NEED_FLOAT
 /* Floats from their bits -- `fconst`'s round-trip. `fconst F bits` carries
  * the RAW bit pattern (ssa-ir.md 2.3: bits, never decimal text) and it must
  * come back exactly: payload bits included (a NaN's payload survives fneg),
@@ -191,6 +199,8 @@ static inline void exsi_st_vf64_8(unsigned char *p, exs_vf64_8 v)
  * could contract. */
 static inline int64_t exsi_i64_from_bits(uint64_t b)
 { int64_t s; __builtin_memcpy(&s, &b, sizeof s); return s; }
+
+#endif /* EXS_NEED_FLOAT */
 
 static inline uint64_t exsi_add_u(uint64_t a, uint64_t b, unsigned n)
 { uint64_t t = a + b;

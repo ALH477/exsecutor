@@ -273,6 +273,72 @@ proc __bfc_prog_hospes, ctx, hospes
 	return
 endp
 
+; __bfc_module_uses_float(module) -> eax = 1 if any instruction needs the
+; float/SIMD half of prologue.c.in, else 0. Opcode ranges from ir.inc:
+; FADD..FTOI 24-34, REDINIT..REDFIN 36-38, FCONST 60, VADD..VDIV 61-64.
+; Walk, do not add a BfaModule field: sizeof.BfaModule is load-bearing.
+proc __bfc_module_uses_float, module
+	uses	rbx, r12, r13
+	locals
+		slot nfunc, dd
+		slot ninst, dd
+	endl
+	mov	rdi, [module]
+	mov	rdi, [rdi + BfaModule.funcs]
+	mov	rax, [rdi + Vec.len]
+	mov	[nfunc], eax
+	xor	ebx, ebx
+  .floop:
+	mov	eax, ebx
+	cmp	eax, [nfunc]
+	jae	.no
+	mov	rdi, [module]
+	mov	rdi, [rdi + BfaModule.funcs]
+	mov	esi, ebx
+	call	vec_get
+	mov	r12, [rax]
+	mov	rdi, [r12 + BfaFunc.insts]
+	mov	rax, [rdi + Vec.len]
+	mov	[ninst], eax
+	mov	r13d, 1
+  .iloop:
+	mov	eax, r13d
+	cmp	eax, [ninst]
+	ja	.inext
+	mov	rdi, r12
+	mov	esi, r13d
+	call	bfa_inst_ptr
+	movzx	ecx, word [rax + BfaInst.op]
+	cmp	ecx, BFA_OP_FADD
+	jb	.notf
+	cmp	ecx, BFA_OP_FTOI
+	jbe	.yes
+  .notf:
+	cmp	ecx, BFA_OP_REDINIT
+	jb	.notred
+	cmp	ecx, BFA_OP_REDFIN
+	jbe	.yes
+  .notred:
+	cmp	ecx, BFA_OP_FCONST
+	je	.yes
+	cmp	ecx, BFA_OP_VADD
+	jb	.iinc
+	cmp	ecx, BFA_OP_VDIV
+	jbe	.yes
+  .iinc:
+	inc	r13d
+	jmp	.iloop
+  .inext:
+	inc	ebx
+	jmp	.floop
+  .no:
+	xor	eax, eax
+	return
+  .yes:
+	mov	eax, 1
+	return
+endp
+
 ; bfc_emit_unit(module, arena, hospes) -> rax = the bytes, rdx = how many.
 ; The whole translation unit. `hospes` is a BFC_HOSPES_* row.
 proc bfc_emit_unit, module, arena, hospes
@@ -302,6 +368,19 @@ proc bfc_emit_unit, module, arena, hospes
 	mov	rdx, 1
 	mov	rcx, 65536
 	call	vec_init
+
+	; ---- 0. which half of the prologue this unit needs -----------------
+	; `#define EXS_NEED_FLOAT N` must precede the verbatim blob so the
+	; `#ifndef` default in prologue.c.in does not force the SIMD half on.
+	mov	rdi, [module]
+	call	__bfc_module_uses_float
+	test	eax, eax
+	jnz	.needf
+	__bfc_emtxt "#define EXS_NEED_FLOAT 0", 10
+	jmp	.prol
+  .needf:
+	__bfc_emtxt "#define EXS_NEED_FLOAT 1", 10
+  .prol:
 
 	; ---- 1. the prologue and the helpers, verbatim ----------------------
 	mov	rdi, [ctx]
