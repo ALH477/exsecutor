@@ -1,6 +1,10 @@
 # Phrase grammar — design plan
 
-Status: `[OPEN]`. Design only; no parser exists and nothing below has run.
+Status: **built for Stage 1, then overtaken by the spec.** `compiler/x86_64/cst/`
+is the parser this document designed; spec §8.6 is now the normative grammar
+and wins where the two disagree (spec §8.6 says so). This file is the design
+record, not the grammar. The LL(1)-as-property claim and recovery beyond the
+Stage 1 sample stay `[UNTESTED]` in §8.6.
 `spec §N` cites `docs/spec/exsecutor-spec-v0.4.md`. Settled surface (spec §8.4
 tokens, spec §8.5 control flow) is taken as given. Every other item is one
 recommendation with its reason, for the owner to accept into the spec or

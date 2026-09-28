@@ -1,10 +1,11 @@
 # Checker — design plan (Stage 2)
 
-Status: **partly built.** `compiler/x86_64/checker/` holds passes 0, 1, 3 and 4
-(b9c0abc), under nine fixtures; pass 2 (types) and pass 5 (lexicon, built and
-not enabled per spec §3.3) are in progress. Section 2.2's range scan was
-corrected against the code (d8cd939). This line said "no checker exists"
-until 2026-09-10.
+Status: **passes 0–4 run on every compile** (README status block; spec §16
+Stage 2). Pass 5 (lexicon) is built, tested, and not called, because
+`lexicon.norma` does not exist (spec §3.3). This line said "under nine
+fixtures; pass 2 in progress" after that stopped being true. Section 2.2's
+range scan was corrected against the code (d8cd939). This line said "no
+checker exists" until 2026-09-10.
 `spec §N` cites `docs/spec/exsecutor-spec-v0.4.md`; `AST n.m` cites
 `docs/design/typed-ast.md`; `IR n.m` cites `docs/design/ssa-ir.md`; a file
 under `compiler/x86_64/ast/` is cited by name where it and AST n.m disagree —
