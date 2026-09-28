@@ -1,9 +1,9 @@
 # Checker — design plan (Stage 2)
 
-Status: **passes 0–4 run on every compile** (README status block; spec §16
-Stage 2). Pass 5 (lexicon) is built, tested, and not called, because
-`lexicon.norma` does not exist (spec §3.3). This line said "under nine
-fixtures; pass 2 in progress" after that stopped being true. Section 2.2's
+Status: **passes 0–5 run on every compile** (README status block; spec §16
+Stage 2). Pass 5 (lexicon) is called against `lexicon.norma`. This line said
+pass 5 was not called because the table did not exist, after that stopped
+being true. Section 2.2's
 range scan was corrected against the code (d8cd939). This line said "no
 checker exists" until 2026-09-10.
 `spec §N` cites `docs/spec/exsecutor-spec-v0.4.md`; `AST n.m` cites
