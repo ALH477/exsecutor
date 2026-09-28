@@ -101,10 +101,10 @@
 ; not assumed (`struct ChkFrame` is processed twice and `end struct` fails on
 ; the second with "symbol 'sizeof?.ChkFrame' is undefined").
 ;
-; When `checker-lexicon` lands, this line becomes `include
-; 'lexicon/lexicon.inc'` and that file opens with `include '../rows/rows.inc'`.
-; Ask; do not edit another agent's tree (.claude/agents/README.md, "The rule").
-include 'rows/rows.inc'
+; `checker-lexicon` is in the chain: this file includes it, and it opens
+; with `include '../rows/rows.inc'`. Do not include rows.inc here as well
+; (diamond: `struct ChkFrame` twice).
+include 'lexicon/lexicon.inc'
 
 ; chk_verify(chk_t, chk_nd, chk_ss) -- `chk_t` is the tree, `chk_nd` the number
 ; of diagnostics Stage 2 emitted, `chk_ss` the CHK_S_* mask of passes that ran.

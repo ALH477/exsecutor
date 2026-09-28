@@ -159,6 +159,9 @@
 include '../rows/rows.inc'
 include 'morphemes.inc'
 
+lx_initium_lit db 'initium'
+LX_INITIUM_LEN = 7
+
 CHK_LX_DEPTH_MAX = 32
 CHK_LX_MAP_BUCKETS_MIN = 16
 
@@ -895,6 +898,48 @@ proc __chk_lx_find_base, lx_wk, lx_ptr, lx_len
 	return
 endp
 
+; __chk_lx_match_loan(lx_ptr, lx_len) -> eax = 1 if the exact span is a
+; harvested loan, edx = its LEXKIND_*. Derivation is tried first; this is
+; only reached on a miss.
+proc __chk_lx_match_loan, lx_ptr, lx_len
+	uses	rbx, r12
+	locals
+		slot	lx_i, dq
+	endl
+	mov	eax, LEX_LOAN_COUNT
+	test	eax, eax
+	jz	.no
+	mov	qword [lx_i], 1
+  .loop:
+	mov	rax, [lx_i]
+	cmp	eax, LEX_LOAN_COUNT
+	ja	.no
+	lea	rdi, [lex_loan_text]
+	mov	rsi, [lx_i]
+	call	ast_name_at
+	cmp	rdx, [lx_len]
+	jne	.next
+	mov	rdi, [lx_ptr]
+	mov	rsi, rax
+	mov	rdx, [lx_len]
+	call	__chk_lx_beq
+	test	eax, eax
+	jz	.next
+	mov	rax, [lx_i]
+	dec	rax
+	lea	rdi, [lex_loan_kind]
+	movzx	edx, byte [rdi + rax]
+	mov	eax, 1
+	return
+  .next:
+	inc	qword [lx_i]
+	jmp	.loop
+  .no:
+	xor	eax, eax
+	xor	edx, edx
+	return
+endp
+
 ; =============================================================================
 ; pass 5 itself
 ; =============================================================================
@@ -968,6 +1013,16 @@ proc __chk_lx_check_decl, lx_wk, lx_d
 	call	intern_bytes
 	mov	[lx_nptr], rax
 	mov	[lx_nlen], rdx
+
+	cmp	qword [lx_nlen], LX_INITIUM_LEN
+	jne	.notinitium
+	lea	rdi, [lx_initium_lit]
+	mov	rsi, [lx_nptr]
+	mov	rdx, LX_INITIUM_LEN
+	call	__chk_lx_beq
+	test	eax, eax
+	jnz	.out
+  .notinitium:
 
 	; §3.1: one qualifier after the FIRST '_'; only the part before it
 	; decomposes.
@@ -1068,6 +1123,52 @@ proc __chk_lx_check_decl, lx_wk, lx_d
 	jmp	.out
 
   .e0601:
+	mov	rdi, [lx_nptr]
+	mov	rsi, [lx_blen]
+	call	__chk_lx_match_loan
+	test	eax, eax
+	jz	.e0601real
+	mov	ecx, edx
+	mov	rax, [lx_dkind]
+	cmp	ecx, LEXKIND_FN
+	jne	.loan_notfn
+	cmp	rax, AST_D_FN
+	je	.out
+	cmp	rax, AST_D_EXTERNFN
+	je	.out
+	cmp	rax, AST_D_MEMBER
+	je	.out
+	jmp	.loan_bad
+  .loan_notfn:
+	cmp	ecx, LEXKIND_STRUCT
+	jne	.loan_notstruct
+	cmp	rax, AST_D_STRUCT
+	je	.out
+	jmp	.loan_bad
+  .loan_notstruct:
+	cmp	ecx, LEXKIND_IFACE
+	jne	.loan_notiface
+	cmp	rax, AST_D_IFACE
+	je	.out
+	jmp	.loan_bad
+  .loan_notiface:
+	cmp	ecx, LEXKIND_TYPUS
+	jne	.loan_bad
+	cmp	rax, AST_D_TYPUS
+	je	.out
+  .loan_bad:
+	mov	rdi, [rbx + ChkLxWork.lxw_ctx]
+	mov	rsi, CHK_P_LEXICON
+	mov	rdx, 602
+	mov	rcx, [lx_dnode]
+	call	chk_raise
+	mov	r14, rax
+	mov	rdi, [rbx + ChkLxWork.lxw_ctx]
+	mov	rsi, r14
+	mov	rdx, [lx_d]
+	call	__chk_at_decl
+	jmp	.out
+  .e0601real:
 	mov	rdi, [rbx + ChkLxWork.lxw_ctx]
 	mov	rsi, CHK_P_LEXICON
 	mov	rdx, 601

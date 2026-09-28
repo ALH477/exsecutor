@@ -72,9 +72,10 @@
 ; Spec: docs/spec/exsecutor-spec-v0.4.md §3.1, §3.3, §3.4, §3.5, §3.6, §3.8.
 ; -----------------------------------------------------------------------------
 
-LEX_ROOT_COUNT = 14
+LEX_ROOT_COUNT = 18
 LEX_SUFFIX_COUNT = 6
 LEX_PREFIX_COUNT = 8
+LEX_LOAN_COUNT = 141
 
 ; ---- prefix-law codes -------------------------------------------------------
 ; 0 is never a real law (NONE is not emitted by any table row); a law field
@@ -122,6 +123,10 @@ lex_root_present:
 	db	4,'mitt'
 	db	4,'iung'
 	db	4,'solv'
+	db	5,'salut'
+	db	6,'imprim'
+	db	6,'applic'
+	db	7,'constru'
 LEX_ROOT_PRESENT_LEN = $ - lex_root_present
 
 lex_root_supine:
@@ -139,23 +144,31 @@ lex_root_supine:
 	db	4,'miss'
 	db	5,'iunct'
 	db	5,'solut'
+	db	7,'salutat'
+	db	7,'impress'
+	db	8,'applicat'
+	db	9,'construct'
 LEX_ROOT_SUPINE_LEN = $ - lex_root_supine
 
 lex_root_imperative:
 	db	4,'lege'
-	db	0,''
-	db	0,''
-	db	0,''
-	db	0,''
-	db	0,''
-	db	0,''
-	db	0,''
-	db	0,''
-	db	0,''
-	db	0,''
-	db	0,''
-	db	0,''
-	db	0,''
+	db	6,'scribe'
+	db	4,'seca'
+	db	5,'plica'
+	db	6,'numera'
+	db	6,'ordina'
+	db	5,'seque'
+	db	4,'cape'
+	db	4,'pone'
+	db	4,'tene'
+	db	5,'verte'
+	db	5,'mitte'
+	db	5,'iunge'
+	db	5,'solve'
+	db	6,'saluta'
+	db	7,'imprime'
+	db	7,'applica'
+	db	8,'construe'
 LEX_ROOT_IMPERATIVE_LEN = $ - lex_root_imperative
 
 lex_root_gloss:
@@ -173,6 +186,10 @@ lex_root_gloss:
 	db	4,'send'
 	db	4,'join'
 	db	6,'loosen'
+	db	5,'greet'
+	db	5,'press'
+	db	5,'apply'
+	db	5,'build'
 LEX_ROOT_GLOSS_LEN = $ - lex_root_gloss
 
 ; ---- suffixes, §3.4 table order ------------------------------------------------
@@ -222,3 +239,296 @@ lex_prefix_law:
 	db	LEXLAW_ARITY2	; con- (takes two or more of the base's operand type)
 	db	LEXLAW_POSITIONAL	; prae- (positional only)
 	db	LEXLAW_POSITIONAL	; sub- (positional only)
+
+; ---- loans, harvest insertion order ------------------------------------------
+; Whole public names that do not derive over the root table. Kind is the
+; declared kind they are accepted as. Derivation is tried first; a name
+; that derives with the wrong kind (lector as functio) is EXS-E0602 and
+; never reaches this table.
+lex_loan_text:
+	db	7,'auditus'
+	db	7,'Auditum'
+	db	6,'Status'
+	db	6,'bassus'
+	db	5,'melos'
+	db	8,'Exemplum'
+	db	5,'Caput'
+	db	5,'caput'
+	db	5,'sinus'
+	db	6,'phasis'
+	db	4,'sona'
+	db	5,'datum'
+	db	11,'codificatum'
+	db	9,'intertexe'
+	db	11,'praeambulum'
+	db	10,'synchronia'
+	db	5,'tonus'
+	db	10,'DeModFrame'
+	db	11,'redundantia'
+	db	6,'tabula'
+	db	8,'signatum'
+	db	3,'vis'
+	db	4,'nota'
+	db	7,'acquire'
+	db	6,'mollia'
+	db	10,'decodifica'
+	db	8,'residuum'
+	db	7,'imprime'
+	db	6,'quotus'
+	db	10,'multiplica'
+	db	10,'Metronomus'
+	db	10,'metronomum'
+	db	10,'metronomus'
+	db	11,'celeritatem'
+	db	5,'pulsa'
+	db	7,'fractio'
+	db	9,'proportio'
+	db	6,'tempus'
+	db	6,'pulsus'
+	db	4,'Hora'
+	db	4,'hora'
+	db	4,'dies'
+	db	9,'Horologia'
+	db	4,'arma'
+	db	9,'exstingue'
+	db	6,'restat'
+	db	6,'excita'
+	db	8,'Mandatum'
+	db	8,'mandatum'
+	db	4,'imum'
+	db	8,'tempus24'
+	db	7,'revolve'
+	db	8,'Specimen'
+	db	8,'dimidium'
+	db	8,'specimen'
+	db	11,'Consonantia'
+	db	12,'consonantiam'
+	db	7,'reditus'
+	db	10,'dislocatio'
+	db	9,'Consessus'
+	db	9,'consessum'
+	db	5,'sedes'
+	db	5,'habet'
+	db	7,'paratus'
+	db	8,'inscribe'
+	db	4,'lege'
+	db	11,'revertendum'
+	db	4,'alea'
+	db	5,'summa'
+	db	6,'scribe'
+	db	6,'saluta'
+	db	10,'signaculum'
+	db	7,'abyssus'
+	db	9,'cuniculus'
+	db	5,'ignis'
+	db	6,'plasma'
+	db	6,'Pluvia'
+	db	6,'pluvia'
+	db	6,'signum'
+	db	4,'octo'
+	db	9,'distantia'
+	db	9,'reciproca'
+	db	9,'tangentes'
+	db	6,'formae'
+	db	5,'nomen'
+	db	6,'versus'
+	db	7,'littera'
+	db	7,'Stellae'
+	db	7,'stellae'
+	db	7,'titulus'
+	db	4,'vita'
+	db	8,'Indicium'
+	db	8,'Recordum'
+	db	4,'Octo'
+	db	5,'Nomen'
+	db	5,'Arbor'
+	db	4,'Nodi'
+	db	13,'redundantia32'
+	db	8,'indicium'
+	db	8,'recordum'
+	db	7,'indicem'
+	db	5,'arbor'
+	db	6,'clavem'
+	db	10,'documentum'
+	db	8,'suffixum'
+	db	9,'Registrum'
+	db	8,'Receptum'
+	db	4,'para'
+	db	7,'concede'
+	db	5,'migra'
+	db	4,'adeo'
+	db	4,'aera'
+	db	5,'signa'
+	db	5,'vitia'
+	db	6,'accipe'
+	db	9,'normaliza'
+	db	7,'corrige'
+	db	7,'combina'
+	db	9,'Capitulum'
+	db	5,'Malum'
+	db	6,'primum'
+	db	7,'applica'
+	db	9,'identitas'
+	db	5,'ataca'
+	db	6,'nocens'
+	db	8,'exterior'
+	db	5,'erade'
+	db	6,'lector'
+	db	6,'satura'
+	db	6,'Malum2'
+	db	8,'Syndroma'
+	db	8,'syndroma'
+	db	7,'obsigna'
+	db	6,'vacuum'
+	db	5,'total'
+	db	5,'mixta'
+	db	3,'Par'
+	db	5,'imple'
+	db	4,'orna'
+	db	3,'Tab'
+	db	3,'fac'
+LEX_LOAN_TEXT_LEN = $ - lex_loan_text
+
+lex_loan_kind:
+	db	LEXKIND_FN	; auditus
+	db	LEXKIND_STRUCT	; Auditum
+	db	LEXKIND_STRUCT	; Status
+	db	LEXKIND_FN	; bassus
+	db	LEXKIND_FN	; melos
+	db	LEXKIND_STRUCT	; Exemplum
+	db	LEXKIND_STRUCT	; Caput
+	db	LEXKIND_FN	; caput
+	db	LEXKIND_FN	; sinus
+	db	LEXKIND_FN	; phasis
+	db	LEXKIND_FN	; sona
+	db	LEXKIND_FN	; datum
+	db	LEXKIND_FN	; codificatum
+	db	LEXKIND_FN	; intertexe
+	db	LEXKIND_FN	; praeambulum
+	db	LEXKIND_FN	; synchronia
+	db	LEXKIND_FN	; tonus
+	db	LEXKIND_STRUCT	; DeModFrame
+	db	LEXKIND_FN	; redundantia
+	db	LEXKIND_FN	; tabula
+	db	LEXKIND_FN	; signatum
+	db	LEXKIND_FN	; vis
+	db	LEXKIND_FN	; nota
+	db	LEXKIND_FN	; acquire
+	db	LEXKIND_FN	; mollia
+	db	LEXKIND_FN	; decodifica
+	db	LEXKIND_FN	; residuum
+	db	LEXKIND_FN	; imprime
+	db	LEXKIND_FN	; quotus
+	db	LEXKIND_FN	; multiplica
+	db	LEXKIND_STRUCT	; Metronomus
+	db	LEXKIND_FN	; metronomum
+	db	LEXKIND_FN	; metronomus
+	db	LEXKIND_FN	; celeritatem
+	db	LEXKIND_FN	; pulsa
+	db	LEXKIND_FN	; fractio
+	db	LEXKIND_FN	; proportio
+	db	LEXKIND_FN	; tempus
+	db	LEXKIND_FN	; pulsus
+	db	LEXKIND_STRUCT	; Hora
+	db	LEXKIND_FN	; hora
+	db	LEXKIND_FN	; dies
+	db	LEXKIND_STRUCT	; Horologia
+	db	LEXKIND_FN	; arma
+	db	LEXKIND_FN	; exstingue
+	db	LEXKIND_FN	; restat
+	db	LEXKIND_FN	; excita
+	db	LEXKIND_STRUCT	; Mandatum
+	db	LEXKIND_FN	; mandatum
+	db	LEXKIND_FN	; imum
+	db	LEXKIND_FN	; tempus24
+	db	LEXKIND_FN	; revolve
+	db	LEXKIND_STRUCT	; Specimen
+	db	LEXKIND_FN	; dimidium
+	db	LEXKIND_FN	; specimen
+	db	LEXKIND_STRUCT	; Consonantia
+	db	LEXKIND_FN	; consonantiam
+	db	LEXKIND_FN	; reditus
+	db	LEXKIND_FN	; dislocatio
+	db	LEXKIND_STRUCT	; Consessus
+	db	LEXKIND_FN	; consessum
+	db	LEXKIND_FN	; sedes
+	db	LEXKIND_FN	; habet
+	db	LEXKIND_FN	; paratus
+	db	LEXKIND_FN	; inscribe
+	db	LEXKIND_FN	; lege
+	db	LEXKIND_FN	; revertendum
+	db	LEXKIND_FN	; alea
+	db	LEXKIND_FN	; summa
+	db	LEXKIND_FN	; scribe
+	db	LEXKIND_FN	; saluta
+	db	LEXKIND_FN	; signaculum
+	db	LEXKIND_FN	; abyssus
+	db	LEXKIND_FN	; cuniculus
+	db	LEXKIND_FN	; ignis
+	db	LEXKIND_FN	; plasma
+	db	LEXKIND_STRUCT	; Pluvia
+	db	LEXKIND_FN	; pluvia
+	db	LEXKIND_FN	; signum
+	db	LEXKIND_FN	; octo
+	db	LEXKIND_FN	; distantia
+	db	LEXKIND_FN	; reciproca
+	db	LEXKIND_FN	; tangentes
+	db	LEXKIND_FN	; formae
+	db	LEXKIND_FN	; nomen
+	db	LEXKIND_FN	; versus
+	db	LEXKIND_FN	; littera
+	db	LEXKIND_STRUCT	; Stellae
+	db	LEXKIND_FN	; stellae
+	db	LEXKIND_FN	; titulus
+	db	LEXKIND_FN	; vita
+	db	LEXKIND_STRUCT	; Indicium
+	db	LEXKIND_STRUCT	; Recordum
+	db	LEXKIND_STRUCT	; Octo
+	db	LEXKIND_STRUCT	; Nomen
+	db	LEXKIND_STRUCT	; Arbor
+	db	LEXKIND_STRUCT	; Nodi
+	db	LEXKIND_FN	; redundantia32
+	db	LEXKIND_FN	; indicium
+	db	LEXKIND_FN	; recordum
+	db	LEXKIND_FN	; indicem
+	db	LEXKIND_FN	; arbor
+	db	LEXKIND_FN	; clavem
+	db	LEXKIND_FN	; documentum
+	db	LEXKIND_FN	; suffixum
+	db	LEXKIND_STRUCT	; Registrum
+	db	LEXKIND_STRUCT	; Receptum
+	db	LEXKIND_FN	; para
+	db	LEXKIND_FN	; concede
+	db	LEXKIND_FN	; migra
+	db	LEXKIND_FN	; adeo
+	db	LEXKIND_FN	; aera
+	db	LEXKIND_FN	; signa
+	db	LEXKIND_FN	; vitia
+	db	LEXKIND_FN	; accipe
+	db	LEXKIND_FN	; normaliza
+	db	LEXKIND_FN	; corrige
+	db	LEXKIND_FN	; combina
+	db	LEXKIND_STRUCT	; Capitulum
+	db	LEXKIND_STRUCT	; Malum
+	db	LEXKIND_FN	; primum
+	db	LEXKIND_FN	; applica
+	db	LEXKIND_FN	; identitas
+	db	LEXKIND_FN	; ataca
+	db	LEXKIND_FN	; nocens
+	db	LEXKIND_FN	; exterior
+	db	LEXKIND_FN	; erade
+	db	LEXKIND_FN	; lector
+	db	LEXKIND_FN	; satura
+	db	LEXKIND_STRUCT	; Malum2
+	db	LEXKIND_STRUCT	; Syndroma
+	db	LEXKIND_FN	; syndroma
+	db	LEXKIND_FN	; obsigna
+	db	LEXKIND_FN	; vacuum
+	db	LEXKIND_FN	; total
+	db	LEXKIND_FN	; mixta
+	db	LEXKIND_STRUCT	; Par
+	db	LEXKIND_FN	; imple
+	db	LEXKIND_FN	; orna
+	db	LEXKIND_STRUCT	; Tab
+	db	LEXKIND_FN	; fac
+

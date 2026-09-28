@@ -55,7 +55,7 @@
 ; | 2 | types   | `checker-types`  | DONE -- `chk_types`                       |
 ; | 3 | rows    | `checker-rows`   | DONE -- `chk_rows`, called when CHK_S_TYPES is set |
 ; | 4 | layout  | `checker-rows`   | DONE -- `chk_layout`, called when CHK_S_TYPES is set |
-; | 5 | lexicon | `checker-lexicon`| WRITTEN, NOT IN THE BUILD -- see below     |
+; | 5 | lexicon | `checker-lexicon`| DONE -- `chk_lexicon`                     |
 ; | 6 | verify  | `checker-resolve`| DONE -- `chk_verify`, gated on CHK_S_*    |
 ;
 ; This table read "2 | types | not written" and "5 | lexicon | not written"
@@ -174,13 +174,8 @@ proc chk_run, chk_c
 	rassert	esi ne 0	; spec §9.5: no default target; the driver sets it
 	call	chk_layout		; pass 4 -- `checker-rows`
   .no_rows:
-	;
-	;	mov	rdi, rbx
-	;	call	chk_lexicon		; pass 5 -- `checker-lexicon` (built against
-	;					; §3.7 and entry 14, NOT ENABLED: spec §3.3,
-	;					; and not in verify.inc's chain either, so
-	;					; this call needs that include first)
-	;
+	mov	rdi, rbx
+	call	chk_lexicon		; pass 5 -- lexicon.norma; initium skipped
 	; Each pass takes what it needs, raises through `chk_raise*` with its own
 	; CHK_P_* pass number, and ORs its CHK_S_* bit into `ChkCtx.stages` on the
 	; way out, the way `chk_resolve` does. `chk_verify` then checks exactly the
