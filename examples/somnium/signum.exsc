@@ -80,8 +80,8 @@ publica functio signum_rota(exsg: &mutabilis acies<u8, 44801>, ph: mensura) -> u
 publica functio signum_compone(fb: &mutabilis acies<u8, 48000>, magnum: acies<u8, 786432>, ph: mensura) -> u32 {
     firma f: acies<u8, 126> = formae();
     firma nm: acies<u8, 9> = nomen();
-    firma v1: acies<u8, 16> = versus_primus();
-    firma v2: acies<u8, 15> = versus_secundus();
+    firma v1: acies<u8, 16> = pinge_versus_primus();
+    firma v2: acies<u8, 15> = pinge_versus_secundus();
 
     // The model fills rows 80..400 and columns 96..416 of the engine's
     // frame; that square becomes an 80 x 80 box at (40, 2), each output

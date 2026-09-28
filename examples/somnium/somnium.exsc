@@ -149,11 +149,11 @@ publica functio nomen() -> acies<u8, 9> {
     redde [10, 7, 6, 4, 1, 12, 2, 5, 17];
 }
 
-publica functio versus_primus() -> acies<u8, 16> {
+publica functio pinge_versus_primus() -> acies<u8, 16> {
     redde [3, 16, 13, 3, 2, 15, 14, 10, 12, 0, 11, 6, 9, 16, 6, 14];
 }
 
-publica functio versus_secundus() -> acies<u8, 15> {
+publica functio pinge_versus_secundus() -> acies<u8, 15> {
     redde [11, 15, 9, 2, 14, 6, 8, 0, 2, 3, 2, 6, 9, 6, 14];
 }
 

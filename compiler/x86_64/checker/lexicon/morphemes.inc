@@ -75,7 +75,7 @@
 LEX_ROOT_COUNT = 18
 LEX_SUFFIX_COUNT = 6
 LEX_PREFIX_COUNT = 8
-LEX_LOAN_COUNT = 141
+LEX_LOAN_COUNT = 187
 
 ; ---- prefix-law codes -------------------------------------------------------
 ; 0 is never a real law (NONE is not emitted by any table row); a law field
@@ -331,7 +331,7 @@ lex_loan_text:
 	db	9,'tangentes'
 	db	6,'formae'
 	db	5,'nomen'
-	db	6,'versus'
+	db	5,'pinge'
 	db	7,'littera'
 	db	7,'Stellae'
 	db	7,'stellae'
@@ -382,11 +382,57 @@ lex_loan_text:
 	db	6,'vacuum'
 	db	5,'total'
 	db	5,'mixta'
+	db	10,'incrementa'
+	db	6,'maxima'
+	db	7,'duplica'
+	db	6,'minima'
+	db	6,'applic'
+	db	4,'unum'
+	db	3,'duo'
+	db	7,'garbage'
 	db	3,'Par'
 	db	5,'imple'
 	db	4,'orna'
 	db	3,'Tab'
 	db	3,'fac'
+	db	3,'dot'
+	db	1,'f'
+	db	11,'placeholder'
+	db	3,'zzz'
+	db	3,'leg'
+	db	6,'lector'
+	db	9,'legibilis'
+	db	9,'legibilis'
+	db	6,'relege'
+	db	12,'conlegibilis'
+	db	7,'conlege'
+	db	12,'conlegibilis'
+	db	9,'reconlege'
+	db	3,'usa'
+	db	6,'vocans'
+	db	6,'caller'
+	db	4,'Tres'
+	db	8,'Quattuor'
+	db	1,'h'
+	db	2,'ad'
+	db	2,'ex'
+	db	4,'muta'
+	db	3,'per'
+	db	1,'P'
+	db	5,'malus'
+	db	9,'longitudo'
+	db	5,'plica'
+	db	4,'quot'
+	db	4,'ipse'
+	db	1,'M'
+	db	1,'g'
+	db	1,'S'
+	db	1,'X'
+	db	3,'una'
+	db	4,'unus'
+	db	4,'tres'
+	db	8,'quattuor'
+	db	5,'Minor'
 LEX_LOAN_TEXT_LEN = $ - lex_loan_text
 
 lex_loan_kind:
@@ -475,7 +521,7 @@ lex_loan_kind:
 	db	LEXKIND_FN	; tangentes
 	db	LEXKIND_FN	; formae
 	db	LEXKIND_FN	; nomen
-	db	LEXKIND_FN	; versus
+	db	LEXKIND_FN	; pinge
 	db	LEXKIND_FN	; littera
 	db	LEXKIND_STRUCT	; Stellae
 	db	LEXKIND_FN	; stellae
@@ -526,9 +572,57 @@ lex_loan_kind:
 	db	LEXKIND_FN	; vacuum
 	db	LEXKIND_FN	; total
 	db	LEXKIND_FN	; mixta
+	db	LEXKIND_FN	; incrementa
+	db	LEXKIND_FN	; maxima
+	db	LEXKIND_FN	; duplica
+	db	LEXKIND_FN	; minima
+	db	LEXKIND_FN	; applic
+	db	LEXKIND_FN	; unum
+	db	LEXKIND_FN	; duo
+	db	LEXKIND_FN	; garbage
 	db	LEXKIND_STRUCT	; Par
 	db	LEXKIND_FN	; imple
 	db	LEXKIND_FN	; orna
 	db	LEXKIND_STRUCT	; Tab
 	db	LEXKIND_FN	; fac
+	db	LEXKIND_FN	; dot
+	db	LEXKIND_FN	; f
+	db	LEXKIND_FN	; placeholder
+	db	LEXKIND_FN	; zzz
+	db	LEXKIND_FN	; leg
+	db	LEXKIND_STRUCT	; lector
+	db	LEXKIND_IFACE	; legibilis
+	db	LEXKIND_FN	; legibilis
+	db	LEXKIND_FN	; relege
+	db	LEXKIND_FN	; conlegibilis
+	db	LEXKIND_FN	; conlege
+	db	LEXKIND_IFACE	; conlegibilis
+	db	LEXKIND_FN	; reconlege
+	db	LEXKIND_FN	; usa
+	db	LEXKIND_FN	; vocans
+	db	LEXKIND_FN	; caller
+	db	LEXKIND_STRUCT	; Tres
+	db	LEXKIND_STRUCT	; Quattuor
+	db	LEXKIND_FN	; h
+	db	LEXKIND_FN	; ad
+	db	LEXKIND_FN	; ex
+	db	LEXKIND_FN	; muta
+	db	LEXKIND_FN	; per
+	db	LEXKIND_STRUCT	; P
+	db	LEXKIND_FN	; malus
+	db	LEXKIND_FN	; longitudo
+	db	LEXKIND_FN	; plica
+	db	LEXKIND_FN	; quot
+	db	LEXKIND_FN	; ipse
+	db	LEXKIND_STRUCT	; M
+	db	LEXKIND_FN	; g
+	db	LEXKIND_STRUCT	; S
+	db	LEXKIND_IFACE	; X
+	db	LEXKIND_FN	; una
+	db	LEXKIND_FN	; unus
+	db	LEXKIND_FN	; tres
+	db	LEXKIND_FN	; quattuor
+	db	LEXKIND_STRUCT	; Minor
+
+lex_initium_lit db 'initium'
 

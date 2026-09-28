@@ -16,9 +16,8 @@ import re
 import sys
 
 DECL_RE = re.compile(
-    r"^publica\s+(functio|structura|interfacies|typus)\s+"
+    r"publica\s+(functio|structura|interfacies|typus)\s+"
     r"([A-Za-z_][A-Za-z0-9_]*)",
-    re.M,
 )
 
 KIND = {
@@ -32,12 +31,12 @@ KIND = {
 def walk(paths):
     files = []
     for p in paths:
-        if os.path.isfile(p) and p.endswith(".exsc"):
+        if os.path.isfile(p) and (p.endswith(".exsc") or p.endswith(".asm")):
             files.append(p)
             continue
         for root, _dirs, names in os.walk(p):
             for n in names:
-                if n.endswith(".exsc"):
+                if n.endswith(".exsc") or n.endswith(".asm"):
                     files.append(os.path.join(root, n))
     files.sort()
     return files
