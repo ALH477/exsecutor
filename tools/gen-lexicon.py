@@ -556,7 +556,7 @@ def main():
     prefixes = parse_prefixes(lines)
     harvest_paths = a.harvest
     if harvest_paths is None:
-        harvest_paths = ["examples", "tests"]
+        harvest_paths = ["examples", "tests/programs", "tests/conformance"]
     loans = parse_loans(harvest_paths) if harvest_paths else []
 
     print(f"roots: {len(roots)}")
