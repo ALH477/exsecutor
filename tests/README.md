@@ -13,9 +13,9 @@ calls):
    four fixtures.
 2. **`tests/conformance/`** — spec §14's suite: 28 entries, 26 with a
    fixture file here (27 and 28 are carried by `tests/programs/`
-   directories, below). **21 of the 26 fixtures run, and 5 are `DEFERRED`;
+   directories, below). **22 of the 26 fixtures run, and 4 are `DEFERRED`;
    with entries 27 and 28, which have no fixture and are carried by
-   `tests/programs/`, 23 of the spec's 28 entries run.** This said "17 run,
+   `tests/programs/`, 24 of the spec's 28 entries run.** This said "17 run,
    9 `DEFERRED`" until 2026-09-27 — stale from 80b9390 and 8e746f3, which
    moved entries 12 and 24 to run without this paragraph following them, and
    `tests/run.sh`'s `run_floor` sat at 17 with it, so neither document would
@@ -92,16 +92,15 @@ calls):
    the same correction, and marks that entry's backend parity and
    big-endian run `[UNTESTED]`.
 
-   The other 5 — 2, 4, 14, 15, 17 — report **`DEFERRED`**
+   The other 4 — 2, 4, 15, 17 — report **`DEFERRED`**
    with what they wait on, each fixture's header naming the current
    blocker: brand syntax `[OPEN]` in §8.6 (2); no import closure
-   (4); no `lexicon.norma`, §3.3's table being fourteen illustrative roots
-   (14); no way for a source program to construct a `refero` value (15 —
+   (4); no way for a source program to construct a `refero` value (15 —
    the ARC runtime exists and `tests/unit/prelude_arc.asm` exercises its
    saturation, so this entry's header stopped claiming otherwise on
    2026-09-27); no riscv64 reference backend to compare against (17). They
    are **never counted as passing**. A suite reporting 26/26 while running
-   21 would be worse than no suite.
+   22 would be worse than no suite.
 
    **Entry 16 moved to run on 2026-09-27**, and not by gaining a backend,
    which is what its `needs=` had named: `tools/reproduce.sh` now compiles

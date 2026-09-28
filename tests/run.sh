@@ -648,7 +648,7 @@ run_conformance_tests() {
   echo "== conformance suite (tests/conformance/, spec §14) =="
   local dir="$REPO_ROOT/tests/conformance"
   local fixture_floor=26
-  local run_floor=21
+  local run_floor=22
 
   if [[ ! -d "$dir" ]]; then
     bad "tests/conformance/ does not exist"
