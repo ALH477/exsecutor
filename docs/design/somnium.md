@@ -412,3 +412,37 @@ floor.
 
 `scribe_tabulam`'s own stack frame went from 176 bytes to 48: the loop
 counter and the running total are gone with the loop.
+
+### 10.2 The read side, and why it was nearly missed
+
+The change above left `machina`'s three READ sites byte-at-a-time, and
+nothing in §10.1's table could have shown it: a request is read once, so its
+cost divides by the frame count and vanishes. It was found by the Oligarchy
+screensaver session reading the emitted unit and noticing that
+`exsrt_lector_lege_octetos` was declared and never called — **spec §4.6's
+row 12 had no caller in any shipped program.** Measured, it was not small:
+
+| | before | after |
+|---|---|---|
+| `read(2)` for a somnium 8 request | **44,819** | **3** |
+| one-frame signum request, total | 0.067 s | **0.039 s** |
+| a REFUSED signum request (model one byte short) | 0.028 s | **0.001 s** |
+
+The last row is the honest isolation, because it renders nothing: reading
+and refusing a 44,801-byte model cost 28 ms and now costs 1. The middle row
+is the same 28 ms inside a run that also draws a frame. **The per-frame
+table in §10.1 does not move at all**, and that is correct rather than
+disappointing — it is why a frame-time harness could not see this and a
+reader of the emitted unit could.
+
+Two of the three sites changed. The 17-byte request and the 44,801-byte
+model are now one `lege_octetos` each, with a short count as the refusal —
+which is exactly what the per-byte loops were testing when they compared
+each `lege_octeto` against 256, so `somnium_brevis` (16 bytes) and
+`somnium_signum_brevis` (a model one byte short) still refuse, unchanged.
+The third site, the end-of-input check, KEEPS `lege_octeto`: it reads one
+byte and wants to be told there is no byte, and 256 is precisely that
+answer. A count-returning call would say the same thing less directly.
+
+`machina`'s stack frame went 3,031,632 → 3,031,408 bytes with the two loop
+counters.
