@@ -978,15 +978,15 @@ segment readable
   ; `redde 0 0;` is §8.6's own "every simple statement ends with a
   ; semicolon" case. It sits on line 3 of the second file, which is what
   ; checks 41/42 require the rendering to say.
-  dv_src_q1 db '// q1',10,'publica functio unus() -> u8 {',10,'    redde 0;',10,'}',10
+  dv_src_q1 db '// q1',10,'publica functio lege() -> u8 {',10,'    redde 0;',10,'}',10
   DV_SRC_Q1_LEN = $ - dv_src_q1
-  dv_src_q2 db '// q2',10,'publica functio duo() -> u8 {',10,'    redde 0 0;',10,'}',10
+  dv_src_q2 db '// q2',10,'publica functio lege() -> u8 {',10,'    redde 0 0;',10,'}',10
   DV_SRC_Q2_LEN = $ - dv_src_q2
-  dv_src_q3 db '// q3',10,'publica functio tres() -> u8 {',10,'    redde 0;',10,'}',10
+  dv_src_q3 db '// q3',10,'publica functio saluta() -> u8 {',10,'    redde 0;',10,'}',10
   DV_SRC_Q3_LEN = $ - dv_src_q3
 
   ; CRLF, which §8.1 rejects with EXS-E0106 -- the gate, not the parser.
-  dv_src_qc db '// qc',13,10,'publica functio quattuor() -> u8 {',13,10,'    redde 0;',13,10,'}',13,10
+  dv_src_qc db '// qc',13,10,'publica functio lege() -> u8 {',13,10,'    redde 0;',13,10,'}',13,10
   DV_SRC_QC_LEN = $ - dv_src_qc
 
   dv_s_exsc     db 'exsc',0
