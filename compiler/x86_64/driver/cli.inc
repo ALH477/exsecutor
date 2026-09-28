@@ -197,6 +197,7 @@ struct DrvCtx
 				; arena. `chk_init` is called fresh each run and
 				; re-zeroes what it owns; nothing here needs the
 				; block pre-zeroed the way BSS already leaves it.
+	field potestates, dd	; 1 once `ego --potestates` has been given
 end struct
 
 ; ---- the subcommand set, exactly §12's list --------------------------------
@@ -261,6 +262,10 @@ DRV_EMIT_C      = 3
 ; and these two stay numbered after it.
 DRV_EMIT_H      = 4
 DRV_EMIT_RS     = 5
+; `exsc ego --emitte` is a FLAG, not a stage dump: it writes the generated
+; ego file to -o OUT. Distinct from `c` so aedifica's valued --emitte is
+; unchanged.
+DRV_EMIT_EGO    = 6
 
 ; ---- the closed `--hospes` table, c-backend.md D2 --------------------------
 ; Spec 9.5 gives `--hospes` no default and forbids guessing one; what was
@@ -300,6 +305,7 @@ drv_o_env    db '--env',0
 drv_o_epoch  db '--epoch',0
 drv_o_diagn  db '--diagnostica',0
 drv_o_emitte db '--emitte',0
+drv_o_potestates db '--potestates',0
 drv_v_textus db 'textus',0
 drv_v_json   db 'json',0
 drv_v_tokens db 'tokens',0
@@ -799,6 +805,7 @@ proc drv_ctx_reset
 	mov	dword [r15 + DrvCtx.nsrc],     0
 	mov	dword [r15 + DrvCtx.emitte],    DRV_EMIT_NONE
 	mov	dword [r15 + DrvCtx.emitteset], 0
+	mov	dword [r15 + DrvCtx.potestates], 0
 	mov	qword [r15 + DrvCtx.epoch],    0
 	mov	qword [r15 + DrvCtx.hospes],   0
 	mov	qword [r15 + DrvCtx.hospesn],  0
@@ -958,6 +965,21 @@ proc drv_parse, argc, argv
 	jmp	.next
   .not_diagn:
 
+	; ---- --potestates (ego only; aedifica treats it as unknown) --------
+	mov	rdi, r14
+	mov	rsi, [an]
+	lea	rdx, [drv_o_potestates]
+	call	drv_arg_is
+	test	eax, eax
+	jz	.not_potestates
+	cmp	dword [r15 + DrvCtx.cmd], DRV_CMD_EGO
+	jne	.unknown
+	cmp	dword [r15 + DrvCtx.potestates], 0
+	jne	.repeated
+	mov	dword [r15 + DrvCtx.potestates], 1
+	jmp	.next
+  .not_potestates:
+
 	; ---- --emitte tokens|cst|ast -- spec 18.2's stage-dump mitigation ---
 	mov	rdi, r14
 	mov	rsi, [an]
@@ -965,6 +987,14 @@ proc drv_parse, argc, argv
 	call	drv_arg_is
 	test	eax, eax
 	jz	.unknown
+	cmp	dword [r15 + DrvCtx.cmd], DRV_CMD_EGO
+	jne	.emitte_valued
+	cmp	dword [r15 + DrvCtx.emitteset], 0
+	jne	.repeated
+	mov	dword [r15 + DrvCtx.emitte], DRV_EMIT_EGO
+	mov	dword [r15 + DrvCtx.emitteset], 1
+	jmp	.next
+  .emitte_valued:
 	call	.take_value
 	test	eax, eax
 	jnz	.leave
