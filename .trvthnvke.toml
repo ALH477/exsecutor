@@ -48,7 +48,7 @@ command_allow = [
   # -- which is the only way those nine numbers can be gated from here: the
   # totals themselves need the whole suite, and the suite needs fasmg.
   ["grep", "-cE",
-   "FLOOR:-(193|78|131|236|59|236|45|13|6)\\}", "tests/run.sh"],
+   "FLOOR:-(194|78|131|236|59|236|45|13|6)\\}", "tests/run.sh"],
   # The two rasterizer goldens. Committed files, so unlike the emitted-unit
   # and exsc sizes these can be measured from here.
   ["wc", "-c", "tests/programs/pictura_triangulum/expected.out"],

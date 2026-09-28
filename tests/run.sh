@@ -92,7 +92,11 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # the Generics list). Both fixtures were run against the pre-fix code and
 # fail there, which is what makes them regression tests rather than
 # descriptions.
-UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-193}"
+# 193 -> 194 on 2026-09-27: chk_ty_cast_literal.asm, the pending literal on
+# the left of `sicut`. Same rule as the two above -- it was run against the
+# pre-fix checker and exits 12 there (row 2: `7 sicut f32` raised nothing),
+# so it is a regression test and not a description.
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-194}"
 
 # The same guarantee for the two run phases below: tests/ir/*.ir fixtures,
 # and tests/programs/*/ directories. Same rule -- `found < floor` fails --

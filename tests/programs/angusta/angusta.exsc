@@ -23,6 +23,18 @@
 //                                a loop phi: 500 mod 256  244
 //   11  locals                   u8 locals, reassigned: 200 +% 100 +% 212 = 0
 //   12  tota(200, 55)            the trapping u8 `+` at its top: 255, no trap
+//   13  septem()                 `7 sicut u8` -- a LITERAL cast, not a
+//                                value's. It is here because it did not
+//                                compile: the checker answered the cast's
+//                                target and left the literal untyped, so
+//                                `-o` died with SIGILL inside `__lwr_lit`
+//                                while `exsc` with no `-o` said nothing
+//                                (checker/types/types.inc `.cast_pending`,
+//                                tests/unit/chk_ty_cast_literal.asm). The
+//                                cast is an identity here and the check is
+//                                cheap; what it buys is that the literal
+//                                path through `sicut` is LOWERED on both
+//                                backends and not merely type-checked.
 //
 // Nothing here traps; tests/ir/trap_add_*.ir are the narrow traps.
 
@@ -74,6 +86,10 @@ functio tota(a: u8, b: u8) -> u8 {
     redde a + b;
 }
 
+functio septem() -> u8 {
+    redde 7 sicut u8;
+}
+
 publica functio initium(m: Mundus) -> u8 {
     si involve(200, 100) ne 44 {
         redde 1;
@@ -113,6 +129,9 @@ publica functio initium(m: Mundus) -> u8 {
     }
     si tota(200, 55) ne 255 {
         redde 12;
+    }
+    si septem() ne 7 {
+        redde 13;
     }
     redde involve(200, 144);
 }

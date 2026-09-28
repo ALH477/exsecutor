@@ -641,7 +641,7 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   re-derived from the repository and a measured total cannot. Where the two
   differ the floor is deliberately behind: this tree's convention is that a
   floor rises when someone re-baselines it, not automatically, so drift there
-  costs precision and never the guarantee. 202 unit fixtures [193]; 78 IR
+  costs precision and never the guarantee. 203 unit fixtures [194]; 78 IR
   fixtures [78] and 147 Exsecutor programs [128], each compiled, assembled,
   **run**, and syscall-audited (70 of those programs are the receiver's
   impaired vectors);
@@ -678,7 +678,7 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   so that any floor moving fails this bullet with it:
 
 ```bash truth:id=suite-floors truth:kind=command truth:expect_exit=0 truth:expect_stdout=9
-grep -cE "FLOOR:-(193|78|131|236|59|236|45|13|6)\}" tests/run.sh
+grep -cE "FLOOR:-(194|78|131|236|59|236|45|13|6)\}" tests/run.sh
 ```
 
 - `tests/run.sh --device=amdgcn` (measured 2026-09-21, not part of the

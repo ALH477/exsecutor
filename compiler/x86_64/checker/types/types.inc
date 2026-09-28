@@ -428,7 +428,7 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	cmp	r14, 1
 	je	.cast_out			; AST_TY_ERROR: already diagnosed
 	test	r13, r13
-	jz	.cast_rel			; a pending literal: only its target is judged
+	jz	.cast_pending		; a pending literal: settled to the target below
 	cmp	r13, 1
 	je	.cast_out			; AST_TY_ERROR: already diagnosed
 	; THE TARGET IS TESTED FIRST WHEN IT IS `dyn`, and only then, because
@@ -483,6 +483,72 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	mov	rdx, r13
 	mov	rcx, r14
 	call	__chk_ty_castrel
+	jmp	.cast_out
+  .cast_pending:
+	; A PENDING INTEGER OR FLOAT LITERAL ON THE LEFT OF `sicut` -- `7 sicut
+	; u8`. Spec §8.4: the cast's TARGET is an expectation like any other, so
+	; the literal settles to it when the two are of one class and is
+	; `EXS-E0308` when they are not, which is the same answer `firma x: f32
+	; = 1;` already draws from `__chk_ty_fits` (an INT literal is not a
+	; float value, a FLOAT literal is not an integer, and neither is a
+	; `textus` or a struct). `__chk_ty_expect` is the whole rule: it is
+	; recursive, so `(1 + 2) sicut u8` settles BOTH literals, and it also
+	; carries the does-it-FIT half -- `300 sicut u8` is `EXS-E0308` at the
+	; literal, not a silent truncation the target would have hidden.
+	;
+	; SETTLE ONLY FOR NUMERIC TARGETS. `0 sicut archivum` is `EXS-E0305`
+	; (a capability atom is never cast to or from anything, §5.2), not
+	; `EXS-E0308` -- settling the literal to `archivum` first would raise
+	; the wrong code at the wrong span. The guard is the target's kind:
+	; integer, float or `mensura` settles; anything else (a capability
+	; atom, a reference, a function type, a struct, `textus`, `dyn`)
+	; falls through to `__chk_ty_castrel`, which refuses the pair with
+	; the code the construct deserves (`EXS-E0305`). The literal stays
+	; unsettled on that path, which is fine: the diagnostic stops the
+	; lowering from running, so `__lwr_lit`'s rassert is never reached.
+	; (`7 sicut textus` draws `EXS-E0305` from `__chk_ty_castrel`, not
+	; `EXS-E0308` from `__chk_ty_fits` -- both are refusals, but the span
+	; and the code differ, and the relational one names what is wrong.)
+	;
+	; WHAT THIS FIXES, measured before it was written: every one of
+	; `7 sicut u8`, `7 sicut f32`, `1.5 sicut u8` and `300 sicut u8`
+	; type-checked CLEAN, because this arm answered the target and left the
+	; literal's own `Node.ty` at 0 -- and `-o` then reached `__lwr_lit`,
+	; whose `__lwr_nty` rasserts on an untyped node: `exsc ... -o` died with
+	; SIGILL on a four-line program the checker had just accepted. That is
+	; the "a program that type-checks and then traps the compiler" class
+	; docs/design/sum-types.md D4 names for `?`, reached through the cast
+	; instead. The answer is still the target (`.cast_out`); what changed is
+	; that the source is settled on the way there.
+	;
+	; THE TARGET SURVIVES THE CALL. `__chk_ty_expect` declares `uses rbx,
+	; r12, r13` -- the macro pushes and pops those -- but r14 is not in
+	; that list, so it is saved and restored here.
+	mov	rdi, rbx
+	mov	rsi, r14
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_INT
+	je	.do_settle
+	cmp	rax, AST_TY_FLOAT
+	je	.do_settle
+	cmp	rax, AST_TY_MENSURA
+	je	.do_settle
+	; Non-numeric target: route through the relational check so the
+	; refusal is `EXS-E0305` at the cast, not a missing diagnostic that
+	; would let the lowering run on an unsettled literal and SIGILL.
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, r13
+	mov	rcx, r14
+	call	__chk_ty_castrel
+	jmp	.cast_out
+  .do_settle:
+	push	r14
+	mov	rdi, rbx
+	mov	rsi, [chkt_ap]
+	mov	rdx, r14
+	call	__chk_ty_expect
+	pop	r14
   .cast_out:
 	mov	rax, r14
 	jmp	.out
