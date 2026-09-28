@@ -20,23 +20,12 @@
 ; Code produced by this compiler is not covered by the GPL --
 ; see Exception A in LICENSE.EXCEPTION.
 ; -----------------------------------------------------------------------------
-; checker-lexicon fixture for pass 5 -- THE LOAD-BEARING NEGATIVE.
-; `docs/design/checker.md` finding 16 and spec §3.3, as amended: "`saluta`,
-; `construe`, `imprime`, `textus` and `grapha` are all correct Latin and none
-; decomposes over them [the fourteen §3.3 roots]." This fixture is the
-; measurement that backs the sentence, not an illustration of it: `saluta`
-; (§4.2's own example), `imprime_gutenbergio` (§5.1, §10.1's qualifier-
-; carrying name) and `initium` (spec §4.1 rule 2's entry-point name, §4.6)
-; are asserted to ALL fail `EXS-E0601` under `checker/lexicon/morphemes.inc`
-; -- the stand-in table `tools/gen-lexicon.py` generates from §3.3-§3.5 as
-; they stand today.
-;
-; THIS IS WHY THE PASS IS NOT ENABLED. `lexicon.inc`'s own header says so;
-; this fixture is where that claim is checked rather than asserted in prose.
-; If a future §3.3 amendment adds `salut-`, `imprim-` or a root `initium`
-; decomposes over, this fixture's corresponding check starts failing --
-; which is the point: it is the tripwire for "the real table changed enough
-; to enable the pass," not a fact this project wants to keep true forever.
+; checker-lexicon fixture for pass 5 -- THE LOAD-BEARING POSITIVE.
+; `lexicon.norma` fills `salut-`/`imprim-` and reserves `initium` (§4.7).
+; `saluta` and `imprime_gutenbergio` must raise ZERO diagnostics (they
+; derive). `initium` must raise ZERO diagnostics (skipped, not decomposed).
+; The old negative (all three EXS-E0601 on the fourteen-root stand-in) was
+; the tripwire that this table change is supposed to trip.
 ;
 ; `saluta` and `imprime_gutenbergio` fail because no root in the table is a
 ; prefix-or-suffix-stripped match for `salut`/`imprim` at all (§3.3 lacks
@@ -104,12 +93,7 @@ segment readable executable
 	lea	rdi, [fx_tree]
 	call	ast_verify_stage1
 	call	fx_run
-	cmp	rax, 1
-	jne	.fail1
-	lea	rdi, [fx_diags]
-	xor	rsi, rsi
-	call	vec_get
-	cmp	dword [rax + Diag.code_num], 601
+	cmp	rax, 0
 	jne	.fail1
 
 	; ==== 2: imprime_gutenbergio -- EXS-E0601 (base `imprime`, no root) ====
@@ -130,12 +114,7 @@ segment readable executable
 	lea	rdi, [fx_tree]
 	call	ast_verify_stage1
 	call	fx_run
-	cmp	rax, 1
-	jne	.fail2
-	lea	rdi, [fx_diags]
-	xor	rsi, rsi
-	call	vec_get
-	cmp	dword [rax + Diag.code_num], 601
+	cmp	rax, 0
 	jne	.fail2
 
 	; ==== 3: initium -- EXS-E0601 (`in-` matches, `itium` still does not) =
@@ -164,12 +143,7 @@ segment readable executable
 	lea	rdi, [fx_tree]
 	call	ast_verify_stage1
 	call	fx_run
-	cmp	rax, 1
-	jne	.fail3
-	lea	rdi, [fx_diags]
-	xor	rsi, rsi
-	call	vec_get
-	cmp	dword [rax + Diag.code_num], 601
+	cmp	rax, 0
 	jne	.fail3
 
 	xor	edi, edi

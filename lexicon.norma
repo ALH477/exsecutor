@@ -1,0 +1,43 @@
+# lexicon.norma
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 The Exsecutor authors.
+#
+# The morpheme table. Spec §3.3 / §3.8 / §3.9.
+# Prefixes and suffixes stay in spec §3.4–§3.5 and are generated from there.
+# This file adds:
+#   I  present  imperative     — fill the -e form for a §3.3 root
+#   R  present  supine  imperative  gloss  — extra root, insertion order
+#
+# Loans (whole public names that do not derive) are harvested at generation
+# time from examples/, tests/programs/, tests/conformance/ by
+# tools/gen-lexicon.py --harvest; they are not listed here. initium is
+# reserved (§4.7) and is never a loan and never decomposed.
+#
+# A registered root is permanent (§3.9.4). Insertion order is load-bearing.
+
+# §3.4: -e is the present-stem imperative, realised -e / -a / -e by
+# conjugation. These fills are the forms the spec already writes in prose
+# (`plica`, `lege`, `tene`) plus the regular realisations of the other
+# eleven §3.3 roots. Guessing is refused in gen-lexicon.py unless listed here.
+I leg lege
+I scrib scribe
+I sec seca
+I plic plica
+I numer numera
+I ordin ordina
+I sequ seque
+I cap cape
+I pon pone
+I ten tene
+I vert verte
+I mitt mitte
+I iung iunge
+I solv solve
+
+# Roots §3.3's own prose names as missing from the fourteen, and that the
+# language already uses in public names. applic- enters as a root, not as
+# ad- + plic- (§3.3, §3.6 would spell adplica).
+R salut salutat saluta greet
+R imprim impress imprime press
+R applic applicat applica apply
+R constru construct construe build

@@ -287,9 +287,9 @@ def parse_prefixes(lines):
 # --------------------------------------------------------------------------
 
 def fasmg_str(s):
-    if not re.match(r'^[a-zA-Z \-]*$', s):
+    if any(ord(c) > 127 or not (c.isalnum() or c in " _-") for c in s):
         raise SystemExit(f"gen-lexicon: refusing to emit {s!r} as a literal "
-                          "(non [a-zA-Z -] byte)")
+                          "(non [A-Za-z0-9_-] byte)")
     return "'" + s + "'"
 
 
@@ -386,13 +386,80 @@ HEADER = """\
 """
 
 
-def emit_inc(roots, suffixes, prefixes, out_path, spec_display_path):
+def parse_norma(path, roots):
+    """Apply lexicon.norma I- and R-lines. Roots stay in insertion order:
+    §3.3 fourteen first, then each R in file order. I fills imperative on
+    an already-present stem; unknown present is refused."""
+    by_present = {r["present"]: r for r in roots}
+    extras = []
+    with open(path, encoding="utf-8") as fh:
+        for lineno, line in enumerate(fh, 1):
+            s = line.split("#", 1)[0].strip()
+            if not s:
+                continue
+            parts = s.split()
+            tag = parts[0]
+            if tag == "I":
+                if len(parts) != 3:
+                    raise SystemExit(f"gen-lexicon: {path}:{lineno}: I needs "
+                                     f"present imperative, got {parts!r}")
+                _, present, imp = parts
+                if present not in by_present:
+                    raise SystemExit(f"gen-lexicon: {path}:{lineno}: I {present} "
+                                     "is not a §3.3 root")
+                by_present[present]["imperative"] = imp
+            elif tag == "R":
+                if len(parts) != 5:
+                    raise SystemExit(f"gen-lexicon: {path}:{lineno}: R needs "
+                                     "present supine imperative gloss")
+                _, present, supine, imp, gloss = parts
+                if present in by_present:
+                    raise SystemExit(f"gen-lexicon: {path}:{lineno}: duplicate "
+                                     f"root {present}")
+                row = {"present": present, "supine": supine,
+                       "imperative": imp, "gloss": gloss}
+                by_present[present] = row
+                extras.append(row)
+            elif tag == "L":
+                raise SystemExit(f"gen-lexicon: {path}:{lineno}: L-lines are "
+                                 "harvested, not stored in lexicon.norma")
+            else:
+                raise SystemExit(f"gen-lexicon: {path}:{lineno}: unknown tag "
+                                 f"{tag!r}")
+    return roots + extras
+
+
+def parse_loans(harvest_paths):
+    here = os.path.dirname(os.path.abspath(__file__))
+    script = os.path.join(here, "harvest-lexicon.py")
+    import subprocess
+    out = subprocess.check_output(
+        [sys.executable, script, *harvest_paths], text=True)
+    loans = []
+    seen = set()
+    for line in out.splitlines():
+        if not line.startswith("L "):
+            continue
+        _tag, name, kind = line.split()
+        if kind not in KIND_WORD_MAP.values() and kind not in (
+                "FN", "STRUCT", "IFACE", "TYPUS"):
+            raise SystemExit(f"gen-lexicon: harvest kind {kind!r} unknown")
+        key = (name, kind)
+        if key in seen:
+            continue
+        seen.add(key)
+        loans.append({"name": name, "kind": kind})
+    return loans
+
+
+def emit_inc(roots, suffixes, prefixes, loans, out_path, spec_display_path):
     out = [HEADER.format(spec=spec_display_path)]
     L = out.append
 
     L(f"LEX_ROOT_COUNT = {len(roots)}")
     L(f"LEX_SUFFIX_COUNT = {len(suffixes)}")
     L(f"LEX_PREFIX_COUNT = {len(prefixes)}")
+    L(f"LEX_LOAN_COUNT = {len(loans)}")
     L("")
     L("; ---- prefix-law codes -------------------------------------------------------")
     L("; 0 is never a real law (NONE is not emitted by any table row); a law field")
@@ -441,8 +508,22 @@ def emit_inc(roots, suffixes, prefixes, out_path, spec_display_path):
         L(f"\tdb\tLEXLAW_{p['law']}\t; {p['prefix']}- ({p['law_text']})")
     L("")
 
+    L("; ---- loans, harvest insertion order ------------------------------------------")
+    L("; Whole public names that do not derive over the root table. Kind is the")
+    L("; declared kind they are accepted as. Derivation is tried first; a name")
+    L("; that derives with the wrong kind (lector as functio) is EXS-E0602 and")
+    L("; never reaches this table.")
+    emit_pool(out, "lex_loan_text", [x["name"] for x in loans])
+    L("lex_loan_kind:")
+    if not loans:
+        L("\tdb\t0")
+    else:
+        for x in loans:
+            L(f"\tdb\tLEXKIND_{x['kind']}\t; {x['name']}")
+    L("")
+
     with open(out_path, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write("\n".join(out))
+        fh.write("\n".join(out) + "\n")
 
 
 # --------------------------------------------------------------------------
@@ -454,6 +535,10 @@ def main():
     ap.add_argument("--out", required=True,
                      help="output path for "
                           "compiler/x86_64/checker/lexicon/morphemes.inc")
+    ap.add_argument("--norma", default="lexicon.norma",
+                     help="path to lexicon.norma (I/R lines)")
+    ap.add_argument("--harvest", nargs="*", default=None,
+                     help="trees to harvest loans from (publica names)")
     ap.add_argument("--check-only", action="store_true",
                      help="parse §3.3-§3.5 and print a summary; write nothing")
     a = ap.parse_args()
@@ -463,10 +548,16 @@ def main():
     lines = text.split("\n")
 
     roots = parse_roots(lines, text)
+    if a.norma:
+        roots = parse_norma(a.norma, roots)
     suffixes = parse_suffixes(lines)
     prefixes = parse_prefixes(lines)
+    harvest_paths = a.harvest
+    if harvest_paths is None:
+        harvest_paths = ["examples", "tests/programs", "tests/conformance"]
+    loans = parse_loans(harvest_paths) if harvest_paths else []
 
-    print(f"§3.3 roots: {len(roots)}")
+    print(f"roots: {len(roots)}")
     for r in roots:
         imp = r["imperative"] if r["imperative"] else "unknown"
         print(f"  {r['present']:<8} {r['supine']:<10} {r['gloss']:<10} imperative={imp}")
@@ -481,13 +572,15 @@ def main():
     for p in prefixes:
         print(f"  {p['prefix']+'-':<7} law={p['law']:<16} ({p['law_text']})")
 
+    print(f"\nloans: {len(loans)}")
+
     if a.check_only:
         return 0
 
     out_dir = os.path.dirname(a.out)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
-    emit_inc(roots, suffixes, prefixes, a.out,
+    emit_inc(roots, suffixes, prefixes, loans, a.out,
               "docs/spec/exsecutor-spec-v0.4.md")
     print(f"\nwrote {a.out}")
     return 0
