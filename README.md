@@ -718,13 +718,13 @@ pattern: DIAG_CODE_COUNT = 52
   `nix flake check`: green (run by the gate).
 
 **What does not run yet.** Most of the language beyond what these programs use
-is `rassert`-refused rather than lowered: `contrahe` and its reduction triple,
-lambdas, `eventus`, generics, and every `numeri` but the
-default. (Vector floats left this list in Stage 5: whole-acy `+ - * /` over
+is `rassert`-refused rather than lowered: lambdas, `eventus`, generics, and every `numeri` but the
+default. (`contrahe` left this list with §14 entry 28; integer `/` and
+`residuum` with `tests/programs/numerus_decimalis/`.) (Vector floats left this
+list in Stage 5: whole-acy `+ - * /` over
 `acies<f32, 8>`/`acies<f64, 8>` at lane counts 2, 4 and 8 lowers in both
 backends, with extract/splat/mask shapes still refused by design.)
-Bitwise and/or, integer division and remainder, and signed shifts
-are unspecified (`[OPEN]`); narrowing and equal-width `sicut` are truncation
+Bitwise and/or, and signed shifts, are unspecified (`[OPEN]`); narrowing and equal-width `sicut` are truncation
 (spec §5.4), with
 narrowing from a signed source still unwritten by any program. An array
 literal at module scope (`publica firma t: acies<u16, 4> = [1, 2, 3, 4];`)
