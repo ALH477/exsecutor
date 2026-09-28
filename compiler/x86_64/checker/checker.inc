@@ -64,15 +64,11 @@
 ; BUT NOT CALLED; they are called, gated on CHK_S_TYPES, and the gate is what
 ; that paragraph asked for.
 ;
-; WHY PASS 5 IS WRITTEN AND STILL DOES NOT RUN. `checker/lexicon/lexicon.inc`
-; exists and defines `chk_lexicon`, raising EXS-E0601, E0602, E0603 and E0610,
-; with six fixtures (`tests/unit/chk_lx_*.asm`) that include that file DIRECTLY
-; and run green. It is not in `verify.inc`'s chain and `chk_run` does not call
-; it, for a reason that is about the spec and not about the code: E0601 ("does
-; not decompose") judges the coverage of the morpheme table, and spec §3.3's
-; table is fourteen illustrative roots, so a called pass would flag ordinary
-; identifiers across the whole tree. Enabling it is one `include` in verify.inc
-; and one call below, behind a decision recorded in §3.3 -- not a port.
+; PASS 5 RUNS FROM THE DRIVER, NOT FROM chk_run. `driver/run.inc` calls
+; `chk_lexicon` then `chk_flush` after `chk_run` (so AST-dump unit fixtures
+; that call chk_run are not the public API). verify.inc includes
+; lexicon/lexicon.inc. E0602 is §14 entry 14. Loans are harvested from
+; *.exsc under examples/, tests/programs/, tests/conformance/ only.
 ;
 ; ---------------------------------------------------------------------------
 ; HOW THE DRIVER CALLS THIS. `driver/run.inc` calls it, after
