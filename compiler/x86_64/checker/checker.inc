@@ -174,8 +174,8 @@ proc chk_run, chk_c
 	rassert	esi ne 0	; spec §9.5: no default target; the driver sets it
 	call	chk_layout		; pass 4 -- `checker-rows`
   .no_rows:
-	mov	rdi, rbx
-	call	chk_lexicon		; pass 5 -- lexicon.norma; initium skipped
+	; Pass 5 is called from the driver after chk_run, not here: unit
+	; fixtures load AST dumps into chk_run and are not the public API.
 	; Each pass takes what it needs, raises through `chk_raise*` with its own
 	; CHK_P_* pass number, and ORs its CHK_S_* bit into `ChkCtx.stages` on the
 	; way out, the way `chk_resolve` does. `chk_verify` then checks exactly the

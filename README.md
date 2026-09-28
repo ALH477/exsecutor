@@ -614,9 +614,9 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   locale, `SOURCE_DATE_EPOCH`, umask and hostname (§9.3).
 - **All three stages of §16 reach end to end.** Stage 1: the §8.1 source gate,
   the lexer, the lossless CST, the typed AST. Stage 2: name resolution, types,
-  capability rows, packed layout — the lexicon pass is built and **not
-  enabled**, because §3.3's root table is illustrative and rejects the
-  language's own canonical names, which its fixture asserts. Stage 3: the
+  capability rows, packed layout — the lexicon pass **runs** against
+  `lexicon.norma` (`initium` skipped; names that do not derive are loans;
+  §14 entry 14 is `EXS-E0602`). Stage 3: the
   lowering to SSA IR, the verifier, and the fasmg reference backend — phi,
   narrow integers at any width with trapping and wrapping arithmetic,
   `f32`/`f64` arithmetic, comparisons and casts on SSE2, byte
@@ -658,12 +658,12 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   the lane rasterizers too (the soft `vector_size` lowering keeps every
   lane's bits), and the thing
   that finally tests §9.5's standing claim that the emitted text assumes
-  nothing about byte order. 21 of the 26 conformance FIXTURES run, each
+  nothing about byte order. 22 of the 26 conformance FIXTURES run, each
   required to emit exactly its expected code and nothing else -- or, for the
   four byte-shape entries, to emit byte-identical output, and for entry 1, to
-  refuse with that code AND a machine fix declaring the capability -- and 5
+  refuse with that code AND a machine fix declaring the capability -- and 4
   report `DEFERRED` and are never counted as passing; with entries 27 and 28,
-  which have no fixture and are carried by program directories, 23 of the
+  which have no fixture and are carried by program directories, 24 of the
   spec's 28 entries run. 0 program directories deferred.
 
   This bullet read "1564 pass — 178 unit fixtures; 64 IR fixtures and 104

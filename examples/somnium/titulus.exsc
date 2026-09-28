@@ -32,8 +32,8 @@ publica functio titulus_pinge(fb: &mutabilis acies<u8, 48000>, ph: mensura, seme
     firma s: acies<u8, 256> = sinus();
     firma f: acies<u8, 126> = formae();
     firma nm: acies<u8, 9> = nomen();
-    firma v1: acies<u8, 16> = versus_primus();
-    firma v2: acies<u8, 15> = versus_secundus();
+    firma v1: acies<u8, 16> = pinge_versus_primus();
+    firma v2: acies<u8, 15> = pinge_versus_secundus();
 
     per k in 0..48000 {
         firma v: u8 = (*fb)[k];

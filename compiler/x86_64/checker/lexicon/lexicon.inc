@@ -159,7 +159,6 @@
 include '../rows/rows.inc'
 include 'morphemes.inc'
 
-lx_initium_lit db 'initium'
 LX_INITIUM_LEN = 7
 
 CHK_LX_DEPTH_MAX = 32
@@ -1016,7 +1015,7 @@ proc __chk_lx_check_decl, lx_wk, lx_d
 
 	cmp	qword [lx_nlen], LX_INITIUM_LEN
 	jne	.notinitium
-	lea	rdi, [lx_initium_lit]
+	lea	rdi, [lex_initium_lit]
 	mov	rsi, [lx_nptr]
 	mov	rdx, LX_INITIUM_LEN
 	call	__chk_lx_beq

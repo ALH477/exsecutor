@@ -521,6 +521,8 @@ def emit_inc(roots, suffixes, prefixes, loans, out_path, spec_display_path):
         for x in loans:
             L(f"\tdb\tLEXKIND_{x['kind']}\t; {x['name']}")
     L("")
+    L("lex_initium_lit db 'initium'")
+    L("")
 
     with open(out_path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write("\n".join(out) + "\n")
@@ -554,7 +556,7 @@ def main():
     prefixes = parse_prefixes(lines)
     harvest_paths = a.harvest
     if harvest_paths is None:
-        harvest_paths = ["examples", "tests/programs", "tests/conformance"]
+        harvest_paths = ["examples", "tests"]
     loans = parse_loans(harvest_paths) if harvest_paths else []
 
     print(f"roots: {len(roots)}")

@@ -1189,6 +1189,10 @@ proc drv_aedifica, argc, argv
 	mov	rdi, [r15 + DrvCtx.chk]
 	call	chk_run			; rax = diagnostics appended; already
 					; in DrvCtx.diags, so nothing reads it
+	mov	rdi, [r15 + DrvCtx.chk]
+	call	chk_lexicon		; pass 5 -- lexicon.norma; initium skipped
+	mov	rdi, [r15 + DrvCtx.chk]
+	call	chk_flush
 
 	; ---- --emitte: spec 18.2's stage-dump mitigation, if requested --------
 	; Runs whether or not the parse, the AST build, or the checker raised a
