@@ -1980,6 +1980,7 @@ run_differential_tests() {
       fi
       ref="tests/programs/$name/expected.out"
     fi
+    require_stdout_evidence "$name" "$ref" || continue
 
     # The verdict this directory's C emission must reach: its own
     # c-exsc-exit= if it has one, else parity with the reference's
@@ -2075,6 +2076,88 @@ run_differential_tests() {
   fi
 }
 
+# ---------------------------------------------------------------------------
+# STDOUT EVIDENCE, REQUIRED AND EXPLICIT. check_run's stdout half (search
+# this file for "byte-identical to \$ref") only compares bytes when `ref` is
+# non-empty; given "" it falls back to "did the binary write ANYTHING"
+# (`elif [[ -s "$out" ]]`). That fallback exists for fixtures that are
+# genuinely silent, but it cannot tell "genuinely silent" apart from
+# "the golden is gone" -- and for a fixture whose correct output is large,
+# the fallback happens to fail anyway (any non-empty write trips it), with a
+# misleading message ("wrote to stdout, expected nothing") that reads as
+# "this fixture must be silent" rather than "this fixture has no reference
+# to check against". Worse, it says NOTHING about the regression that
+# matters: a correct, non-trivial output dropping to zero bytes would pass
+# this fallback cleanly, in every one of the four phases that call
+# check_run with a computed `ref` (run, differential, cross, device).
+#
+# Found 2026-10-01 via tests/programs/signaculum/expected.out (786,447
+# bytes, §14 entry 27's byte-identical lane-rasterizer proof): deleting it
+# does not currently produce a clean pass (signaculum's real stdout is
+# large, so the generic fallback above trips), but the failure it produces
+# names the wrong problem and the same mechanism has no answer at all for a
+# fixture whose real output silently shrinks to nothing. require_stdout_
+# evidence below replaces reliance on that accident with an explicit rule:
+# status=run, stdout=, expected.out -- pick at least one of the first two,
+# or be named in SILENT_BY_DESIGN below, or fail by name before anything is
+# built or run.
+#
+# SILENT_BY_DESIGN -- status=run program directories with neither stdout=
+# nor expected.out whose correct behaviour really is zero bytes of stdout.
+# An allowlist, not a filter, mirroring spec-check.sh's ABSENT_BY_DESIGN:
+# adding a name is a reviewed, recorded decision, not a silent exemption.
+# Surveyed 2026-10-01 against the clean suite (2275 pass / 0 fail) -- every
+# name below already passes today, for one of two reasons noted alongside
+# it, and require_stdout_evidence changes nothing about what they check.
+SILENT_BY_DESIGN=(
+  abortus_differentia              # abort=1 -- traps before any write
+  acies                            # expect-exit=0, no stdout by design
+  angusta                          # expect-exit=88, refusal path
+  arithmetica                      # expect-exit=42, refusal path
+  copia_magna                      # expect-exit=0, no stdout by design
+  discerne                         # expect-exit=200, refusal path
+  float_constants                  # expect-exit=100, device=amdgcn
+  float_division                   # expect-exit=100, device=amdgcn
+  forma                            # expect-exit=0, cross=yes, no stdout by design
+  lector_numerus                   # expect-exit=41, refusal path
+  phi_loops                        # expect-exit=77, refusal path
+  receptio_caput                   # expect-exit=3, refusal path
+  receptio_vec_awgn_exemplum_m12db_s1   # expect-exit=1, c-differentia=nightly-sweep
+  receptio_vec_awgn_exemplum_m12db_s2   # expect-exit=1, c-differentia=nightly-sweep
+  receptio_vec_awgn_loopback_m12db_s1   # expect-exit=1, c-differentia=nightly-sweep
+  receptio_vec_awgn_loopback_m12db_s2   # expect-exit=1, c-differentia=nightly-sweep
+  receptio_vec_awgn_vacuum_m12db_s1     # expect-exit=1, c-differentia=nightly-sweep
+  receptio_vec_awgn_vacuum_m12db_s2     # expect-exit=1, c-differentia=nightly-sweep
+  receptio_vec_freq_loopback_m300hz     # expect-exit=2, c-differentia=nightly-sweep
+  redundantia                      # expect-exit=0, no stdout by design
+  somnium_brevis                   # expect-exit=1, refusal path
+  somnium_ignotum                  # expect-exit=1, refusal path
+  somnium_longa                    # expect-exit=1, refusal path
+  somnium_magia                    # expect-exit=1, refusal path
+  somnium_signum_brevis            # expect-exit=1, refusal path
+  somnium_signum_magia             # expect-exit=1, refusal path
+  streamdb_truncus                 # expect-exit=1, cross=yes, refusal path
+)
+
+# require_stdout_evidence NAME REF -- NAME is a tests/programs/ directory
+# basename, REF is the stdout reference a phase just computed (stdout= or
+# expected.out, "" if neither). Returns 0 when there is something to check
+# the fixture's stdout against, or when its silence is on the record above;
+# returns 1, having said why by name, otherwise. Called by all four phases
+# that build `ref` the same way -- run_program_tests, run_differential_tests,
+# run_cross_tests, run_device_tests -- right after computing it and before
+# anything is built, so a fixture that fails this is never silently counted
+# as found or run.
+require_stdout_evidence() {
+  local name="$1" ref="$2" s
+  [[ -n "$ref" ]] && return 0
+  for s in "${SILENT_BY_DESIGN[@]}"; do
+    [[ "$s" == "$name" ]] && return 0
+  done
+  bad "$name: status=run, no stdout=, no expected.out, and not in SILENT_BY_DESIGN -- nothing can hold this fixture's stdout to anything (tests/run.sh)"
+  return 1
+}
+
 run_program_tests() {
   # -------------------------------------------------------------------------
   # tests/programs/<name>/ -- one directory per program. Its expectations
@@ -2158,6 +2241,10 @@ run_program_tests() {
         bad "$name: both expected.out and stdout= -- which is the reference?"; continue
       fi
       ref="tests/programs/$name/expected.out"
+    fi
+
+    if [[ "$k_status" != "deferred" ]]; then
+      require_stdout_evidence "$name" "$ref" || continue
     fi
 
     if [[ "$k_status" == "deferred" ]]; then
@@ -2365,6 +2452,7 @@ run_cross_tests() {
     elif [[ -f "$d/expected.out" ]]; then
       ref="tests/programs/$name/expected.out"
     fi
+    require_stdout_evidence "$name" "$ref" || continue
     # noaudit: the audit is a statement about what the REFERENCE backend puts
     # in a binary, and this one is clang's. The 120 s timeout is emulation,
     # not slack -- the reference does the corpus in 0.044 s.
@@ -2507,6 +2595,7 @@ run_device_tests() {
     elif [[ -f "$d/expected.out" ]]; then
       ref="$d/expected.out"
     fi
+    require_stdout_evidence "$name" "$ref" || continue
     local input=()
     [[ -n "$k_stdin" ]] && input=(--input "$REPO_ROOT/$k_stdin")
 

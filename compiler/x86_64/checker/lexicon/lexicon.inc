@@ -27,15 +27,15 @@
 ; `EXS-E0603` (prefix signature law violated) and `EXS-E0610` (more than two
 ; affixes, spec §3.8).
 ;
-; BUILT, TESTED, AND NOT ENABLED. `checker/checker.inc`'s `chk_run` does not
-; call this pass -- its call is commented out there, with the reason spec
-; §3.3 amended in: "§3.3's table is illustrative, and it is not the morpheme
-; table." `morphemes.inc` (this directory) is generated from that illustrative
-; table by `tools/gen-lexicon.py` and inherits its incompleteness exactly:
-; `applic-`, `salut-` and `imprim-` are absent because §3.3 lacks them, and
-; §3.3's own prose says as much ("`saluta`, `construe`, `imprime`, `textus`
-; and `grapha` are all correct Latin and none decomposes over them"). Running
-; this pass against a real module today would reject the spec's own examples.
+; BUILT, TESTED, AND ENABLED. This pass runs on every compile: `driver/run.inc`
+; calls `chk_lexicon` after `chk_run` (not from inside `chk_run`, deliberately
+; -- AST-dump unit fixtures call `chk_run` directly and must not trip the
+; lexicon, see `checker/checker.inc`'s header), and `checker/verify.inc`
+; includes this file as the chain's last link. `morphemes.inc` (this directory)
+; is `tools/gen-lexicon.py`'s output over §3.3-§3.5 PLUS `lexicon.norma`'s I-
+; and R-lines, so `applic-`, `salut-` and `imprim-` ARE in its root table.
+; This header said the reverse until 2026-10-01 -- call "commented out", those
+; three roots "absent", and the pass therefore unrunnable against real source.
 ; `tests/unit/chk_lx_e0601_saluta.asm` asserts exactly that, as the load-
 ; bearing NEGATIVE result: `saluta`, `imprime_gutenbergio` and `initium` all
 ; fail `EXS-E0601` under this table, which is the measured reason the pass
@@ -124,13 +124,12 @@
 ; `ChkCtx`, `chk_raise`, `__chk_at_decl`, `CHK_S_LEXICON` and `CHK_P_LEXICON`
 ; are already in scope by the time this file's own code runs.
 ;
-; NOT WIRED INTO THE CHAIN. `checker/verify.inc` (owned by `checker-resolve`)
-; still includes `rows/rows.inc` as its last link; wiring this pass in means
-; changing that one line to `include 'lexicon/lexicon.inc'` (which itself
-; opens `include '../rows/rows.inc'`, preserving the strict-chain-not-diamond
-; shape verify.inc's header requires) and un-commenting `checker/checker.inc`'s
-; `chk_lexicon` call in `chk_run`. Both are outside this agent's write scope
-; (CLAUDE.md, Scope) and are reported, not made, in checker-lexicon's report.
+; WIRED INTO THE CHAIN. `checker/verify.inc` includes this file as its last
+; link (it itself opens `include '../rows/rows.inc'`, preserving the
+; strict-chain-not-diamond shape verify.inc's header requires), and the pass
+; is invoked from `driver/run.inc` after `chk_run` rather than from inside it.
+; This paragraph described both as pending work outside one agent's write
+; scope; they landed, and it was stale from that commit until 2026-10-01.
 ; Every fixture in `tests/unit/chk_lx_*.asm` therefore includes this file
 ; directly and calls `chk_lexicon` itself, exactly as `checker/rows/`'s
 ; fixtures call `chk_rows`/`chk_layout` directly.
@@ -1316,7 +1315,8 @@ proc __chk_lx_check_decl, lx_wk, lx_d
 endp
 
 ; chk_lexicon(chkx_c) -> rax = the number of diagnostics THIS pass buffered.
-; NOT called by `checker/checker.inc`'s `chk_run` (see this file's header).
+; Called from `driver/run.inc` after `chk_run`, NOT from inside `chk_run` --
+; AST-dump unit fixtures call `chk_run` directly (see this file's header).
 proc chk_lexicon, chkx_c
 	uses	rbx, r12, r13
 	locals

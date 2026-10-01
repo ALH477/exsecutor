@@ -11,10 +11,18 @@
 #   4. §8.4 keywords <-> compiler/x86_64/lexer/keywords.inc -- keyword sync
 #   5. artifact-citation validity                      -- every cited PATH
 #                                                         exists
+#   6. §8.4 operators/sigils <-> compiler/x86_64/lexer/token.inc PUN_* --
+#                                                         punctuation sync
+#   7. §3.3-§3.5 <-> compiler/x86_64/checker/lexicon/morphemes.inc --
+#                                                         lexicon regeneration
 #
-# Checks 1 and 4 are the same arrangement: a spec table is the normative
+# Checks 1, 4 and 6 are the same arrangement: a spec table is the normative
 # source, the .inc is generated from it, and drift is a build failure rather
-# than something a reader is expected to notice.
+# than something a reader is expected to notice. Check 7 is one step further
+# down the same road: instead of diffing two extracted SETS, it runs the
+# actual generator (tools/gen-lexicon.py) and diffs its output against what
+# is committed -- the arrangement gen-lexicon.py's own header already
+# described as what a human or CI should do, unenforced until now.
 #
 # Check 5 was added on 2026-09-26, and it was added because the thing it
 # checks had already gone wrong: an amendment declared integer division,
@@ -28,7 +36,27 @@
 # that `make audit` stands in to the socket prohibition: the contract becomes
 # checkable rather than promised (§9.3).
 #
-# Read-only. Touches nothing, builds nothing, needs no toolchain.
+# Checks 6 and 7 were added together, for the same reason check 5 was: the
+# drift they gate had already happened with nothing here to catch it. Check 7
+# is the clear case -- `gen-lexicon.py`'s regeneration had been reproducing
+# stale header prose (three sentences describing the lexicon pass as unwritten
+# and disabled, false by the time they were read) because nothing ever ran it
+# and diffed the result.
+#
+# CHECK 6 DOES NOT CATCH THE TOKEN THAT PROMPTED IT, and saying so here is the
+# point. `PUN_TICK` was added on 2026-09-30 declared **tier B** (`; B ' §5.1`),
+# and tier B is attestation rather than enumeration (token.inc's header), so a
+# tier-B token legitimately has no §8.4 row and gating it would falsely fail
+# `-`, tier B on §10.1's `x86_64-linux`. Check 6 closes the tier-A half, where
+# the token's own comment claims §8.4 is normative for it; the tier-B half
+# stays ungated. What would have caught `PUN_TICK` is a CST-kind-to-§8.6
+# grammar check -- it arrived with a whole `CST_BRAND_TYPE` production and no
+# §8.6 amendment -- and that check does not exist yet. [OPEN]
+#
+# Read-only except check 7, which runs `tools/gen-lexicon.py` (python3) to a
+# TEMP path and diffs -- it touches nothing in the tree. Checks 1-6 touch
+# nothing and need no toolchain; check 7 needs python3, already a devShell
+# dependency (verification-only, as gen-codes.py and gen-keywords.py are).
 #
 # Exit: 0 all checks pass, 1 a check failed, 2 usage/environment error.
 # ---------------------------------------------------------------------------
@@ -39,6 +67,9 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SPEC="$REPO_ROOT/docs/spec/exsecutor-spec-v0.4.md"
 CODES_INC="$REPO_ROOT/compiler/x86_64/diag/codes.inc"
 KEYWORDS_INC="$REPO_ROOT/compiler/x86_64/lexer/keywords.inc"
+TOKEN_INC="$REPO_ROOT/compiler/x86_64/lexer/token.inc"
+MORPHEMES_INC="$REPO_ROOT/compiler/x86_64/checker/lexicon/morphemes.inc"
+GEN_LEXICON="$REPO_ROOT/tools/gen-lexicon.py"
 
 FAIL=0
 ok()   { echo "  [ok]   $*"; }
@@ -457,6 +488,201 @@ check_artifact_citations() {
   return 0
 }
 
+# ---------------------------------------------------------------------------
+# 6. Punctuation table sync
+#
+# §8.4's "Operators and sigils" table is PUN_TICK's gap: the table was never
+# checked against lexer/token.inc's PUN_* block the way keywords.inc is
+# checked against §8.4's reserved-word table (check 4), so a new punctuation
+# token could land -- and did -- with the spec untouched and nothing here to
+# say so.
+#
+# THE TABLE IS NOT A FLAT LIST, so the extractor has to do more than check
+# 4's. Some rows name a GROUP of tokens in one cell (`+` `+%` `+\|`; `( )`;
+# `[ ]`; `{ }`) and some rows name a TYPE/EXPRESSION FORM rather than bare
+# punctuation (`&T`, `*T`, `A..B`, `E?`, `<...>`, plus `T:maior` and `->`,
+# which also happen to have their own bare rows elsewhere in the table and
+# so need no special handling). spec_operator_atoms splits every group cell
+# on whitespace; FORM_ROWS below derives the bare glyph a form row attests
+# ONLY when that form row is still present, so the derivation tracks the
+# table rather than standing in for it.
+#
+# ONE DIRECTION ONLY, on purpose. §8.4's table says of itself "All already
+# in evidence in this document, recorded here rather than introduced" --
+# `@nomen` is a row with no PUN_* at all (TOK_ANNOT, not punctuation), and
+# token.inc's own header says tier B "is NOT in §8.4's table ... attestation,
+# not enumeration" until §8.4 gives a complete delimiter list. So a §8.4 row
+# with nothing in token.inc is not necessarily a problem; a token.inc tier-A
+# PUN_* -- the tier that means "§8.4 is where this is normative" -- with no
+# matching row in §8.4 always is. That is the one direction this check gates:
+# a token claiming the table without the table being amended to agree. Note
+# that this is NOT `PUN_TICK`'s shape -- it was declared tier B and so claimed
+# §5.1, not the table (see the file header); this check would have let it
+# through.
+# ---------------------------------------------------------------------------
+
+# §8.4's operators-and-sigils table, column 1 of each data row, one row per
+# output line, backticks kept and escaped pipes (`+\|`) restored to real
+# pipes. Stops at the first blank line after the table starts, the same
+# "read until the shape ends" rule check 4's spec_keywords uses.
+spec_operator_col1() {
+  awk '/^### Operators and sigils/{f=1; next}
+       f && /^\|/{print; started=1; next}
+       f && started && /^$/{exit}' "$SPEC" \
+    | grep '^\| `' \
+    | sed 's/\\|/\x01/g' \
+    | awk -F'|' '{print $2}' \
+    | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' \
+    | sed 's/\x01/|/g'
+}
+
+# Every atomic punctuation spelling the table records, backticks stripped,
+# one per line: a group cell's several backtick spans each become their own
+# line (grep -o already does this), and a single span with an internal
+# space (`( )`) is split on that space into its two atoms.
+spec_operator_atoms() {
+  spec_operator_col1 | grep -oE '`[^`]*`' | tr -d '`' | tr ' ' '\n' | grep -v '^$'
+}
+
+# form-row text -> the bare glyph it attests, for the §8.4 rows that record
+# a TYPE/EXPRESSION FORM rather than bare punctuation. Reviewed by hand
+# against the table as written (see this check's header above); a new form
+# row in §8.4 is a change here too, on spec-check.sh's ABSENT_BY_DESIGN
+# pattern -- a recorded decision, not a silent inference.
+FORM_ROWS=("&T:&" "*T:*" "A..B:.." "E?:?" "<…>:<" "<…>:>")
+
+spec_operator_atoms_with_forms() {
+  local atoms; atoms="$(spec_operator_atoms)"
+  printf '%s\n' "$atoms"
+  local pair form glyph
+  for pair in "${FORM_ROWS[@]}"; do
+    form="${pair%%:*}"; glyph="${pair#*:}"
+    if printf '%s\n' "$atoms" | grep -qxF -- "$form"; then
+      printf '%s\n' "$glyph"
+    fi
+  done
+}
+
+# Every PUN_* entry in token.inc except PUN_COUNT (a count, not a token),
+# name and glyph, tier A only. A PUN_* line with no parseable `; A|B <glyph>`
+# tier comment is reported as its own failure below rather than silently
+# skipped -- an undocumented token is exactly as uncheckable as an
+# undocumented one that happens to carry a `; B` it does not deserve, and
+# PUN_TICK's own landing is not known to have carried a tier comment at all.
+code_pun_entries() {
+  grep -E '^PUN_[A-Za-z0-9_]+[[:space:]]*=[[:space:]]*[0-9]+' "$TOKEN_INC" \
+    | grep -v '^PUN_COUNT'
+}
+
+check_pun_sync() {
+  echo "== 6. punctuation table sync (§8.4 operators/sigils <-> lexer/token.inc PUN_*) =="
+
+  local spec_atoms n_spec
+  spec_atoms="$(spec_operator_atoms_with_forms | sort -u)"
+  n_spec="$(printf '%s\n' "$spec_atoms" | grep -c . || true)"
+  if [[ "$n_spec" -eq 0 ]]; then
+    bad "§8.4's operators-and-sigils table parsed to zero tokens"
+    note "the table shape changed, or this extractor is wrong -- either way"
+    note "this check is not measuring what it claims"
+    return 0
+  fi
+
+  if [[ ! -f "$TOKEN_INC" ]]; then
+    note "compiler/x86_64/lexer/token.inc does not exist yet."
+    note "The lexer/ module is unwritten, so there is nothing to diff against."
+    note "PASSES VACUOUSLY -- this is not evidence the table is in sync."
+    note "§8.4's table currently parses to $n_spec distinct atoms."
+    return 0
+  fi
+
+  local unparsed=0 mismatched=0 n_a=0 line name tier glyph
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    name="$(echo "$line" | sed -E 's/^(PUN_[A-Za-z0-9_]+).*/\1/')"
+    if [[ "$line" =~ \;[[:space:]]*([AB])[[:space:]]+([^[:space:]]+) ]]; then
+      tier="${BASH_REMATCH[1]}"
+      glyph="${BASH_REMATCH[2]}"
+    else
+      bad "$name: no parseable '; A <glyph>' or '; B <glyph>' tier comment -- cannot be checked against §8.4 at all"
+      unparsed=1
+      continue
+    fi
+    [[ "$tier" == "A" ]] || continue
+    n_a=$((n_a + 1))
+    if ! printf '%s\n' "$spec_atoms" | grep -qxF -- "$glyph"; then
+      bad "$name ('$glyph', tier A -- claims §8.4) has no matching row in §8.4's operators-and-sigils table"
+      mismatched=1
+    fi
+  done < <(code_pun_entries)
+
+  if [[ "$unparsed" -eq 0 && "$mismatched" -eq 0 ]]; then
+    ok "$n_a tier-A PUN_* tokens, every glyph found in §8.4's table ($n_spec atoms parsed)"
+  fi
+  note "tier B is attestation, not enumeration (token.inc's own header) -- not gated here"
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# 7. Lexicon table regeneration
+#
+# §3.3's root table, §3.4's suffix table and §3.5's prefix table are the
+# normative source for compiler/x86_64/checker/lexicon/morphemes.inc, the
+# same arrangement check 1 has with codes.inc and check 4 has with
+# keywords.inc -- except gen-lexicon.py had no check at all: gen-codes.py is
+# covered by check 1, gen-keywords.py by check 4, gen-lexicon.py by nothing.
+# That silence is how morphemes.inc's own header kept emitting stale prose
+# (describing the lexicon pass as unwritten and disabled) across however
+# many regenerations happened while nobody ran a diff.
+#
+# This check RUNS the generator rather than re-deriving its extraction
+# (unlike checks 1/4/6): gen-lexicon.py already refuses to guess at a law,
+# a kind word or an imperative form it does not recognise (see its own
+# header), so re-implementing that parser a second time here would be the
+# thing CLAUDE.md's evidence discipline forbids -- a second, divergent
+# opinion about what §3.3-§3.5 say, instead of running the one that exists.
+# ---------------------------------------------------------------------------
+check_lexicon_regen() {
+  echo "== 7. lexicon table regeneration (§3.3-§3.5 <-> checker/lexicon/morphemes.inc) =="
+
+  if [[ ! -f "$MORPHEMES_INC" ]]; then
+    note "compiler/x86_64/checker/lexicon/morphemes.inc does not exist yet."
+    note "PASSES VACUOUSLY -- this is not evidence the table is in sync."
+    return 0
+  fi
+
+  if [[ ! -f "$GEN_LEXICON" ]]; then
+    bad "tools/gen-lexicon.py is missing -- morphemes.inc exists with nothing that generates it"
+    return 0
+  fi
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    bad "python3 not found on PATH -- tools/gen-lexicon.py cannot be run to check morphemes.inc"
+    note "python3 is a devShell dependency (verification-only, as it is for"
+    note "gen-codes.py and gen-keywords.py); this check needs nix develop"
+    return 0
+  fi
+
+  local tmp; tmp="$(mktemp -d)"
+  if ! python3 "$GEN_LEXICON" --spec "$SPEC" --out "$tmp/morphemes.inc" \
+       >"$tmp/gen.log" 2>&1; then
+    bad "tools/gen-lexicon.py refused to regenerate from the current spec:"
+    sed 's/^/           /' "$tmp/gen.log"
+    rm -rf "$tmp"
+    return 0
+  fi
+
+  if cmp -s "$tmp/morphemes.inc" "$MORPHEMES_INC"; then
+    ok "morphemes.inc is byte-identical to a fresh regeneration from §3.3-§3.5"
+  else
+    bad "morphemes.inc is STALE -- regenerating from the current spec differs:"
+    diff "$MORPHEMES_INC" "$tmp/morphemes.inc" | head -40 | sed 's/^/           /'
+    note "regenerate with: python3 tools/gen-lexicon.py --spec docs/spec/exsecutor-spec-v0.4.md \\"
+    note "  --out compiler/x86_64/checker/lexicon/morphemes.inc"
+  fi
+  rm -rf "$tmp"
+  return 0
+}
+
 check_registry_sync
 echo
 check_citations
@@ -466,6 +692,10 @@ echo
 check_keyword_sync
 echo
 check_artifact_citations
+echo
+check_pun_sync
+echo
+check_lexicon_regen
 echo
 echo "== summary =="
 if [[ "$FAIL" -eq 0 ]]; then
