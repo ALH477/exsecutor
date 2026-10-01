@@ -13,6 +13,12 @@
 //   misce_furore(z)                -> u64       the mixer under both
 //   demisce_furore(z)              -> u64       its inverse
 //
+// and the same pair addressed by chunk COORDINATES, which is how a game on a
+// plane finds a chunk:
+//
+//   semina_plano(orbis, x, y)      -> semen     sow the chunk at (x, y)
+//   desemina_plano(semen, orbis, xy) -> u8      xy[0], xy[1] = the (x, y) of this seed
+//
 // THE NAMES. `semina` is the first-conjugation imperative of *semino*, to sow
 // (the -a realisation of §3.4's `-e` category; `plica` and `saluta` are the same
 // shape), and `misce` of *misceo*, to mix. `de-` is §3.5's reversal: the base's
@@ -120,4 +126,42 @@ publica functio semina_furore(orbis: u64, index: u64) -> u64 {
 publica functio desemina_furore(semen: u64, orbis: u64) -> u64 {
     firma g_inversus: u64 = 0xF1DE83E19937733D;
     redde multiplica_modulo(demisce_furore(semen) -% orbis, g_inversus);
+}
+
+// ---- the plane --------------------------------------------------------------
+//
+// A game addresses a chunk by where it is, not by a counter. (x, y) are two
+// u32s and the chunk index is `(y << 32) | x`: a bijection of u32 x u32 onto u64,
+// so `semina_furore`'s guarantee carries over whole -- every one of the 2^64
+// chunks of a plane, 4,294,967,296 on a side, has its own seed. (At 4,096 bytes a
+// chunk, that plane is 7.5 * 10^22 bytes; the first petabyte is a square 494,106
+// chunks on a side, and 2^19 = 524,288 on a side is exactly one pebibyte, 2^50
+// bytes -- probatio.exsc checks that arithmetic.)
+//
+// THE COORDINATES ARE UNSIGNED, and a world centred on the origin wants signed
+// ones. The cast is the answer and it is a bijection: an i32 chunk coordinate
+// `c` is passed as `c sicut u32` (§5.4: an equal-width sign change reinterprets
+// the bits, never traps), so (-1, 0) is (0xFFFFFFFF, 0) and every signed
+// coordinate has its own seed. Taking u32 here and not i32 keeps the C ABI
+// natural: the C backend holds an iN sign-extended in its uint64_t carrier, and
+// a C caller that passes a zero-extended negative number would be handing it a
+// non-canonical value.
+
+// y in the high word, x in the low.
+functio compone_plano(x: u32, y: u32) -> u64 {
+    redde ((y sicut u64) sursum 32) sive (x sicut u64);
+}
+
+// The seed of the chunk at (x, y) in world `orbis`.
+publica functio semina_plano(orbis: u64, x: u32, y: u32) -> u64 {
+    redde semina_furore(orbis, compone_plano(x, y));
+}
+
+// The chunk of world `orbis` whose seed is `semen`, as xy[0] = x, xy[1] = y.
+// Output through a mutable borrow (ADR 0016): the language has no tuples.
+publica functio desemina_plano(semen: u64, orbis: u64, xy: &mutabilis acies<u32, 2>) -> u8 {
+    firma index: u64 = desemina_furore(semen, orbis);
+    (*xy)[0] = index sicut u32;
+    (*xy)[1] = (index deorsum 32) sicut u32;
+    redde 0;
 }

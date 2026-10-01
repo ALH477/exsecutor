@@ -342,6 +342,9 @@ def render(g):
 #   F  the seed's inverse: index_of(world, chunk_seed(world, index)) for the 18
 #      pairs, then the indices whose seed is 0 and whose seed is GAMMA, per
 #      world (22 words)
+#   G  the plane: for each world and each of the seven PLANE_POINTS, chunk_seed_xy,
+#      then the (x, y) index_of_xy gives back (3 words a point, 42), then the
+#      pebibyte square: side, chunks, bytes (3 words)
 WORLDS = (0x0000000000000000, 0xDEADBEEFCAFEF00D)
 INDICES = (0, 1, 2, 3, 7, 64, 4095, 244140624999, 0xFFFFFFFFFFFFFFFF)
 # Direct seeds, to the chunk function. The last two are chunks where the prune
@@ -356,6 +359,27 @@ DIGEST_RANGE = 256
 
 def be64(v):
     return v.to_bytes(8, 'big')
+
+
+# Chunk coordinates (x, y), both u32; the index is (y << 32) | x. The origin, one
+# step on each axis, the far corner of the pebibyte square (2^19 - 1), the far
+# corner of the plane, the signed extremes read as u32, and (-1, 0).
+PLANE_POINTS = ((0, 0), (1, 0), (0, 1), (524287, 524287), (0xFFFFFFFF, 0xFFFFFFFF),
+                (0x80000000, 0x7FFFFFFF), (0xFFFFFFFF, 0))
+
+
+def plane_index(x, y):
+    assert 0 <= x < 1 << 32 and 0 <= y < 1 << 32
+    return (y << 32) | x
+
+
+def chunk_seed_xy(world, x, y):
+    return chunk_seed(world, plane_index(x, y))
+
+
+def index_of_xy(world, seed):
+    i = index_of(world, seed)
+    return i & 0xFFFFFFFF, i >> 32
 
 
 def pb_words():
@@ -419,6 +443,14 @@ def stream():
             out += be64(back)
     for w in WORLDS:
         out += be64(index_of(w, 0)) + be64(index_of(w, GAMMA))
+    for w in WORLDS:
+        for (x, y) in PLANE_POINTS:
+            sd = chunk_seed_xy(w, x, y)
+            assert index_of_xy(w, sd) == (x, y)
+            out += be64(sd) + be64(x) + be64(y)
+    side = 1 << 19
+    assert side * side * 4096 == 1 << 50
+    out += be64(side) + be64(side * side) + be64(side * side * 4096)
     return bytes(out)
 
 

@@ -15,6 +15,8 @@ measurements behind the design (`python3 prototypes/dungeon_oracle.py selftest`)
 semina_furore(orbis, index)     -> u64      sow: the seed of chunk `index` in world `orbis`
 desemina_furore(semen, orbis)   -> u64      un-sow: the chunk whose seed this is
 misce_furore(z) / demisce_furore(z) -> u64  the splitmix64 finaliser and its inverse
+semina_plano(orbis, x, y)       -> u64      the seed of the chunk at coordinates (x, y), u32 each
+desemina_plano(semen, orbis, xy) -> u8      xy[0], xy[1] = the (x, y) whose seed this is
 fig_dungeon_chunk(w, stats, semen)  -> u64      fills w[0..4096); returns walkable tiles
 fig_dungeon_prune(w, start)     -> mensura  the connectivity guarantee, public so it can be tested
 fig_dungeon_crc32(w)            -> u32      zlib's crc32 of w[0..4096)
@@ -32,6 +34,20 @@ capability type every `initium` receives, and a world seed is not authority.
 `w` is one caller-owned `acies<u8, 12288>`: the chunk at `[0, 4096)`, the
 cellular automaton's second buffer above it, and the prune's stack reusing that
 space after. Tile codes: 0 wall, 1 floor, 2 door, 3 trap.
+
+**Coordinates.** A game finds a chunk by where it is. `semina_plano` packs
+`(y << 32) | x` into the index and calls `semina_furore`, a bijection of u32 × u32
+onto u64, so every chunk of a 4,294,967,296-per-side plane has its own seed.
+The coordinates are unsigned; a world centred on the origin passes `c sicut u32`
+for a signed chunk coordinate (a bijection that never traps), so (−1, 0) is
+(0xFFFFFFFF, 0). They are `u32` and not `i32` so the C ABI stays natural: the C
+backend holds an `iN` sign-extended in its `uint64_t` carrier, and a C caller
+passing a zero-extended negative would be handing it a non-canonical value. The
+first petabyte (10¹⁵ bytes) is not a square — 244,140,625,000 chunks is 494,105.9
+a side — but **2¹⁹ = 524,288 chunks a side is exactly one pebibyte, 2⁵⁰ bytes**,
+which `probatio.exsc` computes. Tested at the origin, one step on each axis, the
+far corner of that square, the far corner of the plane, the signed extremes and
+(−1, 0), in two worlds.
 
 ## Where this came from, and what was checked
 
@@ -122,7 +138,7 @@ independent flood fill then finds in two pieces. So a test that compares twenty
 seeds will rarely meet it. `probatio.exsc` therefore also runs it on a grid built
 to have islands, one touching the main region only at a corner, and the stream
 includes two chunks where it fires (it removes 1 tile in one, 5 in the other). Two
-of the twenty-five mutants of the generator are caught by nothing else: one that
+of the thirty-two mutants of the generator are caught by nothing else: one that
 also walks diagonals, caught only by the synthetic grid, and one that removes the
 prune call, caught only by those two chunk records — the other twenty records
 are byte-identical with it disabled.
@@ -160,4 +176,4 @@ fasmg /tmp/p.asm /tmp/p && chmod +x /tmp/p && /tmp/p | cmp - /tmp/expected.out
 
 `tests/programs/dungeon/` holds the stream against the oracle on the reference
 backend, all four hosted C builds and the big-endian mips64 qemu run; its `TEST`
-header lists the twenty-five mutants and where each is caught.
+header lists the thirty-two mutants and where each is caught.

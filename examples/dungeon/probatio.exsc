@@ -19,7 +19,9 @@
 // zero seed (which must make the SAME chunk as the constant that replaces it),
 // 3 the prune, 4 the petabyte arithmetic, 5 the inverse: `desemina_furore` must
 // give back the index `semina_furore` was handed, for every (world, index) of
-// the scenario. That is the seed's bijection, checked in the language.
+// the scenario. That is the seed's bijection, checked in the language. 6 is the
+// coordinate form: `semina_plano(o, x, y)` must equal `semina_furore(o, y*2^32 + x)`
+// and `desemina_plano` must give (x, y) back, for the seven points below.
 
 @transitus
 structura Octo {
@@ -36,6 +38,22 @@ functio scribe_u64(s: Scriptor, v: u64) -> mensura {
 }
 
 // ---- the fixed scenario ---------------------------------------------------
+
+// Chunk coordinates, x then y: the origin, one step on each axis, the far corner
+// of the pebibyte square (2^19 - 1), the far corner of the plane, the signed
+// extremes read as u32 (0x80000000 is -2^31, 0x7FFFFFFF is 2^31 - 1), and
+// (-1, 0).
+functio puncta() -> acies<u32, 14> {
+    redde [
+        0, 0,
+        1, 0,
+        0, 1,
+        524287, 524287,
+        0xFFFFFFFF, 0xFFFFFFFF,
+        0x80000000, 0x7FFFFFFF,
+        0xFFFFFFFF, 0
+    ];
+}
 
 functio mundi() -> acies<u64, 2> {
     redde [0, 0xDEADBEEFCAFEF00D];
@@ -221,6 +239,41 @@ publica functio initium(m: Mundus) -> u8 {
     per a in 0..2 {
         scribe_u64(s, desemina_furore(0, mm[a]));
         scribe_u64(s, desemina_furore(0x9E3779B97F4A7C15, mm[a]));
+    }
+
+    // G. the plane: for each world and each of seven points, the seed, then the
+    // coordinates the inverse gives back
+    firma pp = puncta();
+    mutabilis xy: acies<u32, 2> = [0; 2];
+    per a in 0..2 {
+        per b in 0..7 {
+            firma cx: u32 = pp[b * 2];
+            firma cy: u32 = pp[b * 2 + 1];
+            firma semen_p: u64 = semina_plano(mm[a], cx, cy);
+            desemina_plano(semen_p, mm[a], xy);
+            scribe_u64(s, semen_p);
+            scribe_u64(s, xy[0] sicut u64);
+            scribe_u64(s, xy[1] sicut u64);
+            firma indicis: u64 = (((cy sicut u64) sursum 32) sive (cx sicut u64));
+            si semen_p ne semina_furore(mm[a], indicis) vel xy[0] ne cx vel xy[1] ne cy {
+                si verdictum eq 0 {
+                    verdictum = 6;
+                }
+            }
+        }
+    }
+
+    // the pebibyte square: 2^19 chunks a side, 4,096 bytes a chunk, is 2^50 bytes
+    firma latus: u64 = 524288;
+    firma coetus: u64 = latus * latus;
+    firma octeti: u64 = coetus * 4096;
+    scribe_u64(s, latus);
+    scribe_u64(s, coetus);
+    scribe_u64(s, octeti);
+    si octeti ne (1 sursum 50) {
+        si verdictum eq 0 {
+            verdictum = 6;
+        }
     }
     redde verdictum;
 }

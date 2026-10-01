@@ -3,15 +3,17 @@
 # furor_petabytorum.exsc (the seed: semina_furore, its inverse desemina_furore
 # and the mixer under both) and dungeon.exsc (the chunk).
 #
-# expected.out (17,840 bytes) is WRITTEN BY prototypes/dungeon_oracle.py, not by
+# expected.out (18,200 bytes) is WRITTEN BY prototypes/dungeon_oracle.py, not by
 # this program: Python's arbitrary-precision integers, list-of-lists grids and
 # zlib's crc32. Regenerate it with
 #   python3 prototypes/dungeon_oracle.py stream -o tests/programs/dungeon/expected.out
-# (about 10 s: the oracle is the slow side). The stream's six sections are
+# (about 10 s: the oracle is the slow side). The stream's seven sections are
 # described in the oracle's source, `WORLDS`' comment: the petabyte arithmetic,
 # the seed function, twenty-two chunk records (the first four followed by their raw
 # 4,096 bytes), a rolled digest over 256 chunks, the prune run on a grid
-# built to have islands in it, and the seed's inverse (22 words).
+# built to have islands in it, the seed's inverse (22 words), and the plane: seven
+# chunk coordinates in two worlds, seed and coordinates back, then the pebibyte
+# square (45 words).
 #
 # The exit status is the program's own check of what is NOT the oracle's word: 0
 # only if the mixer reproduces splitmix64's published first output for seed 0
@@ -19,10 +21,12 @@
 # replaces it, the prune removes exactly the 11 stranded tiles of its synthetic
 # grid and refuses a start that is not floor, the petabyte arithmetic holds, and
 # `desemina_furore` gives back the index `semina_furore` was handed for every
-# (world, index) of the scenario; otherwise 1, 2, 3, 4 or 5 in that order.
+# (world, index) of the scenario, and the coordinate form `semina_plano` agrees
+# with `semina_furore` on (y << 32) | x and `desemina_plano` gives (x, y) back for
+# seven points in two worlds; otherwise 1, 2, 3, 4, 5 or 6.
 #
-# NON-VACUOUS, measured 2026-10-01: of twenty-five mechanical mutants of
-# the two modules, every one fails here, each at a stated place --
+# NON-VACUOUS, measured 2026-10-01: of thirty-two mechanical mutants of
+# the two modules, every one (and one more is equivalent, below) fails here, each at a stated place --
 #   roughen rate 1/4 -> 1/8              byte 200   (the first chunk's draw count)
 #   CA wall rule >= 5 -> >= 6            byte 200
 #   CA floor rule <= 3 -> <= 2           byte 200
@@ -40,6 +44,16 @@
 #   inverse: GAMMA's inverse, either mixer constant's inverse, the xorshift
 #     order, or the world's sign wrong   exit 5, byte 17,673 or 17,737 (section F)
 #   inverse: one xorshift round, not two exit 5, byte 17,673
+#   plane: axes swapped in the pack      exit 6, byte 17,865 (section G)
+#   plane: y shifted by 31, not 32       exit 6, byte 17,889
+#   plane: y ignored                     exit 6, byte 17,889
+#   plane inverse: high word shifted 31  exit 6, byte 17,912
+#   plane inverse: low word shifted      exit 6, byte 17,880
+#   plane inverse: x and y written swapped  exit 6, byte 17,880
+#   pebibyte square: 524,289 a side      exit 6, byte 18,184
+#   EQUIVALENT, survives by design: `sive` -> `aut` in the pack. The two halves
+#   occupy disjoint bits, where OR and XOR agree (tests/programs/basis64 records
+#   the same). Said here rather than left to be found.
 #   zero seed not substituted            exit 2, byte 199
 #   prune loses its left move           exit 3, byte 199   (over-prunes: any chunk shows it)
 #   prune loses its down move            exit 3, byte 199
@@ -61,7 +75,7 @@
 # tests/run.sh was not run; this environment's clang has no UBSan runtime and
 # no target headers, so its differential and cross phases would fail on every
 # program for reasons that are the host's):
-#   reference   exit 0, 17,840 bytes, byte-identical to expected.out, ~1.0 s
+#   reference   exit 0, 18,200 bytes, byte-identical to expected.out, ~1.0 s
 #   gcc   -O0   exit 0, identical (-fsanitize=undefined -fno-sanitize-recover=all)
 #   gcc   -O2   exit 0, identical
 #   clang -O0   exit 0, identical (-fsanitize=undefined -fsanitize-trap=undefined)
