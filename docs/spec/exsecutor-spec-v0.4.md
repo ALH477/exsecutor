@@ -1,6 +1,6 @@
 # Exsecutor — Language Specification v0.4
 
-**Status:** design complete, implementation through Stage 3 (§16), with named Stage 2 gaps; Stage 4 unstarted; whole-acy lanes run (called Stage 5 in §14 entry 27 and the README, which is not §16's Stage 5): Stage 1's front end is built and its kill criterion evaluated and closed (`docs/design/diagnostics-review.md`); checker passes 0–4 run on every compile; and the lowering exists — `.exsc` sources compile to artifacts. The program suite in `tests/programs/` compiles, runs, and is syscall-audited by `tests/run.sh`; the §14 conformance suite runs; the reference backend's IR, its verifier and the runtime prelude are built ahead of their remaining input; the C backend exists in library mode, is differentially tested against the reference under gcc and clang at `-O0`/`-O2` with UBSan, and cross-runs on `mips64-none-o64` (§9.5). The publish gate is met (`tools/publish-gate.sh`; README status block). This sentence previously said no `.exsc` source compiled yet — stale since the lowering landed, and amended here because a false "nothing works" banner is the same evidence-class failure as a false "it works". Consolidates v0.1, Addenda A–C, Stage 0 measurements, the adversary audit, and the capability-row prototype. Supersedes all prior documents.
+**Status:** design complete, implementation through Stage 3 (§16), with named Stage 2 gaps; Stage 4 unstarted; whole-acy lanes run (called Stage 5 in §14 entry 27 and the README, which is not §16's Stage 5): Stage 1's front end is built and its kill criterion evaluated and closed (`docs/design/diagnostics-review.md`); checker passes 0–5 run on every compile; and the lowering exists — `.exsc` sources compile to artifacts. The program suite in `tests/programs/` compiles, runs, and is syscall-audited by `tests/run.sh`; the §14 conformance suite runs; the reference backend's IR, its verifier and the runtime prelude are built ahead of their remaining input; the C backend exists in library mode, is differentially tested against the reference under gcc and clang at `-O0`/`-O2` with UBSan, and cross-runs on `mips64-none-o64` (§9.5). The publish gate is met (`tools/publish-gate.sh`; README status block). This sentence previously said no `.exsc` source compiled yet — stale since the lowering landed, and amended here because a false "nothing works" banner is the same evidence-class failure as a false "it works". Consolidates v0.1, Addenda A–C, Stage 0 measurements, the adversary audit, and the capability-row prototype. Supersedes all prior documents.
 
 **v0.3 → v0.4.** Two changes, both recorded as ADRs rather than argued here. **§15 #2, §16, §17:** the lexicon derivation test is no longer a kill criterion on §3 — the Latin lexicon is retained regardless of the result, as an identity commitment rather than a hypothesis (ADR 0005). The test survives as calibration; §17's adoption risk is now accepted rather than mitigated, and the English-roots fallback §16 offered is closed by choice, not by evidence. **§18.1:** the build closure is `{fasmg}` *plus a vendored macro package* — corrected against measurement, fasmg being architecture-neutral and shipping no instruction set (ADR 0003). No other design decision changed. v0.3 retired the v0.1–v0.2 placeholder name and recorded the implementation decision in §18.
 
@@ -23,6 +23,30 @@ The name is well-formed under this document's own §3 rules, which is the reason
 **What was given up.** "Nomos" was chosen because νόμος (convention) opposes φύσις (nature) — the classical distinction between what holds by human agreement and what is intrinsic, which is §1's thesis in one word. *Exsecutor* means "enforcer," not that distinction. It fits a compiler whose entire character is refusing to compile, but it is a weaker thematic fit than the name it replaces. Recorded rather than argued away.
 
 **Extension:** `.exsc` — **Interface file:** `ego.exsc`
+
+---
+
+## Table of contents
+
+1. Thesis — 1.1 Non-goals · 1.2 Prior art
+2. Falsifiability — 2.1 Strong · 2.2 Moderate · 2.3 Weak · 2.4 The unrepresentability table
+3. The lexicon — 3.1 Rule · 3.2 Why this layer · 3.3 Roots · 3.4 Suffixes carry type contracts · 3.5 Prefixes carry signature laws · 3.6 No assimilation · 3.7 What this buys · 3.8 Constraints · 3.9 Root coinage governance (3.9.1–3.9.7)
+4. Capabilities — 4.1 Rules · 4.2 Rows and substitution · 4.3 Capability-bearing types · 4.4 Dynamic dispatch · 4.5 Ergonomics · 4.6 The capability set · 4.7 The entry point
+5. Types — 5.1 Text and branded offsets · 5.2 Integers, byte order, `@transitus` · 5.3 FFI · 5.4 Numeric semantics · 5.5 Device placement and heterogeneous execution
+6. Memory — 6.1 Model · 6.2 Measured evidence · 6.3 The six decisions · 6.4 Reference types and FFI · 6.5 Refcount representation · 6.6 Destruction · 6.7 Accepted costs
+7. Generics and modes — 7.1 Generics: dictionary passing · 7.2 Modes
+8. Surface syntax and diagnostics — 8.1 Source · 8.2 Identifiers · 8.3 Diagnostics · 8.4 Tokens · 8.5 Control flow · 8.6 Phrase grammar
+9. Compilation and the build model — 9.1 Pipeline · 9.2 Backend · 9.3 Compiler purity contract · 9.4 No build scripts · 9.5 Cross-compilation · 9.6 The two-hash invariant
+10. The `ego` file — 10.1 Format · 10.2 Properties · 10.3 The capability audit
+11. Standard library principles
+12. Tooling
+13. Error registry
+14. Conformance suite
+15. Open problems
+16. Roadmap
+17. What would make this fail
+18. Implementation — 18.1 What this buys · 18.2 Accepted costs
+19. Open-items register (consolidated)
 
 ---
 
@@ -334,6 +358,13 @@ signal worth having, given §16's derivation test can no longer supply one
 (ADR 0005).
 
 Report it. Do not bury it.
+
+**Measured, 2026-10-01: 141 loans** (`LEX_LOAN_COUNT`,
+`compiler/x86_64/checker/lexicon/morphemes.inc`), harvested by
+`tools/harvest-lexicon.py` from every `publica functio`/`structura`/
+`interfacies`/`typus` declaration under `examples/`, `tests/programs/` and
+`tests/conformance/` that does not derive from the table; `initium` is
+reserved (§4.7) and is never a loan.
 
 ### 3.9.6 Domain sub-lexicons
 
@@ -1411,8 +1442,9 @@ kept small and most of the vocabulary is *contextual* instead.
 | selection | `discerne` `casus` |
 | jump | `rumpe` `perge` |
 
-Thirty words. §8.2 says "~40 keywords learned once"; the real number is under
-that, and it is now a count rather than an estimate. `[UNTESTED]` The `ego`
+Thirty words. §8.2 used to say "~40 keywords learned once"; the real number
+was under that, and §8.2 now gives the same counted thirty rather than the
+estimate. `[UNTESTED]` The `ego`
 structure words listed as contextual above (`versio`, `licentia`, `fontes`,
 `hospites`, `acceleratores`, `potestates`, `exitus`, and the four `numeri`
 keys) occur in no compiler table: the CST parses no `ego` block (§8.6, blocked
@@ -2106,11 +2138,20 @@ Terminals are §8.4's tokens; `IDENT` `INT` `STRING` are the lexer's classes.
     Cmp           ::= Range [CmpOp Range]
     CmpOp         ::= 'lt' | 'le' | 'gt' | 'ge' | 'eq' | 'ne'
     Range         ::= Xor ['..' Xor]
-    Xor           ::= Shift ('aut' Shift)*                   (* tests/unit/cst_shift_xor.asm *)
+    Xor           ::= Shift (BitOp Shift)*                   (* every BitOp in one chain is the SAME
+                                                      word; a different word ENDS the production,
+                                                      landing EXS-E0201 at the second word --
+                                                      `(a atque b) sive c` is accepted;
+                                                      tests/unit/cst_bitand_or.asm *)
+    BitOp         ::= 'aut' | 'atque' | 'sive'               (* tests/unit/cst_shift_xor.asm,
+                                                      tests/unit/cst_bitand_or.asm *)
     Shift         ::= Add [ShiftOp Add]                      (* non-associative; same fixture *)
     ShiftOp       ::= 'sursum' | 'deorsum'
     Add           ::= Mul (('+' | '+%' | '+|' | '-' | '-%' | '-|') Mul)*
-    Mul           ::= Cast ('*' Cast)*
+    Mul           ::= Cast (MulOp Cast)*                      (* flat, left-associative, and MIXES
+                                                      FREELY: `a / b residuum c * d` is one flat
+                                                      MUL_EXPR with four operands *)
+    MulOp         ::= '*' | '/' | 'residuum'
     Cast          ::= Unary ('sicut' Type)*
     Unary         ::= ('-' | '&' | '*') Unary | Postfix
     Postfix       ::= Primary Suffix*
@@ -2125,8 +2166,10 @@ Terminals are §8.4's tokens; `IDENT` `INT` `STRING` are the lexer's classes.
     Literal       ::= INT | STRING | FLOAT                  (* INT: decimal or 0x hex; FLOAT: §8.4's
                                                       two forms, one spelling of 'e', no suffixes;
                                                       binary/octal bases [OPEN] *)
-    ArithOp       ::= '+' | '+%' | '+|' | '-' | '-%' | '-|' | '*' | '/'   (* '/': float operands only,
-                                                      §5.4/§8.4; integer quotient and remainder [OPEN] *)
+    ArithOp       ::= '+' | '+%' | '+|' | '-' | '-%' | '-|' | '*' | '/'   (* '/': float and integer
+                                                      operands, both settled 2026-09-25 (§5.4/§8.4);
+                                                      `tests/unit/cst_intdiv_rem.asm`,
+                                                      `tests/unit/chk_ty_intdiv.asm` *)
 
     Type          ::= ('&' ['mutabilis'] | '*')* CoreType (':' IDENT | 'apud' IDENT)*
     CoreType      ::= BitType | Path [GenericArgs] | '(' Type ')'
@@ -2934,7 +2977,7 @@ matching arm runs nothing and falls to the join), which is the honest thing to
 have done and is not the language §8.5 describes.
 
 It takes `035x` rather than `0344` because §13's `03xx` groups by the
-construct a rule belongs to — `0301`–`0311` general typing, `0321`–`0322`
+construct a rule belongs to — `0301`–`0312` general typing, `0321`–`0322`
 `@transitus`, `0332` branded offsets, `0341`–`0343` the reductions — and
 patterns are a fourth construct, so the reductions keep the rest of their
 decade. It is **one** code and not four: `docs/design/sum-types.md` D2 and D4
@@ -2950,13 +2993,12 @@ ordering ADR 0010's profile codes needed and did not get for some time. The
 design it serves is `docs/design/sum-types.md`, of which D1, D2's grammar and
 D6 have since landed and D3 has not: the code exists here so that D3 can be
 implemented, and until it is implemented nothing emits it. Registered codes
-with no raise site anywhere in the compiler, counted on 2026-09-27:
+with no raise site anywhere in the compiler, counted on 2026-10-01 (reverified
+by grep against the same set counted on 2026-09-27; unchanged):
 `EXS-E0105`, `EXS-E0332`, `EXS-E0351`, `EXS-E0701` and the `08xx` profile
 codes. This sentence used to put `EXS-E0601`–`EXS-E0603` in that state; they
 are not — the lexicon pass emits all three and `EXS-E0610`
-(`compiler/x86_64/checker/lexicon/lexicon.inc`, six fixtures) behind a call
-the checker does not make while its morpheme table is §3.3's illustrative
-fourteen roots (§3.3 has said so all along; this section had not).
+(`compiler/x86_64/checker/lexicon/lexicon.inc`, six fixtures).
 
 `08xx` is the `certus` profile (`docs/design/profile-certus.md`, ADR 0010).
 The grouping is the profile's own section structure, not an invention:
@@ -3196,3 +3238,113 @@ Recorded so the constraints are not rediscovered later. Nothing here changes a d
 - **aarch64 and riscv64 hosts are full rewrites** of the architecture-specific tree. §5.3's minimum ABI coverage is about what `exsc` can target and is unaffected; this is about where `exsc` can run.
 - **Debugging degrades.** §12 already flags DWARF as the C backend's weak point; hand-written assembly does not improve it. Mitigated by stage dumps at every pipeline boundary rather than by a debugger.
 - **§16's revise-on-measurement loop gets expensive**, in direct tension with this document's method (see the evidence-base note above: prose designs are hypotheses until code runs). The Python probe layer is the mitigation — design questions get answered where iteration is cheap, and only settled answers are written in assembly.
+
+---
+
+# 19. Open-items register (consolidated)
+
+§15 #9 already admits §8.6's "Not settled here" list is a second,
+uncoordinated register. It is a third, counting this document's own
+`[OPEN]`/`[UNTESTED]`/`[UNREPRODUCED]` markers scattered through every other
+section: 95 of them currently open a bullet or a sentence as a live, present-
+tense claim rather than narrating a past state a surrounding sentence then
+closes (`docs/spec/marker-census.md` classifies all 110 occurrences on that
+test and is the source this section is generated from by eye, not by tool —
+re-run the classification before trusting a stale count here). This section
+does not restate any of them; it indexes by location so a reader does not
+have to walk 3200 lines to find what is still owed. The two pre-existing
+registers are included by reference, not duplicated.
+
+**§15, Open problems** — nine items, numbered, append-only (CLAUDE.md,
+renumbering a referenced list is the same mistake as renumbering an error
+code). Still open there: #2 lexicon derivation test (cost unmeasured), #3
+reference cycles (no answer for the full language), #5 a row on a type
+parameter (no syntax), #6 generator model coverage, #7 generated-C debug
+info, #8 ecosystem bootstrapping, #9 the LL(1) property and the recovery
+design beyond the Stage 1 sample.
+
+**§8.6, Not settled here** — numeric literals beyond decimal/hex/float and
+the `HASH` token; sum types' pattern typing and exhaustiveness, the `?`
+form's design-vs-checker gap; brand syntax `positio<'t>`; generic
+implementation heads; logical negation and the `*%`/`*|` family; the
+`refero` expression form, `apud` as other than a type suffix, labelled
+`rumpe`/`perge`, a `sub` list form, `si`/`discerne` as expressions; `sub`
+inside `per`/`quisque` bodies; an unbounded `dum` outside `profilum certum`.
+
+**Elsewhere in the document**, by section:
+
+- §3 The lexicon — the derivation test is prepared, never administered to a
+  human subject (`[UNTESTED]`, restated at §15 #2). §3.3: the rest of the
+  prefix laws beyond `re-`/`con-` (`[OPEN]`). §3.8: root coinage governance
+  process defined, never exercised (`[UNTESTED]`). §3.9: same, restated
+  (`[UNTESTED]`). §3.9.7: `exsc lexicon` is a stub (`[OPEN]`).
+- §4 Capabilities — the v0.2 capability-row probe is absent from the tree,
+  its six attacks never enumerated anywhere (`[UNREPRODUCED]`). §4.2: the
+  rebuilt probe's fix is `[UNTESTED]` as a soundness claim (nine cases, not a
+  proof, restated at §15 #1). §4.7: no library artifact
+  for the reference backend (`[OPEN]`); `--emitte c` library mode is
+  `[UNTESTED]` (D1); only `m.ambitus()` has a prelude row, `archivum` and the
+  rest do not (`[OPEN]`); which atoms derive fallibly vs. totally beyond the
+  three named is `[OPEN]`.
+- §5 Types — §5.1: four method calls on `octeti` views, only one typed
+  (`[OPEN]`); `quaere`/`sectio` unimplemented (`[OPEN]`); collation names
+  have no prelude row (`[OPEN]`). §5.2: `&T:o` dereference admission
+  (`[OPEN]`); a signed `@transitus` field with an explicit order has no code
+  assigned (`[OPEN]`); whether `textus:maior`'s double diagnostic should
+  suppress (`[OPEN]`); nested `@transitus` structs (`[OPEN]`). §5.4: compare-
+  and-mask, extracts, splats, lane counts above 8 (`[OPEN]`); narrowing from
+  a signed source/destination (`[UNTESTED]`); `aut`'s left-first evaluation
+  order (`[UNTESTED]`); signed shifts' two meanings (`[OPEN]`); `*%`/`*|`
+  overflow division forms (`[OPEN]`); no `/%`/`/|` (`[OPEN]`). §5.5: the
+  whole device-placement surface below `apud`/`@nucleus`/`poscit machina`
+  (`[OPEN]`); the measurement is `[UNTESTED]` beyond the named RDNA3 set.
+- §6 Memory — §6.2: `prototypes/stage0-bench/` is absent; the ARC figures are
+  `[UNREPRODUCED]`. §6.7: no fix for reference-cycle leaks (`[OPEN]`,
+  restated at §15 #3).
+- §7 Generics and modes — §7.1: no syntax for a row on a type parameter
+  (`[OPEN]`, restated at §15 #5).
+- §8 Surface syntax — §8.1: the escape grammar (`[OPEN]`); Unicode's class
+  enumeration is not derived (`[OPEN]`). §8.4: the `ego` structure words are
+  `[UNTESTED]` as a compiler-table fact; `*%`/`*|` families and digit
+  separators remain `[OPEN]`. §8.5: `quisque`'s cross-iteration dependency
+  analysis (`[OPEN]`); exhaustiveness needs an enumeration (cross-referenced
+  from §8.6); three keyword-driven properties' dependency analysis (`[OPEN]`).
+  §8.6 Expressions: `sin` position for struct-literal re-admission
+  (`[UNTESTED]`); array-literal re-admission in `[ ]`/nested blocks
+  (`[UNTESTED]`); logical negation has no token (`[OPEN]`); tuples, slices,
+  open-ended ranges, named arguments, compound assignment (`[OPEN]`). §8.6
+  Grammar: annotation arguments, sum-type constructor/pattern typing and
+  lowering, pattern-vs-scrutinee typing, binary/octal numeric bases (all
+  `[OPEN]` or `[UNTESTED]` grammar-comment entries; see the productions
+  directly). §8.6 Peeks: the numeric-grammar dependency in `1..n` lexing
+  (`[OPEN]`, same underlying gap as §8.4's). §8.6 What building the parser
+  corrected: the `sin` position for struct literals (`[UNTESTED]`).
+- §9 Compilation and the build model — §9.2: `muls`/overflow predicates
+  (`[OPEN]`); `bitcast` (`[OPEN]`); the compile-speed harness is
+  `[UNREPRODUCED]`; "naive is cheap" is an estimate, not a measurement
+  (`[OPEN]`, restated at §16). §9.4: the generator model is unvalidated
+  against bindgen/protobuf/resource embedding/Faust (`[OPEN]`). §9.5:
+  `riscv64-linux` is `[UNTESTED]` (nothing runs it); the `mips64-none-o64`
+  row's `none-eabi`/`aarch64-linux`/`wasm32-wasi` are not yet accepted
+  (`[OPEN]`); the o64 ABI itself (vs. the n32 proxy) stays `[UNTESTED]`.
+- §10 The `ego` file — §10.1: `exsc ego` is a stub, the format is
+  illustrative only (`[OPEN]`). §10.2: nine of ten §12 subcommands are
+  `drv_stub`, `--potestates` is not an accepted option (`[OPEN]`).
+- §11 Standard library principles — `eventus<T, E>` vs. the inhabited
+  two-parameter spelling: the bare/under-parameterised forms are `[OPEN]`
+  until D5 lands; `Scriptor.scribe`/`imprime.exsc`/entry 12's `-> mensura`
+  stay `[OPEN]` until `eventus` is inhabited.
+- §12 Tooling — the LSP is deferred (`[OPEN]`, restated at §18.2); the C
+  backend step `exsc` never invokes is `[UNTESTED]`; `curre` is a stub and
+  `--potestates` is not an option (`[OPEN]`).
+- §15 Open problems — see above.
+- §16 Roadmap — `riscv64-linux` has no comparison target (`[OPEN]`); the
+  `amdgcn` device-build placement surface (`[OPEN]`); "naive is cheap" is
+  still unmeasured (`[OPEN]`).
+- §18 Implementation — §18.2: the LSP is deferred (`[OPEN]`, same item as
+  §12's).
+
+A marker not listed here either does not currently exist (retired by one of
+this change's corrections) or was classified **narrative** by
+`docs/spec/marker-census.md`'s test — it quotes a past state that the
+surrounding prose already closes, and is not an action item.
