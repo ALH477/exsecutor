@@ -1,6 +1,6 @@
 # examples/
 
-Exsecutor source, ten programs, all compiled and run by `tests/run.sh`:
+Exsecutor source, eleven programs, all compiled and run by `tests/run.sh`:
 
 - **the hello world** — `saluta.exsc`, `imprime.exsc`, `initium.exsc`,
   below; `tests/programs/saluta/` and `tools/publish-gate.sh` run it;
@@ -75,6 +75,19 @@ Exsecutor source, ten programs, all compiled and run by `tests/run.sh`:
   as digital-watch firmware (set time, alarm, countdown, stopwatch), bare on
   emulated Cortex-M4 and M0+; `metronomus/README.md` has the mutants and the
   compiler crash it found.
+- **`dungeon/`, a dungeon chunk from one 64-bit seed** — for Kiln.
+  `dungeon.exsc` is a pure library (no `poscit`, no `initium`, no allocation, no
+  clock): a 64×64 chunk of walls, floors, doors and traps from a BSP of twelve
+  rooms, a roughening pass and four cellular-automaton passes, corridors, a
+  connectivity prune, doors and traps, in one caller-owned 12 KB buffer. The seed
+  enters as an argument, and `fig_dungeon_seed(world, index)` is a bijection of the
+  index, so 2⁶⁴ chunks get 2⁶⁴ different seeds by construction (the first
+  petabyte is 244,140,625,000 of them). `tests/programs/dungeon/` holds its
+  17,664-byte stream byte-identical against the independent oracle
+  `prototypes/dungeon_oracle.py` on both backends, all four C builds and the
+  big-endian mips64 qemu run; `tests/c/dungeon_scan.c` runs the emitted C over
+  millions of chunks. `dungeon/README.md` has what was measured, what the original
+  sketch got wrong, and that nothing here has run on a VR4300.
 - **`tempus/`, the time register** — one DeModFrame carrying a node's held
   time onto the Punctim wire, and the read of one that arrives. Built as one
   unit with §14 entry 23's fixture and codex, so the frame declaration is

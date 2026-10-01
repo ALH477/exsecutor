@@ -1,0 +1,205 @@
+// examples/dungeon/probatio.exsc -- the driver for dungeon.exsc, and the only
+// file of the unit that names `Mundus` or `Scriptor`. It reads nothing; it runs
+// a fixed scenario through every entry point and writes what the library
+// answered, as big-endian u64 words, to standard output.
+//
+// TWO KINDS OF CERTIFICATE.
+//   * INDEPENDENT, checked by `cmp`: tests/programs/dungeon/expected.out is
+//     written by prototypes/dungeon_oracle.py -- Python's arbitrary-precision
+//     integers, list-of-lists grids, zlib's crc32 -- which has the same
+//     algorithm but none of this file's arithmetic. The oracle's docstring
+//     says what each section of the stream is.
+//   * EXTERNAL, checked here: two facts that do not come from the oracle.
+//     splitmix64's published first output for seed 0, 0xE220A8397B1DCDAF, is
+//     the mixer at the golden-ratio constant (exit 1 if it is not). And the
+//     petabyte arithmetic must satisfy the relations §0 of the oracle states
+//     (exit 4).
+//
+// The exit status is the first failed check: 0 all right, 1 the mixer, 2 the
+// zero seed (which must make the SAME chunk as the constant that replaces it),
+// 3 the prune, 4 the petabyte arithmetic.
+
+@transitus
+structura Octo {
+    valor: u64:maior
+}
+
+functio scribe_u64(s: Scriptor, v: u64) -> mensura {
+    firma t = Octo { valor: v } sicut acies<u8, 8>;
+    mutabilis n: mensura = 0;
+    per i in 0..8 {
+        n = n + s.scribe_octeto(t[i]);
+    }
+    redde n;
+}
+
+// ---- the fixed scenario ---------------------------------------------------
+
+functio mundi() -> acies<u64, 2> {
+    redde [0, 0xDEADBEEFCAFEF00D];
+}
+
+functio indices() -> acies<u64, 9> {
+    redde [0, 1, 2, 3, 7, 64, 4095, 244140624999, 0xFFFFFFFFFFFFFFFF];
+}
+
+// One record: seed, walkable, draws, boundary tiles, pruned, crc32 -- six
+// words -- and, when `cruda` is 1, the chunk's 4,096 bytes after it.
+functio scribe_chunk(s: Scriptor, w: &mutabilis acies<u8, 12288>, semen: u64, cruda: mensura) -> mensura {
+    mutabilis st: acies<u64, 3> = [0; 3];
+    firma transitabilia: u64 = fig_dungeon_chunk(w, st, semen);
+    mutabilis n: mensura = 0;
+    n = n + scribe_u64(s, semen);
+    n = n + scribe_u64(s, transitabilia);
+    n = n + scribe_u64(s, st[0]);
+    n = n + scribe_u64(s, st[1]);
+    n = n + scribe_u64(s, st[2]);
+    n = n + scribe_u64(s, fig_dungeon_crc32(w) sicut u64);
+    si cruda eq 1 {
+        per i in 0..4096 {
+            n = n + s.scribe_octeto((*w)[i]);
+        }
+    }
+    redde n;
+}
+
+// A grid with islands in it, for the prune. See the oracle's `synthetic`.
+functio fabrica_insulas(w: &mutabilis acies<u8, 12288>) -> u8 {
+    per i in 0..12288 {
+        (*w)[i] = 0;
+    }
+    per y in 10..13 {
+        per x in 10..21 {
+            (*w)[y * 64 + x] = 1;
+        }
+    }
+    per x in 21..37 {
+        (*w)[11 * 64 + x] = 1;
+    }
+    per y in 40..43 {
+        per x in 40..43 {
+            (*w)[y * 64 + x] = 1;
+        }
+    }
+    (*w)[5 * 64 + 50] = 1;
+    (*w)[12 * 64 + 37] = 1;
+    redde 0;
+}
+
+functio sectio_petabyte(s: Scriptor) -> u8 {
+    // 10^15 bytes in 4,096-byte chunks, and what a 64-bit seed can index.
+    // 2^64 is not a u64, so the seed space is stood in for by u64's maximum,
+    // 2^64 - 1, and the quotient is the same because the chunk count does not
+    // divide 2^64.
+    firma pb: u64 = 1000000000000000;
+    firma chunks: u64 = pb / 4096;
+    firma resto: u64 = pb residuum 4096;
+    firma maximum: u64 = 0xFFFFFFFFFFFFFFFF;
+    firma ratio: u64 = maximum / chunks;
+    mutabilis seed64_sufficit: u64 = 0;
+    si maximum gt chunks {
+        seed64_sufficit = 1;
+    }
+    mutabilis seed32_sufficit: u64 = 1;
+    si 4294967296 lt chunks {
+        seed32_sufficit = 0;
+    }
+    scribe_u64(s, chunks);
+    scribe_u64(s, resto);
+    scribe_u64(s, ratio);
+    scribe_u64(s, seed64_sufficit);
+    scribe_u64(s, 1 - seed32_sufficit);
+    si resto ne 0 {
+        redde 4;
+    }
+    si chunks * 4096 ne pb {
+        redde 4;
+    }
+    si seed64_sufficit ne 1 {
+        redde 4;
+    }
+    redde 0;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma s = Scriptor.ad_exitum(m.ambitus());
+    mutabilis w: acies<u8, 12288> = [0; 12288];
+    mutabilis verdictum: u8 = 0;
+
+    // A. the petabyte arithmetic
+    firma pbv = sectio_petabyte(s);
+    si pbv ne 0 {
+        verdictum = pbv;
+    }
+
+    // B. the seed function
+    firma mm = mundi();
+    firma ii = indices();
+    per a in 0..2 {
+        per b in 0..9 {
+            scribe_u64(s, fig_dungeon_seed(mm[a], ii[b]));
+        }
+    }
+
+    // the mixer against splitmix64's published vector
+    si fig_dungeon_mix(0x9E3779B97F4A7C15) ne 0xE220A8397B1DCDAF {
+        si verdictum eq 0 {
+            verdictum = 1;
+        }
+    }
+
+    // C. chunks: every (world, index), then two direct seeds; raw bytes for the
+    // first four
+    mutabilis crudae: mensura = 0;
+    per a in 0..2 {
+        per b in 0..9 {
+            firma semen: u64 = fig_dungeon_seed(mm[a], ii[b]);
+            si crudae lt 4 {
+                scribe_chunk(s, w, semen, 1);
+                crudae = crudae + 1;
+            } aliter {
+                scribe_chunk(s, w, semen, 0);
+            }
+        }
+    }
+    scribe_chunk(s, w, 0xFFFFFFFFFFFFFFFF, 0);
+    scribe_chunk(s, w, 1, 0);
+    // chunks where the prune fires: it removes 1 tile in the first, 5 in the second
+    scribe_chunk(s, w, 0xF8536F0B5739D6EC, 0);
+    scribe_chunk(s, w, 0xA8B1E4B207C1C4C8, 0);
+
+    // the zero seed is replaced by the golden-ratio constant: the two must make
+    // the same chunk
+    mutabilis st0: acies<u64, 3> = [0; 3];
+    fig_dungeon_chunk(w, st0, 0);
+    firma crc_zero: u32 = fig_dungeon_crc32(w);
+    fig_dungeon_chunk(w, st0, 0x9E3779B97F4A7C15);
+    si fig_dungeon_crc32(w) ne crc_zero {
+        si verdictum eq 0 {
+            verdictum = 2;
+        }
+    }
+
+    // D. a rolled digest over 256 chunks of one world
+    mutabilis acc: u64 = 0;
+    per i in 0..256 {
+        fig_dungeon_chunk(w, st0, fig_dungeon_seed(0xDEADBEEFCAFEF00D, i sicut u64));
+        acc = ((acc sursum 7) sive (acc deorsum 57)) aut (fig_dungeon_crc32(w) sicut u64);
+    }
+    scribe_u64(s, 256);
+    scribe_u64(s, acc);
+
+    // E. the prune, on a grid with islands in it
+    fabrica_insulas(w);
+    firma podada: mensura = fig_dungeon_prune(w, 11 * 64 + 11);
+    scribe_u64(s, podada sicut u64);
+    scribe_u64(s, fig_dungeon_crc32(w) sicut u64);
+    firma recusata: mensura = fig_dungeon_prune(w, 0);
+    scribe_u64(s, recusata sicut u64);
+    si podada ne 11 vel recusata ne 4097 {
+        si verdictum eq 0 {
+            verdictum = 3;
+        }
+    }
+    redde verdictum;
+}

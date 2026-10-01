@@ -1,0 +1,485 @@
+// examples/dungeon/dungeon.exsc
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 The Exsecutor authors.
+// ---------------------------------------------------------------------------
+// A 64x64 dungeon chunk, grown from one 64-bit seed. A pure library: no
+// poscit, no Mundus, no initium, no allocation, no clock. The seed ARRIVES --
+// on the console it is the COP0 count at the moment Start is pressed, on a PC
+// it is whatever the host chose -- and everything after it is arithmetic, so
+// the same seed makes the same 4,096 bytes on the VR4300 and on x86-64. That
+// is spec §1's thesis applied to a game: the clock is a capability, and the
+// generator is the part of the program that has none.
+//
+// prototypes/dungeon_oracle.py is the design and the independent reference;
+// its docstring states every step and the measurements behind them. This file
+// is that algorithm in the language, and tests/programs/dungeon/expected.out
+// is written by the oracle, never by this program.
+//
+// THE ENTRY POINTS
+//
+//   fig_dungeon_seed(world, index)    the chunk's seed. A BIJECTION of the
+//                                     index for a fixed world, so 2^64 chunks
+//                                     get 2^64 different seeds -- by
+//                                     construction. 10^15 bytes / 4,096 =
+//                                     244,140,625,000 chunks, and drawing that
+//                                     many seeds at random from 2^64 would
+//                                     collide ~1,615 times.
+//   fig_dungeon_chunk(w, stats, seed) fills w[0..4096) with the chunk and
+//                                     returns its walkable-tile count
+//   fig_dungeon_crc32(w)              CRC-32/ISO-HDLC of w[0..4096)
+//
+// THE STORAGE. One caller-owned buffer, 12,288 bytes:
+//
+//   [    0,  4096)  the chunk, row-major, 64x64, one byte a tile. THE RESULT.
+//   [ 4096,  8192)  the cellular automaton's second buffer
+//   [ 4096, 12288)  the prune's stack of 4,096 u16 (the buffer above is dead by
+//                   then: the two are never live together)
+//
+// TILE CODES: 0 wall, 1 floor, 2 door, 3 trap. 4 exists only inside the prune
+// and never survives it.
+//
+// WHY THE ARITHMETIC IS SHAPED THE WAY IT IS
+//
+//   No `*%`. §5.4 leaves the wrapping multiply `[OPEN]`, and the seed mixer is
+//   two 64-bit multiplies mod 2^64, so `multiplica_modulo` below is
+//   examples/metronomus's, transcribed: split into 32-bit halves, reduce each
+//   cross product by the shift-discard idiom, add with `+%`.
+//
+//   The in-chunk stream is xorshift64 (13, 7, 17) because it is three shifts
+//   and three xors: no multiply at all, which is also what the language can
+//   say natively. State 0 is its fixed point, so a zero seed is replaced by
+//   the golden-ratio constant; exactly one index per world mixes to zero, and
+//   that one chunk repeats the layout of the seed that IS the constant.
+//
+//   `infra(f, n)` is [0, n) by multiply-shift on the high word of the state:
+//   `(s >> 32) * n >> 32`. No division (the VR4300's is ~69 cycles and there
+//   are ~1,000 draws), and the high bits of xorshift64 are the good ones. The
+//   bias is below n / 2^32.
+//
+//   Index arithmetic is `mensura` -- 32 bits on the console row and 64 on the
+//   host -- and trapping. Every tile index here is below 4,096 and every
+//   neighbour step is from an interior tile, so a trap would mean the
+//   algorithm was wrong, and that is what a trapping `+` is for.
+//
+// WHAT THIS DOES NOT DO
+//
+//   * No chunk-to-chunk joins: each chunk is a closed 64x64 with a solid
+//     border. A world is a lookup of chunks by index, not a continuous map.
+//   * No geometry. Turning the bytes into walls is the embedder's job, and on
+//     Kiln it is a different module's (a Forge voxel grid, or a flat draw).
+//   * No timing claim. Nothing here has been run on a VR4300.
+// ---------------------------------------------------------------------------
+
+// ---- the seed ------------------------------------------------------------
+
+// a * b mod 2^64 without `*%` -- examples/metronomus/metronomus.exsc,
+// `multiplica_modulo`. The low product is below 2^64; each cross product is
+// reduced mod 2^32 before it is added, so their sum is below 2^33 and
+// `sursum 32` drops what belongs above bit 63. The final add wraps on purpose.
+functio multiplica_modulo(a: u64, b: u64) -> u64 {
+    firma al = (a sursum 32) deorsum 32;
+    firma ah = a deorsum 32;
+    firma bl = (b sursum 32) deorsum 32;
+    firma bh = b deorsum 32;
+    firma x = (((ah * bl) sursum 32) deorsum 32) + (((al * bh) sursum 32) deorsum 32);
+    redde (al * bl) +% (x sursum 32);
+}
+
+// The splitmix64 finaliser. Two xorshift-rights and two ODD multiplies: each
+// step is invertible, so the whole is a bijection of u64 -- the property
+// `fig_dungeon_seed`'s distinctness rests on, and which the oracle runs
+// backwards (`unmix64`) rather than only arguing. mix(GAMMA) is splitmix64's
+// published first output for seed 0, 0xE220A8397B1DCDAF.
+publica functio fig_dungeon_mix(z: u64) -> u64 {
+    firma a: u64 = z aut (z deorsum 30);
+    firma b: u64 = multiplica_modulo(a, 0xBF58476D1CE4E5B9);
+    firma c: u64 = b aut (b deorsum 27);
+    firma d: u64 = multiplica_modulo(c, 0x94D049BB133111EB);
+    redde d aut (d deorsum 31);
+}
+
+// world + index * GAMMA, mixed. GAMMA is odd, so index -> index * GAMMA is a
+// bijection mod 2^64, and a bijection composed with a bijection is one.
+publica functio fig_dungeon_seed(world: u64, index: u64) -> u64 {
+    firma g: u64 = 0x9E3779B97F4A7C15;
+    redde fig_dungeon_mix(world +% multiplica_modulo(index, g));
+}
+
+// ---- the stream ----------------------------------------------------------
+
+structura Fluxus {
+    s: u64
+    n: u64
+}
+
+functio xs(s: u64) -> u64 {
+    firma a: u64 = s aut (s sursum 13);
+    firma b: u64 = a aut (a deorsum 7);
+    redde b aut (b sursum 17);
+}
+
+// One step of the stream; the draw count is what the oracle's `draws` is.
+functio proximus(f: &mutabilis Fluxus) -> u64 {
+    (*f).s = xs((*f).s);
+    (*f).n = (*f).n + 1;
+    redde (*f).s;
+}
+
+// [0, n), n >= 1.
+functio infra(f: &mutabilis Fluxus, n: mensura) -> mensura {
+    firma v: u64 = proximus(f);
+    firma r: u64 = ((v deorsum 32) * (n sicut u64)) deorsum 32;
+    redde r sicut mensura;
+}
+
+// ---- tile helpers --------------------------------------------------------
+
+// Walls among the eight neighbours of tile `i`. `i` is interior (not on the
+// border), so every index below is in range; a violation traps.
+functio muri_circum(w: &mutabilis acies<u8, 12288>, desde: mensura, i: mensura) -> mensura {
+    firma base: mensura = desde + i - 65;
+    mutabilis n: mensura = 0;
+    per dy in 0..3 {
+        per dx in 0..3 {
+            si dy ne 1 vel dx ne 1 {
+                si (*w)[base + dy * 64 + dx] eq 0 {
+                    n = n + 1;
+                }
+            }
+        }
+    }
+    redde n;
+}
+
+// Passable (anything but wall) as 0 or 1, and "open area" -- five or more of
+// the eight neighbours passable, which is three or fewer walls.
+functio passabile(w: &mutabilis acies<u8, 12288>, i: mensura) -> mensura {
+    si (*w)[i] ne 0 {
+        redde 1;
+    }
+    redde 0;
+}
+
+functio apertum(w: &mutabilis acies<u8, 12288>, i: mensura) -> mensura {
+    si muri_circum(w, 0, i) le 3 {
+        redde 1;
+    }
+    redde 0;
+}
+
+// ---- the passes ----------------------------------------------------------
+
+// Roughen: a tile on a boundary -- its 3x3 block (itself included) is neither
+// all wall nor all open -- flips with probability 1/4, one draw each, in
+// raster order. Reads the chunk, writes the second buffer; returns how many
+// boundary tiles it saw, which is also how many draws it took.
+functio asperge(w: &mutabilis acies<u8, 12288>, f: &mutabilis Fluxus) -> mensura {
+    mutabilis limes: mensura = 0;
+    per y in 1..63 {
+        per x in 1..63 {
+            firma i: mensura = y * 64 + x;
+            firma hic: u8 = (*w)[i];
+            mutabilis novum: u8 = hic;
+            mutabilis muri: mensura = muri_circum(w, 0, i);
+            si hic eq 0 {
+                muri = muri + 1;
+            }
+            si muri gt 0 et muri lt 9 {
+                limes = limes + 1;
+                si (proximus(f) deorsum 62) eq 0 {
+                    si hic eq 0 {
+                        novum = 1;
+                    } aliter {
+                        novum = 0;
+                    }
+                }
+            }
+            (*w)[4096 + i] = novum;
+        }
+    }
+    redde limes;
+}
+
+// One cellular-automaton pass between two 4,096-byte regions of the buffer:
+// wall if five or more of the eight neighbours are wall, floor if three or
+// fewer, otherwise unchanged. The border of the destination is never written,
+// and both regions start with a wall border, so it stays one.
+functio leniga(w: &mutabilis acies<u8, 12288>, a_off: mensura, b_off: mensura) -> u8 {
+    per y in 1..63 {
+        per x in 1..63 {
+            firma i: mensura = y * 64 + x;
+            firma muri: mensura = muri_circum(w, a_off, i);
+            si muri ge 5 {
+                (*w)[b_off + i] = 0;
+            } sin muri le 3 {
+                (*w)[b_off + i] = 1;
+            } aliter {
+                (*w)[b_off + i] = (*w)[a_off + i];
+            }
+        }
+    }
+    redde 0;
+}
+
+// An L's two legs, inclusive of both ends.
+functio hori(w: &mutabilis acies<u8, 12288>, y: mensura, xa: mensura, xb: mensura) -> u8 {
+    mutabilis lo: mensura = xa;
+    mutabilis hi: mensura = xb;
+    si xa gt xb {
+        lo = xb;
+        hi = xa;
+    }
+    per x in lo..(hi + 1) {
+        (*w)[y * 64 + x] = 1;
+    }
+    redde 0;
+}
+
+functio vert(w: &mutabilis acies<u8, 12288>, x: mensura, ya: mensura, yb: mensura) -> u8 {
+    mutabilis lo: mensura = ya;
+    mutabilis hi: mensura = yb;
+    si ya gt yb {
+        lo = yb;
+        hi = ya;
+    }
+    per y in lo..(hi + 1) {
+        (*w)[y * 64 + x] = 1;
+    }
+    redde 0;
+}
+
+// The prune's DFS: mark a floor tile reached (4) and push its index as two
+// bytes, low then high, on the stack that lives at 4096. Each tile is pushed at
+// most once, so the stack never holds more than 4,096 entries.
+functio empuja(w: &mutabilis acies<u8, 12288>, sp: mensura, n: mensura) -> mensura {
+    si (*w)[n] eq 1 {
+        (*w)[n] = 4;
+        (*w)[4096 + 2 * sp] = n sicut u8;
+        (*w)[4097 + 2 * sp] = (n deorsum 8) sicut u8;
+        redde sp + 1;
+    }
+    redde sp;
+}
+
+// ---- the prune -----------------------------------------------------------
+
+// Floor (1) that is not 4-connected to the floor tile `start` becomes wall.
+// Doors and traps are not floor and so are not walked: this runs BEFORE they
+// exist. Returns the tiles pruned; 4,097 if `start` is not a floor tile, which
+// is no count a prune can reach and means nothing was touched.
+//
+// It is public so it can be tested on input built to need it. The corridors
+// already join all twelve room centres, so it only ever removes a fragment the
+// smoothing split off a room -- but it does: measured over 2,000,000 chunks
+// (tests/c/dungeon_scan.c) it fires in 283 of them, about one in 7,000, and
+// removes 1 to 5 tiles; with it disabled, exactly those chunks come out
+// disconnected. A comparison of twenty seeds will rarely meet one, so
+// examples/dungeon/probatio.exsc also runs it on a grid built to have islands
+// in it, one of them touching the main region only at a corner, and its stream
+// includes chunks where it fires.
+publica functio fig_dungeon_prune(w: &mutabilis acies<u8, 12288>, start: mensura) -> mensura {
+    si (*w)[start] ne 1 {
+        redde 4097;
+    }
+    (*w)[start] = 4;
+    (*w)[4096] = start sicut u8;
+    (*w)[4097] = (start deorsum 8) sicut u8;
+    mutabilis sp: mensura = 1;
+    dum sp gt 0 {
+        sp = sp - 1;
+        firma c: mensura = ((*w)[4096 + 2 * sp] sicut mensura) + (((*w)[4097 + 2 * sp] sicut mensura) sursum 8);
+        sp = empuja(w, sp, c - 64);
+        sp = empuja(w, sp, c + 64);
+        sp = empuja(w, sp, c - 1);
+        sp = empuja(w, sp, c + 1);
+    }
+    mutabilis podada: mensura = 0;
+    per i in 0..4096 {
+        si (*w)[i] eq 4 {
+            (*w)[i] = 1;
+        } sin (*w)[i] eq 1 {
+            (*w)[i] = 0;
+            podada = podada + 1;
+        }
+    }
+    redde podada;
+}
+
+// ---- the chunk -----------------------------------------------------------
+
+// Fills w[0..4096). `stats` receives the stream draws taken, the boundary tiles
+// roughened and the floor tiles pruned. Returns the walkable tiles (floor,
+// door, trap). Every byte of `w` it reads it has written first, so the caller
+// owes it nothing: not zeroed storage, not the previous chunk's.
+publica functio fig_dungeon_chunk(w: &mutabilis acies<u8, 12288>, stats: &mutabilis acies<u64, 3>, seed: u64) -> u64 {
+    mutabilis f = Fluxus { s: seed, n: 0 };
+    si seed eq 0 {
+        f.s = 0x9E3779B97F4A7C15;
+    }
+
+    // solid rock, in both 4,096-byte regions
+    per i in 0..8192 {
+        (*w)[i] = 0;
+    }
+
+    // 2. the BSP, flattened into arrays: split the largest leaf on its longer
+    // side until there are twelve. Every leaf side stays >= 6 (see the
+    // oracle's docstring for the induction).
+    mutabilis lx: acies<mensura, 12> = [0; 12];
+    mutabilis ly: acies<mensura, 12> = [0; 12];
+    mutabilis lw: acies<mensura, 12> = [0; 12];
+    mutabilis lh: acies<mensura, 12> = [0; 12];
+    mutabilis pa: acies<mensura, 12> = [0; 12];
+    lw[0] = 64;
+    lh[0] = 64;
+    mutabilis nl: mensura = 1;
+    dum nl lt 12 {
+        mutabilis best: mensura = 0;
+        per j in 1..nl {
+            si lw[j] * lh[j] gt lw[best] * lh[best] {
+                best = j;
+            }
+        }
+        firma a: mensura = lw[best];
+        firma b: mensura = lh[best];
+        si a ge b {
+            firma lo: mensura = a / 3;
+            firma p: mensura = lo + infra(f, a - 2 * lo + 1);
+            lx[nl] = lx[best] + p;
+            ly[nl] = ly[best];
+            lw[nl] = a - p;
+            lh[nl] = b;
+            lw[best] = p;
+        } aliter {
+            firma lo: mensura = b / 3;
+            firma p: mensura = lo + infra(f, b - 2 * lo + 1);
+            lx[nl] = lx[best];
+            ly[nl] = ly[best] + p;
+            lw[nl] = a;
+            lh[nl] = b - p;
+            lh[best] = p;
+        }
+        pa[nl] = best;
+        nl = nl + 1;
+    }
+
+    // one room in each leaf, a tile clear of its edges
+    mutabilis cx: acies<mensura, 12> = [0; 12];
+    mutabilis cy: acies<mensura, 12> = [0; 12];
+    per r in 0..12 {
+        firma rw: mensura = 4 + infra(f, lw[r] - 5);
+        firma rh: mensura = 4 + infra(f, lh[r] - 5);
+        firma rx: mensura = lx[r] + 1 + infra(f, lw[r] - 1 - rw);
+        firma ry: mensura = ly[r] + 1 + infra(f, lh[r] - 1 - rh);
+        per yy in ry..(ry + rh) {
+            per xx in rx..(rx + rw) {
+                (*w)[yy * 64 + xx] = 1;
+            }
+        }
+        cx[r] = rx + (rw deorsum 1);
+        cy[r] = ry + (rh deorsum 1);
+    }
+
+    // 3. roughen the edges, then four smoothing passes. The chunk ends up in
+    // region A: roughen A->B, then B->A, A->B, B->A, A->B, then B back to A.
+    firma limes: mensura = asperge(w, f);
+    per p in 0..4 {
+        si (p residuum 2) eq 0 {
+            leniga(w, 4096, 0);
+        } aliter {
+            leniga(w, 0, 4096);
+        }
+    }
+    per i in 0..4096 {
+        (*w)[i] = (*w)[4096 + i];
+    }
+
+    // 4. corridors, after the smoothing: leaf k to the leaf it was split from
+    per k in 1..12 {
+        firma ax: mensura = cx[k];
+        firma ay: mensura = cy[k];
+        firma bx: mensura = cx[pa[k]];
+        firma by: mensura = cy[pa[k]];
+        si (proximus(f) deorsum 63) eq 0 {
+            hori(w, ay, ax, bx);
+            vert(w, bx, ay, by);
+        } aliter {
+            vert(w, ax, ay, by);
+            hori(w, by, ax, bx);
+        }
+    }
+
+    // 5. prune what is not 4-connected to room 0's centre
+    firma podada: mensura = fig_dungeon_prune(w, cy[0] * 64 + cx[0]);
+
+    // 6. doors: a passage one tile wide with an open area at one end
+    per y in 1..63 {
+        per x in 1..63 {
+            firma i: mensura = y * 64 + x;
+            si (*w)[i] eq 1 {
+                firma pn: mensura = passabile(w, i - 64);
+                firma ps: mensura = passabile(w, i + 64);
+                firma pw: mensura = passabile(w, i - 1);
+                firma pe: mensura = passabile(w, i + 1);
+                si pw eq 0 et pe eq 0 et pn eq 1 et ps eq 1 {
+                    si apertum(w, i - 64) eq 1 vel apertum(w, i + 64) eq 1 {
+                        (*w)[i] = 2;
+                    }
+                } sin pn eq 0 et ps eq 0 et pw eq 1 et pe eq 1 {
+                    si apertum(w, i - 1) eq 1 vel apertum(w, i + 1) eq 1 {
+                        (*w)[i] = 2;
+                    }
+                }
+            }
+        }
+    }
+
+    // 7. traps: ten tries, floor only, all eight neighbours passable
+    per t in 0..10 {
+        firma tx: mensura = infra(f, 64);
+        firma ty: mensura = infra(f, 64);
+        si tx ge 1 et tx le 62 et ty ge 1 et ty le 62 {
+            firma i: mensura = ty * 64 + tx;
+            si (*w)[i] eq 1 {
+                si muri_circum(w, 0, i) eq 0 {
+                    (*w)[i] = 3;
+                }
+            }
+        }
+    }
+
+    (*stats)[0] = f.n;
+    (*stats)[1] = limes sicut u64;
+    (*stats)[2] = podada sicut u64;
+    mutabilis transitabilia: u64 = 0;
+    per i in 0..4096 {
+        si (*w)[i] ne 0 {
+            transitabilia = transitabilia + 1;
+        }
+    }
+    redde transitabilia;
+}
+
+// ---- the digest ----------------------------------------------------------
+
+// CRC-32/ISO-HDLC of w[0..4096): reflected polynomial 0xEDB88320, init and
+// final xor 0xFFFFFFFF -- zlib's crc32, the one the oracle checks it against.
+// Bitwise, no table: 4,096 bytes is 32,768 steps and a 1 KB table would cost
+// more of the console's 4 MB than the time it saves. It takes the same borrow
+// as the generator, though it never writes: a `&mutabilis` binding does not
+// pass where a by-value `acies` is expected (EXS-E0303), and one buffer is what
+// the embedder holds.
+publica functio fig_dungeon_crc32(w: &mutabilis acies<u8, 12288>) -> u32 {
+    mutabilis crc: u32 = 0xFFFFFFFF;
+    per i in 0..4096 {
+        crc = crc aut ((*w)[i] sicut u32);
+        per k in 0..8 {
+            si (crc atque 1) eq 1 {
+                crc = (crc deorsum 1) aut 0xEDB88320;
+            } aliter {
+                crc = crc deorsum 1;
+            }
+        }
+    }
+    redde crc aut 0xFFFFFFFF;
+}

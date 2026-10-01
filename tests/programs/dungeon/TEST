@@ -1,0 +1,66 @@
+# examples/dungeon/: a 64x64 dungeon chunk grown from one 64-bit seed, for Kiln,
+# driven by its probatio.exsc through every entry point of the library.
+#
+# expected.out (17,664 bytes) is WRITTEN BY prototypes/dungeon_oracle.py, not by
+# this program: Python's arbitrary-precision integers, list-of-lists grids and
+# zlib's crc32. Regenerate it with
+#   python3 prototypes/dungeon_oracle.py stream -o tests/programs/dungeon/expected.out
+# (about 10 s: the oracle is the slow side). The stream's five sections are
+# described in the oracle's source, `WORLDS`' comment: the petabyte arithmetic,
+# the seed function, twenty-two chunk records (the first four followed by their raw
+# 4,096 bytes), a rolled digest over 256 chunks, and the prune run on a grid
+# built to have islands in it.
+#
+# The exit status is the program's own check of what is NOT the oracle's word: 0
+# only if the mixer reproduces splitmix64's published first output for seed 0
+# (0xE220A8397B1DCDAF), the zero seed makes the same chunk as the constant that
+# replaces it, the prune removes exactly the 11 stranded tiles of its synthetic
+# grid and refuses a start that is not floor, and the petabyte arithmetic holds;
+# otherwise 1, 2, 3 or 4 in that order.
+#
+# NON-VACUOUS, measured 2026-10-01: of seventeen mechanical mutants of
+# dungeon.exsc, every one fails here, each at a stated place --
+#   roughen rate 1/4 -> 1/8              byte 200   (the first chunk's draw count)
+#   CA wall rule >= 5 -> >= 6            byte 200
+#   CA floor rule <= 3 -> <= 2           byte 200
+#   corridor order bit inverted          byte 200
+#   BSP split third -> quarter           byte 200
+#   xorshift's third shift 17 -> 16      byte 200
+#   draw counter += 2                    byte 207   (the draws word, and only it)
+#   door "open area" <= 3 -> <= 4        byte 229   (a chunk's CRC)
+#   CRC polynomial's low bit             byte 229
+#   trap interior test == 0 -> <= 1      byte 4373  (chunk 5; traps are rare)
+#   mixer constant off by one            exit 1, byte 49
+#   multiply carry shifted               exit 1, byte 49
+#   zero seed not substituted            exit 2, byte 199
+#   prune loses its left move           exit 3, byte 199   (over-prunes: any chunk shows it)
+#   prune loses its down move            exit 3, byte 199
+#   prune also walks diagonals           byte 17,648 -- ONLY the synthetic grid (E)
+#   prune call removed from the chunk    byte 17,544 -- ONLY the two prune-firing
+#                                        chunk records; the 20 older records are
+#                                        byte-identical with it disabled
+# The last two are why sections C's final two records and E exist. The prune fires
+# in about one chunk in 7,000 (283 of 2,000,000, tests/c/dungeon_scan.c), so
+# twenty seeds drawn at random almost never meet it; the two records are seeds
+# where it does (it removes 1 tile in one and 5 in the other), and the synthetic
+# grid pins 4-connectivity with an island that touches only at a corner.
+#
+# MEASURED 2026-10-01 (each phase driven by hand, one program at a time --
+# tests/run.sh was not run; this environment's clang has no UBSan runtime and
+# no target headers, so its differential and cross phases would fail on every
+# program for reasons that are the host's):
+#   reference   exit 0, 17,664 bytes, byte-identical to expected.out, ~1.0 s
+#   gcc   -O0   exit 0, identical (-fsanitize=undefined -fno-sanitize-recover=all)
+#   gcc   -O2   exit 0, identical
+#   clang -O0   exit 0, identical (-fsanitize=undefined -fsanitize-trap=undefined)
+#   clang -O2   exit 0, identical
+#   cross       clang --target=mips64-unknown-linux-musl -mabi=n32 -march=mips3,
+#               run under qemu-mipsn32: exit 0, identical, ~0.5 s -- the
+#               generator's integer arithmetic, its trapping index math and its
+#               32-bit `mensura` agree big-endian. The o64 ABI itself is still
+#               [UNTESTED], as spec 9.5 says of every cross=yes row.
+#   audit       tools/syscall-audit.sh: exit_group, write, read -- nothing else.
+#
+# What this does NOT measure: time on a VR4300. Nothing here, and nothing in
+# the spec's claims about this module, is a cycle count.
+TEST: expect-exit=0 sources=examples/dungeon/dungeon.exsc,examples/dungeon/probatio.exsc cross=yes
