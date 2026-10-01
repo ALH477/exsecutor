@@ -15,7 +15,8 @@ design's claims are measured here first (`selftest`).
 THE DESIGN, in the order the generator runs it. The numbers in brackets are
 the draws each step takes from the stream.
 
-  0. SEED.  `chunk_seed(world, index) = mix64(world + index * GAMMA)` mod 2^64.
+  0. SEED.  `chunk_seed(world, index) = mix64(world + index * GAMMA)` mod 2^64
+     (the module is examples/dungeon/furor_petabytorum.exsc: `semina_furore`).
      Both halves are bijections of u64 (GAMMA is odd, so `index * GAMMA` is
      invertible mod 2^64; the splitmix64 finaliser is two xorshift-rights and
      two odd multiplies, each invertible), so for one world every index below
@@ -338,6 +339,9 @@ def render(g):
 #      4,096 bytes, so a mismatch names a tile and not only a digest
 #   D  a rolled digest over DIGEST_RANGE chunks (2 words)
 #   E  the prune, on a grid built to have islands in it (3 words)
+#   F  the seed's inverse: index_of(world, chunk_seed(world, index)) for the 18
+#      pairs, then the indices whose seed is 0 and whose seed is GAMMA, per
+#      world (22 words)
 WORLDS = (0x0000000000000000, 0xDEADBEEFCAFEF00D)
 INDICES = (0, 1, 2, 3, 7, 64, 4095, 244140624999, 0xFFFFFFFFFFFFFFFF)
 # Direct seeds, to the chunk function. The last two are chunks where the prune
@@ -408,6 +412,13 @@ def stream():
     pruned = prune(g, 11 * W + 11)
     refused = prune(g, 0)
     out += be64(pruned) + be64(crc32(g)) + be64(refused)
+    for w in WORLDS:
+        for i in INDICES:
+            back = index_of(w, chunk_seed(w, i))
+            assert back == i
+            out += be64(back)
+    for w in WORLDS:
+        out += be64(index_of(w, 0)) + be64(index_of(w, GAMMA))
     return bytes(out)
 
 

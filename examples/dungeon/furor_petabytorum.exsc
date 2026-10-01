@@ -1,0 +1,123 @@
+// examples/dungeon/furor_petabytorum.exsc
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 The Exsecutor authors.
+// ---------------------------------------------------------------------------
+// FUROR PETABYTORUM -- "the madness of petabytes": the seed module of PetaByte
+// Madness. One job: turn (world, chunk index) into the 64-bit seed a chunk is
+// grown from, and back. Pure arithmetic: no poscit, no Mundus, no initium, no
+// allocation, no clock -- the same module is the same function on the VR4300
+// and on x86-64.
+//
+//   semina_furore(orbis, index)    -> semen     sow: the seed of chunk `index`
+//   desemina_furore(semen, orbis)  -> index     un-sow: which chunk is this seed
+//   misce_furore(z)                -> u64       the mixer under both
+//   demisce_furore(z)              -> u64       its inverse
+//
+// THE NAMES. `semina` is the first-conjugation imperative of *semino*, to sow
+// (the -a realisation of §3.4's `-e` category; `plica` and `saluta` are the same
+// shape), and `misce` of *misceo*, to mix. `de-` is §3.5's reversal: the base's
+// return type becomes the FIRST parameter, so `desemina_furore` takes the seed
+// before the world -- which is why its parameters are in that order and not
+// `semina`'s. After the `_` is §3.1's one qualifier, an ablative, unchecked:
+// `furore`, "by madness". *Furor* is the module's name and, with *petabyta*,
+// the game's: Furor Petabytorum.
+// `[OPEN]` §3.3's morpheme table is fourteen illustrative roots and the lexicon
+// pass is not enabled, so `semin-` and `misc-` are in no table: when
+// `lexicon.norma` exists they enter it through §3.9, and this is not that.
+//
+// WHAT IT GUARANTEES, and how each is held.
+//
+//   Distinct chunks have distinct seeds. `semina_furore` is
+//   `misce_furore(orbis + index * GAMMA)`, and every step is a bijection of u64:
+//   GAMMA is odd, so index -> index * GAMMA is invertible mod 2^64, and the
+//   mixer is two xorshift-rights and two odd multiplies, each invertible. So for
+//   one `orbis` the 2^64 indices get 2^64 different seeds, by construction. That
+//   is what a petabyte of distinct chunks needs: 10^15 / 4,096 is exactly
+//   244,140,625,000 chunks, and drawing that many seeds AT RANDOM from 2^64
+//   would collide about 1,600 times.
+//   `desemina_furore` is the proof run: it computes the inverse, so
+//   `desemina_furore(semina_furore(o, i), o) == i` for every o and i is a
+//   property tests/programs/dungeon/ checks in the language, not only in the
+//   Python oracle.
+//
+//   One seed is not quite one chunk. xorshift64, which grows a chunk from its
+//   seed, has 0 as its fixed point, so a seed of 0 is replaced by GAMMA
+//   (dungeon.exsc). Exactly one index per world mixes to 0, and that chunk
+//   repeats the layout of the one index whose seed is GAMMA.
+//   `desemina_furore(0, orbis)` names the first and `desemina_furore(GAMMA,
+//   orbis)` the second. For orbis 0 they are 0 and 0x32980CC117E5229F: the
+//   second is ~3.6 * 10^18, so inside the first petabyte (indices below
+//   244,140,625,000) no two chunks of world 0 share a layout. For a world
+//   chosen at random the chance that either index falls in the first petabyte
+//   is about 10^-8 each.
+//
+//   The mixer is splitmix64's finaliser: `misce_furore(GAMMA)` is its published
+//   first output for seed 0, 0xE220A8397B1DCDAF, which probatio.exsc checks.
+//
+// WHY THE MULTIPLY IS HAND-ROLLED. §5.4 leaves `*%` `[OPEN]`. Measured on the
+// mips64 row (clang -O2 -march=mips3 n32, qemu -one-insn-per-tb), one
+// `semina_furore` is 91 instructions against 2,483,730 for the chunk it seeds,
+// so a native wrapping multiply would save a few dozen instructions per chunk
+// and no compiler work is justified by it.
+// ---------------------------------------------------------------------------
+
+// a * b mod 2^64 without `*%` -- examples/metronomus/metronomus.exsc,
+// `multiplica_modulo`. The low product is below 2^64; each cross product is
+// reduced mod 2^32 before it is added, so their sum is below 2^33 and
+// `sursum 32` drops what belongs above bit 63. The final add wraps on purpose.
+functio multiplica_modulo(a: u64, b: u64) -> u64 {
+    firma al = (a sursum 32) deorsum 32;
+    firma ah = a deorsum 32;
+    firma bl = (b sursum 32) deorsum 32;
+    firma bh = b deorsum 32;
+    firma x = (((ah * bl) sursum 32) deorsum 32) + (((al * bh) sursum 32) deorsum 32);
+    redde (al * bl) +% (x sursum 32);
+}
+
+// Inverts y = x ^ (x >> k). The top k bits of y are x's, so r = y starts right
+// in its top k bits, and each round r = y ^ (r >> k) makes k more right: after n
+// rounds the top (n + 1) * k are. k is 27, 30 or 31 here, so two rounds cover all
+// 64. (A first draft ran three, the oracle's ceil(64 / k), which counts r = y as
+// a round; the third was redundant and mutation testing found it -- dropping it
+// to two survived, and to one does not.)
+functio inverte_dextrorsum(z: u64, k: u64) -> u64 {
+    mutabilis r: u64 = z;
+    per i in 0..2 {
+        r = z aut (r deorsum k);
+    }
+    redde r;
+}
+
+// The splitmix64 finaliser: a bijection of u64.
+publica functio misce_furore(z: u64) -> u64 {
+    firma a: u64 = z aut (z deorsum 30);
+    firma b: u64 = multiplica_modulo(a, 0xBF58476D1CE4E5B9);
+    firma c: u64 = b aut (b deorsum 27);
+    firma d: u64 = multiplica_modulo(c, 0x94D049BB133111EB);
+    redde d aut (d deorsum 31);
+}
+
+// Its inverse: undo each step in the opposite order, multiplying by the
+// modular inverse of each odd constant (0x319642B2D24D8EC3 for the second,
+// 0x96DE1B173F119089 for the first -- checked against the constants by the
+// oracle's `unmix64`, and by the round trip in probatio.exsc).
+publica functio demisce_furore(z: u64) -> u64 {
+    firma d: u64 = inverte_dextrorsum(z, 31);
+    firma c: u64 = multiplica_modulo(d, 0x319642B2D24D8EC3);
+    firma b: u64 = inverte_dextrorsum(c, 27);
+    firma a: u64 = multiplica_modulo(b, 0x96DE1B173F119089);
+    redde inverte_dextrorsum(a, 30);
+}
+
+// The seed of chunk `index` in world `orbis`. world + index * GAMMA, mixed.
+publica functio semina_furore(orbis: u64, index: u64) -> u64 {
+    firma g: u64 = 0x9E3779B97F4A7C15;
+    redde misce_furore(orbis +% multiplica_modulo(index, g));
+}
+
+// The chunk of world `orbis` whose seed is `semen`: semina_furore's inverse.
+// `de-` puts the base's return type first (§3.5), hence (semen, orbis).
+publica functio desemina_furore(semen: u64, orbis: u64) -> u64 {
+    firma g_inversus: u64 = 0xF1DE83E19937733D;
+    redde multiplica_modulo(demisce_furore(semen) -% orbis, g_inversus);
+}

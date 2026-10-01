@@ -10,7 +10,8 @@
  * "the prune removes nothing, ever" (said after 3,000 seeds) into "the prune
  * fires in 283 of 2,000,000" (said after running this).
  *
- *   exsc aedifica --hospes x86_64-linux --emitte c examples/dungeon/dungeon.exsc -o d.c
+ *   exsc aedifica --hospes x86_64-linux --emitte c examples/dungeon/furor_petabytorum.exsc \
+ *       examples/dungeon/dungeon.exsc -o d.c
  *   cc -std=gnu11 -O2 -o scan tests/c/dungeon_scan.c d.c
  *   ./scan WORLD FIRST COUNT HASHFILE      # e.g. ./scan 0 0 500000 h0.bin
  *
@@ -40,7 +41,7 @@
 #include <string.h>
 
 uint64_t exs_fig_dungeon_chunk(unsigned char *w, unsigned char *stats, uint64_t seed);
-uint64_t exs_fig_dungeon_seed(uint64_t world, uint64_t index);
+uint64_t exs_semina_furore(uint64_t world, uint64_t index);
 
 _Noreturn void exsrt_abortus(unsigned kind)
 {
@@ -91,7 +92,7 @@ int main(int argc, char **argv)
     uint64_t violations = 0, prune_hits = 0, max_pruned = 0, min_walk = UINT64_MAX, max_walk = 0;
     uint64_t doors = 0, traps = 0;
     for (uint64_t i = first; i < first + count; i++) {
-        const uint64_t seed = exs_fig_dungeon_seed(world, i);
+        const uint64_t seed = exs_semina_furore(world, i);
         memset(w, 0xEE, sizeof w);                 /* the chunk owes nothing to its buffer */
         const uint64_t walk = exs_fig_dungeon_chunk(w, (unsigned char *)st, seed);
 

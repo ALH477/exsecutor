@@ -17,7 +17,9 @@
 //
 // The exit status is the first failed check: 0 all right, 1 the mixer, 2 the
 // zero seed (which must make the SAME chunk as the constant that replaces it),
-// 3 the prune, 4 the petabyte arithmetic.
+// 3 the prune, 4 the petabyte arithmetic, 5 the inverse: `desemina_furore` must
+// give back the index `semina_furore` was handed, for every (world, index) of
+// the scenario. That is the seed's bijection, checked in the language.
 
 @transitus
 structura Octo {
@@ -137,12 +139,12 @@ publica functio initium(m: Mundus) -> u8 {
     firma ii = indices();
     per a in 0..2 {
         per b in 0..9 {
-            scribe_u64(s, fig_dungeon_seed(mm[a], ii[b]));
+            scribe_u64(s, semina_furore(mm[a], ii[b]));
         }
     }
 
     // the mixer against splitmix64's published vector
-    si fig_dungeon_mix(0x9E3779B97F4A7C15) ne 0xE220A8397B1DCDAF {
+    si misce_furore(0x9E3779B97F4A7C15) ne 0xE220A8397B1DCDAF {
         si verdictum eq 0 {
             verdictum = 1;
         }
@@ -153,7 +155,7 @@ publica functio initium(m: Mundus) -> u8 {
     mutabilis crudae: mensura = 0;
     per a in 0..2 {
         per b in 0..9 {
-            firma semen: u64 = fig_dungeon_seed(mm[a], ii[b]);
+            firma semen: u64 = semina_furore(mm[a], ii[b]);
             si crudae lt 4 {
                 scribe_chunk(s, w, semen, 1);
                 crudae = crudae + 1;
@@ -183,7 +185,7 @@ publica functio initium(m: Mundus) -> u8 {
     // D. a rolled digest over 256 chunks of one world
     mutabilis acc: u64 = 0;
     per i in 0..256 {
-        fig_dungeon_chunk(w, st0, fig_dungeon_seed(0xDEADBEEFCAFEF00D, i sicut u64));
+        fig_dungeon_chunk(w, st0, semina_furore(0xDEADBEEFCAFEF00D, i sicut u64));
         acc = ((acc sursum 7) sive (acc deorsum 57)) aut (fig_dungeon_crc32(w) sicut u64);
     }
     scribe_u64(s, 256);
@@ -200,6 +202,25 @@ publica functio initium(m: Mundus) -> u8 {
         si verdictum eq 0 {
             verdictum = 3;
         }
+    }
+
+    // F. the seed's inverse: the index back from each of the eighteen seeds, then
+    // the two indices per world that matter -- the one whose seed is 0 (replaced
+    // by the golden-ratio constant) and the one whose seed IS that constant
+    per a in 0..2 {
+        per b in 0..9 {
+            firma redux: u64 = desemina_furore(semina_furore(mm[a], ii[b]), mm[a]);
+            scribe_u64(s, redux);
+            si redux ne ii[b] {
+                si verdictum eq 0 {
+                    verdictum = 5;
+                }
+            }
+        }
+    }
+    per a in 0..2 {
+        scribe_u64(s, desemina_furore(0, mm[a]));
+        scribe_u64(s, desemina_furore(0x9E3779B97F4A7C15, mm[a]));
     }
     redde verdictum;
 }

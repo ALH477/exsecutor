@@ -17,16 +17,13 @@
 //
 // THE ENTRY POINTS
 //
-//   fig_dungeon_seed(world, index)    the chunk's seed. A BIJECTION of the
-//                                     index for a fixed world, so 2^64 chunks
-//                                     get 2^64 different seeds -- by
-//                                     construction. 10^15 bytes / 4,096 =
-//                                     244,140,625,000 chunks, and drawing that
-//                                     many seeds at random from 2^64 would
-//                                     collide ~1,615 times.
 //   fig_dungeon_chunk(w, stats, seed) fills w[0..4096) with the chunk and
 //                                     returns its walkable-tile count
 //   fig_dungeon_crc32(w)              CRC-32/ISO-HDLC of w[0..4096)
+//
+// The seed itself -- (world, index) -> seed, and back -- is a separate module,
+// furor_petabytorum.exsc, which is the only thing that knows what a world or a
+// chunk index is. This one takes a seed and does not care where it came from.
 //
 // THE STORAGE. One caller-owned buffer, 12,288 bytes:
 //
@@ -40,16 +37,13 @@
 //
 // WHY THE ARITHMETIC IS SHAPED THE WAY IT IS
 //
-//   No `*%`. §5.4 leaves the wrapping multiply `[OPEN]`, and the seed mixer is
-//   two 64-bit multiplies mod 2^64, so `multiplica_modulo` below is
-//   examples/metronomus's, transcribed: split into 32-bit halves, reduce each
-//   cross product by the shift-discard idiom, add with `+%`.
-//
 //   The in-chunk stream is xorshift64 (13, 7, 17) because it is three shifts
 //   and three xors: no multiply at all, which is also what the language can
-//   say natively. State 0 is its fixed point, so a zero seed is replaced by
-//   the golden-ratio constant; exactly one index per world mixes to zero, and
-//   that one chunk repeats the layout of the seed that IS the constant.
+//   say natively (and §5.4 leaves `*%` `[OPEN]`, which is why the seed module
+//   hand-rolls its multiply and this one never needs one). State 0 is its fixed
+//   point, so a zero seed is replaced by the golden-ratio constant; exactly one
+//   index per world mixes to zero, and that one chunk repeats the layout of the
+//   seed that IS the constant (furor_petabytorum.exsc says which two indices).
 //
 //   `infra(f, n)` is [0, n) by multiply-shift on the high word of the state:
 //   `(s >> 32) * n >> 32`. No division (the VR4300's is ~69 cycles and there
@@ -69,41 +63,6 @@
 //     Kiln it is a different module's (a Forge voxel grid, or a flat draw).
 //   * No timing claim. Nothing here has been run on a VR4300.
 // ---------------------------------------------------------------------------
-
-// ---- the seed ------------------------------------------------------------
-
-// a * b mod 2^64 without `*%` -- examples/metronomus/metronomus.exsc,
-// `multiplica_modulo`. The low product is below 2^64; each cross product is
-// reduced mod 2^32 before it is added, so their sum is below 2^33 and
-// `sursum 32` drops what belongs above bit 63. The final add wraps on purpose.
-functio multiplica_modulo(a: u64, b: u64) -> u64 {
-    firma al = (a sursum 32) deorsum 32;
-    firma ah = a deorsum 32;
-    firma bl = (b sursum 32) deorsum 32;
-    firma bh = b deorsum 32;
-    firma x = (((ah * bl) sursum 32) deorsum 32) + (((al * bh) sursum 32) deorsum 32);
-    redde (al * bl) +% (x sursum 32);
-}
-
-// The splitmix64 finaliser. Two xorshift-rights and two ODD multiplies: each
-// step is invertible, so the whole is a bijection of u64 -- the property
-// `fig_dungeon_seed`'s distinctness rests on, and which the oracle runs
-// backwards (`unmix64`) rather than only arguing. mix(GAMMA) is splitmix64's
-// published first output for seed 0, 0xE220A8397B1DCDAF.
-publica functio fig_dungeon_mix(z: u64) -> u64 {
-    firma a: u64 = z aut (z deorsum 30);
-    firma b: u64 = multiplica_modulo(a, 0xBF58476D1CE4E5B9);
-    firma c: u64 = b aut (b deorsum 27);
-    firma d: u64 = multiplica_modulo(c, 0x94D049BB133111EB);
-    redde d aut (d deorsum 31);
-}
-
-// world + index * GAMMA, mixed. GAMMA is odd, so index -> index * GAMMA is a
-// bijection mod 2^64, and a bijection composed with a bijection is one.
-publica functio fig_dungeon_seed(world: u64, index: u64) -> u64 {
-    firma g: u64 = 0x9E3779B97F4A7C15;
-    redde fig_dungeon_mix(world +% multiplica_modulo(index, g));
-}
 
 // ---- the stream ----------------------------------------------------------
 

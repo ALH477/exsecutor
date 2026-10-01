@@ -80,10 +80,11 @@ Exsecutor source, eleven programs, all compiled and run by `tests/run.sh`:
   clock): a 64×64 chunk of walls, floors, doors and traps from a BSP of twelve
   rooms, a roughening pass and four cellular-automaton passes, corridors, a
   connectivity prune, doors and traps, in one caller-owned 12 KB buffer. The seed
-  enters as an argument, and `fig_dungeon_seed(world, index)` is a bijection of the
-  index, so 2⁶⁴ chunks get 2⁶⁴ different seeds by construction (the first
+  enters as an argument, and `semina_furore(orbis, index)` — in its own module,
+  `furor_petabytorum.exsc` — is a bijection of the
+  index, and `desemina_furore` inverts it, so 2⁶⁴ chunks get 2⁶⁴ different seeds by construction (the first
   petabyte is 244,140,625,000 of them). `tests/programs/dungeon/` holds its
-  17,664-byte stream byte-identical against the independent oracle
+  17,840-byte stream byte-identical against the independent oracle
   `prototypes/dungeon_oracle.py` on both backends, all four C builds and the
   big-endian mips64 qemu run; `tests/c/dungeon_scan.c` runs the emitted C over
   millions of chunks. `dungeon/README.md` has what was measured, what the original

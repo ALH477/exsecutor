@@ -4,18 +4,30 @@ A **64×64 dungeon chunk grown from one 64-bit seed**, written in Exsecutor for
 [Kiln](https://github.com/ALH477/kiln), which links it through the C backend the
 way it already links the StreamDB reader, `kiln_soft3d` and `fig_pose`.
 
-`dungeon.exsc` is the library: pure, no `poscit`, no `initium`, no allocation,
-no clock. `probatio.exsc` is the test driver. `prototypes/dungeon_oracle.py` is
-the design, the independent reference, and the measurements behind the design
-(`python3 prototypes/dungeon_oracle.py selftest`).
+Two modules, one unit. `furor_petabytorum.exsc` — *Furor Petabytorum*, "the madness
+of petabytes" — is the seed: it turns (world, chunk index) into the 64-bit seed a
+chunk is grown from, and back. `dungeon.exsc` takes a seed and grows the chunk. Both are pure: no `poscit`,
+no `initium`, no allocation, no clock. `probatio.exsc` is the test driver.
+`prototypes/dungeon_oracle.py` is the design, the independent reference, and the
+measurements behind the design (`python3 prototypes/dungeon_oracle.py selftest`).
 
 ```
-fig_dungeon_seed(world, index)     -> u64      the chunk's seed
-fig_dungeon_chunk(w, stats, seed)  -> u64      fills w[0..4096); returns walkable tiles
-fig_dungeon_prune(w, start)        -> mensura  the connectivity guarantee, public so it can be tested
-fig_dungeon_crc32(w)               -> u32      zlib's crc32 of w[0..4096)
-fig_dungeon_mix(z)                 -> u64      the seed mixer (splitmix64's finaliser)
+semina_furore(orbis, index)     -> u64      sow: the seed of chunk `index` in world `orbis`
+desemina_furore(semen, orbis)   -> u64      un-sow: the chunk whose seed this is
+misce_furore(z) / demisce_furore(z) -> u64  the splitmix64 finaliser and its inverse
+fig_dungeon_chunk(w, stats, semen)  -> u64      fills w[0..4096); returns walkable tiles
+fig_dungeon_prune(w, start)     -> mensura  the connectivity guarantee, public so it can be tested
+fig_dungeon_crc32(w)            -> u32      zlib's crc32 of w[0..4096)
 ```
+
+**The names.** `semina` is the imperative of *semino*, to sow; `misce` of *misceo*, to
+mix; `de-` is §3.5's reversal, which is why `desemina_furore` takes the seed before
+the world. After the `_` is §3.1's one qualifier, an ablative: `furore`, "by
+madness". The lexicon pass is not enabled and §3.3's table has no `semin-` or
+`misc-`, so these names are unchecked, and entering them is §3.9's job when
+`lexicon.norma` exists; the code does not depend on any of it, and a rename is a
+find-and-replace. The parameter is `orbis`, not `mundus`: `Mundus` is the
+capability type every `initium` receives, and a world seed is not authority.
 
 `w` is one caller-owned `acies<u8, 12288>`: the chunk at `[0, 4096)`, the
 cellular automaton's second buffer above it, and the prune's stack reusing that
@@ -37,11 +49,12 @@ needs no multiply, which is also what the language can say natively.
 over a whole petabyte are only guaranteed if the seeds are distinct, and seeds
 *drawn at random* from 2⁶⁴ collide: for n draws the expected number of colliding
 pairs is about n²/2⁶⁵, which for 244,140,625,000 draws is **about 1,616**. So the
-chunk's seed is not drawn. `fig_dungeon_seed(world, index)` is
-`mix(world + index × γ)`, a composition of bijections of u64 (γ is odd, and the
+chunk's seed is not drawn. `semina_furore(orbis, index)` is
+`mix(orbis + index × γ)`, a composition of bijections of u64 (γ is odd, and the
 mixer is two xorshift-rights and two odd multiplies), so for one world every
-index below 2⁶⁴ has a different seed *by construction*. The oracle runs the
-mixer backwards (`unmix64`) rather than only arguing it. Distinct seeds are not
+index below 2⁶⁴ has a different seed *by construction*. `desemina_furore` runs it
+backwards, in Exsecutor, and `probatio.exsc` checks the round trip for every
+(world, index) of its scenario (exit 5); the oracle does the same in Python. Distinct seeds are not
 distinct layouts in general; over 3,000 chunks the oracle found no duplicate
 layout, which is evidence and not a proof.
 
@@ -65,6 +78,7 @@ counted by `qemu-mipsn32 -one-insn-per-tb -d exec`:
 | `empuja` and `fig_dungeon_prune` (the prune's DFS) | 205,425 |
 | `proximus` (the stream) and `asperge` (the roughening) | 188,928 |
 | `fig_dungeon_crc32`, run separately | 174,002 |
+| `semina_furore`, one call, for comparison | 91 |
 
 At one instruction per cycle on a 93.75 MHz VR4300 that is **no less than
 26.5 ms** for this build. It is a floor, not an estimate, and for this compiler
@@ -108,7 +122,7 @@ independent flood fill then finds in two pieces. So a test that compares twenty
 seeds will rarely meet it. `probatio.exsc` therefore also runs it on a grid built
 to have islands, one touching the main region only at a corner, and the stream
 includes two chunks where it fires (it removes 1 tile in one, 5 in the other). Two
-of the seventeen mutants of the generator are caught by nothing else: one that
+of the twenty-five mutants of the generator are caught by nothing else: one that
 also walks diagonals, caught only by the synthetic grid, and one that removes the
 prune call, caught only by those two chunk records — the other twenty records
 are byte-identical with it disabled.
@@ -139,11 +153,11 @@ leaf-size induction.
 ```sh
 make all                                    # build/exsc
 python3 prototypes/dungeon_oracle.py stream -o /tmp/expected.out
-build/exsc aedifica --hospes x86_64-linux examples/dungeon/dungeon.exsc \
-    examples/dungeon/probatio.exsc -o /tmp/p.asm
+build/exsc aedifica --hospes x86_64-linux examples/dungeon/furor_petabytorum.exsc \
+    examples/dungeon/dungeon.exsc examples/dungeon/probatio.exsc -o /tmp/p.asm
 fasmg /tmp/p.asm /tmp/p && chmod +x /tmp/p && /tmp/p | cmp - /tmp/expected.out
 ```
 
 `tests/programs/dungeon/` holds the stream against the oracle on the reference
 backend, all four hosted C builds and the big-endian mips64 qemu run; its `TEST`
-header lists the seventeen mutants and where each is caught.
+header lists the twenty-five mutants and where each is caught.
