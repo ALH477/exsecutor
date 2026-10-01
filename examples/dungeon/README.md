@@ -85,7 +85,7 @@ At one instruction per cycle on a 93.75 MHz VR4300 that is **no less than
 only: Kiln builds with `mips64-elf-gcc -Os -mabi=o64 -march=vr4300`, whose
 instruction count will differ, and a real run adds cache misses, RDRAM latency
 and multiplier stalls that this does not model. **Nothing here has run on a
-VR4300 or in Ares.** `[UNMEASURED]` is the honest status of every time claim,
+VR4300 or in Ares.** `[UNTESTED]` is the honest status of every time claim,
 including that floor. What the count does say is where the time goes: the
 neighbour count is the first thing to optimise, by a wide margin.
 

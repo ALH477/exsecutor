@@ -12,7 +12,7 @@
 //   * EXTERNAL, checked here: two facts that do not come from the oracle.
 //     splitmix64's published first output for seed 0, 0xE220A8397B1DCDAF, is
 //     the mixer at the golden-ratio constant (exit 1 if it is not). And the
-//     petabyte arithmetic must satisfy the relations §0 of the oracle states
+//     petabyte arithmetic must satisfy the relations the oracle's `pb_words` states
 //     (exit 4).
 //
 // The exit status is the first failed check: 0 all right, 1 the mixer, 2 the
