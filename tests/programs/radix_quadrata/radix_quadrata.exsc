@@ -1,0 +1,99 @@
+// `radix_quadrata` from real .exsc source, end to end -- spec §5.4's square root, the
+// one operation outside `+ - * /` that IEEE-754 pins exactly, and the only
+// member of its family the language admits.
+//
+// THE EXACT CASES ARE THE POINT. A square root is correctly rounded, so on a
+// perfect square of a dyadic rational it is EXACT and can be compared with
+// `eq` without caring how anything rounded: 9.0 -> 3.0, 0.25 -> 0.5,
+// 16.0 -> 4.0 in f32. Those are the checks that would catch a lowering that
+// reached for an approximation or a libm call instead of the instruction.
+//
+// The checks:
+//
+//    1  tria()         radix_quadrata 9.0 sicut u8        3   f64, exact
+//    2  dimidium()     radix_quadrata 0.25 eq 0.5         --  exact on a dyadic
+//    3  quattuor_f32() radix_quadrata 16.0 sicut u8       4   f32 (sqrtss, not sqrtsd)
+//    4  nihil()        radix_quadrata 0.0 eq 0.0          --  zero is its own root
+//    5  negativum()    radix_quadrata (-1.0) eq itself    --  must be FALSE: §5.4 says
+//                          a negative operand is a quiet NaN and NOT a trap,
+//                          so this program REACHING check 6 is half the
+//                          result and the ordered-compare being false is the
+//                          other half
+//    6  compositum()   radix_quadrata (radix_quadrata 16.0) eq 2.0 --  nests; 16 -> 4 -> 2, both
+//                          steps exact
+//
+// `initium` returns the number of the first check that is wrong, or 100 when
+// all are right -- tests/programs/float_division/'s convention.
+
+functio tria() -> u8 {
+    firma a: f64 = 9.0;
+    redde (radix_quadrata a) sicut u8;
+}
+
+functio dimidium() -> u1 {
+    firma a: f64 = 0.25;
+    firma r: f64 = radix_quadrata a;
+    firma h: f64 = 0.5;
+    si r ne h {
+        redde 0;
+    }
+    redde 1;
+}
+
+functio quattuor_f32() -> u8 {
+    firma a: f32 = 16.0;
+    redde (radix_quadrata a) sicut u8;
+}
+
+functio nihil() -> u1 {
+    firma z: f64 = 0.0;
+    firma r: f64 = radix_quadrata z;
+    si r ne z {
+        redde 0;
+    }
+    redde 1;
+}
+
+functio negativum() -> u1 {
+    firma n: f64 = -1.0;
+    firma r: f64 = radix_quadrata n;
+    // Every ordered comparison with a NaN operand is false, so `r eq r` is
+    // false and this answers 1. Reaching this line at all is the no-trap
+    // half of §5.4's rule.
+    si r eq r {
+        redde 0;
+    }
+    redde 1;
+}
+
+functio compositum() -> u1 {
+    firma a: f64 = 16.0;
+    firma r: f64 = radix_quadrata (radix_quadrata a);
+    firma d: f64 = 2.0;
+    si r ne d {
+        redde 0;
+    }
+    redde 1;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    si tria() ne 3 {
+        redde 1;
+    }
+    si dimidium() ne 1 {
+        redde 2;
+    }
+    si quattuor_f32() ne 4 {
+        redde 3;
+    }
+    si nihil() ne 1 {
+        redde 4;
+    }
+    si negativum() ne 1 {
+        redde 5;
+    }
+    si compositum() ne 1 {
+        redde 6;
+    }
+    redde 100;
+}

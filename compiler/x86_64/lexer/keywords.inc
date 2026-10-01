@@ -59,9 +59,9 @@
 ;   - LOOKUP order is canonical indices sorted by (length, raw bytes). It is
 ;     derived, and it exists only so a lookup compares against the handful of
 ;     reserved words that share the candidate's length instead of all
-;     30 of them. `kw_len_start` gives each length's half-open range.
+;     31 of them. `kw_len_start` gives each length's half-open range.
 ;
-; No hash table. With 30 words the largest length bucket is 8, so a
+; No hash table. With 31 words the largest length bucket is 8, so a
 ; miss costs at most 8 short byte compares -- and a hash would make the
 ; probe sequence depend on a hash function, which §9.3 forbids for anything
 ; that can reach output. rt/map.inc's header makes the same argument.
@@ -76,9 +76,9 @@
 ; -----------------------------------------------------------------------------
 
 
-KW_COUNT = 30
+KW_COUNT = 31
 KW_MIN_LEN = 2	; shortest reserved word
-KW_MAX_LEN = 11	; longest reserved word
+KW_MAX_LEN = 14	; longest reserved word
 KW_NONE = 0	; not a reserved word -- kw_lookup's miss value
 
 ; ---- canonical ids, §8.4 table order ---------------------------------------
@@ -112,6 +112,7 @@ KW_DISCERNE = 27	; selection
 KW_CASUS = 28	; selection
 KW_RUMPE = 29	; jump
 KW_PERGE = 30	; jump
+KW_RADIX_QUADRATA = 31	; arithmetic
 
 ; ---- the reserved-word text pool, canonical order --------------------------
 ; One `kw` line per §8.4 reserved word; see this file's header for why they
@@ -153,13 +154,14 @@ kw_text:
 	kw	casus,       'casus'      	; 28  selection
 	kw	rumpe,       'rumpe'      	; 29  jump
 	kw	perge,       'perge'      	; 30  jump
+	kw	radix_quadrata, 'radix_quadrata'	; 31  arithmetic
 KW_TEXT_LEN = $ - kw_text
 purge kw?
 
 ; A generated file that silently emitted the wrong number of bytes would be
 ; caught by nothing else in the tree, so it is caught here, at assembly time,
 ; by fasmg's own native `assert` (NOT macros/assert.inc's runtime `rassert`).
-assert KW_TEXT_LEN = 171
+assert KW_TEXT_LEN = 185
 
 ; ---- byte offset of each word into kw_text, canonical order ----------------
 kw_off:
@@ -193,6 +195,7 @@ kw_off:
 	dd	156	; casus
 	dd	161	; rumpe
 	dd	166	; perge
+	dd	171	; radix_quadrata
 
 ; ---- byte length of each word, canonical order -----------------------------
 kw_len:
@@ -226,6 +229,7 @@ kw_len:
 	db	5	; casus
 	db	5	; rumpe
 	db	5	; perge
+	db	14	; radix_quadrata
 
 ; ---- lookup index: canonical 0-based indices, sorted by (length, bytes) ----
 kw_sorted:
@@ -259,6 +263,7 @@ kw_sorted:
 	db	8	; mutabilis (9)
 	db	2	; structura (9)
 	db	4	; interfacies (11)
+	db	30	; radix_quadrata (14)
 
 ; ---- kw_sorted[kw_len_start[L] .. kw_len_start[L+1]) is every reserved -----
 ;      word of length L. Indexable directly by a candidate's byte length,
@@ -276,5 +281,8 @@ kw_len_start:
 	db	27	; L=9  (2 words)
 	db	29	; L=10  (0 words)
 	db	29	; L=11  (1 word)
-	db	30	; L=12  (end)
-KW_LEN_START_COUNT = 13
+	db	30	; L=12  (0 words)
+	db	30	; L=13  (0 words)
+	db	30	; L=14  (1 word)
+	db	31	; L=15  (end)
+KW_LEN_START_COUNT = 16

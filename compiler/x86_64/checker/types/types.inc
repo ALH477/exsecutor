@@ -300,6 +300,8 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	je	.u_addr
 	cmp	qword [chkt_up], AST_U_DEREF
 	je	.u_deref
+	cmp	qword [chkt_up], AST_U_SQRT
+	je	.u_sqrt
 	; `-e` -- the operand's own type, and a pending literal stays pending;
 	; except that a settled `acies` operand is EXS-E0305 AT THE OPERATOR.
 	; The stage 5 settlement is "`+ - * /` whole-acy only, else E0305" and
@@ -323,6 +325,39 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	jmp	.out
   .un_out:
 	mov	rax, r13
+	jmp	.out
+  .u_sqrt:
+	; `radix e` -- spec §5.4: `f32 -> f32`, `f64 -> f64`, and EVERYTHING
+	; ELSE is `EXS-E0305` at the operator. There is no implicit conversion
+	; in this language (§5.2), so an integer operand is a mistake and not a
+	; promotion: `radix 2` does not mean `radix 2.0`.
+	;
+	; An `acies` is refused here for the reason unary minus refuses one
+	; above -- the IR has no vector square root, so a typed Unary(acies)
+	; would reach the lowerer as a node nothing can lower. Refusing on
+	; "not AST_TY_FLOAT" covers that case and every other non-float at
+	; once.
+	;
+	; A PENDING operand passes through unjudged, exactly as `-e` does: the
+	; expectation settles it and this arm has no expectation to settle it
+	; against. That means `radix 2` with an integer expectation is caught
+	; when the literal settles and not here. Consistent with the rest of
+	; this file rather than better than it.
+	test	r13, r13
+	jz	.un_out
+	mov	rdi, rbx
+	mov	rsi, r13
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_FLOAT
+	je	.un_out
+	cmp	rax, AST_TY_ERROR
+	je	.un_out			; already diagnosed; no cascade
+	mov	rdi, rbx
+	mov	rsi, 305
+	mov	rdx, r12
+	call	__chk_ty_raise
+	mov	rdi, rbx
+	call	__chk_ty_err
 	jmp	.out
   .u_addr:
 	; `&e` -- typed-ast.md section 2.5's `borrow`

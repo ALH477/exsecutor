@@ -96,7 +96,7 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # prelude_lege_octetos.asm, spec §4.6's bulk pair, added with the rows they
 # pin. Raised by exactly the two fixtures added, which is this file's
 # convention when a commit adds them rather than re-baselines.
-UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-204}"
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-205}"
 
 # The same guarantee for the two run phases below: tests/ir/*.ir fixtures,
 # and tests/programs/*/ directories. Same rule -- `found < floor` fails --
@@ -1820,6 +1820,16 @@ run_differential_tests() {
   #     other's as an unknown-warning option without complaint.
   local cflags="-std=c11 -Wall -Wextra -fsanitize=undefined -fno-sanitize-recover=all"
   cflags="$cflags -Wno-unused-function"
+  # -fno-math-errno: spec §5.4's `radix` lowers to __builtin_sqrt, and under
+  # gcc/clang's default -fmath-errno a possibly-negative operand still routes
+  # through libm so errno can be set -- which fails to link, since nothing
+  # here links libm and §9.3 keeps it out of the closure. The flag removes
+  # errno, which this language does not have; it changes no value (a negative
+  # operand is a quiet NaN either way). A module that needs it SAYS so: exsc
+  # emits a `#error` naming this flag, but only into a module that actually
+  # roots (backend_c/program_c.inc's __bfc_uses_fsqrt), so a module without a
+  # square root is byte-identical to before this line existed.
+  cflags="$cflags -fno-math-errno"
 
   local found=0 builds=0 src
   shopt -s nullglob
@@ -2129,6 +2139,10 @@ SILENT_BY_DESIGN=(
   receptio_vec_awgn_vacuum_m12db_s1     # expect-exit=1, c-differentia=nightly-sweep
   receptio_vec_awgn_vacuum_m12db_s2     # expect-exit=1, c-differentia=nightly-sweep
   receptio_vec_freq_loopback_m300hz     # expect-exit=2, c-differentia=nightly-sweep
+  radix_quadrata                   # expect-exit=100, no stdout by design --
+                                   # §5.4's square root: six checks, each
+                                   # signalling through the exit status, the
+                                   # convention float_division/ set
   redundantia                      # expect-exit=0, no stdout by design
   somnium_brevis                   # expect-exit=1, refusal path
   somnium_ignotum                  # expect-exit=1, refusal path

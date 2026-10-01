@@ -150,7 +150,8 @@ AST_W_COLON	= 37
 AST_W_EQUALS	= 38
 AST_W_ARROW	= 39
 AST_W_ABI	= 40
-AST_W_COUNT	= 40
+AST_W_RADIX_QUADRATA = 41  ; §5.4's square root, a PREFIX RESERVED word
+AST_W_COUNT	= 41
 
 ; `__ast_w_op` maps a word to an operator by DISTANCE: the operator words run
 ; `AST_W_VEL`..`AST_W_SIVE` in exactly the order `AST_OP_VEL`..
@@ -212,6 +213,7 @@ ast_w_words:
 	db 1,'='
 	db 2,'->'
 	db 3,'abi'
+	db 14,'radix_quadrata'
 AST_W_WORDS_LEN = $ - ast_w_words
 
 ; ---- primitives over a red node --------------------------------------------
@@ -1304,7 +1306,27 @@ proc __ast_w_unary, w, red
 	lea	rcx, [wu_sub]
 	call	__ast_w_kidk
 	test	eax, eax
+	jnz	.punct_op
+	; No punct child: the only other prefix operator §8.6 admits is
+	; `radix_quadrata` (§5.4), whose token is a KEYWORD leaf -- it is
+	; reserved (§8.4 table 1), not contextual, so the lexer has already
+	; classified it. A `CST_UNARY_EXPR` with neither is a tree no production
+	; builds, and it falls through to op 0 as it always did.
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, CST_TK_KEYWORD
+	lea	rcx, [wu_sub]
+	call	__ast_w_kidk
+	test	eax, eax
 	jz	.no_op
+	mov	rdi, rbx
+	lea	rsi, [wu_sub]
+	mov	rdx, AST_W_RADIX_QUADRATA
+	call	__ast_w_isw
+	test	eax, eax
+	jnz	.radix
+	jmp	.no_op
+  .punct_op:
 	mov	rdi, rbx
 	lea	rsi, [wu_sub]
 	mov	rdx, AST_W_MINUS
@@ -1318,6 +1340,9 @@ proc __ast_w_unary, w, red
 	test	eax, eax
 	jnz	.addr
 	mov	r13, AST_U_DEREF
+	jmp	.no_op
+  .radix:
+	mov	r13, AST_U_SQRT
 	jmp	.no_op
   .neg:
 	mov	r13, AST_U_NEG

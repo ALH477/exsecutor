@@ -800,7 +800,7 @@ Integers are implemented and evidenced end-to-end — checked, lowered and run
 `tests/ir/trap_*.ir`); this banner previously said "nothing implemented",
 which the subsections below it already contradicted by citing those fixtures.
 Floating point at the IR level is implemented the same way since the float
-wave of 2026-09-13: both backends lower the eleven float opcodes and
+wave of 2026-09-13: both backends lower the twelve float opcodes and
 `tests/ir/float_*.ir` runs them through the differential phase — 52 checks
 byte-identical across gcc and clang at `-O0`/`-O2`. The surface landed too
 (same wave, the front-end half): the literal grammar and `/` below in §8.4
@@ -857,6 +857,70 @@ assumption — the same rule §5.2 applies to `mensura`.
 Directed rounding (`ad_superius`, `ad_inferius`) is declarable because validated
 numerics — interval arithmetic with provable error bounds — is impossible
 without it.
+
+**`radix_quadrata` — the square root, and the only one of its family here.**
+`radix_quadrata x` is a prefix operator on a float: `f32 -> f32`,
+`f64 -> f64`, binding like unary `-` (§8.6). An integer operand is
+`EXS-E0305`; this language has no implicit conversions (§5.2), so
+`radix_quadrata 2` does not mean `radix_quadrata 2.0`.
+
+It is in the language, and `sinus`, `exponentialis` and `logarithmus` are not,
+for one reason that is a property of IEEE-754 and not a preference: **754
+requires `sqrt` to be correctly rounded**, the same as `+`, `-`, `*` and `/`.
+It is the only operation outside the five basic ones that the standard pins
+exactly. So it costs this section's guarantees nothing — `rotundatio` governs
+it as it governs any other operation, `reassociatio` has nothing to
+reassociate in a unary operation, and `subnormales conservata` holds over it
+unchanged. The transcendentals are a different question entirely: 754
+*recommends* them and does not require them, every libm answers them
+differently, and admitting one would make a module's result depend on a C
+library this document has spent §9.3 keeping out of the closure. They stay
+out until something can state what they are allowed to return.
+
+**A negative operand is NaN, not a trap.** `radix_quadrata (-1.0)` is a quiet
+NaN with 754's invalid flag raised, which is the same policy the rest of
+floating point here already follows — division by zero does not trap either
+(the banner above cites `tests/programs/float_division/`'s no-trap proof).
+Trapping belongs to the *integer* operators (§5.4's integer rules), and a float
+operation that trapped would be the ambient-state-by-another-name this section
+exists to refuse. `radix_quadrata (-0.0)` is `-0.0` and `radix_quadrata 0.0` is
+`0.0`, per 754.
+
+**It is a word, not a sigil** — the numeric vocabulary here is already words
+rather than symbols (`residuum`, `atque`, `sive`, `aut`, `sursum`, `deorsum`).
+But unlike every one of those it is **reserved** (§8.4 table 1), not
+contextual, and the reason is a correction this document owes:
+
+§8.4's argument for why an operator word can stay contextual is that *operator
+position is never operand position*. **That argument is true of an infix word
+and false of a prefix one**, which sits exactly where an operand may start. A
+first draft of this section made `radix` contextual and leaned on a one-token
+peek instead; the peek could not tell `radix ge n` (a name, then a comparison)
+from `radix a` (the operator), because the contextual comparison words are
+identifier tokens too. Reserving the word removes the question rather than
+answering it, and costs the thirty-first reserved word.
+
+**And the spelling is `radix_quadrata`, not `radix`, for a reason the tree
+supplied.** `examples/streamdb/lector_streamdb.exsc` already binds a variable
+named `radix` — a B-tree index root — so the short spelling would have taken a
+name the corpus was using, and `radix` means *number base* to most readers of
+any other language besides. `radix_quadrata` is the unambiguous Latin for this
+one operation; `radix` stays an ordinary identifier
+(`tests/unit/cst_radix_quadrata.asm` pins that it still does).
+
+**Why it arrived when it did**, recorded because this section's other
+operators arrived the same way — from a program that could not be written
+without them. Kiln's brush CSG exists twice, once in host `f64` and once in
+console `f32`, and both normalise every plane before an inside-every-other-
+plane test. Neither could be expressed here, so the first consumer of §5.4's
+guarantees from outside this repository's own test suite was blocked on a
+single instruction. `/` and `residuum` were settled by a decimal printer and a
+Base64 encoder; this is the same pattern.
+
+`tests/programs/radix_quadrata/` runs it on both backends: the exact cases
+(9.0, 0.25, f32 16.0) that a correctly-rounded root makes comparable with `eq`
+without caring how anything rounded, the NaN that proves the negative operand
+does not trap, and the nesting.
 
 ### Reduction shape is semantics, not optimization
 
@@ -1380,7 +1444,7 @@ Restriction modes work (Rust's `unsafe`, `use strict`, D's `@safe`): the restric
 - UTS #39 **Moderately Restrictive**. Mixed-script is `EXS-E0104`.
 - **Confusable detection is scoped to the import closure**, not the compilation unit (`EXS-E0105`). Module A exporting Cyrillic `аdd` and module B calling `add` contains no confusable *pair* in either unit. The `ego` files make whole-closure checking cheap.
 - Comparison is byte equality after NFC. Identifiers are case-sensitive, so locale case folding never reaches identifier resolution.
-- **Non-ASCII identifiers are allowed. Non-ASCII keywords are not.** Private names in any script; the reserved words are enumerated in §8.4 and there are thirty of them, learned once. Public names additionally obey §3.
+- **Non-ASCII identifiers are allowed. Non-ASCII keywords are not.** Private names in any script; the reserved words are enumerated in §8.4 and there are thirty-one of them, learned once. Public names additionally obey §3.
 
 ## 8.3 Diagnostics
 
@@ -1441,10 +1505,13 @@ kept small and most of the vocabulary is *contextual* instead.
 | reduction | `contrahe` `forma` |
 | selection | `discerne` `casus` |
 | jump | `rumpe` `perge` |
+| arithmetic | `radix_quadrata` |
 
-Thirty words. §8.2 used to say "~40 keywords learned once"; the real number
-was under that, and §8.2 now gives the same counted thirty rather than the
-estimate. `[UNTESTED]` The `ego`
+Thirty-one words. §8.2 used to say "~40 keywords learned once"; the real
+number was under that, and §8.2 now gives the same count rather than the
+estimate. It was thirty until §5.4's square root took the thirty-first:
+`radix_quadrata` is RESERVED and not contextual, and the reason is in §5.4
+-- a PREFIX operator cannot use the argument the contextual words rest on. `[UNTESTED]` The `ego`
 structure words listed as contextual above (`versio`, `licentia`, `fontes`,
 `hospites`, `acceleratores`, `potestates`, `exitus`, and the four `numeri`
 keys) occur in no compiler table: the CST parses no `ego` block (§8.6, blocked
@@ -2153,7 +2220,10 @@ Terminals are §8.4's tokens; `IDENT` `INT` `STRING` are the lexer's classes.
                                                       MUL_EXPR with four operands *)
     MulOp         ::= '*' | '/' | 'residuum'
     Cast          ::= Unary ('sicut' Type)*
-    Unary         ::= ('-' | '&' | '*') Unary | Postfix
+    Unary         ::= ('-' | '&' | '*') Unary | 'radix_quadrata' Unary | Postfix
+                                                     (* §5.4's square root; a
+                                                      RESERVED word, so no peek
+                                                      -- tests/unit/cst_radix_quadrata.asm *)
     Postfix       ::= Primary Suffix*
     Suffix        ::= '.' IDENT | '(' [Expr (',' Expr)*] ')' | '[' Expr ']' | '?'
                     | GenericArgs                            (* after a path segment only *)

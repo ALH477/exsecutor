@@ -3256,6 +3256,19 @@ proc __cst_unary, p
 	call	__cst_pun
 	test	eax, eax
 	jnz	.prefix
+	; `radix_quadrata` (§5.4's square root). A RESERVED word (§8.4 table 1),
+	; so it needs no lookahead: the lexer has already classified it and it
+	; can never be an identifier. An earlier draft made it the contextual
+	; word `radix` and needed a one-token peek to tell the operator from a
+	; name -- which could not tell `radix ge n` from `radix a`, because the
+	; contextual comparison words are identifier tokens too, and which broke
+	; `examples/streamdb/lector_streamdb.exsc`, where `radix` is a variable.
+	; Reserving the word removes the question instead of answering it.
+	mov	rdi, rbx
+	mov	esi, KW_RADIX_QUADRATA
+	call	__cst_kw
+	test	eax, eax
+	jnz	.prefix
 	mov	rdi, rbx
 	call	__cst_postfix
 	return

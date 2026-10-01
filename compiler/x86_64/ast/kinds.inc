@@ -301,6 +301,10 @@ AST_OP_MAX	= 23
 AST_U_NEG	= 1	; `-`
 AST_U_ADDR	= 2	; `&`
 AST_U_DEREF	= 3	; `*`
+AST_U_SQRT	= 4	; `radix_quadrata` -- the square root (§5.4). The only
+			; unary here spelled as a WORD rather than a sigil,
+			; which is why from_cst.inc's builder has to look at a
+			; KEYWORD child and not only at a PUNCT one.
 
 ; ---- literal classes -------------------------------------------------------
 ; `Lit.aux`. typed-ast.md section 2.3: `Lit` keeps TEXT, not value -- the

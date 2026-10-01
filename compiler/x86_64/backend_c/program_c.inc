@@ -77,6 +77,69 @@ BFC_HOSPES_X86_64   = 1		; x86_64-linux
 BFC_HOSPES_RISCV64  = 2		; riscv64-linux
 BFC_HOSPES_MIPS64   = 3		; mips64-none-o64 -- parsed, refused in C1
 
+; ---- the -fno-math-errno guard, emitted only for a module that roots --------
+	jmp	__bfc_sqrt_guard_end
+__bfc_sqrt_guard:
+	db 10
+	db '#if !defined(__NO_MATH_ERRNO__)', 10
+	db '# error "exsecutor: this module uses radix (spec 5.4) and must be compiled with -fno-math-errno -- under math-errno a possibly-negative operand routes through libm to set errno, and libm is outside the closure spec 9.3 defines"', 10
+	db '#endif', 10
+__bfc_sqrt_guard_end:
+
+; __bfc_uses_fsqrt(module) -> eax = 1 if any function in the module holds a
+; BFA_OP_FSQRT instruction. A whole-module scan, run once per emission; the
+; alternative is threading a flag out of the lowerer, which would put a
+; backend`s compile-flag requirement into the IR.
+proc __bfc_uses_fsqrt, module
+	uses	rbx, r12, r13, r14
+	locals
+		slot nf, dd
+		slot ni, dd
+	endl
+	mov	rbx, [module]
+	mov	rdi, [rbx + BfaModule.funcs]
+	mov	rax, [rdi + Vec.len]
+	mov	[nf], eax
+	xor	r12d, r12d
+  .func:
+	mov	eax, r12d
+	cmp	eax, [nf]
+	jae	.no
+	mov	rdi, [rbx + BfaModule.funcs]
+	mov	esi, r12d
+	call	vec_get
+	mov	r13, [rax]			; -> BfaFunc
+	test	r13, r13
+	jz	.nextf
+	mov	rdi, [r13 + BfaFunc.insts]
+	test	rdi, rdi
+	jz	.nextf
+	mov	rax, [rdi + Vec.len]
+	mov	[ni], eax
+	xor	r14d, r14d
+  .inst:
+	mov	eax, r14d
+	cmp	eax, [ni]
+	jae	.nextf
+	mov	rdi, [r13 + BfaFunc.insts]
+	mov	esi, r14d
+	call	vec_get
+	movzx	ecx, word [rax + BfaInst.op]
+	cmp	ecx, BFA_OP_FSQRT
+	je	.yes
+	inc	r14d
+	jmp	.inst
+  .nextf:
+	inc	r12d
+	jmp	.func
+  .yes:
+	mov	eax, 1
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
 ; ---- the prologue blob ------------------------------------------------------
 ; `file` reads prologue.c.in at EXSC's assembly time and lays its bytes down
 ; here; the `jmp` guards them, since this lands in an executable segment.
@@ -308,6 +371,39 @@ proc bfc_emit_unit, module, arena, hospes
 	lea	rsi, [__bfc_prologue]
 	mov	rdx, __bfc_prologue_end - __bfc_prologue
 	call	__bfa_out_bytes
+
+	; ---- 1b. the -fno-math-errno guard, ONLY if this module roots ---------
+	; Emitted per MODULE, not in the prologue blob, and that distinction is
+	; the point: the prologue's text is a function of exsc's own bytes
+	; (c-backend.md D5) and every module gets it verbatim, so a requirement
+	; put there would land on modules that never take a square root -- and
+	; would break every existing consumer's build the day it was added.
+	; `radix` is the only operation in the language that can reach libm, so
+	; the flag it needs is demanded only where it is used.
+	;
+	; WHY THE FLAG IS NEEDED AT ALL. `__builtin_sqrt` lowers to the
+	; instruction, except that under gcc/clang's DEFAULT -fmath-errno a
+	; possibly-negative operand must still route through libm so errno can
+	; be set. Measured: without the flag, gcc and clang both fail to link
+	; this module with "undefined reference to `sqrt'" -- a loud failure,
+	; but one that names the wrong thing. With it, gcc and clang at -O0 and
+	; -O2 all produce the reference backend's exit status exactly.
+	;
+	; It changes no VALUE: §5.4 says a negative operand is a quiet NaN, and
+	; it is one either way. What it removes is errno, which this language
+	; does not have, and a libm dependency, which §9.3 keeps out of the
+	; closure and which the N64 consumer could not satisfy if it wanted to.
+	; Both compilers predefine __NO_MATH_ERRNO__ when given the flag, so
+	; the guard is exact rather than advisory.
+	mov	rdi, [module]
+	call	__bfc_uses_fsqrt
+	test	eax, eax
+	jz	.no_sqrt_guard
+	mov	rdi, [ctx]
+	lea	rsi, [__bfc_sqrt_guard]
+	mov	rdx, __bfc_sqrt_guard_end - __bfc_sqrt_guard
+	call	__bfa_out_bytes
+  .no_sqrt_guard:
 
 	; ---- 2. the one per-hospes line --------------------------------------
 	mov	rdi, [ctx]

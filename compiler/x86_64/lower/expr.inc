@@ -650,6 +650,8 @@ proc __lwr_unary, lwrsp, lwrn
 	je	.addr
 	cmp	dword [lwrop], AST_U_DEREF
 	je	.deref
+	cmp	dword [lwrop], AST_U_SQRT
+	je	.fsqrt_pre
 
 	; `-x`. On an integer this is `sub T 0 x` -- TRAPPING, so `-MIN` traps,
 	; which is spec section 5.4's `-`; on a float it is `fneg`.
@@ -687,6 +689,31 @@ proc __lwr_unary, lwrsp, lwrn
   .fneg:
 	mov	rdi, rbx
 	mov	esi, BFA_OP_FNEG
+	xor	rdx, rdx
+	mov	ecx, [lwrt]
+	mov	r8d, r12d
+	xor	r9, r9
+	call	lwr_emit
+	return
+  .fsqrt_pre:
+	; `radix x` (spec §5.4). The checker has already refused everything but
+	; a float (types.inc's `.u_sqrt`), so there is no integer arm here the
+	; way `-x` has one -- the node simply cannot arrive with another type.
+	; Same shape as `.fneg` otherwise: one operand, the node's own type.
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_nty
+	mov	r13d, eax
+	mov	rdi, rbx
+	mov	esi, r13d
+	call	lwr_ty_ir
+	mov	[lwrt], eax
+	mov	rdi, rbx
+	mov	esi, r12d
+	call	lwr_expr
+	mov	r12d, eax
+	mov	rdi, rbx
+	mov	esi, BFA_OP_FSQRT
 	xor	rdx, rdx
 	mov	ecx, [lwrt]
 	mov	r8d, r12d

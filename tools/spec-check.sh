@@ -242,7 +242,16 @@ echo
 spec_keywords() {
   # The reserved-word table in §8.4: rows between the "1. Reserved words"
   # marker and the count sentence. Only backticked cells in the second column.
-  awk '/^\*\*1\. Reserved words\*\*/{f=1} /^Thirty words/{exit} f&&/^\| [a-z]/{print}' "$SPEC" \
+  #
+  # THE TERMINATOR IS COUNT-AGNOSTIC on purpose. It used to be the literal
+  # "Thirty words", which meant the first word ever added to the table broke
+  # this check in a way that looked like a sync failure: the scan ran past the
+  # table into the contextual list and reported words code never claimed. It
+  # fired exactly once, on `radix_quadrata` (thirty-one). The terminator is
+  # guarded by `f` because an unguarded one matches prose ABOVE the table and
+  # exits before the scan ever starts -- which extracts nothing and reads as
+  # "code has 31 words the spec does not".
+  awk '/^\*\*1\. Reserved words\*\*/{f=1} f&&/^[A-Za-z-]+ words/{exit} f&&/^\| [a-z]/{print}' "$SPEC" \
     | sed 's/^|[^|]*|//; s/|$//' \
     | grep -o '`[^`]*`' | tr -d '`' | sort -u
 }
@@ -297,7 +306,7 @@ check_keyword_sync() {
 # Words listed under two different §8.4 groups. sort -u hides this, so the
 # duplicate scan reads the unsorted extraction.
 spec_keywords_raw_dupes() {
-  awk '/^\*\*1\. Reserved words\*\*/{f=1} /^Thirty words/{exit} f&&/^\| [a-z]/{print}' "$SPEC" \
+  awk '/^\*\*1\. Reserved words\*\*/{f=1} f&&/^[A-Za-z-]+ words/{exit} f&&/^\| [a-z]/{print}' "$SPEC" \
     | sed 's/^|[^|]*|//; s/|$//' \
     | grep -o '`[^`]*`' | tr -d '`' | sort | uniq -d
 }

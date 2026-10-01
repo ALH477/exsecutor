@@ -34,7 +34,7 @@
 ; lowering the differential test cannot check is a hypothesis with no test.
 ; The reference's `__bfa_emit_inst` lowers 50 of the IR's 64 opcodes -- the
 ; 35 integer, memory and control ones it always lowered, plus the eleven
-; float ones (fadd fsub fmul fdiv fneg fcmp fext ftrunc itof ftoi fconst)
+; float ones (fadd fsub fmul fdiv fneg fsqrt fcmp fext ftrunc itof ftoi fconst)
 ; and the vector float group's four (vadd vsub vmul vdiv);
 ; this file lowers exactly those 50 and refuses the other 14 BY NAME through
 ; `__bfc_die` -- "bfc: emitter: ...", exit 4, the same class
@@ -1480,7 +1480,7 @@ endp
 ; ============================================================================
 ; D4 rows 24-34 and 60: the float opcodes
 ; ============================================================================
-; fadd fsub fmul fdiv fneg fcmp fext ftrunc itof ftoi fconst -- the eleven
+; fadd fsub fmul fdiv fneg fsqrt fcmp fext ftrunc itof ftoi fconst -- the twelve
 ; float opcodes the reference lowers (emit.inc's float arms), and therefore
 ; the eleven this emitter lowers too. `fma` and `bitcast` are the two float
 ; rows the reference refuses, and they fall to `__bfc_refuse` here, which
@@ -1722,6 +1722,99 @@ endp
 ; exactly the reference's xorps row. NaN payloads survive (the ordered
 ; fcmp predicates stay false on the result either way, but a payload is
 ; observable through `fconst`'s round-trip), and -0.0 <-> +0.0.
+; __bfc_emit_fsqrt(ctx, module, func, instid) -- `vK = __builtin_sqrt(A);`
+; (f64) or `__builtin_sqrtf` (f32). Spec §5.4's `radix`.
+;
+; `__builtin_sqrt` AND NOT `sqrt`, for two reasons that are this project's
+; and not style. First, `sqrt` is libm, and §9.3 keeps libm out of the
+; closure -- the reference backend emits one `sqrtsd` and calls nothing, so a
+; C target that pulled in libm would not be compiling the same program. The
+; downstream consumers prove the point: Kiln's N64 build links libdragon and
+; has no libm to link against, so a `sqrt` call would be a link error on the
+; only hardware target this operation currently has. Second, the builtin is
+; what lowers to the hardware instruction -- `sqrtsd` on SSE2, `sqrt.d` on
+; the VR4300 -- which is the instruction IEEE-754 pins, so the C row and the
+; reference row compute the same bits rather than merely similar ones.
+;
+; KNOWN AND STATED, not silently relied on: with `-fmath-errno` (the gcc/clang
+; DEFAULT) a negative operand may still route through libm so that `errno`
+; can be set. The VALUE is unaffected -- a quiet NaN either way, which is
+; §5.4's rule -- so this is a link-surface property and not a numeric one,
+; and it surfaces as a loud undefined reference rather than a wrong answer.
+; A target that wants the instruction and nothing else passes
+; `-fno-math-errno`. No `#error` is emitted for it here: §9.2 says a C target
+; that cannot honour a declared `numeri` fails the build, and this does not
+; touch `numeri` -- rounding, reassociation, contraction and subnormals are
+; all unchanged by which of two paths produces the same NaN.
+proc __bfc_emit_fsqrt, ctx, module, func, instid
+	locals
+		slot av,   dd
+		slot tyv,  dd
+		slot auxv, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[av], ecx
+	mov	ecx, [rax + BfaInst.ty]
+	mov	[tyv], ecx
+	movzx	ecx, word [rax + BfaInst.aux]
+	mov	[auxv], ecx
+
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfc_ty_class
+	cmp	eax, 3
+	je	.tyok
+	cmp	eax, 4
+	je	.vty
+	jmp	.badty
+  .tyok:
+	mov	eax, [auxv]
+	and	eax, 0x100
+	jnz	.flimm
+
+	mov	rdi, [ctx]
+	mov	rsi, [func]
+	mov	edx, [instid]
+	call	__bfc_emit_result
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfc_ty_info
+	cmp	edx, BFA_TK_F64
+	je	.d64
+	__bfc_emtxt "__builtin_sqrtf("
+	jmp	.arg
+  .d64:
+	__bfc_emtxt "__builtin_sqrt("
+  .arg:
+	mov	rdi, [ctx]
+	mov	esi, [av]
+	call	__bfc_emit_v
+	__bfc_emtxt ")"
+	mov	rdi, [ctx]
+	call	__bfc_semi
+	return
+
+  .badty:
+	jmp	.after_s1
+  .s1 db "fsqrt: the operand type must be a float (f32/f64)"
+  .after_s1:
+	lea	rdi, [.s1]
+	mov	rsi, .after_s1 - .s1
+	call	__bfc_die
+  .vty:
+	call	__bfc_die_vecfloat
+  .flimm:
+	jmp	.after_s2
+  .s2 db "fsqrt: the operand is a value only (`fconst` is the leaf)"
+  .after_s2:
+	lea	rdi, [.s2]
+	mov	rsi, .after_s2 - .s2
+	call	__bfc_die
+endp
+
 proc __bfc_emit_fneg, ctx, module, func, instid
 	locals
 		slot av,   dd
@@ -5170,6 +5263,15 @@ proc __bfc_emit_inst, ctx, module, func, instid
   .n_fbin:
 	cmp	dword [op], BFA_OP_FNEG
 	je	.dofneg
+	cmp	dword [op], BFA_OP_FSQRT
+	jne	.n_fsqrt
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfc_emit_fsqrt
+	return
+  .n_fsqrt:
 	cmp	dword [op], BFA_OP_FEXT
 	je	.dofconv
 	cmp	dword [op], BFA_OP_FTRUNC

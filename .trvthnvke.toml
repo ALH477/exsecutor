@@ -54,7 +54,7 @@ command_allow = [
   # quietly re-typed -- which is the whole point of pinning the argument
   # vector and not the binary name.
   ["grep", "-cE",
-   "FLOOR:-(204|78|147|236|77|308|15|6)\\}", "tests/run.sh"],
+   "FLOOR:-(205|78|147|236|77|308|15|6)\\}", "tests/run.sh"],
   # The two rasterizer goldens. Committed files, so unlike the emitted-unit
   # and exsc sizes these can be measured from here.
   ["wc", "-c", "tests/programs/pictura_triangulum/expected.out"],
