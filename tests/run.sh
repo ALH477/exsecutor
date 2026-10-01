@@ -102,12 +102,12 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # frame's `freln` was 0 -- and a SIGILL in the compiler on the first one that
 # could. The fixture fails on the pre-fix code (exit 132, the crash itself),
 # which is what makes it a regression test rather than a description.
-# 225 -> 226 on 2026-10-10: merged on top of the cast-literal fix (193 -> 225
-# across the intervening commits), which added chk_ty_cast_literal.asm as a
-# regression fixture. Same rule -- it was run against the pre-fix checker and
-# exits 12 there (row 2: `7 sicut f32` raised nothing), so it is a regression
-# test and not a description.
-UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-226}"
+# 226 -> 227 on 2026-10-10: prelude_scribe_octetos.asm and
+# prelude_lege_octetos.asm, spec §4.6's bulk pair, added with the rows they
+# pin. Raised by exactly the one fixture added (the two bulk routines share
+# one fixture file), which is this file's convention when a commit adds them
+# rather than re-baselines.
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-227}"
 
 # The same guarantee for the two run phases below: tests/ir/*.ir fixtures,
 # and tests/programs/*/ directories. Same rule -- `found < floor` fails --
@@ -2334,6 +2334,16 @@ run_differential_tests() {
   #     other's as an unknown-warning option without complaint.
   local cflags="-std=c11 -Wall -Wextra -fsanitize=undefined -fno-sanitize-recover=all"
   cflags="$cflags -Wno-unused-function"
+  # -fno-math-errno: spec §5.4's `radix` lowers to __builtin_sqrt, and under
+  # gcc/clang's default -fmath-errno a possibly-negative operand still routes
+  # through libm so errno can be set -- which fails to link, since nothing
+  # here links libm and §9.3 keeps it out of the closure. The flag removes
+  # errno, which this language does not have; it changes no value (a negative
+  # operand is a quiet NaN either way). A module that needs it SAYS so: exsc
+  # emits a `#error` naming this flag, but only into a module that actually
+  # roots (backend_c/program_c.inc's __bfc_uses_fsqrt), so a module without a
+  # square root is byte-identical to before this line existed.
+  cflags="$cflags -fno-math-errno"
 
   local found=0 builds=0 src
   shopt -s nullglob
@@ -2684,6 +2694,10 @@ SILENT_BY_DESIGN=(
   receptio_vec_awgn_vacuum_m12db_s1     # expect-exit=1, c-differentia=nightly-sweep
   receptio_vec_awgn_vacuum_m12db_s2     # expect-exit=1, c-differentia=nightly-sweep
   receptio_vec_freq_loopback_m300hz     # expect-exit=2, c-differentia=nightly-sweep
+  radix_quadrata                   # expect-exit=100, no stdout by design --
+                                   # §5.4's square root: six checks, each
+                                   # signalling through the exit status, the
+                                   # convention float_division/ set
   redundantia                      # expect-exit=0, no stdout by design
   scriptor_campus_occultus         # expect-exit=1, refusal path
   scriptor_nomen_collidens         # expect-exit=1, refusal path

@@ -2242,6 +2242,56 @@ endp
 ; XOR touches only bit 63/31, so a NaN operand keeps its PAYLOAD (ssa-ir.md
 ; 2.3 wants exactly that), where `0 - x` is an arithmetic op that would
 ; run the (masked, hence silent) invalid path on a signaling NaN.
+; __bfa_emit_fsqrt -- spec §5.4's `radix`. ONE INSTRUCTION, and that is the
+; whole argument for admitting this operation and not `sinus`: IEEE-754
+; requires `sqrt` correctly rounded, SSE2 has had `sqrtsd`/`sqrtss` since
+; 2000, and both honour MXCSR's rounding mode, so `rotundatio` governs it the
+; way it governs `fadd`. Nothing is called, nothing is approximated, and no
+; libm enters the closure (§9.3).
+;
+; A negative operand yields a quiet NaN and raises 754's invalid flag; it does
+; not trap, which is §5.4's float policy (division by zero does not trap
+; either). `sqrtsd xmm0, xmm0` is safe with source and destination the same
+; register.
+proc __bfa_emit_fsqrt, ctx, module, func, instid
+	locals
+		slot av, dd
+		slot tyv, dd
+		slot width, dd
+	endl
+	mov	rdi, [func]
+	mov	esi, [instid]
+	call	bfa_inst_ptr
+	mov	ecx, [rax + BfaInst.a]
+	mov	[av], ecx
+	mov	ecx, [rax + BfaInst.ty]
+	mov	[tyv], ecx
+
+	mov	rdi, [module]
+	mov	esi, [tyv]
+	call	__bfa_emit_fwidth
+	mov	[width], eax
+
+	mov	rdi, [ctx]
+	xor	esi, esi
+	mov	edx, [width]
+	mov	ecx, [av]
+	call	__bfa_emit_fload
+
+	cmp	dword [width], 8
+	jne	.ss
+	__bfa_emtxt 9, "sqrtsd", 9, "xmm0, xmm0", 10
+	jmp	.tostore
+  .ss:
+	__bfa_emtxt 9, "sqrtss", 9, "xmm0, xmm0", 10
+  .tostore:
+	mov	rdi, [ctx]
+	mov	esi, [width]
+	mov	edx, [instid]
+	call	__bfa_emit_fstore
+	return
+endp
+
 proc __bfa_emit_fneg, ctx, module, func, instid
 	locals
 		slot av, dd
@@ -7370,6 +7420,15 @@ proc __bfa_emit_inst, ctx, module, func, instid, lblptr, lbllen
 	call	__bfa_emit_fneg
 	return
   .notfneg:
+	cmp	dword [op], BFA_OP_FSQRT
+	jne	.notfsqrt
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	rdx, [func]
+	mov	ecx, [instid]
+	call	__bfa_emit_fsqrt
+	return
+  .notfsqrt:
 	cmp	dword [op], BFA_OP_FEXT
 	je	.dofconv
 	cmp	dword [op], BFA_OP_FTRUNC

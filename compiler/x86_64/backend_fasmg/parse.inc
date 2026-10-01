@@ -1011,6 +1011,7 @@ proc __bfa_optab_init, p
 	bfa_opdef 'sext',    BFA_OP_SEXT,    BFA_SH_UN
 	bfa_opdef 'trunc',   BFA_OP_TRUNC,   BFA_SH_UN
 	bfa_opdef 'fneg',    BFA_OP_FNEG,    BFA_SH_UN
+	bfa_opdef 'fsqrt',   BFA_OP_FSQRT,   BFA_SH_UN
 	bfa_opdef 'fext',    BFA_OP_FEXT,    BFA_SH_UN
 	bfa_opdef 'ftrunc',  BFA_OP_FTRUNC,  BFA_SH_UN
 	bfa_opdef 'itof',    BFA_OP_ITOF,    BFA_SH_UN

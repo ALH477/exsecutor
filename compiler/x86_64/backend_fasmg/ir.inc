@@ -185,6 +185,10 @@ BFA_OP_VADD     = 61
 BFA_OP_VSUB     = 62
 BFA_OP_VMUL     = 63
 BFA_OP_VDIV     = 64
+; APPENDED, never inserted: these ids are dense and are compared numerically
+; all over this backend, so a new opcode goes on the end. §5.4's square root
+; (`radix`), the twelfth scalar float opcode.
+BFA_OP_FSQRT    = 65
 
 ; ---- operand shapes (drives parse.inc's tokenizer AND print.inc's
 ; re-emission -- one interpreter for both directions, never two).

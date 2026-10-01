@@ -468,6 +468,7 @@ proc __bfa_print_opname, ctx, op, aux
 	__bfa_opname_case op, BFA_OP_FMUL, 'fmul'
 	__bfa_opname_case op, BFA_OP_FDIV, 'fdiv'
 	__bfa_opname_case op, BFA_OP_FNEG, 'fneg'
+	__bfa_opname_case op, BFA_OP_FSQRT, 'fsqrt'
 	__bfa_opname_case op, BFA_OP_FMA, 'fma'
 	__bfa_opname_case op, BFA_OP_FEXT, 'fext'
 	__bfa_opname_case op, BFA_OP_FTRUNC, 'ftrunc'
