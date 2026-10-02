@@ -1,0 +1,53 @@
+// examples/custos/filtrum.exsc -- custos as a process: the gate with the
+// smallest authority a program can hold.
+//
+// The library (custos.exsc) is pure. This file adds the only authority that
+// running it needs: the standard streams, derived once from `Mundus` as
+// `ambitus` (spec §4.6). Nothing else is derivable here, and nothing else is
+// derived, so the binary's syscall surface is read, write and exit_group --
+// `tools/syscall-audit.sh --potestates Mundus,ambitus` holds it to that, and
+// fails loudly on any socket-family call. A host that runs this as a child
+// (privileged or not) hands the hostile bytes to a process that cannot open a
+// file, a socket, or another program, whatever those bytes do to it.
+//
+// The stream protocol, both directions:
+//
+//   in   [n u8][n bytes] ...    one record per datagram, n <= 255
+//   out  [verdict u8] ...       admitte's code for each record, in order
+//
+// Records longer than 32 bytes are read in full and judged on their length
+// (verdict 6) without the gate reading past its window. End of input between
+// records exits 0; end of input inside a record exits 2 and writes no verdict
+// for it -- a truncated datagram is never judged.
+//
+// The compilation unit is entry 23's fixture, entry23/codex.exsc,
+// custos.exsc, then this file.
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma l = Lector.ab_introitu(a);
+    firma s = Scriptor.ad_exitum(a);
+    mutabilis d: acies<u8, 32> = [0; 32];
+    mutabilis currit: u8 = 1;
+    dum currit eq 1 {
+        firma k = l.lege_octeto();
+        si k ge 256 {
+            currit = 0;
+        } aliter {
+            firma n = k sicut mensura;
+            per i in 0..n {
+                firma b = l.lege_octeto();
+                si b ge 256 {
+                    redde 2;
+                }
+                si i lt 32 {
+                    d[i] = b sicut u8;
+                }
+            }
+            firma v = admitte(d, n);
+            firma w = s.scribe_octeto(v);
+        }
+    }
+    redde 0;
+}

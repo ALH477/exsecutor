@@ -75,6 +75,23 @@ Exsecutor source, ten programs, all compiled and run by `tests/run.sh`:
   as digital-watch firmware (set time, alarm, countdown, stopwatch), bare on
   emulated Cortex-M4 and M0+; `metronomus/README.md` has the mutants and the
   compiler crash it found.
+- **`arca/`, a tar-header judge for root** — for Oligarchy's reliquary,
+  which extracts USB-sourced payloads as root and used to check member names
+  but not types (a hostile payload made a world-readable block device).
+  `arca.exsc` is pure and admits only GNU tar's own output shape: regular
+  files, directories, GNU long names, exact checksum/size/numeric forms, safe
+  names. `proba_c.sh` holds it to GNU tar itself: reliquary's archives
+  admitted with identical member lists, 32 hostile cases refused by verdict,
+  and a header fuzz with zero gate-admitted/tar-disagrees cases, plus six
+  behaviour mutants and the rule-6 capability checks.
+- **`custos/`, the DCF datagram gate** — for Punctim's `dcf-ws-bridge`,
+  which links its C. `custos.exsc` is a pure library: `admitte` says whether
+  one bare-dialect UDP datagram is a valid 17-byte DeModFrame or a valid
+  32-byte SuperPack (joint CRC, both cores version 1), and otherwise why
+  not. Built as one unit with §14 entry 23's fixture and codex, so a frame
+  is judged by the certified `lege` itself. `proba_c.sh` checks reproducible
+  emission, 19 anchors under gcc and clang with UBSan, and five mutants; the
+  vector certification is the consumer's, in Punctim.
 - **`tempus/`, the time register** — one DeModFrame carrying a node's held
   time onto the Punctim wire, and the read of one that arrives. Built as one
   unit with §14 entry 23's fixture and codex, so the frame declaration is

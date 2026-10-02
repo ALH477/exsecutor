@@ -1,0 +1,105 @@
+// examples/custos/custos.exsc -- the DCF datagram gate: given the bytes of one
+// UDP datagram in Punctim's bare dialect, say whether it is something a DCF
+// relay may forward. Pure: no `poscit`, no `initium`, no allocation, no I/O.
+//
+// The compilation unit is §14 entry 23's fixture (the DeModFrame
+// declaration), then entry23/codex.exsc (the codec that passes the 246-vector
+// certificate), then this file -- so a 17-byte datagram is judged by exactly
+// the `lege` entry 23 certifies, not by a copy of it. There is no module
+// system yet; the file list is the import.
+//
+// Its consumer is Punctim's `dcf-ws-bridge` (web/bridge/), which links the C
+// this file becomes (`exsc --emitte c`) and calls `admitte` on every datagram
+// in both directions. Before it, that bridge relayed any bytes a WebSocket
+// handed it to any UDP peer it was told about.
+//
+// The rule is Punctim's DCF_MEDIUM_SPEC.md `udp_bare` decode, with the frame
+// gate applied the way `punctim io` and `dcf.bridge` apply it:
+//
+//   17 bytes  -> one frame; admitted iff sync 0xD3, version nibble 1 and
+//                CRC-16/CCITT-FALSE over bytes 0..14 (entry 23's `lege`).
+//   32 bytes  -> one SuperPack (SUPERPACK_SPEC.md); admitted iff sync 0xD3,
+//                sflags 0x15 (version 1, type SUPER), the joint CRC over
+//                bytes 0..29, and both inner cores carrying version 1 -- the
+//                last because `unpack` rebuilds each frame with a fresh CRC,
+//                so the version nibble is the only gate a rebuilt frame can
+//                still fail.
+//   otherwise -> refused.
+//
+// The type nibble is NOT gated, for frames or for cores: reserved types 4-15
+// pass, as DCF_MEDIUM_SPEC.md's frame gate requires.
+
+// SuperPack's 32 bytes, declared the way §5.2 declares DeModFrame: every width
+// and byte order once, so reading a field is the shift and the mask. A core
+// is a DeModFrame without its sync byte and its CRC (bytes 1..14).
+@transitus
+publica structura Sarcina {
+    signum:    u8                // 0xD3
+    versio:    u4                // 1
+    genus:     u4                // 5, SUPER
+    a_versio:  u4                // frame A's core, bytes 2..15
+    a_genus:   u4
+    a_numerus: u16:maior
+    a_fons:    u16:maior
+    a_meta:    u16:maior
+    a_onus:    u32:maior
+    a_tempus:  u24:maior
+    b_versio:  u4                // frame B's core, bytes 16..29
+    b_genus:   u4
+    b_numerus: u16:maior
+    b_fons:    u16:maior
+    b_meta:    u16:maior
+    b_onus:    u32:maior
+    b_tempus:  u24:maior
+    cursus:    u16:maior         // joint CRC-16/CCITT-FALSE over bytes 0..29
+}
+
+// entry 23's `redundantia`, over a 32-byte window: the parameter's type is its
+// length and there are no generics over a length, so the body is repeated
+// rather than shared. Same polynomial division, same `aut` and shift by one.
+publica functio redundantia_sarcinae(b: acies<u8, 32>, n: mensura) -> u16 {
+    mutabilis c: u16 = 0xffff;
+    per i in 0..n {
+        c = c aut ((b[i] sicut u16) sursum 8);
+        per k in 0..8 {
+            si c ge 0x8000 {
+                c = (c sursum 1) aut 0x1021;
+            } aliter {
+                c = c sursum 1;
+            }
+        }
+    }
+    redde c;
+}
+
+// The verdict on one datagram, `d[0..n)`. `d` is a 32-byte window because a
+// SuperPack is the longest thing admitted; bytes at and past `n` are not read.
+//
+//   0  admitted        3  bad CRC (the frame's, or the joint one)
+//   1  bad sync        4  32 bytes whose sflags type is not SUPER
+//   2  bad version     5  a SuperPack core whose version nibble is not 1
+//                      6  a length that is neither 17 nor 32
+//
+// Only "0 or not 0" is the certified half -- it is what DCF_MEDIUM_SPEC.md and
+// SUPERPACK_SPEC.md define. The nonzero codes are for the caller's counters;
+// their order follows entry 23's `lege` (sync, then version, then CRC).
+publica functio admitte(d: acies<u8, 32>, n: mensura) -> u8 {
+    si n eq 17 {
+        mutabilis w: acies<u8, 17> = [0; 17];
+        per i in 0..17 {
+            w[i] = d[i];
+        }
+        redde lege(w);
+    }
+    si n eq 32 {
+        firma s = d sicut Sarcina;
+        si s.signum ne 0xd3 { redde 1; }
+        si s.versio ne 1 { redde 2; }
+        si s.genus ne 5 { redde 4; }
+        si (redundantia_sarcinae(d, 30) aut s.cursus) ne 0 { redde 3; }
+        si s.a_versio ne 1 { redde 5; }
+        si s.b_versio ne 1 { redde 5; }
+        redde 0;
+    }
+    redde 6;
+}
