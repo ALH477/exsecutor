@@ -409,6 +409,261 @@
       somniumCPkg = buildExsecutorCProgram somniumCArgs;
 
       # ----------------------------------------------------------------------
+      # lib.buildExsecutorGuard -- a buildExsecutorProgram whose syscall
+      # surface is audited inside the derivation (docs/design/guards.md).
+      #
+      #   lib.buildExsecutorGuard {
+      #     pname, version, src, sources,
+      #     potestates ? [ "Mundus" "ambitus" ],
+      #     installCheck ? "",   # shell run against $out/bin/<pname>
+      #     meta ? { },
+      #   }
+      #
+      # The binary is exactly buildExsecutorProgram's (same buildPhase; the
+      # override adds steps, never touches the bytes). After it is assembled
+      # and before anything is installed, these must hold or there is no
+      # output at all:
+      #
+      #   0. guardTable below still matches the audit script (see there).
+      #   1. tools/syscall-audit.sh --potestates <atoms> passes on it.
+      #   2. The pass saw something: at least one syscall site is in its table.
+      #   3. The declared set is MINIMAL: for every declared atom other than
+      #      Mundus, the audit with that atom dropped must FAIL (exit 1, not
+      #      2 -- a usage error is not a refusal). The audit's admitted set is
+      #      a union over atoms, so it is monotone, and "every one-smaller set
+      #      fails" implies "every strictly smaller set fails". This is a
+      #      build-time check, not a test beside the package, because it is
+      #      what makes passthru.systemCallFilter honest: every atom in it is
+      #      one the binary was shown to need. (examples/custos/proba_c.sh
+      #      does the {Mundus} case of this by hand for filtrum.)
+      #
+      # The audit's tools (python3, binutils) are build inputs of this
+      # derivation only. `allowedReferences = [ ]` makes "they are not on the
+      # runtime closure" a build failure rather than a comment: a freestanding
+      # binary references no store path, and neither does the audit report
+      # installed beside it. The script is the one in THIS flake's tree,
+      # referenced by store path, so a consumer's own `src` cannot swap it.
+      #
+      # Refused at evaluation, with the reason:
+      #   - an atom that is not one of spec §4.6's eleven spellings;
+      #   - `rete`: the audit admits the socket family wholesale for it, so
+      #     there is no closed list to derive a filter from, and a guard that
+      #     can open a socket is not the thing this helper is for;
+      #   - an atom other than Mundus whose row in the audit's table is empty
+      #     today (sermo, horologium, archivum, fortuna, Filum, machina,
+      #     Crudum): it admits nothing, so check 3 could never pass for it,
+      #     and declaring it would put an atom in passthru that nothing
+      #     measured. Mundus is exempt because it is the root every
+      #     `initium` receives; it admits nothing by design.
+      #
+      # guardTable is a transcription of tools/syscall-audit.sh's
+      # POTESTATES_CORE and POTESTATES_TABLE. A transcription can drift, so
+      # the build reads both dicts back out of the script it runs and fails
+      # if any row differs. Core here also carries write(1): the audit admits
+      # exsrt_abort's write to fd 2 under every atom set, in code rather than
+      # in the dict, so a seccomp filter that omitted write would kill a
+      # trapping guard with SIGSYS instead of letting it report the trap.
+      guardAtoms = [
+        "Mundus" "alloc" "sermo" "horologium" "archivum" "rete"
+        "fortuna" "ambitus" "Filum" "machina" "Crudum"
+      ];
+      guardSyscallName = {
+        "0" = "read";
+        "1" = "write";
+        "9" = "mmap";
+        "11" = "munmap";
+        "231" = "exit_group";
+      };
+      guardCore = [ 231 ];
+      guardCoreAbortWrite = 1;
+      guardTable = {
+        Mundus = [ ];
+        alloc = [ 9 11 ];
+        sermo = [ ];
+        horologium = [ ];
+        archivum = [ ];
+        fortuna = [ ];
+        ambitus = [ 0 1 ];
+        Filum = [ ];
+        machina = [ ];
+        Crudum = [ ];
+      };
+      auditScript = ./tools/syscall-audit.sh;
+
+      buildExsecutorGuard =
+        { pname
+        , version
+        , src
+        , sources
+        , potestates ? [ "Mundus" "ambitus" ]
+        , installCheck ? ""
+        , meta ? { }
+        }:
+        let
+          unknown = builtins.filter (a: !(builtins.elem a guardAtoms)) potestates;
+          empty = builtins.filter (a: a != "Mundus" && a != "rete" && guardTable.${a} == [ ])
+            (builtins.filter (a: builtins.elem a guardAtoms) potestates);
+          dropped = builtins.filter (a: a != "Mundus") potestates;
+          reduced = a:
+            let rest = builtins.filter (b: b != a) potestates;
+            in if rest == [ ] then [ "Mundus" ] else rest;
+          numbers = nixpkgsLib.sort builtins.lessThan (nixpkgsLib.unique
+            (guardCore ++ [ guardCoreAbortWrite ]
+              ++ builtins.concatMap (a: guardTable.${a}) potestates));
+          syscalls = map (n: guardSyscallName.${toString n}) numbers;
+          csv = nixpkgsLib.concatStringsSep "," potestates;
+          checked =
+            if potestates == [ ] then
+              throw "buildExsecutorGuard ${pname}: potestates is empty; name the atoms the program derives (at least Mundus)"
+            else if unknown != [ ] then
+              throw "buildExsecutorGuard ${pname}: not one of spec §4.6's eleven atom spellings: ${toString unknown}"
+            else if nixpkgsLib.unique potestates != potestates then
+              throw "buildExsecutorGuard ${pname}: potestates lists an atom twice"
+            else if builtins.elem "rete" potestates then
+              throw "buildExsecutorGuard ${pname}: 'rete' admits the socket family wholesale in tools/syscall-audit.sh, so no closed SystemCallFilter can be derived for it, and a guard with a socket is not a guard (spec §9.3). Use buildExsecutorProgram."
+            else if empty != [ ] then
+              throw "buildExsecutorGuard ${pname}: ${toString empty} admit(s) no syscall in tools/syscall-audit.sh's table today, so the minimality check could never pass for it and nothing would measure it. Drop it."
+            else true;
+        in
+        assert checked;
+        (buildExsecutorProgram { inherit pname version src sources meta; }).overrideAttrs (old: {
+          nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.python3 pkgs.binutils-unwrapped ];
+          # The bytes fasmg wrote are the bytes that ship: no strip, no
+          # patchelf (fasmg's ELF has no section table for either to read).
+          dontStrip = true;
+          dontPatchELF = true;
+          allowedReferences = [ ];
+          postBuild = ''
+            guard=./${nixpkgsLib.escapeShellArg pname}
+            audit() { bash ${auditScript} "$@"; }
+
+            echo "== guard: audit table vs flake.nix's transcription =="
+            python3 - ${auditScript} ${nixpkgsLib.escapeShellArg (builtins.toJSON { core = guardCore; table = guardTable; })} <<'PYEOF'
+            import ast, json, re, sys
+            text = open(sys.argv[1], encoding='utf-8').read()
+            want = json.loads(sys.argv[2])
+            def grab(name):
+                m = re.search(r'^' + name + r' = (\{[^\n]*\})$', text, re.M) or \
+                    re.search(r'^' + name + r' = (\{.*?^\})', text, re.S | re.M)
+                if not m:
+                    sys.exit('guard: %s not found in the audit script' % name)
+                body = re.sub(r'#[^\n]*', "", m.group(1))
+                return ast.literal_eval(body)
+            core = grab('POTESTATES_CORE')
+            table = grab('POTESTATES_TABLE')
+            bad = []
+            if sorted(core) != sorted(want['core']):
+                bad.append('core: script %s, flake %s' % (sorted(core), want['core']))
+            for atom in sorted((set(table) | set(want['table'])) - {'rete'}):
+                s = sorted(table.get(atom, {'missing': 0}))
+                f = sorted(want['table'].get(atom, ['missing']))
+                if s != f:
+                    bad.append('%s: script %s, flake %s' % (atom, s, f))
+            if bad:
+                print('FAIL: guardTable has drifted from tools/syscall-audit.sh:')
+                for b in bad:
+                    print('  ' + b)
+                sys.exit(1)
+            print('ok: %d atoms and the core row agree' % (len(table) - 1))
+            PYEOF
+
+            echo "== guard: audit --potestates ${csv} (must PASS) =="
+            audit --potestates ${nixpkgsLib.escapeShellArg csv} "$guard" | tee guard-audit.txt
+            sites=$(grep -cE '^0x[0-9a-f]+ +[0-9]+ ' guard-audit.txt || true)
+            if [ "$sites" -lt 1 ]; then
+              echo "FAIL: the audit passed with no syscall site in its table -- it saw nothing" >&2
+              exit 1
+            fi
+            echo "ok: $sites syscall site(s) audited"
+
+            ${nixpkgsLib.concatMapStrings (a: let r = nixpkgsLib.concatStringsSep "," (reduced a); in ''
+              echo "== guard: audit --potestates ${r} (${a} dropped; must FAIL) =="
+              rc=0
+              audit --potestates ${nixpkgsLib.escapeShellArg r} "$guard" > guard-minus.txt || rc=$?
+              if [ "$rc" -ne 1 ] || ! grep -q '^AUDIT: FAIL' guard-minus.txt; then
+                cat guard-minus.txt
+                echo "FAIL: dropping '${a}' gave exit $rc, not a refusal (1). Either ${a} is not needed by this binary -- declare less -- or the audit saw nothing." >&2
+                exit 1
+              fi
+              echo "ok: refused without ${a}"
+            '') dropped}
+          '';
+          postInstall = ''
+            install -Dm0644 guard-audit.txt "$out/share/exsecutor-guard/${pname}.audit"
+          '';
+          doInstallCheck = installCheck != "";
+          installCheckPhase = ''
+            runHook preInstallCheck
+            guard="$out/bin/${pname}"
+            ${installCheck}
+            runHook postInstallCheck
+          '';
+          passthru = (old.passthru or { }) // {
+            inherit potestates syscalls;
+            # The allow-list line for a systemd unit (docs/design/guards.md):
+            # the audited set plus execve, which the launcher needs because
+            # the filter is installed before it execs the binary. systemd adds
+            # its own @default set to any allow-list regardless; pair this
+            # with SystemCallArchitectures = "native".
+            systemCallFilter = syscalls ++ [ "execve" ];
+          };
+        });
+
+      # examples/custos/filtrum.exsc: the DCF datagram gate as a process
+      # holding only `ambitus` (examples/custos/README.md). The first guard.
+      # Unit order is proba_c.sh's: entry 23's fixture, its certified codec,
+      # the gate, the process.
+      custosFiltrumPkg = buildExsecutorGuard {
+        pname = "custos-filtrum";
+        version = "0.1.0";
+        src = nixpkgsLib.fileset.toSource {
+          root = ./.;
+          fileset = nixpkgsLib.fileset.unions [
+            ./tests/conformance/entry23_demodframe_golden_vectors.exsc
+            ./tests/conformance/entry23/codex.exsc
+            ./examples/custos/custos.exsc
+            ./examples/custos/filtrum.exsc
+          ];
+        };
+        sources = [
+          "tests/conformance/entry23_demodframe_golden_vectors.exsc"
+          "tests/conformance/entry23/codex.exsc"
+          "examples/custos/custos.exsc"
+          "examples/custos/filtrum.exsc"
+        ];
+        potestates = [ "Mundus" "ambitus" ];
+        # proba_c.sh's two runtime checks, on the installed binary: a filler
+        # frame (0), a filler SuperPack (0), a bad-CRC frame (3), a 200-byte
+        # record (6); then a record cut off mid-way exits 2 with no verdict.
+        installCheck = ''
+          hx() { printf '%s' "$1" | sed 's/../\\x&/g'; }
+          { printf '\x11'; printf "$(hx d310000000000000000000000000005b80)"
+            printf '\x20'; printf "$(hx d315100000000000000000000000000010000000000000000000000000005b75)"
+            printf '\x11'; printf "$(hx d310000000000000000000000000005b81)"
+            printf '\xc8'; head -c 200 /dev/zero; } > in.bin
+          got="$("$guard" < in.bin | od -An -tu1 | tr -s ' ' | sed 's/^ //')"
+          if [ "$got" != "0 0 3 6" ]; then
+            echo "FAIL: verdicts '$got', want '0 0 3 6'" >&2
+            exit 1
+          fi
+          echo "ok: verdicts $got"
+          rc=0
+          printf '\x11\xd3\x10' | "$guard" > trunc.out || rc=$?
+          if [ "$rc" -ne 2 ] || [ -s trunc.out ]; then
+            echo "FAIL: truncated record gave exit $rc" >&2
+            exit 1
+          fi
+          echo "ok: truncated record exits 2 with no verdict"
+        '';
+        meta = {
+          description = "custos as a process: the DCF datagram gate on stdin/stdout, freestanding, syscall surface audited to read/write/exit_group at build time";
+          license = nixpkgsLib.licenses.gpl3Plus;
+          platforms = [ system ];
+          mainProgram = "custos-filtrum";
+        };
+      };
+
+      # ----------------------------------------------------------------------
       # Fixtures shared by the checks below.
       smokeAsmSrc = pkgs.writeText "exsecutor-smoke.asm" ''
         include 'format/format.inc'
@@ -567,12 +822,13 @@
         exsc = exscPkg;
         somnium = somniumPkg;
         somnium-c = somniumCPkg;
+        custos-filtrum = custosFiltrumPkg;
         # exsc doesn't exist yet; fasmg-x86 is the most meaningful thing this
         # repo actually builds today (fasmg itself is just nixpkgs, unchanged).
         default = if compilerExists then exscPkg else fasmg-x86;
       };
 
-      lib = { inherit buildExsecutorPackage buildExsecutorProgram buildExsecutorCProgram somniumCArgs; };
+      lib = { inherit buildExsecutorPackage buildExsecutorProgram buildExsecutorCProgram buildExsecutorGuard somniumCArgs; };
 
       devShells.${system}.default = pkgs.mkShell {
         packages = [
