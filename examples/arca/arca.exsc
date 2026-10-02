@@ -1,0 +1,253 @@
+// examples/arca/arca.exsc -- judge a tar header the way GNU tar will read it,
+// before root lets GNU tar extract anything. Pure: no `poscit`, no capability
+// parameter (spec §4.1 rule 6), no allocation, no I/O.
+//
+// Its consumer is reliquary (Oligarchy's cold-storage tool). Reliquary runs
+// as root and extracts payloads that may have come off a USB stick, whose
+// label anyone can forge. `tar -xf` as root creates whatever the archive says:
+// measured with GNU tar 1.35 and reliquary's own flags (`--no-same-owner
+// --no-same-permissions`), a hostile payload made a world-readable block
+// device `259,0` (an NVMe disk), a FIFO and a symlink to /etc/shadow. The name
+// check reliquary had looked at member NAMES only, never at member TYPES.
+//
+// The rule is not "parse tar". It is "accept only what reliquary's own packer
+// writes, in exactly the bytes GNU tar writes it, and refuse everything else".
+// A gate that parses a format differently from the program that acts on it is
+// a gate that can be shown one archive while the program extracts another.
+// Narrowing to the producer's own output removes that freedom:
+//
+//   - the GNU header magic only (`ustar  \0`); POSIX ustar and pax refused.
+//     In the GNU format bytes 345.. are not a name prefix, so the name is
+//     bytes 0..100 or the preceding long-name record -- nothing else.
+//   - typeflag '0' (file), '5' (directory) and 'L' (GNU long name) only. No
+//     symlink, hard link, device, FIFO, sparse, volume or extension header.
+//   - the checksum exactly as GNU writes it (6 octal digits, NUL, space) and
+//     equal to the unsigned byte sum.
+//   - the size exactly as GNU writes it: 11 octal digits and NUL, or the
+//     base-256 form (0x80 then a big-endian value) GNU uses at 8 GiB and up,
+//     bounded below 2^63.
+//   - a directory's name ends in '/' and its size is 0; a file's does not.
+//   - a name is non-empty and relative, has no ".." component, and has no
+//     control byte, DEL or backslash.
+//   - a long-name record holds 1..=4096 bytes whose only NUL is the last, is
+//     named "././@LongLink", and is followed by a file or directory header.
+//
+// The host does the I/O and obeys the verdicts: it reads 512-byte blocks,
+// hands each to `caput_iudica`, reads a long name's bytes when told to, skips
+// `saltus(magnitudo(h))` bytes of file data, and stops at the first zero block
+// -- which is where GNU tar stops too.
+//
+//   0  a file, admitted            16  bad checksum
+//   1  a directory, admitted       17  not the GNU magic
+//   2  a long-name record:         18  a refused type
+//      read magnitudo(h) bytes     19  a malformed size
+//      into `l`, then pass         20  an absolute name
+//      habet = 1 next time         21  a ".." component
+//   3  end of archive              22  a control byte, DEL or backslash
+//                                  23  an empty name
+//                                  24  a malformed long-name record
+//                                  25  a long name not followed by a member
+//                                  26  a directory with data, or a name
+//                                      whose trailing '/' disagrees with
+//                                      its type
+//                                  27  a mode, uid, gid or mtime field not
+//                                      in GNU's octal form
+
+// The size field (bytes 124..136) as GNU writes it, or 0xffffffffffffffff
+// when it is not in either of GNU's two forms. No real size reaches 2^63, so
+// the sentinel cannot collide with one.
+publica functio magnitudo(h: acies<u8, 512>) -> u64 {
+    mutabilis v: u64 = 0;
+    si h[124] eq 0x80 {
+        // base-256: three zero bytes, then the value in bytes 128..136.
+        si h[125] ne 0 { redde 0xffffffffffffffff; }
+        si h[126] ne 0 { redde 0xffffffffffffffff; }
+        si h[127] ne 0 { redde 0xffffffffffffffff; }
+        si h[128] ge 0x80 { redde 0xffffffffffffffff; }
+        per i in 128..136 {
+            v = (v sursum 8) aut (h[i] sicut u64);
+        }
+        redde v;
+    }
+    per i in 124..135 {
+        firma c = h[i];
+        si c lt 0x30 { redde 0xffffffffffffffff; }
+        si c gt 0x37 { redde 0xffffffffffffffff; }
+        v = (v sursum 3) aut ((c - 0x30) sicut u64);
+    }
+    si h[135] ne 0 { redde 0xffffffffffffffff; }
+    redde v;
+}
+
+// 1 if h[a..a+n) is n-1 octal digits then a NUL -- how GNU writes mode, uid,
+// gid (n = 8) and mtime (n = 12). GNU tar reads other shapes with a warning
+// and a failing exit status (the fuzz in proba.py found this), so they are
+// refused rather than left to tar's interpretation.
+publica functio octalis(h: acies<u8, 512>, a: mensura, n: mensura) -> u8 {
+    per i in a..(a + n - 1) {
+        si h[i] lt 0x30 { redde 0; }
+        si h[i] gt 0x37 { redde 0; }
+    }
+    si h[a + n - 1] ne 0 { redde 0; }
+    redde 1;
+}
+
+// The data a member occupies: its size rounded up to whole 512-byte blocks.
+// Only called on a size `magnitudo` accepted, which is below 2^63.
+publica functio saltus(m: u64) -> u64 {
+    redde ((m + 511) deorsum 9) sursum 9;
+}
+
+// A member name, b[0..n). 0 if admissible, else the verdict above.
+publica functio nomen_iudica(b: acies<u8, 4096>, n: mensura) -> u8 {
+    si n eq 0 { redde 23; }
+    si b[0] eq 0x2f { redde 20; }
+    mutabilis a: mensura = 0;
+    per i in 0..n {
+        firma c = b[i];
+        si c lt 0x20 { redde 22; }
+        si c eq 0x7f { redde 22; }
+        si c eq 0x5c { redde 22; }
+        si c eq 0x2f {
+            si (i - a) eq 2 {
+                si b[a] eq 0x2e {
+                    si b[a + 1] eq 0x2e { redde 21; }
+                }
+            }
+            a = i + 1;
+        }
+    }
+    si (n - a) eq 2 {
+        si b[a] eq 0x2e {
+            si b[a + 1] eq 0x2e { redde 21; }
+        }
+    }
+    redde 0;
+}
+
+// The verdict on one 512-byte header block `h`. When the previous block was
+// a long-name record, `habet` is 1 and `l[0..nl)` holds its bytes.
+publica functio caput_iudica(h: acies<u8, 512>, l: acies<u8, 4096>, nl: mensura, habet: u8) -> u8 {
+    // A zero block ends the archive, as it does for GNU tar.
+    mutabilis nullus: u8 = 1;
+    per i in 0..512 {
+        si h[i] ne 0 { nullus = 0; }
+    }
+    si nullus eq 1 {
+        si habet eq 1 { redde 25; }
+        redde 3;
+    }
+
+    // Checksum: 6 octal digits, NUL, space; equal to the unsigned sum of the
+    // block with the field itself read as eight spaces.
+    mutabilis summa: u64 = 0;
+    per i in 0..512 {
+        si i ge 148 {
+            si i lt 156 {
+                summa = summa + 0x20;
+            } aliter {
+                summa = summa + (h[i] sicut u64);
+            }
+        } aliter {
+            summa = summa + (h[i] sicut u64);
+        }
+    }
+    mutabilis scripta: u64 = 0;
+    per i in 148..154 {
+        firma c = h[i];
+        si c lt 0x30 { redde 16; }
+        si c gt 0x37 { redde 16; }
+        scripta = (scripta sursum 3) aut ((c - 0x30) sicut u64);
+    }
+    si h[154] ne 0 { redde 16; }
+    si h[155] ne 0x20 { redde 16; }
+    si scripta ne summa { redde 16; }
+
+    // "ustar  \0": the GNU format, whose bytes 345.. are not a name prefix.
+    si h[257] ne 0x75 { redde 17; }
+    si h[258] ne 0x73 { redde 17; }
+    si h[259] ne 0x74 { redde 17; }
+    si h[260] ne 0x61 { redde 17; }
+    si h[261] ne 0x72 { redde 17; }
+    si h[262] ne 0x20 { redde 17; }
+    si h[263] ne 0x20 { redde 17; }
+    si h[264] ne 0 { redde 17; }
+
+    si octalis(h, 100, 8) eq 0 { redde 27; }
+    si octalis(h, 108, 8) eq 0 { redde 27; }
+    si octalis(h, 116, 8) eq 0 { redde 27; }
+    si octalis(h, 136, 12) eq 0 { redde 27; }
+
+    firma t = h[156];
+    firma m = magnitudo(h);
+    si m eq 0xffffffffffffffff { redde 19; }
+
+    // 'L': a GNU long-name record, named "././@LongLink", 1..=4096 bytes.
+    si t eq 0x4c {
+        si habet eq 1 { redde 24; }
+        si m eq 0 { redde 24; }
+        si m gt 4096 { redde 24; }
+        // "././@LongLink" then NUL.
+        si h[0] ne 0x2e { redde 24; }
+        si h[1] ne 0x2f { redde 24; }
+        si h[2] ne 0x2e { redde 24; }
+        si h[3] ne 0x2f { redde 24; }
+        si h[4] ne 0x40 { redde 24; }
+        si h[5] ne 0x4c { redde 24; }
+        si h[6] ne 0x6f { redde 24; }
+        si h[7] ne 0x6e { redde 24; }
+        si h[8] ne 0x67 { redde 24; }
+        si h[9] ne 0x4c { redde 24; }
+        si h[10] ne 0x69 { redde 24; }
+        si h[11] ne 0x6e { redde 24; }
+        si h[12] ne 0x6b { redde 24; }
+        si h[13] ne 0 { redde 24; }
+        redde 2;
+    }
+
+    mutabilis directorium: u8 = 0;
+    si t eq 0x35 {
+        directorium = 1;
+    } aliter {
+        si t ne 0x30 { redde 18; }
+    }
+    si directorium eq 1 {
+        si m ne 0 { redde 26; }
+    }
+
+    // The name: the long-name record's bytes, or bytes 0..100 up to a NUL.
+    mutabilis b: acies<u8, 4096> = [0; 4096];
+    mutabilis n: mensura = 0;
+    si habet eq 1 {
+        si nl eq 0 { redde 24; }
+        si nl gt 4096 { redde 24; }
+        si l[nl - 1] ne 0 { redde 24; }
+        per i in 0..(nl - 1) {
+            si l[i] eq 0 { redde 24; }
+            b[i] = l[i];
+        }
+        n = nl - 1;
+    } aliter {
+        mutabilis finis: u8 = 0;
+        per i in 0..100 {
+            si finis eq 0 {
+                si h[i] eq 0 {
+                    finis = 1;
+                } aliter {
+                    b[i] = h[i];
+                    n = n + 1;
+                }
+            }
+        }
+    }
+    firma v = nomen_iudica(b, n);
+    si v ne 0 { redde v; }
+
+    // GNU writes a directory with a trailing '/', a file without one.
+    si b[n - 1] eq 0x2f {
+        si directorium eq 0 { redde 26; }
+        redde 1;
+    }
+    si directorium eq 1 { redde 26; }
+    redde 0;
+}

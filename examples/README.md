@@ -75,6 +75,15 @@ Exsecutor source, ten programs, all compiled and run by `tests/run.sh`:
   as digital-watch firmware (set time, alarm, countdown, stopwatch), bare on
   emulated Cortex-M4 and M0+; `metronomus/README.md` has the mutants and the
   compiler crash it found.
+- **`arca/`, a tar-header judge for root** — for Oligarchy's reliquary,
+  which extracts USB-sourced payloads as root and used to check member names
+  but not types (a hostile payload made a world-readable block device).
+  `arca.exsc` is pure and admits only GNU tar's own output shape: regular
+  files, directories, GNU long names, exact checksum/size/numeric forms, safe
+  names. `proba_c.sh` holds it to GNU tar itself: reliquary's archives
+  admitted with identical member lists, 32 hostile cases refused by verdict,
+  and a header fuzz with zero gate-admitted/tar-disagrees cases, plus six
+  behaviour mutants and the rule-6 capability checks.
 - **`custos/`, the DCF datagram gate** — for Punctim's `dcf-ws-bridge`,
   which links its C. `custos.exsc` is a pure library: `admitte` says whether
   one bare-dialect UDP datagram is a valid 17-byte DeModFrame or a valid
