@@ -1,9 +1,12 @@
 # 0018 — `archivum` creates a directory with `mkdirat`, one checked component beneath an `openat2` parent
 
-**Status:** Accepted, 2026-10-02, by the repository owner, as step 3 of the
-`explicator` plan (`docs/design/explicator.md`). Not yet implemented: it
-lands after ADR 0017's stage 2, whose prelude and audit it extends. The audit
-rules K1–K4 below are this ADR's own and are the part to review.
+**Status:** Superseded by 0019, 2026-10-02, and never implemented. The
+"Accepted" this line first carried overstated things: the owner approved a
+plan step, not Decisions 2–4 or K1–K4. A Fable review then measured three
+problems. Decision 4's premise is false (Landlock closes the window and the
+multi-component hole). K3 cannot be checked by the audit's symbol-less
+sweep. And the per-create handle leaks a descriptor per member. ADR 0019
+replaces this decision.
 **Relates to:** ADR 0017; `docs/design/archivum-beneath.md` section 5
 ("Not in v1", the single-component pattern recorded there as `[UNTESTED]`);
 spec §4.6; `tools/syscall-audit.sh`; CLAUDE.md, "The compiler is
