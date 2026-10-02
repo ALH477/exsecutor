@@ -351,12 +351,13 @@ drift. A new code is a spec amendment first.
 id: conformance-count
 kind: file_contains
 path: docs/spec/exsecutor-spec-v0.4.md
-pattern: twenty-eight
+pattern: twenty-nine
 -->
-**Conformance is §14 of `docs/spec/exsecutor-spec-v0.4.md`.** Twenty-eight entries, each a fixture under
-`tests/conformance/`. The runner distinguishes five rule shapes (reject with
+**Conformance is §14 of `docs/spec/exsecutor-spec-v0.4.md`.** Twenty-nine entries, each a fixture under
+`tests/conformance/`. The runner distinguishes six rule shapes (reject with
 exactly this code; byte-identical output; external certificate; runtime abort;
-capability absence) and reports an entry it cannot yet run as `DEFERRED`,
+capability absence; differential agreement with a reference implementation)
+and reports an entry it cannot yet run as `DEFERRED`,
 naming what it waits on; deferred entries are never counted as passing.
 <!-- truth:end -->
 
@@ -655,13 +656,14 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   the lane rasterizers too (the soft `vector_size` lowering keeps every
   lane's bits), and the thing
   that finally tests §9.5's standing claim that the emitted text assumes
-  nothing about byte order. 21 of the 26 conformance FIXTURES run, each
+  nothing about byte order. 22 of the 27 conformance FIXTURES run, each
   required to emit exactly its expected code and nothing else -- or, for the
-  four byte-shape entries, to emit byte-identical output, and for entry 1, to
-  refuse with that code AND a machine fix declaring the capability -- and 5
+  four byte-shape entries, to emit byte-identical output, for entry 1, to
+  refuse with that code AND a machine fix declaring the capability, and for
+  entry 29, to agree with GNU tar on every case the judge admits -- and 5
   report `DEFERRED` and are never counted as passing; with entries 27 and 28,
-  which have no fixture and are carried by program directories, 23 of the
-  spec's 28 entries run. 0 program directories deferred.
+  which have no fixture and are carried by program directories, 24 of the
+  spec's 29 entries run. 0 program directories deferred.
 
   This bullet read "1564 pass — 178 unit fixtures; 64 IR fixtures and 104
   Exsecutor programs … 184 IR builds and 136 program builds … ten of those

@@ -2991,19 +2991,21 @@ recoverable and over-committing is not. `0204`-`0209`, `0211`-`0219` and
 
 # 14. Conformance suite
 
-Ships with v1. Twenty of the twenty-eight entries must **fail to compile**.
-The other eight must compile and are judged by what they
-produce: 15 by a runtime abort, 16, 17, 25, 26, 27 and 28 by byte-identical output, and 23 by
-byte-identical agreement with an external certificate. `tests/run.sh`'s five
-fixture shapes — `code`, `nocap`, `abort`, `bytes`, `cert` — are exactly this
-partition. (This sentence previously excepted only 16 and 17, which was false
+Ships with v1. Twenty of the twenty-nine entries must **fail to compile**.
+The other nine must compile and are judged by what they
+produce: 15 by a runtime abort, 16, 17, 25, 26, 27 and 28 by byte-identical output, 23 by
+byte-identical agreement with an external certificate, and 29 by differential
+agreement with a reference implementation (the sixth shape, below).
+`tests/run.sh`'s six fixture shapes — `code`, `nocap`, `abort`, `bytes`,
+`cert`, `reference` — are exactly this partition. (This sentence previously excepted only 16 and 17, which was false
 for 15 since it was written and for 23 since it was added;
 `docs/design/wire-codec.md`, finding 1. The "twenty-five" count was stale
 from the moment entry 25 appended; entry 26 appended with the float wave's
 RGB triangle, entry 27 with Stage 5's lane rasterizers, and both counts are
 settled at twenty-seven with seven of the run-and-judge shape, and entry 28
 appended on 2026-09-25 with the reduction wave — twenty-eight, eight of that
-shape. "Running" here has only ever meant that partition; how many entries
+shape; entry 29 appended on 2026-10-02 with the sixth shape — twenty-nine, nine
+of that shape. "Running" here has only ever meant that partition; how many entries
 the suite actually executes is `tests/run.sh`'s own RAN/DEFERRED line and
 `README.md`'s gated bullet, and this section does not carry a third copy of
 a number that moves with every fixture.)
@@ -3037,6 +3039,8 @@ a number that moves with every fixture.)
 27. Lane-parallel rasterization over `acies<f32, 8>` — whole-acy arithmetic on two acies of one float element type is the elementwise operation, one IEEE rounding per lane and nothing combined across lanes (§5.4's admission law; every refusal pinned by `tests/unit/chk_ty_aciesops.asm`, the lowering by `tests/unit/lwr_aciesops.asm`), so a pixel loop's edge accumulators step **one packed op per edge per 8-pixel group** — to a binary P6 image on stdout → byte-identical between the reference and C backends, byte-identical to an independently computed oracle that mirrors the written operation order in numpy `float32` elementwise (`prototypes/pictura_octonaria_oracle.py`), and byte-identical cross-run big-endian on `mips64-none-o64` under emulation — the C backend's soft `vector_size` lowering reproducing every lane's bits on a target with no SSE. The census is measured over the emitted fasmg text and recorded in the program's TEST header: exactly four divisions, all in setup (three per-vertex reciprocals and one reciprocal of the determinant), zero in any pixel loop; twelve `addps` and six `mulps` (each packed op emitting its two SSE2 halves), no `subps`, no `divps`. Carried by `tests/programs/pictura_octonaria/` — the entry-26 triangle rebuilt at 960×540 with 2×2 supersampled coverage, eight f32 lanes at a time — through the run, differential and cross phases; its f64-lane companion is `tests/programs/signaculum/`, the logo at 512×512 over `acies<f64, 8>`, whose `addpd`/`mulpd`/`zero-divpd` census its own TEST header records.
 28. A reduction whose shape is declared — `contrahe s: + … forma arborea 8` over the same twenty `f32` values as `forma ordinata` and `forma arborea 4` — produces three **different** bit patterns (the shape is observable, which is the claim), each of them exactly the bits §5.4's group-and-fold definition gives, and byte-identical to an oracle that implements the definition independently (`prototypes/contractio_oracle.py`, which mirrors §5.4's paragraph and nothing of the compiler). Measured 2026-09-26 over `tests/data/contractio_viginti.bin`: `ordinata` 121209096, `arborea 8` 121209080, `arborea 4` 121209088 in units of 2⁻²³ — f32 `0x41673021`, `0x4167301F`, `0x41673020`, three adjacent representables, two ulps end to end. Carried by `tests/programs/contractio/` through the **run phase**, the **differential phase** — eligible, four builds (gcc and clang at `-O0` and `-O2`, each under `-fsanitize=undefined -fno-sanitize-recover=all`), every one producing the reference's 24 bytes — and the **cross phase** (`cross=yes`: emitted for `--hospes mips64-none-o64`, cross-compiled to big-endian MIPS-III with 32-bit `mensura` and run under `qemu-mipsn32`, the same 24 bytes). Measured 2026-09-27. The cross row is the leg worth having: `mensura`'s width differs, so the emitted unit's index arithmetic is a different call from the same source line, and clang soft-lowers every `f32` operation because MIPS-III has no SSE2 — so identical bytes there say the group-and-fold order of §5.4 is a property of the **lowering** and not of one instruction set. The chronology is kept because it is the point: this entry was written on 2026-09-25 asserting backend parity and the big-endian run when the C backend had no lowering for `redinit`/`contrib`/`redfin` — `--emitte c` refused the module at the `red.F` handle type, one step before `docs/design/c-backend.md` D4 rows 36–38's by-name refusal — so both clauses were false from the moment they were written; they were narrowed to `[UNTESTED]` on 2026-09-26, with the directory carrying `c-exsc-exit=4` and the differential phase checking parity of the refusal alone; and the C backend gained the three opcodes on 2026-09-27, which is when the two clauses became measurable and were measured. An assertion that later becomes true is not the same event as an assertion that was right, and this entry has now been each in turn. The IR-level fixtures under `tests/ir/red_*.ir` pin each shape's value at the opcode layer, where the reference lowering is the definition (ADR 0012); the seven that carried `c-emit-exit=4` carry it no longer and are built four ways each.
 
+29. A tar-header judge, `examples/arca/arca.exsc`, held to GNU tar by the sixth shape: of 3000 seeded mutants of a real archive's headers, every one the judge **admits** is read by GNU tar as exactly the members the judge listed, each a regular file or a directory, with exit status 0 — zero disagreements, with the judge admitting at least 300 and refusing at least 300 (measured 807 and 2193 at seed 1), and each of three wrong judges (types unchecked, numeric fields unchecked, checksum unchecked) producing disagreements in the same run. Carried by `tests/conformance/entry29_arca_differential_tar.exsc`, `examples/arca/proba.py` and `tests/conformance/entry29/mutantes.tsv`; measured 2026-10-02, GNU tar 1.35, gcc and clang at `-O0` and `-O2`, four builds reporting identical counts.
+
 Entries 18-20 close a gap: §8.1 defines six source-policy codes and only three
 of them (`E0102`, `E0103`, `E0105`) had an entry, while `E0101`, `E0104` and
 `E0106` are exactly what a Stage 1 lexer implements first.
@@ -3067,6 +3071,86 @@ makes `+` trap at 2^32 there (§9.5, ADR 0015). The reader it certifies is the
 one entry 23's method produced, so 25 leans on `vendor/streamdb-v3/` the way
 23 leans on `vendor/hydramesh-wire/`, and the two together are what a second
 backend and a second target are worth.
+
+### The sixth shape: differential agreement with a reference implementation
+
+Entry 29 is appended under the same rule as 25, and it is the third entry whose
+oracle is not this project's own: 23's is a certificate somebody else wrote, 26
+and 27's is an oracle that mirrors the program's operation order, and 29's is a
+**program** somebody else wrote. It exists because a gate that parses a format
+differently from the program that acts on it can be shown one input while the
+program does another — the failure `examples/arca/` was built to close for
+`tar`, run as root. The method was used to build that example before it was
+written down; this subsection is the written-down form, and the example's own
+two findings are the evidence the method finds things. The shape, and what a
+fixture of it must carry:
+
+1. **The reference is external and off the build closure.** It is a program the
+   subject's consumer also acts through (`tar`), run as a verification tool the
+   way `gcc` and `clang` are in the differential phase (§18): never linked into
+   the compiler, never in the closure that §9.3's determinism claim covers, and
+   named in the fixture so a different reference is a different entry. Its
+   version is recorded in every result line. The *subject* is an Exsecutor
+   program compiled by the unmodified compiler; the fixture references it where
+   it lives rather than copying it, since a differential over a copy proves
+   nothing about the original.
+2. **The generator is seeded and deterministic.** A fixed integer seed, printed
+   in every result line, drives a pseudo-random mutation of inputs the
+   *reference itself* produced (a valid archive made with the consumer's own
+   flags), so the inputs sit near the boundary and not in the space of noise. The
+   seed is part of the fixture. The generated *inputs* are a function of the
+   seed **and of the reference's version**, because the base input is made by
+   it; the contract is therefore the floors in 4, not exact counts.
+3. **The property is one-directional where the subject is a gate.** *Everything
+   the subject ADMITS, the reference reads identically.* For a subject that
+   admits or refuses, **refusing more than the reference would is allowed** — a
+   conservative gate is a correct one — and the entry says so by counting the
+   refusals and never by calling them agreement. A **disagreement** is an
+   admitted case the reference reads differently (other members, other types) or
+   reads with a failing exit status. A subject that must compute the same value
+   as the reference rather than admit or refuse (a codec, a formatter) is
+   held instead to equality, and its fixture says that is what it checks.
+4. **Non-vacuity is mandatory, and the runner enforces it itself.** The fixture
+   declares three floors: a minimum number of cases, a minimum **admitted**,
+   and a minimum **refused**, each at least 1. A run in which the subject
+   admitted nothing compared nothing against the reference; a run in which it
+   refused nothing never tested the gate's refusals. The runner reads the counts
+   from the driver's summary line and applies the floors **itself**; the driver's
+   own exit status is necessary and never sufficient. The four builds of the
+   subject (`gcc` and `clang`, each at `-O0` and `-O2`, UBSan on) must report
+   identical counts: the generator is seeded and the subject deterministic, so a
+   count that differs across toolchains is a build that behaves differently.
+5. **The shape must be shown able to fail.** The fixture carries at least one
+   **mutant** — a deliberately wrong variant of the subject, made mechanically
+   from the subject's own text — and each must produce disagreements greater
+   than zero **from the differential itself**. A mutant that only fails some
+   other check the driver carries (a hand-written corpus verdict, say) shows the
+   driver can fail, not that the comparison with the reference can, and does not
+   count. Entry 29's other three mutants, which only the corpus catches, are
+   kept in `examples/arca/proba_c.sh` for that reason and are not this entry's.
+6. **Disagreements are reported with enough to replay them:** the seed, the
+   build, the counts, and the first cases the driver printed for the
+   disagreement. The shape needs no new error code: a disagreement is a test
+   failure, not a diagnostic of the compiler, and §13 is not touched.
+7. **An absent reference is DEFERRED, never a pass.** If the reference program
+   or `python3` is not on `PATH`, the runner reports the entry `DEFERRED`,
+   naming which, counts it toward neither pass nor fail, and does **not** lower
+   its run floor for it — so a machine that could not run the entry cannot make
+   the suite green by omission.
+
+**What passing proves and what it does not.** It proves that on this many
+seeded inputs, near a valid input of one shape, the subject admitted none that
+the reference reads differently, that the harness can see a disagreement when
+one exists (5), and that the subject's four builds agree. It is a **sample, not
+a proof**: the mutator flips one to three bytes of a few favoured header
+offsets and never builds an input from nothing; agreement with GNU tar 1.35 is
+not agreement with bsdtar, busybox, or another GNU tar; and zero disagreements
+is "none found". Nothing here establishes that the subject and the reference
+agree on the whole input space, and a fixture of this shape must say so in its
+own header, as entry 29's does. `[UNTESTED]`: any reference other than GNU tar
+1.35, and any seed other than the recorded one in the runner (the example's own
+README records seeds 1 to 6, 18,000 mutants, 0 disagreements, run by hand with
+`examples/arca/proba_c.sh`).
 
 ---
 

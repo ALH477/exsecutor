@@ -1,0 +1,65 @@
+// TEST: entry=29 shape=reference status=run subject=examples/arca/arca.exsc host=examples/arca/proba.c header=examples/arca/arca.h driver=examples/arca/proba.py reference=tar seed=1 min-cases=3000 min-admitted=300 min-refused=300 mutants=entry29/mutantes.tsv
+
+// §14 entry 29 -- the tar-header judge `examples/arca/arca.exsc`, held to
+// GNU tar: every archive the judge ADMITS, GNU tar reads as exactly the
+// members the judge listed, each a regular file or a directory, with exit
+// status 0. The first entry of §14's SIXTH shape, differential agreement with
+// a reference implementation (§14, "The sixth shape").
+//
+// THIS FILE CARRIES NO PROGRAM, and that is the design, not an omission. The
+// subject is examples/arca/arca.exsc, named by `subject=` and compiled from
+// where it lives: a copy here would be a second program that can drift from
+// the one reliquary links, and a differential over the copy would prove
+// nothing about the original. (The same reason entry 26's fixture says where
+// its legs are carried.) A comment-only module is valid and checks clean.
+// The rest of the entry is in four places:
+//
+//   examples/arca/proba.c    the host loop reliquary runs in Rust, in C
+//   examples/arca/arca.h     its C face, force-included so a drifted
+//                            signature is a build error
+//   examples/arca/proba.py   the generator (seeded), the comparison with
+//                            GNU tar, and the corpus checks around it
+//   entry29/mutantes.tsv     wrong variants of arca that the differential,
+//                            by itself, must catch
+//
+// WHAT THE RUNNER (tests/run.sh, reference_entry) REQUIRES, and what each
+// requirement is for:
+//
+//   seed=1               recorded in every result line. The driver mutates a
+//                        real GNU-tar archive of reliquary's own pack flags,
+//                        3000 times, with random.Random(seed).
+//   disagreements == 0   one-directional: the judge may REFUSE what tar
+//                        would read -- most mutants are refused -- and the
+//                        entry says so by counting them, never by calling
+//                        them agreement. It may never ADMIT what tar reads
+//                        differently, or reads with a failing exit status.
+//   min-cases=3000       the driver's whole fuzz, not a prefix of it.
+//   min-admitted=300     measured 807 admitted at seed 1 (README: 4,629 over
+//   min-refused=300      seeds 1-6, 18,000 mutants). A run that admitted
+//                        nothing, or refused nothing, compared nothing; the
+//                        floors sit well under the measurement so a different
+//                        GNU tar moves the count without failing the entry,
+//                        and well over 0 so a gate that stopped admitting
+//                        (or stopped refusing) fails it.
+//   four builds          gcc and clang at -O0 and -O2, UBSan, and the four
+//                        must report identical counts.
+//   mutants              each must produce disagreements > 0 in the same
+//                        driver: three wrong arcas (types unchecked, numeric
+//                        fields unchecked, checksum unchecked). The other
+//                        three mutants examples/arca/proba_c.sh uses are
+//                        caught by the driver's hostile CORPUS, not by the
+//                        differential, so they are left to that script: they
+//                        show the driver can fail, not that THIS shape can.
+//
+// WHAT PASSING DOES NOT PROVE. 3000 seeded mutants of one archive's headers
+// are a sample of the input space, not the space: the mutator flips one to
+// three bytes, favouring a handful of header offsets, and never produces a
+// header from nothing. Agreement with GNU tar 1.35 says nothing about
+// bsdtar, busybox tar, or a different GNU tar. The reference itself builds
+// the base archive, so exact counts move with its version (the floors are
+// the contract, not the counts). Zero disagreements is "none found", and the
+// two findings in examples/arca/README.md are evidence that the method
+// finds things, not that it has found everything.
+//
+// When GNU tar or python3 is absent the entry is DEFERRED, naming which, and
+// is not counted as passing.
