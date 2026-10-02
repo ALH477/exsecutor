@@ -55,6 +55,33 @@ bytes that are not a SuperPack, `5` a core with version not 1, `6` wrong
 length. Only zero versus nonzero is the certified half. The codes are for a
 caller's counters.
 
+## The process: `filtrum.exsc`
+
+The library has no authority. `filtrum.exsc` is the smallest program that can
+run it. Its `initium` derives `ambitus` (the standard streams) from `Mundus` and
+derives nothing else.
+
+The stream format:
+
+- **Input.** One record per datagram: a length byte `n`, then `n` bytes.
+- **Output.** One verdict byte per record.
+- **Truncation.** A record cut off mid-way exits with status 2 and gets no
+  verdict.
+
+Built on the reference backend it is a freestanding binary of 5,287 bytes,
+with no interpreter and no dynamic section. `tools/syscall-audit.sh
+--potestates Mundus,ambitus` passes on it: the only syscall sites are
+`read(0)` and `write(1)`. The same audit with `--potestates Mundus` alone fails,
+which shows the audit is reading the binary's real surface.
+
+The point is privilege separation that can be checked. A host can hand
+hostile bytes to this child process. Whatever those bytes do to it, the child
+cannot open a file, open a socket, map memory, or run another program, because
+none of those syscalls appears anywhere in the binary.
+
+Over the 14,523 datagrams of the differential run in the commit that added
+`custos`, its verdicts agree with Punctim's Python reference on every one.
+
 ## The C face
 
 `custos.h` declares the three functions the unit defines and the one symbol it
@@ -65,7 +92,7 @@ stop the process.
 
 ## Checks
 
-`proba_c.sh` (run after `make all`) does six things:
+`proba_c.sh` (run after `make all`) does seven things:
 
 1. Emits the unit twice and requires the two outputs to be byte-identical.
 2. Compiles `custos.h` against the emitted unit.
@@ -90,6 +117,13 @@ stop the process.
      `poscit`, since the parameter already shows it in the signature. So
      the checker accepts it, and what refuses it is `custos.h`, which pins
      the signature the consumer links against.
+
+7. Builds `filtrum` freestanding when fasmg and `INCLUDE` are available. It
+   then checks:
+   - the audit passes with `Mundus,ambitus`;
+   - the audit fails without `ambitus`;
+   - four records come back with verdicts `0 0 3 6`;
+   - a truncated record exits 2 and writes nothing.
 
 An earlier draft of the anchors had no case with a bad version in core B
 alone. The core-B mutant passed, and that is how the gap was found.

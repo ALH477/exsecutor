@@ -129,4 +129,43 @@ else
   echo "  [ok]   capability 'Scriptor parameter' breaks custos.h"
 fi
 
+# The process (filtrum.exsc): the reference backend, freestanding, audited.
+# Its only authority is `ambitus` derived from `Mundus`; the audit must pass
+# with exactly {Mundus, ambitus} and FAIL without `ambitus`, or it is not
+# looking at the binary's real surface.
+if command -v fasmg >/dev/null && [ -n "${INCLUDE:-}" ]; then
+  if "$exsc" aedifica --hospes x86_64-linux "${unit[@]}" "$here/custos.exsc" "$here/filtrum.exsc" \
+       -o "$work/filtrum.asm" >/dev/null 2>&1 && fasmg "$work/filtrum.asm" "$work/filtrum" >/dev/null 2>&1; then
+    chmod +x "$work/filtrum"
+    echo "  [ok]   filtrum built freestanding ($(wc -c <"$work/filtrum") bytes)"
+    if "$root/tools/syscall-audit.sh" --potestates Mundus,ambitus "$work/filtrum" >/dev/null 2>&1; then
+      echo "  [ok]   filtrum audit --potestates Mundus,ambitus: PASS"
+    else
+      echo "  [FAIL] filtrum audit --potestates Mundus,ambitus"; fail=1
+    fi
+    if "$root/tools/syscall-audit.sh" --potestates Mundus "$work/filtrum" >/dev/null 2>&1; then
+      echo "  [FAIL] filtrum audit passed WITHOUT ambitus -- the audit saw nothing"; fail=1
+    else
+      echo "  [ok]   filtrum audit --potestates Mundus (no ambitus): refused"
+    fi
+    # Records: filler frame (0), filler SuperPack (0), bad-CRC frame (3),
+    # a 200-byte record (6). Then a record truncated mid-way: exit 2, no verdict.
+    hx() { printf '%s' "$1" | sed 's/../\\x&/g'; }
+    { printf '\x11'; printf "$(hx d310000000000000000000000000005b80)"
+      printf '\x20'; printf "$(hx d315100000000000000000000000000010000000000000000000000000005b75)"
+      printf '\x11'; printf "$(hx d310000000000000000000000000005b81)"
+      printf '\xc8'; head -c 200 /dev/zero; } >"$work/in.bin"
+    got="$("$work/filtrum" <"$work/in.bin" | od -An -tu1 | tr -s ' ' | sed 's/^ //')"
+    if [ "$got" = "0 0 3 6" ]; then echo "  [ok]   filtrum verdicts: $got"
+    else echo "  [FAIL] filtrum verdicts: '$got' (want '0 0 3 6')"; fail=1; fi
+    rc=0; printf '\x11\xd3\x10' | "$work/filtrum" >"$work/trunc.out" || rc=$?
+    if [ "$rc" -eq 2 ] && [ ! -s "$work/trunc.out" ]; then echo "  [ok]   filtrum truncated record: exit 2, no verdict"
+    else echo "  [FAIL] filtrum truncated record: exit $rc"; fail=1; fi
+  else
+    echo "  [FAIL] filtrum did not build"; fail=1
+  fi
+else
+  echo "  [skip] filtrum: needs fasmg and INCLUDE (nix develop)"
+fi
+
 [ "$fail" -eq 0 ] && echo "custos: PASS" || { echo "custos: FAIL"; exit 1; }
