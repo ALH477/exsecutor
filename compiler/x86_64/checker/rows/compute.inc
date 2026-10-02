@@ -645,6 +645,19 @@ chk_row_pre_marks:
 				;   fewer row to cross-read it against.
 	db 0			; 10 `functio ab_introitu(a: ambitus) -> Lector`
 	db 0			; 11 `functio lege_octeto(l: Lector) -> u16`
+	db AST_CAP_ARCHIVUM	; 12 `structura Directorium` -- mark {archivum}
+				;   (ADR 0017), with no FIELD row, `Lector`'s
+				;   precedent: this byte is the mark
+	db 0			; 13 `functio archivum(m: Mundus) -> archivum`
+	db 0			; 14 `functio ad_radicem(a: archivum, via: textus)`
+	db 0			; 15 `functio infra(d: Directorium, via: textus)`
+	db 0			; 16 `functio lege_ex(d: Directorium, via: textus)`
+	db 0			; 17 `functio crea(d: Directorium, via: textus)`
+	db AST_CAP_ARCHIVUM	; 18 `structura Lectorium` -- mark {archivum}
+	db 0			; 19 `functio exlege_octeto(r: Lectorium)`
+	db AST_CAP_ARCHIVUM	; 20 `structura Scriptorium` -- mark {archivum}
+	db 0			; 21 `functio inscribe(w: Scriptorium, t: textus)`
+	db 0			; 22 `functio inscribe_octeto(w: Scriptorium, b: u8)`
 assert $ - chk_row_pre_marks = CHK_TY_PRE_COUNT
 
 ; ---- spec §4.3: the atoms a TYPE bears -------------------------------------

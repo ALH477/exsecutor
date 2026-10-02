@@ -66,7 +66,8 @@
 ; __chk_ty_pre_assoc(k) -> eax = 1 if prelude row `k` is ASSOCIATED (called as
 ; `Type.name(...)`, no receiver). `prelude/interface.inc`'s
 ; `EXS_IFACE_F_ASSOCIATA`: today `Scriptor.ad_exitum` and
-; `Lector.ab_introitu`, the two stream constructors, and nothing else.
+; `Lector.ab_introitu`, the two stream constructors, and
+; `Directorium.ad_radicem`, the derivation of a root (ADR 0017).
 proc __chk_ty_pre_assoc, chkt_kv
 	locals
 	endl
@@ -74,6 +75,8 @@ proc __chk_ty_pre_assoc, chkt_kv
 	cmp	rax, CHK_TY_PRE_AD_EXITUM
 	je	.yes
 	cmp	rax, CHK_TY_PRE_AB_INTROITU
+	je	.yes
+	cmp	rax, CHK_TY_PRE_AD_RADICEM
 	je	.yes
 	xor	eax, eax
 	return
@@ -87,9 +90,12 @@ endp
 ;
 ; Reachable this way: `Scriptor.a`, `Scriptor.descriptor`, `Scriptor.scribe`,
 ; `Scriptor.scribe_octeto` and `Scriptor.ad_exitum` on a `Scriptor`;
-; `Lector.lege_octeto` and `Lector.ab_introitu` on a `Lector`; and
-; `Mundus.ambitus` on the capability `Mundus` -- which is spec §4.7's
-; "derivation is by method on the root, `m.ambitus()`".
+; `Lector.lege_octeto` and `Lector.ab_introitu` on a `Lector`;
+; `ad_radicem`, `infra`, `lege_ex`, `crea` on a `Directorium`, `exlege_octeto`
+; on a `Lectorium`, `inscribe` and `inscribe_octeto` on a `Scriptorium`
+; (ADR 0017); and `Mundus.ambitus` and `Mundus.archivum` on the capability
+; `Mundus` -- which is spec §4.7's "derivation is by method on the root,
+; `m.ambitus()`".
 ;
 ; THE RECEIVER'S TYPE DECIDES, NOT THE NAME ALONE. `lege_octeto` on a
 ; `Scriptor` is no member at all (`EXS-E0305`), and so is `scribe_octeto` on a
@@ -117,9 +123,10 @@ proc __chk_ty_pre_member, chkt_wPM, chkt_tPM, chkt_mPM
 	cmp	rax, r12
 	jne	.views
 	cmp	r13, CHK_TY_PRE_AMBITUS
-	jne	.no
-	mov	rax, r13
-	return
+	je	.yes
+	cmp	r13, CHK_TY_PRE_ARCHIVUM	; `m.archivum()`, spec 4.7: total
+	je	.yes
+	jmp	.no
 
   ; ---- spec §5.1's text views: KEYED ON THE RECEIVER'S KIND ------------------
   ; THIS ARM EXISTS BECAUSE ITS RECEIVERS HAVE NO `AstDecl`. Every other member
@@ -196,10 +203,50 @@ proc __chk_ty_pre_member, chkt_wPM, chkt_tPM, chkt_mPM
 	mov	rsi, CHK_TY_PRE_LECTOR
 	call	chk_ty_prelude_type
 	cmp	rax, r12
-	jne	.no
+	jne	.directorium
 	cmp	r13, CHK_TY_PRE_LEGE_OCT
 	je	.yes
 	cmp	r13, CHK_TY_PRE_AB_INTROITU
+	je	.yes
+	jmp	.no
+
+  ; ---- ADR 0017. NO FIELD ROW IS A MEMBER OF ANY OF THE THREE -- not `a`,
+  ; not `descriptor` -- so `d.a` falls through to `.fields`, finds a prelude
+  ; struct, and is EXS-E0305 (design D1, R3). The `Scriptor.a` row (2) is
+  ; `Scriptor`'s and is compared against `recvty` like every other row here.
+  .directorium:
+	mov	rdi, rbx
+	mov	rsi, CHK_TY_PRE_DIRECTORIUM
+	call	chk_ty_prelude_type
+	cmp	rax, r12
+	jne	.lectorium
+	cmp	r13, CHK_TY_PRE_AD_RADICEM
+	je	.yes
+	cmp	r13, CHK_TY_PRE_INFRA
+	je	.yes
+	cmp	r13, CHK_TY_PRE_LEGE_EX
+	je	.yes
+	cmp	r13, CHK_TY_PRE_CREA
+	je	.yes
+	jmp	.no
+  .lectorium:
+	mov	rdi, rbx
+	mov	rsi, CHK_TY_PRE_LECTORIUM
+	call	chk_ty_prelude_type
+	cmp	rax, r12
+	jne	.scriptorium
+	cmp	r13, CHK_TY_PRE_EXLEGE_OCT
+	je	.yes
+	jmp	.no
+  .scriptorium:
+	mov	rdi, rbx
+	mov	rsi, CHK_TY_PRE_SCRIPTORIUM
+	call	chk_ty_prelude_type
+	cmp	rax, r12
+	jne	.no
+	cmp	r13, CHK_TY_PRE_INSCRIBE
+	je	.yes
+	cmp	r13, CHK_TY_PRE_INSCRIBE_OCT
 	je	.yes
 	jmp	.no
   .yes:
