@@ -152,7 +152,14 @@ int main(void)
   anc("proc/self/mem", 0);
   anc("etc/shadow", 0);
   anc("", 0);
-  anc("$STATEX", 1);             /* starts_with, not a component test */
+  anc("$STATEX", 0);             /* a whole component, not starts_with */
+  anc("$STATE/x", 1);
+  anc("$CONFIG/a/b", 1);
+  anc("/home$STORE", 0);         /* '$' only as the leading variable */
+  anc("$STATE/a$STORE", 0);
+  anc("/proc$STATE", 0);
+  anc("$PATH/x", 0);
+  anc("$STATE$", 0);
   anc("$STAT", 0);
   anc("$CONFI", 0);
   anc("$STOR", 0);

@@ -220,21 +220,26 @@ publica functio tangit(p: acies<u8, 4096>, np: mensura, f: acies<u8, 4096>, nf: 
     redde 0;
 }
 
-// Manifest::validate's anchor rule for an fs capability: non-empty, and
-// absolute or starting with "$STATE", "$CONFIG" or "$STORE" (a byte prefix,
-// as `starts_with` is). 1 anchored, 0 refused.
-publica functio ancora(p: acies<u8, 4096>, n: mensura) -> u8 {
-    si n eq 0 { redde 0; }
-    si n gt 4096 { redde 0; }
-    si p[0] eq 0x2f { redde 1; }
-    si p[0] ne 0x24 { redde 0; }
-    // "$STATE" = 24 53 54 41 54 45
+// The length of a leading expansion variable that is a whole component --
+// "$STATE", "$CONFIG" or "$STORE", followed by the end or a '/' -- else 0.
+// manifest::split_var.
+publica functio variabilis(p: acies<u8, 4096>, n: mensura) -> mensura {
+    mutabilis k: mensura = 0;
     si n ge 6 {
-        si p[1] eq 0x53 {
-            si p[2] eq 0x54 {
-                si p[3] eq 0x41 {
-                    si p[4] eq 0x54 {
-                        si p[5] eq 0x45 { redde 1; }
+        si p[0] eq 0x24 {
+            si p[1] eq 0x53 {
+                si p[2] eq 0x54 {
+                    // "$STATE" = 24 53 54 41 54 45
+                    si p[3] eq 0x41 {
+                        si p[4] eq 0x54 {
+                            si p[5] eq 0x45 { k = 6; }
+                        }
+                    }
+                    // "$STORE" = 24 53 54 4f 52 45
+                    si p[3] eq 0x4f {
+                        si p[4] eq 0x52 {
+                            si p[5] eq 0x45 { k = 6; }
+                        }
                     }
                 }
             }
@@ -242,31 +247,44 @@ publica functio ancora(p: acies<u8, 4096>, n: mensura) -> u8 {
     }
     // "$CONFIG" = 24 43 4f 4e 46 49 47
     si n ge 7 {
-        si p[1] eq 0x43 {
-            si p[2] eq 0x4f {
-                si p[3] eq 0x4e {
-                    si p[4] eq 0x46 {
-                        si p[5] eq 0x49 {
-                            si p[6] eq 0x47 { redde 1; }
+        si p[0] eq 0x24 {
+            si p[1] eq 0x43 {
+                si p[2] eq 0x4f {
+                    si p[3] eq 0x4e {
+                        si p[4] eq 0x46 {
+                            si p[5] eq 0x49 {
+                                si p[6] eq 0x47 { k = 7; }
+                            }
                         }
                     }
                 }
             }
         }
     }
-    // "$STORE" = 24 53 54 4f 52 45
-    si n ge 6 {
-        si p[1] eq 0x53 {
-            si p[2] eq 0x54 {
-                si p[3] eq 0x4f {
-                    si p[4] eq 0x52 {
-                        si p[5] eq 0x45 { redde 1; }
-                    }
-                }
-            }
-        }
-    }
+    si k eq 0 { redde 0; }
+    si n eq k { redde k; }
+    si p[k] eq 0x2f { redde k; }
     redde 0;
+}
+
+// Manifest::validate's anchor rule for an fs capability (manifest::anchored):
+// absolute, or one expansion variable as its whole first component; and no
+// '$' anywhere after that. `expand` substitutes only that leading variable,
+// so a '$' elsewhere would make the checked path and the granted path differ
+// ("/home$STORE" opened /home/nix/store/... before Oligarchy f389fdb's
+// successor). 1 anchored, 0 refused.
+publica functio ancora(p: acies<u8, 4096>, n: mensura) -> u8 {
+    si n eq 0 { redde 0; }
+    si n gt 4096 { redde 0; }
+    mutabilis a: mensura = 0;
+    si p[0] ne 0x2f {
+        a = variabilis(p, n);
+        si a eq 0 { redde 0; }
+    }
+    per i in a..n {
+        si p[i] eq 0x24 { redde 0; }
+    }
+    redde 1;
 }
 
 // ------------------------------------------------------------------ W^X
