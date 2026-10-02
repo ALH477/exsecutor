@@ -248,9 +248,9 @@ with no arguments prints its usage, its options, and its exit-status table.
 id: adr-count
 kind: glob_count
 glob: docs/decisions/0*.md
-equals: 16
+equals: 17
 -->
-`docs/decisions/` holds sixteen ADRs, `0001` through `0016`, immutable once
+`docs/decisions/` holds seventeen ADRs, `0001` through `0017`, immutable once
 written; superseded, never edited (a status line and an Open list may be
 updated).
 <!-- truth:end -->
