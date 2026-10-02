@@ -68,7 +68,9 @@ is linked as C (`--emitte c`), the way the bridge links `custos`.
 
 1. Emits the unit twice and requires byte-identical output (63,400 bytes).
 2. Builds `proba.c` against the unit with gcc and clang, at `-O0` and `-O2`,
-   under UBSan, with `arca.h` force-included.
+   under UBSan, with the header `exsc --emitte h` generates force-included
+   (`proba.c` includes `arca.h` itself, so the compiler holds the two to
+   each other; `docs/design/c-backend.md` D9).
 3. Runs `proba.py` on each build:
    - reliquary's own archives are admitted, and the member list equals
      `tar -tvf`'s, in order. The archives include long names, UTF-8 names

@@ -247,6 +247,13 @@ DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-236}"
 #     floor moves in that commit and not a later one.
 DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-59}"
 DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-236}"
+# DISTINCT program UNITS whose generated header (`--emitte h`,
+# c-backend.md D9) compiles, force-included, against the unit it describes
+# under gcc and clang. Counted once per distinct unit, not per directory:
+# directories sharing a `sources=` share one unit and one face. Set to the
+# count measured when the face landed: 45, 2026-10-02; it moves with
+# the eligible corpus, in the commit that moves it.
+DIFFERENTIAL_FACE_FLOOR="${DIFFERENTIAL_FACE_FLOOR:-45}"
 
 # The cross phase's own floor, deliberately NOT folded into the differential
 # numbers above: a cross-compiled, emulated run of a 32-bit-`mensura` unit is
@@ -2050,6 +2057,139 @@ run_differential_tests() {
       bad "driver: exsc --emitte c and emit_c disagree on the hello world"
       diff "$workdir/hw.c" "$workdir/x86.c" 2>&1 | head -20 | sed 's/^/         /'
     fi
+
+    # -----------------------------------------------------------------------
+    # The unit's FACE: `--emitte h` and `--emitte rs` (c-backend.md D9). The
+    # first two library consumers (examples/custos, examples/arca) each
+    # carried a hand-written header and a hand-written Rust extern block, and
+    # drift was caught only by force-including the hand-written header. The
+    # face is now generated from the same module and the same signature
+    # routine as the unit, and these rows hold it to that:
+    #   - h and rs are artifacts exactly as c is: -o required, stdout empty;
+    #   - tests/c/facies/facies.exsc's two faces are PINNED byte for byte
+    #     (facies.{h,rs}.expected): one function per row of the type table,
+    #     and two non-publica ones (one of them called) that must be absent;
+    #   - two emissions of each are byte-identical (D5 within one process;
+    #     tools/reproduce.sh does it across two condition sets);
+    #   - the header compiles against the unit, force-included, under gcc
+    #     and clang at -Werror, so a prototype the unit does not spell the
+    #     same way is a "conflicting types" error;
+    #   - THE STALE CONSUMER: `quiesce` gains a parameter. The mutant's own
+    #     header still compiles against the mutant's unit (so the source is
+    #     fine), and the ORIGINAL header against the mutant's unit does not --
+    #     a consumer holding yesterday's header is refused at compile time;
+    #   - the Rust face, where cargo exists: tests/c/facies/crate links the
+    #     unit and calls every face function (tests/c/facies/consumer.rs);
+    #     the mutant's regenerated face then breaks that same consumer.
+    # flake.nix's checks.test has gcc and clang but not cargo, so the Rust
+    # leg is a NAMED note when cargo is absent, never a silent pass.
+    drv_case "--emitte h without -o" 2 \
+      aedifica --hospes x86_64-linux --emitte h "${hw[@]}"
+    drv_case "--emitte rs without -o" 2 \
+      aedifica --hospes x86_64-linux --emitte rs "${hw[@]}"
+    drv_case "--emitte h" 0 \
+      aedifica --hospes x86_64-linux --emitte h "${hw[@]}" -o "$workdir/hw.h"
+    drv_case "--emitte rs" 0 \
+      aedifica --hospes x86_64-linux --emitte rs "${hw[@]}" -o "$workdir/hw.rs"
+    local fdir="$REPO_ROOT/tests/c/facies" fx="$workdir/facies"
+    local fsrc="$fdir/facies.exsc" k
+    for k in c h rs; do
+      "$exsc" aedifica --hospes x86_64-linux --emitte "$k" "$fsrc" -o "$fx.$k" >/dev/null 2>&1 ||
+        bad "face: exsc --emitte $k on facies.exsc failed"
+    done
+    for k in h rs; do
+      "$exsc" aedifica --hospes x86_64-linux --emitte "$k" "$fsrc" -o "$fx.again.$k" >/dev/null 2>&1 || true
+      if [[ -s "$fx.$k" ]] && cmp -s "$fx.$k" "$fx.again.$k"; then
+        ok "face: --emitte $k emitted twice, byte-identical ($(wc -c <"$fx.$k" | tr -d ' ') bytes)"
+      else
+        bad "face: --emitte $k: two emissions differ, or wrote nothing"
+      fi
+      if cmp -s "$fx.$k" "$fdir/facies.$k.expected"; then
+        ok "face: --emitte $k matches tests/c/facies/facies.$k.expected byte for byte"
+      else
+        bad "face: --emitte $k differs from tests/c/facies/facies.$k.expected"
+        diff "$fdir/facies.$k.expected" "$fx.$k" 2>&1 | head -20 | sed 's/^/         /'
+      fi
+    done
+    if grep -q 'exs_arcana\|exs_gradus' "$fx.h" "$fx.rs" 2>/dev/null; then
+      bad "face: a non-publica function (arcana, gradus) is in a face"
+    elif grep -q 'exs_arcana(' "$fx.c" && grep -q 'exs_gradus(' "$fx.c"; then
+      ok "face: the unit defines arcana and gradus, and neither face declares them"
+    else
+      bad "face: the unit no longer defines arcana and gradus -- the absence check is vacuous"
+    fi
+    # face_cc CC HEADER UNIT -- 0 iff the header compiles against the unit
+    face_cc() {
+      local fcc="$1" nowarn="-Wno-cpp"
+      [[ "$fcc" == clang ]] && nowarn="-Wno-#warnings"
+      # shellcheck disable=SC2086
+      "$fcc" -std=c11 -Wall -Wextra -Werror -Wno-unused-function $nowarn \
+        -fsyntax-only -include "$2" "$3" >"$workdir/face.cclog" 2>&1
+    }
+    for cc in gcc clang; do
+      if face_cc "$cc" "$fx.h" "$fx.c"; then
+        ok "face: [$cc] the header compiles against its unit (-include, -Werror)"
+      else
+        bad "face: [$cc] the header does not compile against its own unit"
+        sed 's/^/         /' "$workdir/face.cclog" | head -20
+      fi
+    done
+    local fmut="$workdir/facies_mutans.exsc"
+    sed 's/^publica functio quiesce() {/publica functio quiesce(x: u64) {/' "$fsrc" >"$fmut"
+    if cmp -s "$fmut" "$fsrc"; then
+      bad "face: the stale-consumer mutant changed nothing -- its pattern moved"
+    else
+      for k in c h rs; do
+        "$exsc" aedifica --hospes x86_64-linux --emitte "$k" "$fmut" -o "$fx.mut.$k" >/dev/null 2>&1 ||
+          bad "face: exsc --emitte $k on the mutant failed"
+      done
+      for cc in gcc clang; do
+        if ! face_cc "$cc" "$fx.mut.h" "$fx.mut.c"; then
+          bad "face: [$cc] the mutant's OWN header does not compile against it -- the next check would prove nothing"
+          sed 's/^/         /' "$workdir/face.cclog" | head -10
+        elif face_cc "$cc" "$fx.h" "$fx.mut.c"; then
+          bad "face: [$cc] a stale header still compiles against a unit whose publica signature changed"
+        elif grep -q 'conflicting types' "$workdir/face.cclog"; then
+          ok "face: [$cc] the stale header is refused against the changed unit (conflicting types)"
+        else
+          bad "face: [$cc] the stale header is refused, but not for conflicting types:"
+          sed 's/^/         /' "$workdir/face.cclog" | head -10
+        fi
+      done
+    fi
+    if command -v cargo >/dev/null 2>&1; then
+      local fcr="$workdir/facies_crate"
+      rm -rf "$fcr" && cp -r "$fdir/crate" "$fcr"
+      face_cargo() {  # UNIT FACE -- builds the crate with the stock consumer
+        ( cd "$fcr" && EXS_FACIES_UNIT="$1" EXS_FACIES_RS="$2" \
+            EXS_FACIES_USE="$fdir/consumer.rs" CC=gcc CARGO_TARGET_DIR="$fcr/target" \
+            cargo build --offline --quiet ) >"$workdir/face.cargolog" 2>&1
+      }
+      local frc=0
+      if face_cargo "$fx.c" "$fx.rs"; then
+        "$fcr/target/debug/facies" >/dev/null 2>&1 || frc=$?
+        if [[ "$frc" -eq 0 ]]; then
+          ok "face: the Rust face links its unit and every call answers (cargo, tests/c/facies/crate)"
+        else
+          bad "face: the Rust host ran and consumer.rs answered $frc (0 = all agree)"
+        fi
+      else
+        bad "face: the Rust face does not build against its unit"
+        sed 's/^/         /' "$workdir/face.cargolog" | head -20
+      fi
+      if [[ -s "$fx.mut.rs" ]] && ! face_cargo "$fx.mut.c" "$fx.mut.rs"; then
+        if grep -q 'E0061' "$workdir/face.cargolog"; then
+          ok "face: the mutant's regenerated Rust face breaks the stale consumer (E0061)"
+        else
+          bad "face: the mutant's Rust face fails, but not on the argument count:"
+          sed 's/^/         /' "$workdir/face.cargolog" | head -10
+        fi
+      else
+        bad "face: the stale Rust consumer still builds against the mutant's face"
+      fi
+    else
+      note "face: cargo is not on PATH -- the Rust face is pinned byte for byte above but NOT compiled in this run [UNTESTED here]"
+    fi
   else
     bad "exsc.asm failed to assemble -- the driver's half of D2 cannot be checked"
     sed 's/^/         /' "$workdir/exsc.asmlog"
@@ -2200,7 +2340,7 @@ run_differential_tests() {
   # single run of one `exsc`, and it is reported as one rather than silently
   # recompiled.
   echo "== differential tests (C backend vs the reference, tests/programs/) =="
-  local pfound=0 pagree=0 pbuilds=0 pskip=0 pdefer=0 dir
+  local pfound=0 pagree=0 pbuilds=0 pskip=0 pdefer=0 pface=0 dir
   local -A unit_of=()        # sources= key -> the work prefix whose binaries
                              # are already built for that exact unit text
   shopt -s nullglob
@@ -2302,6 +2442,36 @@ run_differential_tests() {
       unit_of[$key]="$w"
     fi
 
+    # The FACE of the same unit (c-backend.md D9), once per distinct unit:
+    # the generated header, force-included into the unit it describes, must
+    # compile under both compilers -- so every eligible program, not only
+    # the face fixture, has a header that agrees with its own prototypes.
+    if [[ "$share" == "$w" ]]; then
+      local hrc=0
+      "$exsc" aedifica --hospes x86_64-linux "${srcs[@]}" --emitte h -o "$w.h" \
+        >/dev/null 2>"$w.hlog" || hrc=$?
+      if [[ "$hrc" -ne 0 ]]; then
+        bad "$name: exsc --emitte h exit=$hrc on a unit --emitte c accepted"
+        sed 's/^/         /' "$w.hlog"
+      else
+        local hok=1 fcc
+        for fcc in gcc clang; do
+          local hnowarn="-Wno-cpp"
+          [[ "$fcc" == clang ]] && hnowarn="-Wno-#warnings"
+          # shellcheck disable=SC2086
+          if ! "$fcc" $cflags $hnowarn -fsyntax-only -include "$w.h" "$w.c" >"$w.hcc" 2>&1; then
+            bad "$name/ [$fcc]: the generated header does not compile against its unit"
+            sed 's/^/         /' "$w.hcc" | head -10
+            hok=0
+          fi
+        done
+        if [[ "$hok" -eq 1 ]]; then
+          pface=$((pface + 1))
+          ok "$name/: its header ($(grep -c '^[a-z].*exs_' "$w.h") publica prototypes) compiles against its unit under gcc and clang"
+        fi
+      fi
+    fi
+
     local agree=1 opt
     for cc in gcc clang; do
       for opt in -O0 -O2; do
@@ -2337,6 +2507,8 @@ run_differential_tests() {
     "$pagree" "$DIFFERENTIAL_PROGRAM_FLOOR" DIFFERENTIAL_PROGRAM_FLOOR
   floor_check "differential program builds run and checked" "$pbuilds" \
     "$DIFFERENTIAL_PROGRAM_BUILD_FLOOR" DIFFERENTIAL_PROGRAM_BUILD_FLOOR
+  floor_check "distinct program units whose generated header compiles against them" \
+    "$pface" "$DIFFERENTIAL_FACE_FLOOR" DIFFERENTIAL_FACE_FLOOR
   if [[ "$pagree" -ne "$pfound" ]]; then
     bad "$pfound program directories were eligible but only $pagree agreed with the reference under all four builds"
   fi

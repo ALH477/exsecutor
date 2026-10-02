@@ -2419,6 +2419,17 @@ symbol, `exsrt_abortus(kind)`, which whoever links it supplies; a module
 without `initium` is a library there (§4.7). Whole-program mode — an
 `initium` driven from a C `main`, a C prelude, syscalls, `#if`-gated
 capabilities so §10.3's audit holds of the binary — is a later milestone.
+**A library unit's face is generated, not written.** The same invocation
+with `--emitte h` writes a C11 header, and with `--emitte rs` a Rust
+`extern "C"` block, holding one declaration per `publica` function the unit
+defines — spelled by the routine that spells the unit's own prototypes, in
+the unit's own declaration order, with each function's IR signature beside
+it — plus, in the header, the `exsrt_abortus` import. A function that is not
+`publica`, and an `externus` or prelude import, is in neither. Both are
+artifacts as `c` is (`-o` required, nothing on stdout) and both are
+byte-identical under §9.3's conditions. The first two library consumers each
+carried a hand-written header that only a force-included compile kept honest;
+`docs/design/c-backend.md` D9 has the design and its tests.
 The lowering of each opcode is tabulated row by row in
 `docs/design/c-backend.md` (D4), and the two backends' refusal-by-name sets
 are maintained as ONE set — drift between them is a finding. The float wave

@@ -442,3 +442,7 @@ proc bfc_emit_unit, module, arena, hospes
 	mov	rdx, [rdi + Vec.len]
 	return
 endp
+
+; The FACE of the unit -- `--emitte h` / `--emitte rs` (c-backend.md D9). It
+; reads `__bfc_emit_sig` and `__bfc_prog_hexnib`, so it comes after both.
+include 'face_c.inc'

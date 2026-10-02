@@ -252,6 +252,15 @@ DRV_EMIT_AST    = 2
 ; the "this instead of a program" meaning, and one flag with four values is
 ; one table here.
 DRV_EMIT_C      = 3
+; `h` and `rs` are the unit's FACE (c-backend.md D9): from the same module
+; and the same signature routine as `c`, the declarations a C or a Rust host
+; needs to call it -- one per `publica` function the unit defines. Artifacts
+; like `c`, with everything `c` implies (`-o` required, nothing on stdout, a
+; C-only `--hospes` row accepted, no EXS-E0424 for a missing `initium`), so
+; every test of "is this the C path" in driver/run.inc is `>= DRV_EMIT_C`,
+; and these two stay numbered after it.
+DRV_EMIT_H      = 4
+DRV_EMIT_RS     = 5
 
 ; ---- the closed `--hospes` table, c-backend.md D2 --------------------------
 ; Spec 9.5 gives `--hospes` no default and forbids guessing one; what was
@@ -297,6 +306,8 @@ drv_v_tokens db 'tokens',0
 drv_v_cst    db 'cst',0
 drv_v_ast    db 'ast',0
 drv_v_c      db 'c',0
+drv_v_h      db 'h',0
+drv_v_rs     db 'rs',0
 ; the rows of the --hospes table, above
 drv_v_x86_64  db 'x86_64-linux',0
 drv_v_riscv64 db 'riscv64-linux',0
@@ -323,7 +334,7 @@ drv_m_envkey   db '--env: KEY does not spell an identifier (spec 8.2): ',0
 drv_m_envdup   db '--env: a repeated KEY is an error, not a last-wins (spec 9.3): ',0
 drv_m_epoch    db '--epoch: expected decimal seconds since the Unix epoch, got: ',0
 drv_m_diagn    db '--diagnostica: expected textus or json, got: ',0
-drv_m_emitte   db '--emitte: expected tokens, cst, ast or c, got: ',0
+drv_m_emitte   db '--emitte: expected tokens, cst, ast, c, h or rs, got: ',0
 
 ; ---- small predicates ------------------------------------------------------
 
@@ -994,8 +1005,28 @@ proc drv_parse, argc, argv
 	lea	rdx, [drv_v_c]
 	call	drv_arg_is
 	test	eax, eax
-	jz	.bad_emitte
+	jz	.try_h
 	mov	dword [r15 + DrvCtx.emitte], DRV_EMIT_C
+	mov	dword [r15 + DrvCtx.emitteset], 1
+	jmp	.next
+  .try_h:
+	mov	rdi, [vp]
+	mov	rsi, [vn]
+	lea	rdx, [drv_v_h]
+	call	drv_arg_is
+	test	eax, eax
+	jz	.try_rs
+	mov	dword [r15 + DrvCtx.emitte], DRV_EMIT_H
+	mov	dword [r15 + DrvCtx.emitteset], 1
+	jmp	.next
+  .try_rs:
+	mov	rdi, [vp]
+	mov	rsi, [vn]
+	lea	rdx, [drv_v_rs]
+	call	drv_arg_is
+	test	eax, eax
+	jz	.bad_emitte
+	mov	dword [r15 + DrvCtx.emitte], DRV_EMIT_RS
 	mov	dword [r15 + DrvCtx.emitteset], 1
 	jmp	.next
 

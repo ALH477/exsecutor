@@ -351,6 +351,12 @@ drv_s_usage:
 	db '                         _Noreturn void exsrt_abortus(unsigned kind);', 10
 	db '                       exsc does not and cannot run a C compiler (spec 12:', 10
 	db '                       execve is on no allowlist). Compile OUT yourself.', 10
+	db '                       Two more artifacts, from the same SOURCE list: `h`', 10
+	db '                       writes the unit`s C header and `rs` its Rust', 10
+	db '                       `extern "C"` block -- one declaration per `publica`', 10
+	db '                       function the unit defines, spelled as the unit', 10
+	db '                       spells it (docs/design/c-backend.md D9). Both', 10
+	db '                       REQUIRE -o OUT, like `c`.', 10
 	db 10
 	db 'exit status:', 10
 	db '  0  the requested work completed and there was nothing to report', 10
