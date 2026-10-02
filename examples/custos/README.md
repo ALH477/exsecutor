@@ -68,8 +68,9 @@ The stream format:
 - **Truncation.** A record cut off mid-way exits with status 2 and gets no
   verdict.
 
-Built on the reference backend it is a freestanding binary of 5,287 bytes,
-with no interpreter and no dynamic section. `tools/syscall-audit.sh
+Built on the reference backend it is a freestanding binary of 5,745 bytes
+(5,287 before the buffered prelude, `bc2ec69`, added its block reader and
+writer), with no interpreter and no dynamic section. `tools/syscall-audit.sh
 --potestates Mundus,ambitus` passes on it: the only syscall sites are
 `read(0)` and `write(1)`. The same audit with `--potestates Mundus` alone fails,
 which shows the audit is reading the binary's real surface.

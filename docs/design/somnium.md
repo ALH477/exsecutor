@@ -71,8 +71,13 @@ state, entering through the one declared door.
 
 **160 × 100, because of the runtime.** The only way arbitrary bytes reach
 stdout is `Scriptor.scribe_octeto`, and `compiler/x86_64/prelude/prelude.asm`
-makes it one `write(2)` per byte: 48,000 syscalls a frame. The C build's
-host (section 6) removes that cost without touching the source. 16:10 is
+made it one `write(2)` per byte: 48,000 syscalls a frame. The C build's
+host (section 6) removed that cost without touching the source. Since the
+buffered prelude (`bc2ec69`, `docs/design/runtime.md` section 2), the reference
+build writes in 64 KiB blocks too: two `plasma` frames went from 96,019
+syscalls to 6, and a frame from 12.5 ms to 1.24 ms over 100 frames (measured
+with `strace -c` in that commit). Whether 160 × 100 is still the right size
+now that the reason is gone is `[OPEN]`. 16:10 is
 also the Framework 16's own aspect.
 
 **Integers, except where a float is the point.** Eight somnia are integer

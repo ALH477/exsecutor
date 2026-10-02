@@ -5,7 +5,9 @@ and their build-time checks have run; the systemd consumption in §4 is
 `[UNTESTED]`.** `nix build .#custos-filtrum` ran to completion in the Nix
 sandbox, with the inputs overridden to local clones of the pinned revisions
 (see the commit that added this file). The binary it installed is
-byte-identical to a hand build: 5,287 bytes, sha256 `2b32f114…7a2df8`.
+byte-identical to a hand build: 5,287 bytes, sha256 `2b32f114…7a2df8`, at
+`73863a8`. The buffered prelude (`bc2ec69`), merged afterwards, makes
+`filtrum` 5,745 bytes; that build has not been rerun under `nix build`.
 `nix build --rebuild` reproduced it bit for bit. Its
 closure is itself, and nothing else. No systemd unit has started a guard:
 this environment has no systemd PID 1 and no NixOS VM. §3 says which parts

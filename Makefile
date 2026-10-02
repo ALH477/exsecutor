@@ -33,8 +33,13 @@ all: $(OUT)
 # conclusion about whether a lexer fix had worked. fasmg has no depfile
 # support, so this is a wildcard rather than generated deps. The .in tail is
 # backend_c/prologue.c.in: prologue edits are code edits (Stage 5's vector
-# typedefs proved a stale binary follows without it).
-EXSC_SRCS = $(shell find compiler -name '*.inc' -o -name '*.bin' -o -name '*.in' 2>/dev/null)
+# typedefs proved a stale binary follows without it). The .asm tail is the
+# runtime prelude, compiler/x86_64/prelude/prelude{,_data}.asm, which exsc
+# carries with fasmg's `file` and copies into every OUT: without it, `make`
+# after a prelude edit kept a binary that emitted the OLD prelude, and a
+# program built with it tested nothing that had changed (found while
+# buffering the standard streams, runtime.md 2.4 as amended).
+EXSC_SRCS = $(shell find compiler -name '*.inc' -o -name '*.bin' -o -name '*.in' -o -name '*.asm' 2>/dev/null)
 
 $(OUT): $(SRC) $(EXSC_SRCS) | build
 	$(FASMG) $(SRC) $@

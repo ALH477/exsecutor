@@ -1,0 +1,4 @@
+# Kind 1, numeric trap, AFTER three bytes of output: stdout must equal
+# expected.out ("AB\n"), so the write buffer was drained on the abort path
+# (post_scripturam.exsc says why three).
+TEST: abort=1

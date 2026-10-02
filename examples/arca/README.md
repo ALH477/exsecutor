@@ -66,10 +66,18 @@ test cases.
 
 `examples/custos/filtrum.exsc` shows the gate pattern as a freestanding
 process whose syscalls are audited (`read`, `write`, `exit_group`). That would
-be stronger here too, but the reference prelude's `lege_octeto` is one
-`read(2)` per byte (`docs/design/runtime.md`), and a payload is gigabytes of
-file data the host must stream past. Until `Lector` reads in blocks, `arca`
-is linked as C (`--emitte c`), the way the bridge links `custos`.
+be stronger here too. When `arca` was written, the reference prelude's
+`lege_octeto` was one `read(2)` per byte, and a payload is gigabytes of file
+data the host must stream past, so `arca` is linked as C (`--emitte c`), the
+way the bridge links `custos`.
+
+That reason no longer holds. Since the buffered prelude (`bc2ec69`,
+`docs/design/runtime.md`), a reference-backend program reads and writes in
+64 KiB blocks: `cat` over 8 MiB fell from 16,777,218 syscalls to 259 and runs
+at about 181 MiB/s, limited now by the per-byte loop rather than by syscalls.
+At that rate, an audited `arca` child process costs about 6 s per GiB of
+payload. Moving reliquary to the process form is `[OPEN]`, and is a change
+to Oligarchy, not to this file.
 
 ## Checks: `proba_c.sh` (after `make all`; needs python3 and GNU tar)
 
