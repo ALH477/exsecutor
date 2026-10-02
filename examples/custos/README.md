@@ -88,7 +88,10 @@ Over the 14,523 datagrams of the differential run in the commit that added
 imports, `exsrt_abortus`. A bounds or overflow trap is the only thing that
 reaches it. `admitte` reads at most `d[0..32)`, and nothing a caller passes
 with `n <= 32` traps. A trap is a defect, so a host's `exsrt_abortus` should
-stop the process.
+stop the process. A host that must keep running anyway (a relay should not die
+on one datagram) can wrap its calls in `examples/abortus/`'s guard. The
+trap's kind then comes back as a return value. That example drives
+`redundantia_sarcinae(d, 33)`, which reads `d[32]`, as one of its traps.
 
 ## Checks
 
