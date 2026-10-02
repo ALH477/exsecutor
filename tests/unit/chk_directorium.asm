@@ -51,6 +51,16 @@
 ;	14 the exploit: `sub archivum = d;` in a `sicut d` fn   {EXS-E0303}
 ;	15 `sub rete = <u32>`                                    {EXS-E0303}
 ;	16 `sub alloc = <u32>` (the arena, `[OPEN]`)             clean
+;	17 the reference exploit: `&d sicut &archivum`           {EXS-E0305}
+;	18 `&d sicut &Scriptor`                                  {EXS-E0305}
+;	19 `&a sicut &Directorium` (a ref to the raw atom)       {EXS-E0305}
+;	20 `&d sicut &Directorium`, `u8 sicut u16`, `u16 sicut u8`  clean
+;	21 `sub archivum = x sicut archivum;` (a u32)            {EXS-E0305}
+;	22 `sub archivum = 0 sicut archivum;` (a pending literal) {EXS-E0305}
+;	23 `&x sicut u64`, `n sicut &archivum`                   {E0305, E0305}
+;	24 `a sicut u64` (the atom as a number)                  {EXS-E0305}
+;	25 `g sicut functio(u8) -> u8` (a row taken off `g`)     {EXS-E0305}
+;	26 `&x sicut &mutabilis u8` (mutability gained)          {EXS-E0305}
 ;
 ; NON-VACUITY, run when this fixture was written (each mutant in a scratch
 ; copy of the tree; the exit given is the one measured -- the first three
@@ -65,6 +75,18 @@
 ;   - `Scriptorium` interned with `Scriptor`'s tag -> exit 11 (row 1's
 ;     writer is then a `Scriptor`, which has no `inscribe_octeto`; row 9
 ;     would be accepted behind it).
+;
+; Rows 17-26 pin R1 rule 4 (docs/design/archivum-beneath.md finding 5): no
+; `sicut` retypes a value into or out of the atom or a reference to one. Row
+; 17 is the exploit that falsified the claim "the atom cannot be minted out of
+; a `Directorium`" after rows 12-14 were green: the cast dispatch judged only
+; aggregates, so `&T sicut &U` fell through unjudged. `[OPEN]`: `Crudum`
+; (spec §4.6) would license an unchecked reinterpret; nothing implements it,
+; so none is admitted. NON-VACUITY, measured: with the dispatch as it was
+; (`__chk_ty_castrel` never called) each of rows 17-19 and 21-26 fails at its
+; own row, started one at a time (exit 10+N); row 20, the one that must stay
+; clean, fails (exit 30) when castrel loses its same-type arm or stops
+; counting an integer as a numeric scalar.
 ;
 ; Exit 0 = every row passed; 10+N = row N of the table above did not match,
 ; with the diagnostics it did produce printed to stdout first.
@@ -536,6 +558,100 @@ segment readable
 		db '}', 10
   fx_s16_LEN = $ - fx_s16
 
+  ; s17: THE REFERENCE FORM of row 12, and the exploit that falsified R1 rule 2
+  ; after rows 12-14 were green. `&d sicut &archivum` took a reference to a
+  ; `Directorium` and retyped it as a reference to the raw atom; `*p` then
+  ; typed as `archivum`, which is exactly what `sub archivum = e` demands, so
+  ; `sub` bound the atom and `ad_radicem` opened a file outside the child's
+  ; root (built and run: it read it and exited with its first byte). The cast
+  ; dispatch sent a cast to the aggregate judge only when a SIDE was a struct
+  ; or an `acies`; `&T` is neither, so a reference cast fell through
+  ; unjudged. EXS-E0305 at the cast, and nothing else: the cast's type is its
+  ; target either way, so `sub` is not asked a second time.
+  fx_s17:	db 'functio salva(d: Directorium) -> u8 poscit sicut d {', 10
+		db 9, 'firma p = &d sicut &archivum;', 10
+		db 9, 'sub archivum = *p;', 10
+		db 9, 'discerne Directorium.ad_radicem(archivum, "/tmp/exs-xp") {', 10
+		db 9, 9, 'casus prosperum(o) { redde 42; }', 10
+		db 9, 9, 'casus adversum(e) { redde 4; }', 10
+		db 9, '}', 10
+		db '}', 10
+  fx_s17_LEN = $ - fx_s17
+  ; s18: a neighbour that holds no atom at all: a `Directorium` reference as a
+  ; `Scriptor` reference (a different mark, a different type). Refused for the
+  ; same reason -- the pointee changed.
+  fx_s18:	db 'functio f(d: Directorium) -> u8 poscit sicut d {', 10
+		db 9, 'firma p = &d sicut &Scriptor;', 10
+		db 9, 'redde 0;', 10
+		db '}', 10
+  fx_s18_LEN = $ - fx_s18
+  ; s19: the other direction: a reference to the raw atom, taken from a
+  ; function that legitimately holds it, retyped as a reference to a
+  ; `Directorium`.
+  fx_s19:	db 'publica functio initium(m: Mundus) -> u8 {', 10
+		db 9, 'firma a = m.archivum();', 10
+		db 9, 'firma p = &a;', 10
+		db 9, 'firma q = p sicut &Directorium;', 10
+		db 9, 'redde 0;', 10
+		db '}', 10
+  fx_s19_LEN = $ - fx_s19
+  ; s20: what must STAY accepted, so the refusal above is not a blanket one:
+  ; a reference cast that changes nothing (`&d sicut &Directorium`), a cast
+  ; between numeric scalars, and a cast of a pending-free scalar variable.
+  ; Clean. (A reference cast that changes the pointee has no clean spelling;
+  ; spec §4.6 gives `Crudum` that, and nothing implements it, `[OPEN]`.)
+  fx_s20:	db 'functio f(d: Directorium, x: u8) -> u8 poscit sicut d {', 10
+		db 9, 'firma p = &d sicut &Directorium;', 10
+		db 9, 'firma w = x sicut u16;', 10
+		db 9, 'firma n = w sicut u8;', 10
+		db 9, 'redde n;', 10
+		db '}', 10
+  fx_s20_LEN = $ - fx_s20
+  ; s21: the atom cannot be made out of a number (spec §4.1 rule 1: "No
+  ; literal, no cast, no default"), by a value cast...
+  fx_s21:	db 'functio f(x: u32) -> u8 {', 10
+		db 9, 'sub archivum = x sicut archivum;', 10
+		db 9, 'redde 0;', 10
+		db '}', 10
+  fx_s21_LEN = $ - fx_s21
+  ; s22: ...by a literal, whose type is pending and which the dispatch used to
+  ; wave through before it looked at the target...
+  fx_s22:	db 'functio f() -> u8 {', 10
+		db 9, 'sub archivum = 0 sicut archivum;', 10
+		db 9, 'redde 0;', 10
+		db '}', 10
+  fx_s22_LEN = $ - fx_s22
+  ; s23: ...or by turning a reference into an address and back.
+  fx_s23:	db 'functio f(x: u8, n: u64) -> u8 {', 10
+		db 9, 'firma a = &x sicut u64;', 10
+		db 9, 'firma p = n sicut &archivum;', 10
+		db 9, 'redde 0;', 10
+		db '}', 10
+  fx_s23_LEN = $ - fx_s23
+  ; s24: and the atom cannot be turned into a number either (the first half
+  ; of a launder that needs both).
+  fx_s24:	db 'publica functio initium(m: Mundus) -> u8 {', 10
+		db 9, 'firma a = m.archivum();', 10
+		db 9, 'firma n = a sicut u64;', 10
+		db 9, 'redde 0;', 10
+		db '}', 10
+  fx_s24_LEN = $ - fx_s24
+  ; s25: the same hole in a function TYPE. `g` draws `archivum`; recast as
+  ; `functio(u8) -> u8` it has the empty row, and the call through it draws
+  ; nothing. Without the cast, `g`'s own row is `EXS-E0421` at the call.
+  fx_s25:	db 'functio g(a: u8) -> u8 poscit archivum { redde a; }', 10
+		db 'functio f(x: u8) -> u8 {', 10
+		db 9, 'firma h = g sicut functio(u8) -> u8;', 10
+		db 9, 'redde h(x);', 10
+		db '}', 10
+  fx_s25_LEN = $ - fx_s25
+  ; s26: a borrow cannot gain mutability by a cast either.
+  fx_s26:	db 'functio f(x: u8) -> u8 {', 10
+		db 9, 'firma p = &x sicut &mutabilis u8;', 10
+		db 9, 'redde 0;', 10
+		db '}', 10
+  fx_s26_LEN = $ - fx_s26
+
   fx_tab:
 	dq fx_s01, fx_s01_LEN
 	dd 0, 0, 0, 0
@@ -569,6 +685,26 @@ segment readable
 	dd 1, 303, 0, 0
 	dq fx_s16, fx_s16_LEN
 	dd 0, 0, 0, 0
+	dq fx_s17, fx_s17_LEN
+	dd 1, 305, 0, 0
+	dq fx_s18, fx_s18_LEN
+	dd 1, 305, 0, 0
+	dq fx_s19, fx_s19_LEN
+	dd 1, 305, 0, 0
+	dq fx_s20, fx_s20_LEN
+	dd 0, 0, 0, 0
+	dq fx_s21, fx_s21_LEN
+	dd 1, 305, 0, 0
+	dq fx_s22, fx_s22_LEN
+	dd 1, 305, 0, 0
+	dq fx_s23, fx_s23_LEN
+	dd 2, 305, 305, 0
+	dq fx_s24, fx_s24_LEN
+	dd 1, 305, 0, 0
+	dq fx_s25, fx_s25_LEN
+	dd 1, 305, 0, 0
+	dq fx_s26, fx_s26_LEN
+	dd 1, 305, 0, 0
   FX_NROWS = ($ - fx_tab) / FX_ROW
   assert ($ - fx_tab) mod FX_ROW = 0
 

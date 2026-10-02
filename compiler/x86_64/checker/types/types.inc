@@ -411,9 +411,12 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	; `[OPEN]` -- see this file's header. Whether two AGGREGATES are is not:
 	; spec §5.2 admits exactly one pair, a `@transitus` struct and
 	; `acies<u8, sizeof>`, and every other aggregate `sicut` is `EXS-E0305`
-	; (member.inc's `__chk_ty_castagg`). A `sicut dyn I poscit {P}` cast's
-	; bound is pass 3's `EXS-E0510`, which reads the interned `dyn` type
-	; this builds.
+	; (member.inc's `__chk_ty_castagg`). Nor is a cast that touches a
+	; reference, a capability atom, a function type or a sum: only numeric
+	; scalars, one type to itself and `dyn` pass `__chk_ty_castrel`, and the
+	; rest is `EXS-E0305` (spec §5.2, a whitelist). A `sicut dyn I poscit {P}`
+	; cast's bound is pass 3's `EXS-E0510`, which reads the interned `dyn`
+	; type this builds.
 	mov	rdi, rbx
 	mov	rsi, [chkt_ap]
 	call	__chk_ty_expr
@@ -422,12 +425,12 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	mov	rsi, [chkt_bp]
 	call	chk_ty_of_node
 	mov	r14, rax			; the target
+	cmp	r14, 1
+	je	.cast_out			; AST_TY_ERROR: already diagnosed
 	test	r13, r13
-	jz	.cast_out
+	jz	.cast_rel			; a pending literal: only its target is judged
 	cmp	r13, 1
 	je	.cast_out			; AST_TY_ERROR: already diagnosed
-	cmp	r14, 1
-	je	.cast_out
 	; THE TARGET IS TESTED FIRST WHEN IT IS `dyn`, and only then, because
 	; this block's own comment above already says what the answer is: a
 	; trait-object cast's verdict is pass 3's `EXS-E0510` and nothing else.
@@ -461,13 +464,25 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	cmp	rax, AST_TY_STRUCT
 	je	.cast_agg
 	cmp	rax, AST_TY_ACIES
-	jne	.cast_out
+	jne	.cast_rel
   .cast_agg:
 	mov	rdi, rbx
 	mov	rsi, r12
 	mov	rdx, r13
 	mov	rcx, r14
 	call	__chk_ty_castagg
+	jmp	.cast_out
+  .cast_rel:
+	; NEITHER SIDE AN AGGREGATE: `__chk_ty_castrel` judges it (member.inc).
+	; Until it existed this arm accepted every pair the aggregate test did
+	; not catch, so `&d sicut &archivum` -- a `Directorium` reference
+	; reinterpreted as the raw atom -- was `sub`-able, and so were a
+	; function type's row stripped and an atom forged from an integer.
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, r13
+	mov	rcx, r14
+	call	__chk_ty_castrel
   .cast_out:
 	mov	rax, r14
 	jmp	.out

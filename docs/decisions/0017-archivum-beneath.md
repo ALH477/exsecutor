@@ -207,8 +207,9 @@ routine lands, have one row for `archivum`: `openat2(437)`, `close(3)`,
 
 - ~~The checker properties R1–R3 the design depends on, as tests. Whether
   the lowering passes a hidden full-atom carrier beside a `Directorium`~~ --
-  closed by stage 2, which also found R1 false twice (`sub`'s provider was
-  untyped; a lambda's draw was invisible to a call). What stays `[OPEN]`: the
+  closed by stage 2, which also found R1 false three times (`sub`'s provider was
+  untyped; a lambda's draw was invisible to a call; `&d sicut &archivum`
+  retyped a reference to the atom, spec §5.2, design finding 5). What stays `[OPEN]`: the
   closure check follows a lambda written in place or held in an immutable
   local, not one that reaches a parameter with an empty row, a field, a
   return, or a `mutabilis` local, none of which reaches an object while the

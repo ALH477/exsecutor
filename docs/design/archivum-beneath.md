@@ -604,9 +604,9 @@ keeps the function from reaching any other tree is that it cannot obtain the
 raw atom, and that rests on three properties of the checker
 (`docs/design/checker.md` sections 2.1 and 2.8), pinned by tests:
 
-- **R1. The raw atom cannot be obtained from a `Directorium`.** Three
-  rules, each of which was needed, and the first two of which were found
-  missing by review:
+- **R1. The raw atom cannot be obtained from a `Directorium`.** Four
+  rules, each of which was needed, and the second and the fourth of
+  which were found missing by review:
   1. A `sicut` row item never binds the atom's carrier. Only a `poscit P`
      *atom* item sets `cap[P]` in the function's root frame (checker.md
      2.1, "Bind"). So inside `salva`, `archivum` in expression position is
@@ -630,6 +630,20 @@ raw atom, and that rests on three properties of the checker
      its type's row. No such shape produces an object (the lowering refuses
      every lambda), and an atom with no carrier is `EXS-E0421` in the
      lowering rather than a trap.
+  4. **No `sicut` retypes a value into or out of a capability atom, or
+     a reference to one.** Rule 2 types the provider, so it is only as
+     strong as the type the provider carries, and `sicut` writes a type.
+     The cast judgement had a rule for aggregates (a struct or an `acies`
+     on either side) and none for anything else, so `d sicut archivum` was
+     refused (`EXS-E0305`) while `&d sicut &archivum` was not: `*p` then
+     had type `archivum` and rule 2 passed it. Found by review of the fix
+     that added rule 2, built and run (it read a file outside the root).
+     `__chk_ty_castrel` (checker/types/member.inc) now admits a
+     non-aggregate cast only between numeric scalars, between identical
+     types, or to `dyn` (`EXS-E0510`), and refuses the rest as
+     `EXS-E0305`: spec §5.2. `[OPEN]` `Crudum` (§4.6, "unchecked casts") is
+     the gate a reinterpret would need; nothing implements it, so the
+     refusal does not look at the function's row.
 - **R2. `ad_radicem` takes the atom as an explicit value.** No prelude
   routine draws `archivum` implicitly. With R1, a function that holds only a
   `Directorium` has no expression of type `archivum` -- *as a consequence
@@ -1027,6 +1041,31 @@ this document.
 - *This document and the spec said the function's row "reads
   `{archivum}`" and that `sicut d` bounds it.* Neither is so; corrected in
   D6 above and in spec §4.6.
+
+**Finding 5 -- R1 was false a third time, through a reference cast.**
+Review of the finding-4 fixes found one more runnable escape in the same
+family. `&d sicut &archivum` was accepted: the cast dispatch sent a cast to
+the aggregate judge (`__chk_ty_castagg`) only when a side was a struct or an
+`acies`, and `&T` is neither, so every other pair fell through with its target
+as the answer and no relatedness check. `*p` had type `archivum`, `sub
+archivum = *p;` passed rule 2, and `ad_radicem` read a file outside the child
+root (built and run: exit status = the file's first byte; the value cast
+`d sicut archivum` was refused all along). This was broader than
+`Directorium`: any pointee could be reinterpreted. The sweep that followed
+found the same unchecked path for: `x sicut archivum` (a number made into the
+atom; the lowering's emitter refused it by accident), `0 sicut archivum` (a
+pending literal skipped every judgement and then SIGILLed the lowering),
+`a sicut u64` (the atom turned into a number), `n sicut &archivum` and `&x sicut
+u64`, `&x sicut &mutabilis u8` (mutability gained), a sum carrying a
+`Directorium` recast to one that does not, and `g sicut functio(u8) -> u8`
+with `g` drawing `archivum` (the one way to take a row off a value). All are
+`EXS-E0305` now (rule 4; `tests/unit/chk_directorium.asm` rows 17-26, spec
+§5.2). The earlier sentence "the atom cannot be minted out of a `Directorium`,
+or out of any value that is not an `archivum`" claimed more than rule 2
+enforces; it is true only of rules 2 and 4 together, and the spec says so.
+`[OPEN]`, found on the way and not touched: `refero<T>` as a parameter type
+crashes `exsc` (SIGILL) in a later pass, and a pending-literal cast to a
+numeric type still SIGILLs the lowering (spec §5.4's recorded defect).
 
 **D6's lowering question: no hidden carrier.** A function declared `poscit
 sicut d` over a `Directorium` lowers to a signature with the `Directorium`
