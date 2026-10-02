@@ -5,8 +5,17 @@
 # and must be byte-identical; custos.h is compiled against it; proba.c (one
 # anchor per verdict, plus SUPERPACK_SPEC.md's joint-CRC anchor 0x5B75) is
 # built with every C compiler given, at -O0 and -O2, under UBSan, and must
-# pass. Then three mutants of custos.exsc must each FAIL proba.c, so the
+# pass. Then five mutants of custos.exsc must each FAIL proba.c, so the
 # anchors are known to see what they claim to.
+#
+# Then the capability half. `admitte` is pure by spec §4.1 rule 6: its
+# declared row is empty (no `poscit`) AND it takes no capability parameter.
+# Each half is held by a mutant: drawing ambient authority (`ambitus`,
+# `sermo`) without declaring it must be refused by the checker as EXS-E0421,
+# and taking a capability parameter (`s: Scriptor`, which rule 4 makes
+# usable without `poscit`) must change the C prototype so that custos.h no
+# longer compiles against the unit. A mutant that slipped either check would
+# be a gate that could reach the host.
 #
 # Usage: examples/custos/proba_c.sh [CC...]    (default: gcc clang)
 # Needs build/exsc (make all). Writes only to a temp dir.
@@ -90,5 +99,34 @@ mutant "core B version unchecked"          '/si s.b_versio ne 1/d'
 mutant "sflags type 5 -> 4"                's/si s.genus ne 5/si s.genus ne 4/'
 mutant "core A version unchecked"          '/si s.a_versio ne 1/d'
 mutant "17-byte frames refused"            's/si n eq 17 {/si n eq 18 {/'
+
+# Capability: ambient draws are refused by the checker, by code.
+cap_refused() {  # cap_refused NAME LINE
+  local name=$1 line=$2
+  sed "s/^publica functio admitte(d: acies<u8, 32>, n: mensura) -> u8 {/&\n    $line/" \
+    "$here/custos.exsc" >"$work/cap.exsc"
+  if "$exsc" aedifica --hospes x86_64-linux --emitte c --diagnostica json "${unit[@]}" \
+      "$work/cap.exsc" -o "$work/cap.gen.c" >/dev/null 2>"$work/cap.err"; then
+    echo "  [FAIL] capability '$name' compiled -- an ambient draw was accepted"; fail=1
+  elif grep -q '"code":"EXS-E0421"' "$work/cap.err"; then
+    echo "  [ok]   capability '$name' refused EXS-E0421"
+  else
+    echo "  [FAIL] capability '$name' refused, but not as EXS-E0421:"
+    head -c 300 "$work/cap.err"; echo; fail=1
+  fi
+}
+cap_refused "ambient ambitus" 'firma z = ambitus;'
+cap_refused "ambient sermo"   'firma z = "custos".plica_sermone(sermo);'
+
+# Capability: a capability parameter breaks the C face.
+sed 's/^publica functio admitte(d: acies<u8, 32>, n: mensura) -> u8 {/publica functio admitte(s: Scriptor, d: acies<u8, 32>, n: mensura) -> u8 {\n    firma z = s.scribe("custos");/' \
+  "$here/custos.exsc" >"$work/cap.exsc"
+emit "$work/cap.exsc" "$work/cap.gen.c"
+if "${ccs[0]}" -std=c11 -fsyntax-only -Wno-unused-function -include "$here/custos.h" \
+    "$work/cap.gen.c" 2>/dev/null; then
+  echo "  [FAIL] capability 'Scriptor parameter' still matches custos.h"; fail=1
+else
+  echo "  [ok]   capability 'Scriptor parameter' breaks custos.h"
+fi
 
 [ "$fail" -eq 0 ] && echo "custos: PASS" || { echo "custos: FAIL"; exit 1; }

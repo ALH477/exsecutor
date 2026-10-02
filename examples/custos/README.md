@@ -65,7 +65,7 @@ stop the process.
 
 ## Checks
 
-`proba_c.sh` (run after `make all`) does five things:
+`proba_c.sh` (run after `make all`) does six things:
 
 1. Emits the unit twice and requires the two outputs to be byte-identical.
 2. Compiles `custos.h` against the emitted unit.
@@ -77,6 +77,19 @@ stop the process.
    check, drop core B's version check, change the sflags type, and refuse
    17-byte frames. They run only after a clean baseline, because a mutant
    failing proves nothing when the original fails too.
+
+6. Checks the capability claim. `admitte` is pure by spec §4.1 rule 6
+   because its declared row is empty **and** it takes no capability
+   parameter. Each half is tested:
+   - **No ambient draw.** A mutant that draws `ambitus`, and another that
+     draws `sermo`, without declaring it must each be refused by the
+     checker as `EXS-E0421`. Both are refused.
+   - **No capability parameter.** A mutant that takes `s: Scriptor` and
+     writes through it must break the header check. Rule 4 makes that
+     mutant legal Exsecutor: a capability received as a parameter needs no
+     `poscit`, since the parameter already shows it in the signature. So
+     the checker accepts it, and what refuses it is `custos.h`, which pins
+     the signature the consumer links against.
 
 An earlier draft of the anchors had no case with a bad version in core B
 alone. The core-B mutant passed, and that is how the gap was found.
