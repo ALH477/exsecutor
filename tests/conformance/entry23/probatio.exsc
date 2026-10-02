@@ -29,10 +29,14 @@
 //
 // The helpers write no `poscit`: they are private, so their rows are
 // inferred from their bodies (spec §4.1 rule 5), and the authority they
-// write with is the `Scriptor` `initium` hands them. Declaring `poscit
-// sicut s` on a helper that calls another such helper is refused today,
-// EXS-E0421, which spec §4.2 says it should not be -- a checker defect,
-// recorded as docs/design/wire-codec.md finding 9.
+// write with is the `Scriptor` `initium` hands them. When this was written,
+// declaring `poscit sicut s` on a helper that calls another such helper was
+// refused EXS-E0421, which spec §4.2 says it should not be -- a checker
+// defect, recorded as docs/design/wire-codec.md finding 9. It was fixed on
+// 2026-10-02 (tests/unit/chk_row_sicut_forward.asm). These helpers were
+// left inferred on purpose: an inferred row is legal for a private function,
+// this file is a pinned certificate, and re-declaring its helpers would
+// change nothing it proves.
 
 // ---- writing -----------------------------------------------------------
 

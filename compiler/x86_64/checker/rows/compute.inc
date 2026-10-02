@@ -1394,89 +1394,11 @@ proc __chk_row_contrib, chkw_wk, chkw_ui
 	mov	[chkw_nx], rcx			; the argument list's offset
 	mov	ecx, [rax + AstNode.c]
 	mov	[chkw_ox], rcx			; the argument count
-	mov	qword [chkw_ca], 0
-	mov	qword [chkw_co], 0
-
-	mov	rdi, r14
+	mov	rdi, rbx
 	mov	rsi, r12
-	call	ast_node_at
-	movzx	ecx, word [rax + AstNode.kind]
-	cmp	ecx, AST_PATH
-	je	.named
-	cmp	ecx, AST_MEMBER
-	je	.named
-	jmp	.indirect
-  .named:
-	mov	r13d, [rax + AstNode.d]
-	test	r13, r13
-	jz	.indirect
-	bt	r13, 31
-	jc	.indirect			; a PRELUDE-tagged `d`
-						; (checker/types/prim.inc's
-						; `CHK_TY_PRELUDE`) names a row
-						; of `prelude/interface.inc`,
-						; NOT an `AstDecl` -- handing it
-						; to `ast_decl_at` trapped its
-						; bounds `rassert` on
-						; `0x80000004` for `m.ambitus()`.
-						; `.indirect` reads the callee's
-						; TYPE and reaches the same row.
-	mov	rdi, r14
-	mov	rsi, r13
-	call	ast_decl_at
-	movzx	ecx, byte [rax + AstDecl.kind]
-	mov	rdi, rcx
-	call	__chk_row_isfn
-	test	rax, rax
-	jz	.indirect
-	mov	rdi, rbx
-	add	rdi, ChkRowWork.wdcl
-	mov	rsi, r13
-	call	__chk_row_g1
-	test	rax, rax
-	jz	.inferred
-	mov	rdi, rbx
-	add	rdi, ChkRowWork.wrat
-	mov	rsi, r13
-	call	__chk_row_g4
+	call	__chk_row_callee
 	mov	[chkw_ca], rax
-	mov	rdi, rbx
-	add	rdi, ChkRowWork.wror
-	mov	rsi, r13
-	call	__chk_row_g8
-	mov	[chkw_co], rax
-	jmp	.have_row
-  .inferred:
-	mov	rdi, rbx
-	add	rdi, ChkRowWork.wdra
-	mov	rsi, r13
-	call	__chk_row_g4
-	mov	[chkw_ca], rax
-	mov	rdi, rbx
-	add	rdi, ChkRowWork.wdro
-	mov	rsi, r13
-	call	__chk_row_g8
-	mov	[chkw_co], rax
-	jmp	.have_row
-
-  .indirect:
-	mov	rdi, r14
-	mov	rsi, r12
-	call	ast_node_at
-	mov	esi, [rax + AstNode.ty]
-	mov	rdi, rbx
-	call	__chk_row_rowofty
-	test	rax, rax
-	jz	.have_row
-	mov	r13, rax
-	mov	rdi, r14
-	mov	rsi, r13
-	call	chk_row_atoms
-	mov	[chkw_ca], rax
-	mov	rdi, r14
-	mov	rsi, r13
-	call	chk_row_ords
-	mov	[chkw_co], rax
+	mov	[chkw_co], rdx
 
   .have_row:
 	cmp	qword [chkw_co], 0
@@ -1529,6 +1451,113 @@ proc __chk_row_contrib, chkw_wk, chkw_ui
   .plain:
 	mov	rax, [chkw_ca]
 	mov	rdx, [chkw_co]
+	return
+endp
+
+; ---- the callee's row, before substitution ---------------------------------
+; rax = atoms, rdx = ordinals of the row the callee expression `chkw_cx1`
+; carries: a DIRECT call reads the callee DECLARATION's current row (declared
+; or, for an inferred one, what the fixpoint has drawn so far); an INDIRECT
+; call -- or a PRELUDE-tagged member -- reads the row out of the callee's
+; TYPE. Factored out of `__chk_row_contrib` so that `__chk_row_sicutcov` reads
+; exactly the row the contribution was substituted from, and not a second
+; copy of the rule that could drift from it.
+proc __chk_row_callee, chkw_wk, chkw_cx1
+	uses	rbx, r12, r13, r14
+	locals
+		slot chkw_cca, dq
+		slot chkw_cco, dq
+	endl
+	mov	rbx, [chkw_wk]
+	mov	r14, [rbx + ChkRowWork.wtree]
+	mov	r12, [chkw_cx1]
+	mov	qword [chkw_cca], 0
+	mov	qword [chkw_cco], 0
+
+	mov	rdi, r14
+	mov	rsi, r12
+	call	ast_node_at
+	movzx	ecx, word [rax + AstNode.kind]
+	cmp	ecx, AST_PATH
+	je	.cnamed
+	cmp	ecx, AST_MEMBER
+	je	.cnamed
+	jmp	.cindirect
+  .cnamed:
+	mov	r13d, [rax + AstNode.d]
+	test	r13, r13
+	jz	.cindirect
+	bt	r13, 31
+	jc	.cindirect			; a PRELUDE-tagged `d`
+						; (checker/types/prim.inc's
+						; `CHK_TY_PRELUDE`) names a row
+						; of `prelude/interface.inc`,
+						; NOT an `AstDecl` -- handing it
+						; to `ast_decl_at` trapped its
+						; bounds `rassert` on
+						; `0x80000004` for `m.ambitus()`.
+						; `.cindirect` reads the callee's
+						; TYPE and reaches the same row.
+	mov	rdi, r14
+	mov	rsi, r13
+	call	ast_decl_at
+	movzx	ecx, byte [rax + AstDecl.kind]
+	mov	rdi, rcx
+	call	__chk_row_isfn
+	test	rax, rax
+	jz	.cindirect
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wdcl
+	mov	rsi, r13
+	call	__chk_row_g1
+	test	rax, rax
+	jz	.cinferred
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wrat
+	mov	rsi, r13
+	call	__chk_row_g4
+	mov	[chkw_cca], rax
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wror
+	mov	rsi, r13
+	call	__chk_row_g8
+	mov	[chkw_cco], rax
+	jmp	.cdone
+  .cinferred:
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wdra
+	mov	rsi, r13
+	call	__chk_row_g4
+	mov	[chkw_cca], rax
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wdro
+	mov	rsi, r13
+	call	__chk_row_g8
+	mov	[chkw_cco], rax
+	jmp	.cdone
+
+  .cindirect:
+	mov	rdi, r14
+	mov	rsi, r12
+	call	ast_node_at
+	mov	esi, [rax + AstNode.ty]
+	mov	rdi, rbx
+	call	__chk_row_rowofty
+	test	rax, rax
+	jz	.cdone
+	mov	r13, rax
+	mov	rdi, r14
+	mov	rsi, r13
+	call	chk_row_atoms
+	mov	[chkw_cca], rax
+	mov	rdi, r14
+	mov	rsi, r13
+	call	chk_row_ords
+	mov	[chkw_cco], rax
+
+  .cdone:
+	mov	rax, [chkw_cca]
+	mov	rdx, [chkw_cco]
 	return
 endp
 
@@ -1744,6 +1773,313 @@ proc __chk_row_fix, chkw_wk
 	return
 endp
 
+; ---- spec §4.2: a caller's own `sicut` covers what it forwards ---------------
+; THE DEFECT §4.2 RECORDED, AND ITS FIX. A function declared `poscit sicut s`
+; that calls another declared `poscit sicut s` with the same `s` was refused
+; `EXS-E0421` (docs/design/wire-codec.md, finding 9): at the call, the callee's
+; ordinal substitutes to the ATOMS of `s`'s type -- `Scriptor`'s mark,
+; `{ambitus}` -- and `__chk_row_e0421` subtracted those atoms only from the
+; caller's declared ATOMS (`wrat`), never from the mark its own `sicut s`
+; denotes. Both rows are the same `{ambitus}`, so the draw was covered and the
+; checker said otherwise.
+;
+; WHAT IS COVERED, AND WHY NOT MORE. The caller's `sicut` items are expanded
+; to the atoms their parameters' types carry (`__chk_row_sicutx`) and those
+; atoms may cover ONLY atoms that reached the contribution through SUBSTITUTION
+; at an ELIGIBLE argument position (`__chk_row_eligible`):
+;
+;   - the argument is one of the caller's own `sicut` parameters, named
+;     directly -- forwarding, of any type, a function-typed one included
+;     (the authority is the very value the caller's caller paid for); or
+;   - the argument's type is a `structura` -- a capability-bearing value
+;     carries its authority INSIDE it (§4.3), so passing one needs no carrier,
+;     and a `Directorium` derived beneath a `sicut d` parameter
+;     (`d.infra(...)`) can be handed on.
+;
+; The CALLEE may be such a parameter too: `f(x)` inside a function declaring
+; `sicut f` reads `f`'s type row, which travels inside the value -- without
+; this, `prototypes/capcheck/cases/ok_closure_declared.exsc`'s `consumidor`,
+; which §4.2 says must be accepted, was itself refused `EXS-E0421` at `f(x)`.
+;
+; Never covered: an atom in the callee's own DECLARED row (it is a hidden
+; carrier argument the caller must hold, and a `sicut` item binds no carrier
+; -- checker.md 2.1, "Bind"; `archivum-beneath.md` D6's R1), and an atom also
+; brought in by an INELIGIBLE argument -- a named function passed as a value,
+; whose closure would need the caller to hold that atom's carrier. That second
+; exclusion is what keeps §4.2's closure-capture shape rejected and is where a
+; looser fix would double-count: `exterior` in
+; `prototypes/capcheck/cases/bad_closure_capture.exsc` writes no `sicut` at
+; all, so nothing here applies to it; a caller that DOES write `sicut f` and
+; then passes some OTHER function still has to declare that function's row.
+; `tests/unit/chk_row_sicut_forward.asm` pins all of it, both directions.
+;
+; `__chk_row_sicutx(wk, F)` -> rax = the atoms the `sicut` items of declared
+; function `F` denote: for each ordinal `k` in its declared row, the atoms of
+; the row `__chk_row_tyrow` gives parameter `k`'s type. 0 when `F` declares no
+; ordinal, or has no `fn` type recorded (a hand-built tree).
+proc __chk_row_sicutx, chkw_wk, chkw_sxf
+	uses	rbx, r12, r13, r14
+	locals
+		slot chkw_sxo, dq
+		slot chkw_sxm, dq
+		slot chkw_sxa, dq
+		slot chkw_sxn, dq
+	endl
+	mov	rbx, [chkw_wk]
+	mov	r14, [rbx + ChkRowWork.wtree]
+	mov	qword [chkw_sxm], 0
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wror
+	mov	rsi, [chkw_sxf]
+	call	__chk_row_g8
+	mov	[chkw_sxo], rax
+	test	rax, rax
+	jz	.done
+	mov	rdi, r14
+	mov	rsi, [chkw_sxf]
+	call	ast_decl_at
+	mov	esi, [rax + AstDecl.ty]
+	test	esi, esi
+	jz	.done
+	mov	rax, [r14 + Ast.types.len]
+	cmp	rsi, rax
+	ja	.done
+	mov	rdi, r14
+	call	ast_type_at
+	movzx	ecx, byte [rax + AstType.kind]
+	cmp	ecx, AST_TY_FN
+	jne	.done
+	mov	ecx, [rax + AstType.a]
+	mov	[chkw_sxa], rcx			; the parameter types' offset
+	mov	ecx, [rax + AstType.width]
+	mov	[chkw_sxn], rcx			; how many there are
+	xor	r12, r12
+  .k:
+	cmp	r12, [chkw_sxn]
+	jae	.done
+	cmp	r12, 64
+	jae	.done
+	mov	rax, [chkw_sxo]
+	bt	rax, r12
+	jnc	.knext
+	mov	rdi, r14
+	mov	rsi, [chkw_sxa]
+	add	rsi, r12
+	call	ast_extra_at
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	__chk_row_tyrow
+	test	rax, rax
+	jz	.knext
+	mov	rdi, r14
+	mov	rsi, rax
+	call	chk_row_atoms
+	or	[chkw_sxm], rax
+  .knext:
+	inc	r12
+	jmp	.k
+  .done:
+	mov	rax, [chkw_sxm]
+	return
+endp
+
+; `__chk_row_eligible(wk, F, argn)` -> eax = 1 if the atoms argument node
+; `argn` substitutes at a call inside `F` may be covered by `F`'s own `sicut`
+; items (the header above: a directly named `sicut` parameter of `F`, or a
+; value of `structura` type).
+proc __chk_row_eligible, chkw_wk, chkw_elf, chkw_eln
+	uses	rbx, r12, r13, r14
+	locals
+	endl
+	mov	rbx, [chkw_wk]
+	mov	r14, [rbx + ChkRowWork.wtree]
+	mov	rdi, r14
+	mov	rsi, [chkw_eln]
+	call	ast_node_at
+	mov	r12, rax
+	mov	esi, [r12 + AstNode.ty]
+	test	esi, esi
+	jz	.path
+	mov	rax, [r14 + Ast.types.len]
+	cmp	rsi, rax
+	ja	.path
+	mov	rdi, r14
+	call	ast_type_at
+	movzx	ecx, byte [rax + AstType.kind]
+	cmp	ecx, AST_TY_STRUCT
+	je	.yes
+  .path:
+	movzx	ecx, word [r12 + AstNode.kind]
+	cmp	ecx, AST_PATH
+	jne	.no
+	mov	r13d, [r12 + AstNode.d]
+	test	r13, r13
+	jz	.no
+	bt	r13, 31
+	jc	.no				; a prelude row, never a parameter
+	mov	rax, [r14 + Ast.decls.len]
+	cmp	r13, rax
+	ja	.no
+	mov	rdi, r14
+	mov	rsi, r13
+	call	ast_decl_at
+	cmp	byte [rax + AstDecl.kind], AST_D_PARAM
+	jne	.no
+	mov	ecx, [rax + AstDecl.parent]
+	cmp	rcx, [chkw_elf]
+	jne	.no
+	; its position among `F`'s parameters: the parameters of one function
+	; are its PARAM declarations in declaration order, which is the order
+	; the `Sig` lists them and the order an ordinal counts
+	xor	r12, r12			; the index
+	mov	rbx, [chkw_elf]
+	inc	rbx
+  .scan:
+	cmp	rbx, r13
+	jae	.found
+	mov	rdi, r14
+	mov	rsi, rbx
+	call	ast_decl_at
+	cmp	byte [rax + AstDecl.kind], AST_D_PARAM
+	jne	.snext
+	mov	ecx, [rax + AstDecl.parent]
+	cmp	rcx, [chkw_elf]
+	jne	.snext
+	inc	r12
+  .snext:
+	inc	rbx
+	jmp	.scan
+  .found:
+	cmp	r12, 64
+	jae	.no
+	mov	rbx, [chkw_wk]
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wror
+	mov	rsi, [chkw_elf]
+	call	__chk_row_g8
+	bt	rax, r12
+	jnc	.no
+  .yes:
+	mov	eax, 1
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
+; `__chk_row_sicutcov(wk, ui, F)` -> rax = the atoms of use `ui`'s
+; contribution that declared function `F`'s own `sicut` items cover: atoms
+; substituted at an eligible argument position, that `F`'s `sicut` items
+; denote, that the callee does not itself declare, and that no ineligible
+; argument also brought in. 0 for a use that is not a call.
+proc __chk_row_sicutcov, chkw_wk, chkw_cvu, chkw_cvf
+	uses	rbx, r12, r13, r14
+	locals
+		slot chkw_cvx, dq	; F's sicut expansion
+		slot chkw_cva, dq	; the callee's declared atoms
+		slot chkw_cvo, dq	; the callee's ordinals
+		slot chkw_cvb, dq	; argument list offset
+		slot chkw_cvn, dq	; argument count
+		slot chkw_cve, dq	; eligible substituted atoms
+		slot chkw_cvi, dq	; ineligible substituted atoms
+		slot chkw_cvg, dq	; the argument node
+	endl
+	mov	rbx, [chkw_wk]
+	mov	r14, [rbx + ChkRowWork.wtree]
+	mov	qword [chkw_cve], 0
+	mov	qword [chkw_cvi], 0
+	mov	rdi, rbx
+	mov	rsi, [chkw_cvf]
+	call	__chk_row_sicutx
+	mov	[chkw_cvx], rax
+	test	rax, rax
+	jz	.none
+	lea	rdi, [rbx + ChkRowWork.wuse]
+	mov	rsi, [chkw_cvu]
+	call	vec_get
+	cmp	dword [rax + ChkRowUse.ukind], CHK_ROW_U_CALL
+	jne	.none
+	mov	esi, [rax + ChkRowUse.target]
+	mov	rdi, r14
+	call	ast_node_at
+	mov	r12d, [rax + AstNode.a]		; the callee expression
+	mov	ecx, [rax + AstNode.b]
+	mov	[chkw_cvb], rcx
+	mov	ecx, [rax + AstNode.c]
+	mov	[chkw_cvn], rcx
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_row_callee
+	mov	[chkw_cva], rax
+	mov	[chkw_cvo], rdx
+	; the CALLEE itself may be one of `F`'s own `sicut` parameters -- a
+	; call through it (`f(x)` in `applica`'s body). Its row is its type's,
+	; and that authority travels inside the value (checker.md 2.8), so it
+	; is coverable rather than a carrier `F` must hold.
+	mov	rdi, rbx
+	mov	rsi, [chkw_cvf]
+	mov	rdx, r12
+	call	__chk_row_eligible
+	test	eax, eax
+	jz	.args_start
+	mov	rax, [chkw_cva]
+	or	[chkw_cve], rax
+	mov	qword [chkw_cva], 0		; nothing of it is a carrier
+  .args_start:
+	xor	r12, r12
+  .arg:
+	cmp	r12, [chkw_cvn]
+	jae	.args_done
+	cmp	r12, 64
+	jae	.args_done
+	mov	rax, [chkw_cvo]
+	bt	rax, r12
+	jnc	.anext
+	mov	rdi, r14
+	mov	rsi, [chkw_cvb]
+	add	rsi, r12
+	call	ast_extra_at
+	mov	[chkw_cvg], rax
+	mov	rdi, r14
+	mov	rsi, rax
+	call	ast_node_at
+	mov	esi, [rax + AstNode.ty]
+	mov	rdi, rbx
+	call	__chk_row_tyrow
+	test	rax, rax
+	jz	.anext
+	mov	rdi, r14
+	mov	rsi, rax
+	call	chk_row_atoms
+	mov	r13, rax
+	mov	rdi, rbx
+	mov	rsi, [chkw_cvf]
+	mov	rdx, [chkw_cvg]
+	call	__chk_row_eligible
+	test	eax, eax
+	jz	.inel
+	or	[chkw_cve], r13
+	jmp	.anext
+  .inel:
+	or	[chkw_cvi], r13
+  .anext:
+	inc	r12
+	jmp	.arg
+  .args_done:
+	mov	rax, [chkw_cve]
+	and	rax, [chkw_cvx]
+	mov	rcx, [chkw_cva]
+	not	rcx
+	and	rax, rcx
+	mov	rcx, [chkw_cvi]
+	not	rcx
+	and	rax, rcx
+	return
+  .none:
+	xor	eax, eax
+	return
+endp
+
 ; ---- EXS-E0421, and EXS-E0423 ----------------------------------------------
 ; "A draw with no provider in a declared function", spec §4.1-§4.2, AFTER the
 ; fixpoint (checker.md section 2.3) -- before it, a callee's inferred row is
@@ -1829,6 +2165,14 @@ proc __chk_row_e0421, chkw_wk
 	call	__chk_row_g4
 	not	rax
 	and	[chkw_ea], rax			; ... nor is a declared one
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, r13
+	call	__chk_row_sicutcov
+	not	rax
+	and	[chkw_ea], rax			; ... nor one the caller's own
+						; `sicut` items denote, forwarded
+						; (__chk_row_sicutcov's header)
 	mov	rdi, rbx
 	add	rdi, ChkRowWork.wror
 	mov	rsi, r13
