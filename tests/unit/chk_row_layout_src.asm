@@ -71,9 +71,17 @@
 ;
 ; THE CRASH CLASS, every other type kind with no layout of its own, as a
 ; field: a capability atom (c13/c14), `dyn Iface` (c15/c16), `functio(...)`
-; (c17/c18), `eventus<T>` (c19/c20), a generic parameter (c21/c22). Each is
+; (c17/c18), `eventus` (c19/c20), a generic parameter (c21/c22). Each is
 ; clean out of `@transitus` and `EXS-E0321` in it -- the generic parameter
 ; INCLUDED, as of the day this fixture asked to be revisited.
+;
+; c19/c20 LEFT THE CRASH CLASS with docs/design/sum-types.md D5: `eventus` is
+; the prelude's two-parameter SUM now, laid out by D6 (tag plus the widest
+; payload) rather than answered width 0 by the builtin, so the spelling is
+; `eventus<u8, u8>` -- the one-argument `eventus<u8>` these rows wrote is
+; `EXS-E0304` -- and the rows still hold for the reason they always did: a
+; sum is not `AST_TY_INT`, so in `@transitus` it is `EXS-E0321` at the field,
+; byte 26, through pass 4's existing kind test (D6's "no sum-specific rule").
 ;
 ; c21/c22 read `EXS-E0301` at `X` in both until 2026-09-27, because pass 1
 ; bound no generic parameter outside a function, so what a generic field's
@@ -611,12 +619,12 @@ segment readable
 		db '}', 10
   fx_c18_LEN = $ - fx_c18
   fx_c19:	db 'structura T {', 10
-		db 9, 'e: eventus<u8>', 10
+		db 9, 'e: eventus<u8, u8>', 10
 		db '}', 10
   fx_c19_LEN = $ - fx_c19
   fx_c20:	db '@transitus', 10
 		db 'structura T {', 10
-		db 9, 'e: eventus<u8>', 10
+		db 9, 'e: eventus<u8, u8>', 10
 		db '}', 10
   fx_c20_LEN = $ - fx_c20
   fx_c21:	db 'structura T<X> {', 10
@@ -693,7 +701,7 @@ segment readable
 	; c18: @transitus, a functio field: E0321
 	dq fx_c18, fx_c18_LEN
 	dd 1, 321, 26, 0, 0, 0
-	; c19: an eventus field: clean
+	; c19: an eventus field (a sum since D5): clean
 	dq fx_c19, fx_c19_LEN
 	dd 0, 0, 0, 0, 0, 0
 	; c20: @transitus, an eventus field: E0321

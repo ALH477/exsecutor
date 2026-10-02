@@ -1,6 +1,6 @@
 # Sum types, constructor patterns, and `eventus`
 
-**Status: D1 (grammar), D2 (grammar and pass-1 scoping), D6 (layout) and the declaration's typing are implemented as of 2026-09-27; D2's typing, D3, D4 and D5 are design.** When this document was written nothing here was implemented. Every decision below is `D`-numbered
+**Status: D1, D2 (grammar, scoping and typing), D3, D5 and D6 are implemented in the checker as of 2026-10-02, with D4's interim refusal of `?`; D4 itself is design, and the LOWERING of constructors and of a sum-typed `discerne` is not yet built.** §8 records what implementing them measured, including two places this document was wrong. Until 2026-10-02 this line read "D1 (grammar), D2 (grammar and pass-1 scoping), D6 (layout) and the declaration's typing are implemented as of 2026-09-27; D2's typing, D3, D4 and D5 are design. When this document was written nothing here was implemented. Every decision below is `D`-numbered
 so the spec and the fixtures can cite one rather than quote the argument, and every
 claim about what the tree does today was measured on 2026-09-26 at `747fa30` plus the
 working tree. Prose designs are hypotheses until code runs; this document is a
@@ -574,15 +574,20 @@ check starts holding this document to them. Item 0 has crossed over.
    `EXS-E0304` on an arity mismatch — which is the checker's next commit, and
    the reason a constructor pattern still reaches pass 2 as an unresolved
    path today.
-3. **tests/unit/chk_ty_exhaustive.asm** — D3, both rules: a sum-typed `discerne`
+3. **`tests/unit/chk_ty_exhaustive.asm`** — **exists and runs** (twelve
+   rows, each pinning the exact code set, and the fix text where there is
+   one). D3, both rules: a sum-typed `discerne`
    missing one variant raises `EXS-E0351` **and the diagnostic names the missing
    variant**; a scalar `discerne` with no `aliter` raises it; both complete forms
    pass. The code set must *equal* `{EXS-E0351}`, the way `run_conformance_tests`
    checks an entry, so a second unrelated diagnostic cannot hide in it.
-4. **tests/unit/chk_ty_eventus_arity.asm** — D5: `eventus<mensura>` with one
-   argument is `EXS-E0304`. **Blocked on the checker's one-sided count** (D5):
-   until `__chk_ty_genarg`'s test has an upper bound this fixture cannot pass,
-   and that fix is owed independently of this design.
+4. **`tests/unit/chk_ty_eventus_arity.asm`** — **exists and runs**: D5,
+   `eventus<mensura>` with one argument is `EXS-E0304`, and so are a bare
+   `eventus` and three arguments; two pass; a module's own `eventus` shadows
+   the prelude's; `?` is `EXS-E0305`. The blocker this item recorded (the
+   one-sided count) was fixed independently, as it said it should be. D2's
+   typing has its own fixture, which this plan did not name:
+   `tests/unit/chk_ty_sum_typing.asm` (sixteen rows).
 5. **tests/programs/eventus/** — D4 end to end on both backends: a program that
    reads with `lege_octeto`, propagates with `?`, and distinguishes end-of-input
    from a read error, which no program in this tree can currently do. This is the
@@ -595,3 +600,82 @@ Until 2–5 exist, §8.6's bullets cite **this document** and stay `[OPEN]`: a d
 is not evidence, and the difference is the whole of CLAUDE.md. Items 0 and 1
 narrow the `[OPEN]` — the grammar, the representation and the layout are
 measured — and do not lift it.
+
+---
+
+## 8. What implementing D2's typing, D3, D4's interim and D5 measured
+
+Written 2026-10-02, with the code. Each finding names what it changed.
+
+**F1 — a generic sum's instance is a type, and this document never said
+how.** D5 writes `eventus<mensura, erratum>`, but D6's layout is per
+*declaration*, and the checker had no instantiation of any generic type: a
+generic `structura`'s arguments are still ignored. An instance is now an
+`AST_TY_SUM` whose `b` is an `AST_TY_ARGS` list — a cons list of interned
+cells, so equal argument lists are one id and instances compare by id like
+every other type (an `extra` run would not: `__chk_ty_fneqnorow` records what
+that costs `fn` types). Its payload element types are the declaration's with
+the arguments substituted (`ast_sum_subst`, `compiler/x86_64/ast/types.inc`),
+computed where needed and never stored; pass 4 sizes an instance from them
+(`__chk_lay_suminst`). The argument count is checked at both ends for every
+sum (`__chk_ty_decl_inst`).
+
+**F2 — where a generic constructor's type arguments come from was not
+decided.** `prosperum(5)` says nothing about `E`. The rule implemented: an
+explicit `prosperum<mensura, erratum>(5)` (counted as in type position), else
+the expected type when it is an instance of the same sum (an annotation, a
+parameter, `redde`, an assignment target — `__chk_ty_want` hands the
+expectation to the constructor), else `EXS-E0304` at the constructor's name:
+the arguments the type needs are missing, the same mistake as a bare `eventus`
+in type position. Nothing is inferred from a payload: half an instance is not
+an instance, and inferring the other half would be a second feature.
+
+**F3 — "variants are names in the scope of their type" means the module
+scope.** D2's collision consequence (a variant and a constant of one name are
+`EXS-E0302`) only holds if variants are module-visible, and a constructor in
+expression position only resolves if they are. Pass 1 now enters a module
+`typus`'s variants into the module table beside it. Pass 1 resolves a
+*pattern's* path silently (`CHK_POS_PATTERN`); pass 2 resolves it against the
+scrutinee's variants first, which is D2's ordering, measured by a local
+`firma ordinata` not capturing `casus ordinata`.
+
+**F4 — the prelude is materialized on mention.** D5 says "a prelude `typus`"
+and the prelude had no declarations, only a pre-seeded call table. `eventus`
+and `erratum` are now built as the tree of their source
+(`compiler/x86_64/prelude/eventus.inc`) and appended to a module's items — but
+only when a path segment in the module names `eventus`, `erratum`,
+`prosperum` or `adversum`. A module that names none of them cannot observe
+them, so every existing tree and dump is byte-identical. Their declarations
+carry a zero span, which is how pass 1 lets a module's own declaration of the
+same name shadow them instead of colliding (`examples/onus/onus.exsc` declares
+`functio eventus`). The field of `erratum` is `numerus: u16`; D5 named the type
+and the width, not the field.
+
+**F5 — the builtin `eventus` is unreachable, not retired.** A declaration is
+found before the primitive table, so the one-argument builtin (`CHK_TY_P_EVENTUS`,
+`AST_TY_EVENTUS`) can no longer be reached from source. Its rows stay, dead,
+for hand-built trees; deleting them is the retirement D1 deferred to "the last
+commit of this design", and it is still owed.
+
+**F6 — D4's interim state is now real.** `?` is `EXS-E0305` on every operand
+(the `.try:` arm's existing code; no code spent on a temporary state). D4 is
+not required for D5 to be usable — an `eventus` is matched with `discerne` —
+so it stays design.
+
+**F7 — §6's cost was wrong twice.** It said `tests/programs/discerne/` would
+lose four of its thirty checks (6, 13, 15, 25). Adding an EMPTY `aliter` to
+each `discerne` that had none kept all thirty expected values: an empty
+`aliter` runs nothing, which is what the fall-through did. And the list was
+not the set of checks that reached the fall-through: 15 (`mens(9)`) always had
+an `aliter`, and 18 (`signa(9)`) fell through and was not listed. No check was
+deleted.
+
+**F8 — `u1` is a scalar.** D3 requires `aliter` of every scalar, including a
+`u1` whose two arms name both values; implemented as written
+(`tests/unit/chk_ty_exhaustive.asm` row 9), not special-cased.
+
+**What remains, in order:** the lowering (constructors, the tag test, the
+bindings); then the prelude I/O migration D5 calls for — `lege_octeto` and
+`scribe` returning `eventus<…, erratum>` with the blob, the rows and every
+caller moved together — which this change deliberately did not make; then D4;
+then retiring the builtin (F5).

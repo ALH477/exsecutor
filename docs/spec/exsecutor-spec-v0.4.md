@@ -464,7 +464,7 @@ potestas Hospes = { alloc, archivum, horologium, ambitus }
 
 **Standard input, output and error belong to `ambitus`.** They are handed to a process by its environment, not found on a filesystem: a program that writes to its terminal has touched nothing under `archivum`, and borrowing that atom for it would over-grant in exactly the way §10.3's audit exists to expose. `examples/README.md` recorded this as `[OPEN]` when the companion program was written; it is closed by placing the streams, not by spending a root on a twelfth atom.
 
-**The streams' two prelude types.** Standard output is written through `Scriptor`, a capability-bearing `structura` with mark `{ambitus}`, obtained by `Scriptor.ad_exitum(a: ambitus) -> Scriptor` — an associated function with no receiver, total — and written one byte at a time by `s.scribe_octeto(b: u8) -> mensura` (`docs/design/wire-codec.md` D7; `tests/unit/prelude_scribe_octeto.asm`, `tests/programs/octeti/`) or as a `textus` by `s.scribe(t)` (§11). Standard input is read through **`Lector`**, the same record with the same mark, obtained by `Lector.ab_introitu(a: ambitus) -> Lector` and read one byte at a time by `l.lege_octeto() -> u16`: the byte, 0–255, or **256** at end of input and on a read error, the two undistinguished — provisional in exactly `scribe`'s way until `eventus` is *inhabited* (§11: the spelling is interned today, the type has no variants, constructor, pattern or layout), when the call becomes `-> eventus<u8>`. `read(0)` is in `ambitus`'s admitted syscall set already; the compiler itself never issues it. `docs/design/receptor.md` D1 is the design; the routine is `compiler/x86_64/prelude/prelude.asm`'s `exsrt_lector_lege_octeto`, pinned by `tests/unit/prelude_lege_octeto.asm` (the four bytes `0x00 0x7f 0x80 0xff` in order, then 256 twice, then 256 on a refused descriptor) and run from source by `tests/programs/lector/` (`cat`, 41 bytes in and the same 41 out), `lector_numerus/` (the count as the exit status) and the receiver's `tests/programs/receptio_*/` (38,060 bytes a WAV). Because the prelude gates by atom and not by call, every binary whose closure holds `ambitus` carries the reader whether it reads or not. The part after the `_` in both constructors is a noun the preposition governs, and neither `ad` nor `ab` decomposes under §3.1 — recorded there as an open question for the lexicon, not resolved here.
+**The streams' two prelude types.** Standard output is written through `Scriptor`, a capability-bearing `structura` with mark `{ambitus}`, obtained by `Scriptor.ad_exitum(a: ambitus) -> Scriptor` — an associated function with no receiver, total — and written one byte at a time by `s.scribe_octeto(b: u8) -> mensura` (`docs/design/wire-codec.md` D7; `tests/unit/prelude_scribe_octeto.asm`, `tests/programs/octeti/`) or as a `textus` by `s.scribe(t)` (§11). Standard input is read through **`Lector`**, the same record with the same mark, obtained by `Lector.ab_introitu(a: ambitus) -> Lector` and read one byte at a time by `l.lege_octeto() -> u16`: the byte, 0–255, or **256** at end of input and on a read error, the two undistinguished — provisional in exactly `scribe`'s way: `eventus` is inhabited now (§11, the prelude's `eventus<T, E>`), and the call becomes `-> eventus<u8, erratum>` with the whole-tree migration of the prelude's I/O that §11 records as not yet made. `read(0)` is in `ambitus`'s admitted syscall set already; the compiler itself never issues it. `docs/design/receptor.md` D1 is the design; the routine is `compiler/x86_64/prelude/prelude.asm`'s `exsrt_lector_lege_octeto`, pinned by `tests/unit/prelude_lege_octeto.asm` (the four bytes `0x00 0x7f 0x80 0xff` in order, then 256 twice, then 256 on a refused descriptor) and run from source by `tests/programs/lector/` (`cat`, 41 bytes in and the same 41 out), `lector_numerus/` (the count as the exit status) and the receiver's `tests/programs/receptio_*/` (38,060 bytes a WAV). Because the prelude gates by atom and not by call, every binary whose closure holds `ambitus` carries the reader whether it reads or not. The part after the `_` in both constructors is a noun the preposition governs, and neither `ad` nor `ab` decomposes under §3.1 — recorded there as an open question for the lexicon, not resolved here.
 
 ## 4.7 The entry point
 
@@ -1625,26 +1625,24 @@ document.
 the missing cases* and ships the edit — mechanically derivable, which is exactly
 the class §8.3 says is suited to `exsc emenda`.
 
-`[OPEN]` **— and this sentence has never been true of the implementation.**
-`discerne` compiles, lowers and runs (`tests/programs/discerne/`, thirty checks
-through `-o` on both backends), and it is a comparison chain with a
-fall-through: with no `aliter` and no matching arm, the chain's last false edge
-goes to the join and **nothing runs**. That fixture's header pins the behaviour
-and records the contradiction rather than papering over it, which was the right
-call — exhaustiveness needs an enumeration §8.6 lists as `[OPEN]`, and until
-2026-09-26 §13 had no code to report a missing arm with, so nothing could have
-refused one. `EXS-E0351` now exists for it (§13), and
-`docs/design/sum-types.md` is the design that would make the sentence true: D1
-declares the enumeration, D2 gives constructor patterns, and **D3 is the rule**
-— a sum-typed scrutinee is exhaustive when every variant is covered or
-`aliter` is present, and a scalar scrutinee, whose value space is 2^N,
-**requires** `aliter`. D1's grammar and its layout (D6) landed on 2026-09-27
-(`tests/unit/cst_typus_sum.asm`, `tests/unit/chk_row_layout_sum.asm`), and
-D2's grammar with its bindings scoped to the arm (`tests/unit/cst_pattern_ctor.asm`,
-`tests/unit/chk_pattern_scope.asm`); D2's typing and **D3 itself are still
-design** — no `EXS-E0351` is emitted — and its §6 states what landing D3
-costs, which is four of those thirty checks, since they exist precisely to pin
-the behaviour D3 outlaws.
+**Enforced since 2026-10-02 (`docs/design/sum-types.md` D3), and for most of
+this document's life it was not.** A `discerne` with no `aliter` is
+`EXS-E0351` unless its arms cover the scrutinee: a **sum** scrutinee by naming
+every variant — the diagnostic carries the missing arms, in declaration order,
+as an insertion fix, so the rendered diagnostic lists them — and a **scalar**
+scrutinee (`uN`, `iN`, `mensura`, `u1`), whose value space is 2^N, by
+`aliter` alone, with no fix, since the body is the author's
+(`compiler/x86_64/checker/types/sum.inc`, `tests/unit/chk_ty_exhaustive.asm`:
+twelve rows, each pinning the exact code set). Until then this was a
+comparison chain with a fall-through: with no `aliter` and no matching arm,
+the chain's last false edge went to the join and **nothing ran**, and
+`tests/programs/discerne/`'s header pinned that and recorded the
+contradiction rather than papering over it, which was the right call while
+§13 had no code to refuse with. That fixture now writes `aliter` wherever it
+had none; an empty one runs nothing, so all thirty of its checks kept their
+values (sum-types.md §6 had predicted four would have to go). Duplicate and
+unreachable arms are still not diagnosed — the first matching arm wins — and
+that rule is `[OPEN]` in D3, with no code.
 
 ### Iteration
 
@@ -2249,65 +2247,68 @@ refusing symbolic comparisons — is what makes that last one possible.
   open, and needs its own token (`docs/design/phrase-grammar.md` H12), so
   `fontes` cannot yet be lexed. An earlier version of this bullet listed
   floats as open and said the literal grammar blocked `HASH`; neither held.
-- `[OPEN]` Sum types and constructor patterns; `discerne`'s exhaustiveness
-  presupposes an enumeration the language does not yet declare. The natural
-  home is `typus` — keyword-led, LL(1)-harmless — and **it is now decided as
-  design**: `docs/design/sum-types.md` D1 puts variants under `typus`, led by
-  the already-reserved `casus` (no new keyword, and no new sigil — `,`
-  separates variants, for the reason shifts never became `<<`), and D2 adds
-  `Path '(' IDENT (',' IDENT)* ')'` to `Pattern` on a one-token peek at `(`.
-  This bullet's prediction held: the peek after `typus IDENT [GenericParams]
-  '='` is one token, at `casus`, which no enclosing production can want.
-  **What is implemented is the grammar (declarations and patterns), the
-  representation, the declaration's typing and the layout, and nothing
-  above them.** `TypeDecl` above parses `SumBody` on that one
-  peek (`compiler/x86_64/cst/parse.inc`'s `__cst_sum_body`;
-  `tests/unit/cst_typus_sum.asm`), the tree has the kinds (`AST_SUMBODY`,
-  `AST_VARIANT`, `AST_D_VARIANT`, `AST_TY_SUM`,
-  `compiler/x86_64/ast/kinds.inc`) and pass 4 lays a sum out by that
-  document's D6 — the tag at byte 0, the variant's index in declaration
-  order, one byte up to 256 variants; then the widest payload, packed;
-  alignment 1; `:nativus`, so a sum on the wire is `EXS-E0321` through
-  §5.2's existing rule — measured by `tests/unit/chk_row_layout_sum.asm`
-  over hand-built trees, because that document's §6 required the layout to
-  be pinned before any grammar could produce one; pass 2 types the
-  declaration as its own nominal sum and pass 4 lays it out from source
-  (`tests/unit/chk_ty_typus_sum.asm`, which also pins that a recursive sum
-  is refused as `EXS-E0303` — class C, whichever `typus` form spells the
-  infinite type — and that a generic `typus`'s parameters do not resolve in
-  pass 1, on the alias form too, which `[GenericParams]` above has admitted
-  all along and nothing in the corpus had ever exercised). Constructor
-  patterns parse, build and scope their bindings to the arm (D2's grammar,
-  `tests/unit/cst_pattern_ctor.asm`, `tests/unit/chk_pattern_scope.asm`;
-  a nested pattern is refused as `EXS-E0201`). Still `[OPEN]` as a claim
-  about the language: no constructor call is typed, a pattern is not
-  resolved against the scrutinee's variants (so `casus arborea(n)` is
-  `EXS-E0301` today and a use of `n` is `EXS-E0307`), a variant's
-  declaration has no type, and nothing lowers; §7 there lists the fixtures
-  that would retire it. Recursive sum types (pass 4 breaks the cycle at width 0
-  and does not diagnose it; the types pass must), nested patterns, range
-  patterns, `?`'s error conversion and the unreachable-arm rule are each
-  deferred there by name rather than folded in.
-- `[OPEN]` **`?` is used by this document, checked by the compiler, and
-  defined by neither in the same way.** It is lexed (`PUN_QUESTION`,
-  `compiler/x86_64/lexer/token.inc`), spelled in the CST's punctuation table,
-  admitted by `Suffix` in the grammar above, named in §8.4's sigil table as
-  `E?`, "error propagation", citing §5.1 — and §5.1 uses it twice in its own
-  illustrative block (`abassus.quaere("/")?`, `via.sectio(0..ubi)?`) without a
-  sentence anywhere in this document saying what it does. The checker has a
-  rule: `compiler/x86_64/checker/types/types.inc`'s `.try:` arm requires the
-  operand to be an `eventus` (`EXS-E0305` otherwise) and answers its first type
-  argument — an unconditional unwrap, with no enclosing-function check and no
-  early return. The lowering refuses the node by name
-  (`compiler/x86_64/lower/expr.inc`), so no program containing `?` has run.
-  `docs/design/sum-types.md` D4 settles the meaning as design — the `prosperum`
-  payload, or an early return of the `adversum` from an enclosing function
-  whose error type matches, with error *conversion* deferred — and that is
-  **not** what the checker's arm does today; D4 says the arm should refuse
-  until it can do the right thing. An earlier version of this bullet said `?`
-  "means nothing" and that the checker's behaviour was "unmeasured", inferring
-  the second from the corpus containing no `?`. It was wrong on both counts and
-  on §5.1; recorded here per the evidence note rather than overwritten.
+- Sum types and constructor patterns — **settled, by
+  `docs/design/sum-types.md` D1–D3 and D5, and implemented in the checker**;
+  this bullet was `[OPEN]` until 2026-10-02 and keeps its history below.
+  D1 puts variants under `typus`, led by the already-reserved `casus` (no new
+  keyword, and no new sigil — `,` separates variants, for the reason shifts
+  never became `<<`); the one-token peek after `typus IDENT [GenericParams]
+  '='` is at `casus`, which no enclosing production can want
+  (`compiler/x86_64/cst/parse.inc`'s `__cst_sum_body`,
+  `tests/unit/cst_typus_sum.asm`). D2 adds `Path '(' IDENT (',' IDENT)* ')'`
+  to `Pattern` above on a peek at `(`, and its typing: a **variant is a
+  module-scope name** (so it collides with a constant of the same name,
+  `EXS-E0302`); a **constructor** `prosperum(n)` — or a bare `ordinata` for a
+  payload-less variant — has its sum's type, its payload count is checked
+  (`EXS-E0304`) and each payload is typed against the variant's element type;
+  a **generic** sum's type arguments come from an explicit
+  `prosperum<mensura, erratum>(n)` or from the expected type (an annotation,
+  a parameter, `redde`, an assignment target), and a generic constructor with
+  neither is `EXS-E0304` — nothing is inferred from a payload. A **pattern's
+  path is resolved against the scrutinee's variants first** and only then
+  against the value namespace (`EXS-E0303` if it names something else,
+  `EXS-E0301` if nothing), so a local constant cannot capture a variant
+  pattern; its bindings take the payload's element types and are assigned by
+  the match; their count is the payload's (`EXS-E0304`)
+  (`compiler/x86_64/checker/types/sum.inc`, `tests/unit/chk_ty_sum_typing.asm`).
+  D3 is §8.5's exhaustiveness rule above. The representation is the tree's
+  (`AST_SUMBODY`, `AST_VARIANT`, `AST_D_VARIANT`, `AST_TY_SUM`, and
+  `AST_TY_ARGS` for a generic sum's argument list,
+  `compiler/x86_64/ast/kinds.inc`), and pass 4 lays a sum out by D6 — the tag
+  at byte 0, the variant's index in declaration order, one byte up to 256
+  variants; then the widest payload, packed; alignment 1; `:nativus`, so a
+  sum on the wire is `EXS-E0321` through §5.2's existing rule
+  (`tests/unit/chk_row_layout_sum.asm`, `tests/unit/chk_ty_typus_sum.asm`,
+  which also pins that a recursive sum is refused as `EXS-E0303`, class C,
+  whichever `typus` form spells the infinite type). An instance of a generic
+  sum is sized from its substituted payloads. `[UNIMPLEMENTED]` as of this
+  amendment: the LOWERING of a constructor and of a sum-typed `discerne`. Still
+  `[OPEN]`, each deferred
+  there by name rather than folded in: nested patterns (refused as
+  `EXS-E0201` at the parse), range patterns, the unreachable-arm rule, `?`'s
+  meaning (the next bullet) and recursive sums beyond their refusal.
+- `[OPEN]` **`?` is used by this document and refused by the compiler.** It
+  is lexed (`PUN_QUESTION`, `compiler/x86_64/lexer/token.inc`), spelled in the
+  CST's punctuation table, admitted by `Suffix` in the grammar above, named in
+  §8.4's sigil table as `E?`, "error propagation", citing §5.1 — and §5.1 uses
+  it twice in its own illustrative block (`abassus.quaere("/")?`,
+  `via.sectio(0..ubi)?`) without a sentence anywhere in this document saying
+  what it does. `docs/design/sum-types.md` D4 settles the meaning as design —
+  the `prosperum` payload, or an early return of the `adversum` from an
+  enclosing function whose error type matches, with error *conversion*
+  deferred — and it is not built: D5 does not need it, since an `eventus` is
+  matched with `discerne`. Until it is, **every `e?` is `EXS-E0305` at the
+  `?`** (`compiler/x86_64/checker/types/types.inc`'s `.try:` arm;
+  `tests/unit/chk_ty_eventus_arity.asm` row 7), which is D4's own interim
+  rule. That arm used to require the builtin `eventus` kind and answer its
+  first type argument — an unconditional unwrap with no error branch, which
+  the lowering then refused by name, so a program that type-checked trapped
+  the compiler; with `eventus` the prelude's sum no operand had that kind
+  any more, and the refusal is now explicit rather than accidental. An
+  earlier version of this bullet said `?` "means nothing" and that the
+  checker's behaviour was "unmeasured", inferring the second from the corpus
+  containing no `?`. It was wrong on both counts and on §5.1; recorded here
+  per the evidence note rather than overwritten.
 - `[OPEN]` Brand syntax `positio<'t>` (§5.1): `'` is not a §8.4 token.
 - `[OPEN]` Generic implementation heads: `interfacies Legibilis<T> in
   acies<T, N>` leaves `N` unbound.
@@ -2732,24 +2733,33 @@ A dependency that gains `rete` in a new version is a one-line diff in a checked-
 - Human formatting requires `sermo`, always.
 - Paths are an abstract type with `hostPlatform`-dependent semantics, not strings.
 - Time is a capability (`horologium`); time zones are data.
-- **`eventus`'s spellings below are one type parameter short.**
-  `docs/design/sum-types.md` D5 declares it `eventus<T, E>` and deliberately
-  refuses a defaulted second parameter, because defaulted type parameters do
-  not exist in §7 and inventing them as a side effect of declaring a sum type
-  is a second feature the first one does not need. So `eventus<mensura>` below,
-  §4.6's `eventus<u8>`, and §5.1's bare `eventus` all become
-  `eventus<…, erratum>` when the type is inhabited. They are `[OPEN]` already,
-  which is why this is a respelling and not a broken promise — recorded here so
-  that no fixture is written against the short form. The spelling is not what
-  is missing: the checker interns `eventus<T>` today
-  (`compiler/x86_64/checker/types/sig.inc`) and, since 2026-09-27, counts
-  generic arguments at both ends (`__chk_ty_genarity`,
-  `tests/unit/chk_ty_genarity.asm`), so the two-parameter spelling and the
-  bare one are `EXS-E0304` until D5 lands — this paragraph said the opposite
-  for a day, while the count was one-sided. What is missing is a variant, a
-  constructor, a pattern and a layout; the type is uninhabited, not
-  unspellable.
-- **I/O reports failure as `eventus`; a count is never silently short.** A closed descriptor is discovered at the write, which a bare `mensura` cannot report, so `Scriptor.scribe` returns `eventus<mensura>` (`docs/design/runtime.md`, finding 10); `examples/imprime.exsc` and §14 entry 12 write `-> mensura` and are `[OPEN]` until `eventus` is inhabited (the bullet above). `Lector.lege_octeto` (§4.6) is provisional the same way: its `-> u16` carries 256 for end of input and for an error alike (`tests/unit/prelude_lege_octeto.asm` pins both), and becomes `-> eventus<u8>` when it is.
+- **`eventus<T, E>` is the prelude's sum, and `erratum` its error.**
+  `docs/design/sum-types.md` D5: `typus eventus<T, E> = casus prosperum(T),
+  casus adversum(E);` and `structura erratum { numerus: u16 }`, the error
+  number being the syscall's own return and nothing ambient (§9.3). Both are
+  ordinary declarations every module can name without declaring
+  (`compiler/x86_64/prelude/eventus.inc`, which builds them as the tree of
+  that source); a module's own declaration of any of the four names shadows
+  the prelude's rather than colliding with it (§12). D5 deliberately refuses
+  a defaulted second parameter — defaulted type parameters do not exist in §7,
+  and inventing them as a side effect of declaring a sum type is a second
+  feature the first one does not need — so `eventus` is always written with
+  two arguments: `eventus<mensura>` and a bare `eventus` are `EXS-E0304`
+  (`tests/unit/chk_ty_eventus_arity.asm`). This bullet said until 2026-10-02
+  that the spellings below were one parameter short and the type uninhabited;
+  it is inhabited — constructed and matched exhaustively by the checker and
+  laid out by pass 4; its lowering is `[UNIMPLEMENTED]` (§8.6).
+- **I/O reports failure as `eventus`; a count is never silently short.** A
+  closed descriptor is discovered at the write, which a bare `mensura` cannot
+  report, so `Scriptor.scribe` returns `eventus<mensura, erratum>`
+  (`docs/design/runtime.md`, finding 10). `[OPEN]` **as built**: the prelude's
+  I/O still returns the count, and `examples/imprime.exsc` and §14 entry 12
+  write `-> mensura`; `Lector.lege_octeto` (§4.6) still returns `-> u16`, 256
+  for end of input and for an error alike (`tests/unit/prelude_lege_octeto.asm`
+  pins both), and becomes `-> eventus<u8, erratum>`. The type is no longer
+  what is missing: moving the prelude rows, the blob's routines and every
+  caller in the tree to it is one whole-tree migration, D5's next step, not
+  yet made.
 - Grapheme segmentation ships in the core, not a third-party package. This was Rust's mistake.
 - **The Unicode data version is a content-addressed dependency** of every `ego` transitively using text. `plica_unicode` is stable only against a pinned table.
 
@@ -2921,12 +2931,13 @@ written.
 This amendment lands **before** the checker work, not after it, because
 CLAUDE.md forbids inventing a code and §13 is the only source — the same
 ordering ADR 0010's profile codes needed and did not get for some time. The
-design it serves is `docs/design/sum-types.md`, of which D1, D2's grammar and
-D6 have since landed and D3 has not: the code exists here so that D3 can be
-implemented, and until it is implemented nothing emits it. Registered codes
-with no raise site anywhere in the compiler, counted on 2026-09-27:
-`EXS-E0105`, `EXS-E0332`, `EXS-E0351`, `EXS-E0701` and the `08xx` profile
-codes. This sentence used to put `EXS-E0601`–`EXS-E0603` in that state; they
+design it serves is `docs/design/sum-types.md`, whose D3 landed on
+2026-10-02: `EXS-E0351` is raised by `compiler/x86_64/checker/types/sum.inc`
+and pinned by `tests/unit/chk_ty_exhaustive.asm`, with no new code beside it
+(D2's typing reused the five above, as this paragraph said it would).
+Registered codes with no raise site anywhere in the compiler, counted on
+2026-09-27 and re-counted for `EXS-E0351` only: `EXS-E0105`, `EXS-E0332`,
+`EXS-E0701` and the `08xx` profile codes. This sentence used to put `EXS-E0601`–`EXS-E0603` in that state; they
 are not — the lexicon pass emits all three and `EXS-E0610`
 (`compiler/x86_64/checker/lexicon/lexicon.inc`, six fixtures) behind a call
 the checker does not make while its morpheme table is §3.3's illustrative

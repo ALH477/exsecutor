@@ -172,8 +172,10 @@ AST_D_CAPATOM	= 18	; a capability ATOM of spec §4.6 -- the one declaration
 			; below, and ast/build.inc's `ast_cap_push`.
 AST_D_VARIANT	= 19	; one variant of a sum `typus` (sum-types.md D1):
 			; `parent` is the `typus` declaration, `node` its
-			; `Variant`. Stage 2 fills `ty` (a constructor's `fn`
-			; type, or the sum itself for a payload-less variant);
+			; `Variant`. Stage 2 fills `ty` with the sum itself,
+			; payload or none (a constructor is typed at its USE,
+			; checker/types/sum.inc -- a generic sum's instance
+			; comes from there, never from this declaration);
 			; pass 4 gives it a layout entry holding its payload's
 			; byte offset (D6).
 AST_DECL_MAX	= 19
@@ -357,7 +359,27 @@ AST_TY_SUM	= 25	; `a` = the sum `typus` declaration: nominal, like
 			; switch must fail there loudly rather than be sized as
 			; something it is not -- node.inc's argument for
 			; `borrow`'s sign byte, run the other way.
-AST_TY_MAX	= 25
+			; `b` = 0 for a sum with no generic parameters, and
+			; for a GENERIC sum the `AST_TY_ARGS` list of its type
+			; arguments: `eventus<mensura, erratum>` and
+			; `eventus<u8, erratum>` are two ids because their `b`
+			; differs (sum-types.md D5; ast/types.inc's
+			; `ast_type_sum`). The declaration's own type -- the
+			; one its variants and its payload nodes are typed in
+			; -- keeps `b` = 0.
+AST_TY_ARGS	= 26	; ONE CELL of a type-argument list: `a` = the head
+			; type id, `b` = the rest (another `args` id) or 0.
+			; Checker-internal, like `red`: no type expression
+			; spells it. A CONS LIST AND NOT AN `extra` RUN on
+			; purpose -- `ast_type_intern` keys on all sixteen
+			; bytes, and an `extra` offset differs for two
+			; identical lists (types.inc's `__chk_ty_fneqnorow`
+			; records what that costs `fn` types), while a list of
+			; interned cells is interned by content all the way
+			; down, so equal argument lists are one id and a
+			; generic sum's instances compare by id like every
+			; other type.
+AST_TY_MAX	= 26
 
 ; `AstType.sign`, `.order`, `.place`. Byte order and placement are FIELDS OF
 ; THE TYPE NODE and part of the interning key: that is what makes spec §5.2's
@@ -646,6 +668,7 @@ ast_tkind_names:
 	db 4,'unit'
 	db 3,'cap'
 	db 3,'sum'
+	db 4,'args'
 AST_TKIND_NAMES_LEN = $ - ast_tkind_names
 
 ; ---- capability atoms ------------------------------------------------------

@@ -569,7 +569,8 @@ proc __chk_ty_path_type, chkt_wh, chkt_nh
 	jnz	.pre
 	mov	rdi, rbx
 	mov	rsi, r14
-	call	__chk_ty_decl_type
+	mov	rdx, r13
+	call	__chk_ty_decl_inst
 	jmp	.out
   .pre:
 	mov	rdi, rbx
@@ -1396,6 +1397,148 @@ proc __chk_ty_decl_type, chkt_wc, chkt_dc
 	return
 endp
 
+; __chk_ty_ngen(w, d) -> rax = how many generic parameters `typus`
+; declaration `d` declares (`Typus.c`'s `Generics` count), 0 for none.
+proc __chk_ty_ngen, chkt_wNG, chkt_dNG
+	uses	rbx
+	locals
+	endl
+	mov	rbx, [chkt_wNG]
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_dNG]
+	call	ast_decl_at
+	mov	esi, [rax + AstDecl.node]
+	test	esi, esi
+	jz	.none
+	mov	rdi, rbx
+	call	__chk_ty_node
+	mov	esi, [rax + AstNode.c]
+	test	esi, esi
+	jz	.none
+	mov	rdi, rbx
+	call	__chk_ty_node
+	mov	eax, [rax + AstNode.b]
+	return
+  .none:
+	xor	eax, eax
+	return
+endp
+
+; __chk_ty_decl_inst(w, d, seg) -> rax = the type `Seg` node `seg`, which
+; names declaration `d`, denotes in TYPE position -- `__chk_ty_decl_type`'s
+; answer, except that a SUM `typus` is APPLIED to the segment's generic
+; arguments (docs/design/sum-types.md D5: `eventus<mensura, erratum>`).
+;
+; THE COUNT IS CHECKED AT BOTH ENDS, by `__chk_ty_genarity`, for every sum:
+; a generic sum written with too few or too many arguments, or with none, and
+; a non-generic sum written with any, is `EXS-E0304` once -- at the `<...>`
+; when it is written, at the segment when it is not. That is the rule the
+; primitive spellings already follow (`eventus<mensura>` and a bare `eventus`
+; were `EXS-E0304` against the builtin and are against the prelude `typus`
+; too). A generic STRUCT's or alias's arguments are still not counted here --
+; nothing instantiates either, and that is a separate change (`__chk_ty_genarity`'s
+; header).
+;
+; The arguments are typed LEFT TO RIGHT, each once (a type node typed twice
+; would raise its own diagnostic twice -- `chk_ty_of_node` does not cache), and
+; consed RIGHT TO LEFT into the `args` list `ast_type_sum` keys the instance
+; on.
+proc __chk_ty_decl_inst, chkt_wDI, chkt_dDI, chkt_sDI
+	uses	rbx, r12, r13, r14
+	locals
+		slot chkt_tDI, dq
+		slot chkt_gDI, dq
+		slot chkt_nDI, dq
+		slot chkt_oDI, dq
+	endl
+	mov	rbx, [chkt_wDI]
+	mov	rdi, rbx
+	mov	rsi, [chkt_dDI]
+	call	__chk_ty_decl_type
+	mov	[chkt_tDI], rax
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_SUM
+	jne	.plain
+	mov	rdi, rbx
+	mov	rsi, [chkt_tDI]
+	mov	rdx, AstType.a
+	call	__chk_ty_field
+	cmp	rax, [chkt_dDI]
+	jne	.plain				; an ALIAS of a sum: transparent,
+						; its own arguments not counted
+	mov	rdi, rbx
+	mov	rsi, [chkt_dDI]
+	call	__chk_ty_ngen
+	mov	r12, rax			; the parameters declared
+	mov	rdi, rbx
+	mov	rsi, [chkt_sDI]
+	call	__chk_ty_node
+	mov	ecx, [rax + AstNode.b]		; `Seg.b`: `GenericArgs` or 0
+	mov	[chkt_gDI], rcx
+	mov	rdi, rbx
+	mov	rsi, [chkt_sDI]
+	mov	rdx, [chkt_gDI]
+	mov	rcx, r12
+	call	__chk_ty_genarity
+	mov	[chkt_nDI], rax
+	test	r12, r12
+	jz	.plain
+	cmp	rax, r12
+	jne	.bad
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	call	ast_list_mark
+	mov	r13, rax
+	xor	r14, r14
+  .arg:
+	cmp	r14, r12
+	jae	.args_done
+	mov	rdi, rbx
+	mov	rsi, [chkt_gDI]
+	mov	rdx, r14
+	call	__chk_ty_genarg
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	inc	r14
+	jmp	.arg
+  .args_done:
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, r13
+	call	ast_list_emit
+	mov	[chkt_oDI], rax
+	xor	r13, r13			; the list built so far
+	mov	r14, r12
+  .cons:
+	test	r14, r14
+	jz	.mk
+	dec	r14
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_oDI]
+	add	rsi, r14
+	call	ast_extra_at
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	mov	rdx, r13
+	call	ast_type_args
+	mov	r13, rax
+	jmp	.cons
+  .mk:
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_dDI]
+	mov	rdx, r13
+	call	ast_type_sum
+	return
+  .bad:
+	mov	rdi, rbx
+	call	__chk_ty_err
+	return
+  .plain:
+	mov	rax, [chkt_tDI]
+	return
+endp
+
 ; __chk_ty_at_decl(w, d, dg) -- move a buffered diagnostic's caret onto
 ; declaration `d`'s own span. A declaring node's span is the whole construct;
 ; the declaration's is the name-bearing part.
@@ -1487,9 +1630,12 @@ endp
 ; nodus(arbor)`) comes back through `__chk_ty_decl_type`'s `.alias` arm while
 ; this declaration is BUSY and lands on the same `.cycle`, which is how D1's
 ; "refuse a recursive sum by name" is met with a code that already exists:
-; an infinite type is class C whichever `typus` form spells it. Variant
-; declarations keep `Decl.ty` = 0 for now -- a constructor's type is D2's,
-; not yet written -- and pass 4 does not need it.
+; an infinite type is class C whichever `typus` form spells it. Every
+; variant declaration's `Decl.ty` is this same sum type (D2): a variant is a
+; name for a value of its sum, and `__chk_ty_sumbody` writes it. For a
+; GENERIC sum that is the declaration's own type, `b` = 0, whose payloads are
+; `AST_TY_PARAM`s; an instance (`eventus<mensura, erratum>`) is built at the
+; USE by `__chk_ty_decl_inst` and is never anybody's `Decl.ty`.
 proc __chk_ty_typus, chkt_wx, chkt_dx
 	uses	rbx, r12, r13
 	locals
@@ -1537,6 +1683,7 @@ proc __chk_ty_typus, chkt_wx, chkt_dx
 	mov	[chkt_sumty], rax
 	mov	rdi, rbx
 	mov	rsi, r13
+	mov	rdx, rax
 	call	__chk_ty_sumbody
 	mov	rax, [chkt_sumty]
 	jmp	.record
@@ -1588,13 +1735,14 @@ proc __chk_ty_typus, chkt_wx, chkt_dx
 	return
 endp
 
-; __chk_ty_sumbody(w, n) -- intern every payload type of every variant of the
-; `SumBody` at `n` (sum-types.md D1), in source order. `chk_ty_of_node`
+; __chk_ty_sumbody(w, n, t) -- intern every payload type of every variant of the
+; `SumBody` at `n` (sum-types.md D1), in source order, and give every variant
+; declaration the sum's type `t` (D2). `chk_ty_of_node`
 ; annotates the type nodes, which is what `__chk_lay_sum` reads; a payload
 ; that does not resolve is that routine's diagnostic (`EXS-E0301`) and comes
 ; back as the error type, which pass 4 sizes as 0 and says nothing about --
 ; AST H3, the parser and the resolver have spoken.
-proc __chk_ty_sumbody, chkt_wV, chkt_nV
+proc __chk_ty_sumbody, chkt_wV, chkt_nV, chkt_tV2
 	uses	rbx, r12
 	locals
 		slot chkt_vi, dq
@@ -1623,6 +1771,12 @@ proc __chk_ty_sumbody, chkt_wV, chkt_nV
 	mov	[chkt_pi], rcx
 	mov	ecx, [rax + AstNode.c]
 	mov	[chkt_pn], rcx
+	mov	esi, [rax + AstNode.d]		; the `AST_D_VARIANT` declaration
+	test	esi, esi
+	jz	.payload
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rdx, [chkt_tV2]
+	call	ast_decl_ty
   .payload:
 	cmp	qword [chkt_pn], 0
 	jle	.variant_next

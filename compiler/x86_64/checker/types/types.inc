@@ -267,9 +267,22 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 
   ; ---- names ---------------------------------------------------------------
   .path:
+	; a bare variant -- `ordinata` -- is a CONSTRUCTOR (sum.inc), typed
+	; with no expectation here; `__chk_ty_want` is where one arrives
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_isctor
+	test	rax, rax
+	jnz	.ctor
 	mov	rdi, rbx
 	mov	rsi, r12
 	call	__chk_ty_path_expr
+	jmp	.out
+  .ctor:
+	mov	rdi, rbx
+	mov	rsi, r12
+	xor	rdx, rdx
+	call	__chk_ty_ctor
 	jmp	.out
 
   .member:
@@ -279,6 +292,11 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	jmp	.out
 
   .call:
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_isctor
+	test	rax, rax
+	jnz	.ctor
 	mov	rdi, rbx
 	mov	rsi, r12
 	call	__chk_ty_call
@@ -461,7 +479,19 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	jmp	.out
 
   .try:
-	; `e?` -- spec §6: the operand must be an `eventus`
+	; `e?` -- REFUSED, on every operand, as `EXS-E0305` at the `?`.
+	; docs/design/sum-types.md D4: "Until D4 is implemented, the checker's
+	; present arm should refuse `?` rather than unwrap it." This arm used to
+	; require the builtin `eventus` kind and answer its first argument --
+	; an unconditional unwrap with no error branch, which the lowering then
+	; refused by name (`rassert`), so a program that type-checked trapped
+	; the compiler. `eventus` is now the prelude's sum (D5), so no operand
+	; has that kind any more; and D4's meaning -- the `prosperum` payload,
+	; or an early `redde` of the `adversum` from a function returning the
+	; same `E` -- is not built. `EXS-E0305` is the code this arm already
+	; raised for a non-`eventus` operand (D4: "that half is settled by the
+	; tree"); no code is spent on a temporary state. The operand is still
+	; typed, so nothing under it goes untyped.
 	mov	rdi, rbx
 	mov	rsi, [chkt_ap]
 	call	__chk_ty_expr
@@ -469,14 +499,8 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	mov	rsi, rax
 	mov	rdx, r12
 	call	__chk_ty_settled
-	mov	r13, rax
-	mov	rdi, rbx
-	mov	rsi, r13
-	call	__chk_ty_kindof
-	cmp	rax, AST_TY_EVENTUS
-	je	.try_ok
-	cmp	rax, AST_TY_ERROR
-	je	.try_err
+	cmp	rax, 1
+	je	.try_err			; the error type: already said
 	mov	rdi, rbx
 	mov	rsi, 305
 	mov	rdx, r12
@@ -484,12 +508,6 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
   .try_err:
 	mov	rdi, rbx
 	call	__chk_ty_err
-	jmp	.out
-  .try_ok:
-	mov	rdi, rbx
-	mov	rsi, r13
-	mov	rdx, AstType.a
-	call	__chk_ty_field
 	jmp	.out
 
   .lambda:
@@ -1026,7 +1044,7 @@ proc __chk_ty_want, chkt_wW, chkt_nW, chkt_tW
 	mov	rsi, r12
 	call	__chk_ty_arraykind
 	test	eax, eax
-	jz	.plain
+	jz	.ctorq
 	mov	rdi, rbx
 	mov	rsi, r12
 	call	__chk_ty_ty
@@ -1036,6 +1054,31 @@ proc __chk_ty_want, chkt_wW, chkt_nW, chkt_tW
 	mov	rsi, r12
 	mov	rdx, r13
 	call	__chk_ty_arraylit
+	mov	[chkt_yW], rax
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, rax
+	call	__chk_ty_setty
+	mov	rax, [chkt_yW]
+	jmp	.have
+  .ctorq:
+	; A CONSTRUCTOR TAKES THE EXPECTATION TOO: a generic sum's type
+	; arguments come from it when the constructor does not write them
+	; (sum.inc's header, D5).
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_isctor
+	test	rax, rax
+	jz	.plain
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_ty
+	test	rax, rax
+	jnz	.plain
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, r13
+	call	__chk_ty_ctor
 	mov	[chkt_yW], rax
 	mov	rdi, rbx
 	mov	rsi, r12
@@ -2904,6 +2947,7 @@ endp
 
 include 'member.inc'
 include 'stmt.inc'
+include 'sum.inc'
 
 ; =============================================================================
 ; the pass

@@ -60,7 +60,10 @@
 ;	textus octeti scalares grapha        four distinct kinds (spec §5.1)
 ;	unit                                 `unit`
 ;	refero<T> refero_communis<T>         `ref` / `refc` (spec §6.4)
-;	eventus<T>                           `eventus`
+;	eventus<T>                           `eventus` -- UNREACHABLE from
+;	                                     source: the prelude's `typus
+;	                                     eventus<T, E>` is a declaration and
+;	                                     is found first (sum-types.md D5)
 ;	acies<T, N>                          `acies`, lane count in the type (spec §5.4)
 ;
 ; THE SIGNED WIDTHS MIRROR §5.2'S UNSIGNED ONES, and that is a decision, not a
@@ -1070,17 +1073,16 @@ proc chk_ty_prelude_type, chkt_wp, chkt_kp
 
   .fn_scribe:
 	; functio scribe(s: Scriptor, t: textus) -> mensura
-	; [OPEN] spec §11 as amended says this returns `eventus<mensura>`;
-	; prelude/interface.inc row 5 is marked EXS_IFACE_F_APERTUM for exactly
-	; that reason and returns the COUNT until `eventus` is INHABITED
-	; (docs/design/sum-types.md section 2). NOT "until `eventus` has syntax":
-	; `eventus<mensura>` is a spelling this pass interns today -- sig.inc's
-	; `.eventus:` arm, `AST_TY_EVENTUS`, and since the generic-arity commit it
-	; is the ONLY admitted spelling. What is missing is a variant, a
-	; constructor, destructuring and a layout, so the type has no value; a
-	; result type nothing can produce would be worse than a count. This table
-	; follows the row, not the amendment, so that the two cannot disagree
-	; silently.
+	; [OPEN] spec §11 as amended says this returns `eventus<mensura,
+	; erratum>`; prelude/interface.inc row 5 is marked EXS_IFACE_F_APERTUM
+	; for exactly that reason and returns the COUNT. `eventus` IS INHABITED
+	; now -- the prelude's `typus eventus<T, E>` with `prosperum`/`adversum`,
+	; constructed, matched and lowered (docs/design/sum-types.md D5) -- so
+	; what remains is the MIGRATION: this row, row 5's symbol and the blob's
+	; `exsrt_scriptor_scribe` returning the sum, and every caller in the tree
+	; matching it, in one whole-tree change. Not done here; D5 records it as
+	; the next step. This table follows the row, not the amendment, so that
+	; the two cannot disagree silently.
 	mov	rdi, [rbx + ChkTyWork.wtre]
 	call	ast_list_mark
 	mov	[chkt_np], rax
