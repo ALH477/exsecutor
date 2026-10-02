@@ -56,8 +56,12 @@
 ; every row item bound its atom in the function's root frame, including one
 ; written inside a parameter's function type. It is here because row 4 could
 ; not be measured without it (EXS-E0422 there) and because ADR 0017's R1 --
-; a function holding only a `Directorium` has no expression of type
-; `archivum` -- is false while it stands.
+; the raw `archivum` atom cannot be obtained from a `Directorium` -- was false
+; while it stood. (R1 was later found false twice more: `sub`'s untyped
+; provider, pinned in chk_directorium.asm rows 14-16, and a lambda's invisible
+; draw, rows 11-18 below. This header used to say a function holding only a
+; `Directorium` "has no expression of type `archivum`", which is a
+; CONSEQUENCE of those three rules and not a thing any one of them gives.)
 ;
 ; NON-VACUITY, run when this fixture was written (each mutant in a scratch
 ; copy of the tree, each failing exactly where predicted):

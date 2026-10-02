@@ -23,10 +23,14 @@
 ; checker fixture -- ADR 0017 stage 2's surface, and the three properties the
 ; design rests its attenuation on (docs/design/archivum-beneath.md D6):
 ;
-;   R1  a `sicut` row item never binds the atom's carrier, so inside a
-;       function whose row is only `poscit sicut d`, `archivum` in expression
-;       position is EXS-E0421 -- and nothing else in the signature (a
-;       parameter's TYPE row included) provides it;
+;   R1  the raw atom cannot be obtained from a `Directorium`: a `sicut` row
+;       item never binds the atom's carrier, so inside a function whose row
+;       is only `poscit sicut d`, `archivum` in expression position is
+;       EXS-E0421 -- and nothing else in the signature (a parameter's TYPE
+;       row included) provides it; and `sub P = e` requires `e` to have P's
+;       own capability type, so `sub archivum = d;` is EXS-E0303 (rows 14-16);
+;       and a lambda's draw is read at its live row, which is
+;       chk_row_sicut_forward.asm rows 11-18;
 ;   R2  no prelude routine draws `archivum` implicitly: `ad_radicem` takes it
 ;       as a value, and every other row is empty;
 ;   R3  `Directorium`, `Lectorium` and `Scriptorium` have no field rows.

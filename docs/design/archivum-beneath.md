@@ -589,21 +589,51 @@ A library function takes one the way `imprime_gutenbergio` takes a
 publica functio salva(d: Directorium, nomen: textus, t: textus) -> … poscit sicut d { … }
 ```
 
-By §4.2's table, `sicut d` is `Directorium`'s mark, `{archivum}`, and the
-audit (§10.3) sees `archivum` in the function's row, as it should. **What
-makes attenuation sound is not the row**, because a row says *which atom*,
-never *which tree*. It is three properties of the checker as designed
-(`docs/design/checker.md` sections 2.1 and 2.8), which this design depends
-on and which must be pinned by tests before it is built:
+**What bounds such a function is the set of VALUES it holds, not its row,
+and not the `sicut`.** Every prelude row on a `Directorium` is empty
+(section 10: `infra`, `lege_ex` and `crea` draw no atom), so a function
+that merely USES one needs no `poscit` at all and its own row shows nothing
+for `archivum`. `poscit sicut d` is needed only to FORWARD the handle to a
+callee that is itself declared `sicut`: by §4.2's table `sicut d`
+substitutes `Directorium`'s mark, `{archivum}`, at that call, and the
+caller's `sicut` covers it. (An earlier version of this section said the
+function's row "reads `{archivum}`" and that it "can reach that tree and
+nothing else" because of it. Both were wrong: the row is empty or `sicut d`,
+and it bounds nothing.) A row says *which atom*, never *which tree*. What
+keeps the function from reaching any other tree is that it cannot obtain the
+raw atom, and that rests on three properties of the checker
+(`docs/design/checker.md` sections 2.1 and 2.8), pinned by tests:
 
-- **R1. A `sicut` row item never binds the atom's carrier.** Only a
-  `poscit P` *atom* item sets `cap[P]` in the function's root frame
-  (checker.md 2.1, "Bind"). So inside `salva`, `archivum` in expression
-  position is `EXS-E0421`, and the body cannot call
-  `Directorium.ad_radicem(archivum, "/")`.
+- **R1. The raw atom cannot be obtained from a `Directorium`.** Three
+  rules, each of which was needed, and the first two of which were found
+  missing by review:
+  1. A `sicut` row item never binds the atom's carrier. Only a `poscit P`
+     *atom* item sets `cap[P]` in the function's root frame (checker.md
+     2.1, "Bind"). So inside `salva`, `archivum` in expression position is
+     `EXS-E0421`, and the body cannot call
+     `Directorium.ad_radicem(archivum, "/")`.
+  2. **`sub P = e` requires `e` to have the atom's own capability type**
+     (`EXS-E0303`; spec §4.5). `sub` is the one statement that mints an
+     atom, and it used to accept a provider of any type that was not
+     another atom's: `sub archivum = d;` with `d: Directorium` bound the raw
+     atom, and the program that did so (built and run) read a file outside
+     its root and exited 42. Rule 1 does not reach it, because the `sub` IS
+     the provider. `alloc` is the one exemption (spec §4.5 types its
+     provider only as "an arena", `[OPEN]`).
+  3. **A lambda's draw is read at its live row** when the lambda is called
+     or forwarded (`__chk_row_lamof`). A lambda's row is inferred, and the
+     call used to read the row of its TYPE, `{}`, so a closure over
+     `archivum` called inside `salva` contributed nothing and was accepted.
+     It is `EXS-E0421` at the call now. `[OPEN]`, not claimed: a lambda that
+     reaches a parameter whose function type has an empty row, is stored in
+     a field, is returned, or sits in a `mutabilis` local is still read at
+     its type's row. No such shape produces an object (the lowering refuses
+     every lambda), and an atom with no carrier is `EXS-E0421` in the
+     lowering rather than a trap.
 - **R2. `ad_radicem` takes the atom as an explicit value.** No prelude
   routine draws `archivum` implicitly. With R1, a function that holds only a
-  `Directorium` has no expression of type `archivum`.
+  `Directorium` has no expression of type `archivum` -- *as a consequence
+  of R1's three rules*, not by itself.
 - **R3. The fields have no rows** (D1).
 
 A library that writes `poscit archivum` is asking for the whole atom, and
@@ -937,12 +967,16 @@ behind the first: `exlege_octeto` and `inscribe`/`inscribe_octeto`, whose
 `ex-` and `in-` follow spec 3.5's laws (the first parameter is the source,
 the destination). All spellings provisional under §3.9.
 
-**R1-R3, as tests** (`tests/unit/chk_directorium.asm`, 13 rows, exact
+**R1-R3, as tests** (`tests/unit/chk_directorium.asm`, 16 rows, exact
 codes): `archivum` in a function whose row is only `sicut d` is EXS-E0421
-(R1); every value row is empty and `ad_radicem` without its atom is
+(R1 rule 1); `sub archivum = d;` over a `Directorium` and `sub rete = <u32>`
+are EXS-E0303 (R1 rule 2, rows 14-15, with the `alloc` exemption pinned by
+row 16); every value row is empty and `ad_radicem` without its atom is
 {EXS-E0303, EXS-E0304} (R2); `d.a`, `d.descriptor`, `r.a`, `w.descriptor`
-are EXS-E0305 (R3). Each property was broken on purpose in a scratch copy
-and the fixture failed at the row predicted (the commit has the exits).
+are EXS-E0305 (R3). The closure shapes of R1 rule 3 are rows 11-18 of
+`tests/unit/chk_row_sicut_forward.asm`. Each property was broken on purpose
+in a scratch copy and the fixture failed at the row predicted (the commits
+have the exits).
 
 **Finding 1 -- R1 was false, through a parameter's TYPE.** A row written
 inside a parameter's function type (`g: functio(u8) -> u8 poscit
@@ -961,12 +995,38 @@ or the row of a call through such a parameter -- and never a callee's
 declared atom, which is a carrier the caller must hold. So a `Directorium`
 forwards through any number of helpers, a child derived with `infra` can be
 handed on, and §4.2's closure-capture violation is still refused
-(`tests/unit/chk_row_sicut_forward.asm`, 10 rows; spec §4.2 states the
+(`tests/unit/chk_row_sicut_forward.asm`, 19 rows now; spec §4.2 states the
 rule).
 
 **Finding 3 -- D1 said `d.a` is EXS-E0301; it is EXS-E0305** (corrected in
 D1 and in interface.inc). No code was added: `codes.inc` and §13 are
 untouched.
+
+**Finding 4 -- R1 was false twice more, and the "reach that tree and nothing
+else" sentence was wrong.** Review of stage 2 found one runnable escape, one
+checker hole the lowering happened to mask, and two defects in the tests and
+this document.
+
+- *`sub` did not type its provider.* `sub archivum = d;` over a
+  `Directorium` minted the raw atom (above, R1 rule 2). Built and run
+  before the fix: `ad_radicem(archivum, "/tmp/exs-xp")` from a function
+  holding only a child of `/tmp/exs-xp/root` opened a file outside it and
+  the program exited 42. After: EXS-E0303 at the `sub`.
+- *A lambda's draw was invisible to a call.* Checker-clean, then a SIGILL in
+  the lowering. The SIGILL turned out to be the lowering's blanket refusal
+  of every lambda (`lwr_expr`), not the atom arm -- a lambda with no
+  capability in it traps there too -- so no escape was reachable at run
+  time; but the checker was accepting a program its own rule says to
+  refuse. Fixed in the checker (R1 rule 3); the lowering's atom arm and its
+  staged-carrier site now answer EXS-E0421 instead of trapping, pinned by
+  `tests/unit/lwr_unprovided.asm`, with the driver half `[UNTESTED]`
+  because nothing reaches it.
+- *The ineligible-argument exclusion in `__chk_row_sicutcov` was not
+  pinned:* deleting it left both fixtures green. Row 19 of
+  `chk_row_sicut_forward.asm` fails without it.
+- *This document and the spec said the function's row "reads
+  `{archivum}`" and that `sicut d` bounds it.* Neither is so; corrected in
+  D6 above and in spec §4.6.
 
 **D6's lowering question: no hidden carrier.** A function declared `poscit
 sicut d` over a `Directorium` lowers to a signature with the `Directorium`

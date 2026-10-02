@@ -114,10 +114,14 @@ to the spec only when this ADR is Accepted, with the reason in the commit
 > RESOLVE_NO_XDEV`. So `..` past the root, an absolute path, a symlink out
 > of it, a magic link and a mount crossing are refused by the kernel and not
 > by the program. `d.infra(via)` derives a `Directorium` beneath `d`, and
-> nothing derives one above it. A function that receives a `Directorium` and
-> declares `poscit sicut d` can reach that tree and nothing else. Its row
-> reads `{archivum}`, because a row names an atom and never a tree, and the
-> value is what bounds it. What `RESOLVE_BENEATH` bounds is *names*: a hard
+> nothing derives one above it. A function that receives a `Directorium`
+> can reach that tree and nothing else, and the *value* is what bounds it,
+> not a row: the prelude's rows on a `Directorium` are empty, so a function
+> that merely uses one needs no `poscit`, and `poscit sicut d` is needed only
+> to forward the handle to a `sicut`-declared callee. The function cannot
+> obtain the raw atom: a `sicut` item binds no carrier, and `sub P = e`
+> requires `e` to have P's own capability type (EXS-E0303). What
+> `RESOLVE_BENEATH` bounds is *names*: a hard
 > link beneath the root to a file outside it is reachable (measured,
 > `prototypes/beneath/`). `docs/design/archivum-beneath.md` is the design,
 > and its section 2 is the measurement.
@@ -150,8 +154,10 @@ on, because the kernel refuses the same paths at run time.
 
 `EXS-E0425` is unused in the tree today (the design records the grep).
 Everything else needs no new code. `d.a` and `d.descriptor` are
-`EXS-E0301`. Writing `archivum` in a function whose row is only
-`sicut d` is `EXS-E0421`.
+`EXS-E0301` (as built: `EXS-E0305`). Writing `archivum` in a function whose
+row is only `sicut d` is `EXS-E0421`, and `sub archivum = d;` is
+`EXS-E0303` (added after review: the proposal above did not type `sub`'s
+provider, and a `Directorium` could mint the raw atom through it).
 
 **`docs/design/runtime.md` section 2.6 and
 `compiler/x86_64/prelude/README.md`'s per-atom tables**, when the prelude
@@ -199,9 +205,14 @@ routine lands, have one row for `archivum`: `openat2(437)`, `close(3)`,
 
 ## Open
 
-- The checker properties R1–R3 the design depends on, as tests. Whether the
-  lowering passes a hidden full-atom carrier beside a `Directorium` (design
-  D6).
+- ~~The checker properties R1–R3 the design depends on, as tests. Whether
+  the lowering passes a hidden full-atom carrier beside a `Directorium`~~ --
+  closed by stage 2, which also found R1 false twice (`sub`'s provider was
+  untyped; a lambda's draw was invisible to a call). What stays `[OPEN]`: the
+  closure check follows a lambda written in place or held in an immutable
+  local, not one that reaches a parameter with an empty row, a field, a
+  return, or a `mutabilis` local, none of which reaches an object while the
+  lowering refuses lambdas (design section 10, finding 4).
 - The reader and writer types' spelling (D4). `Directorium`, `ad_radicem`,
   `infra`, `lege_ex` and `crea` are provisional under §3.9.
 - Recording a literal root in the ego as `archivum[/path]` (§10.1).

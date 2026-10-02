@@ -2599,8 +2599,8 @@ endp
 ; 2026-10-02 every item bound, so `f(s: Scriptor, g: functio(u8) -> u8
 ; poscit {ambitus}) -> u8 poscit sicut s` could name `ambitus` in its body
 ; and was accepted -- measured with `exsc aedifica`, and the hole
-; docs/design/archivum-beneath.md D6's R1 (a function holding only a
-; `Directorium` has no expression of type `archivum`) depends on being shut.
+; docs/design/archivum-beneath.md D6's R1 (the raw `archivum` atom cannot be
+; obtained from a `Directorium`) depends on being shut.
 ; A type-position item is still RESOLVED (`d` set), because pass 3 interns
 ; that row; it is just not a provider. `tests/unit/chk_directorium.asm`
 ; pins it.
