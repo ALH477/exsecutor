@@ -1,0 +1,6 @@
+# NAME<TAB>SED-EXPRESSION, applied to examples/arca/arca.exsc (spec §14, the sixth shape).
+# Each is a wrong arca that the DIFFERENTIAL against GNU tar must catch by itself:
+# disagreements > 0 in the same driver run, not merely a failed corpus verdict.
+devices and links admitted	s/si t ne 0x30 { redde 18; }/si t eq 0x99 { redde 18; }/
+numeric fields unchecked	/si octalis(h, 100, 8) eq 0/d
+checksum unchecked	s/si scripta ne summa { redde 16; }//
