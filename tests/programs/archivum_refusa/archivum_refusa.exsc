@@ -1,0 +1,71 @@
+// ADR 0017 stage 2: what a root REFUSES, observed through `adversum` with
+// the number the kernel (or, for a relative root, the prelude) returned.
+// Each refusal has a legal twin beside it, so no check passes by everything
+// failing. The root is the harness's (`radix=yes`; archivum_radix's header
+// says how it is made): /tmp/exsecutor-radix holding `sub/intus.txt`.
+//
+// Linux's numbers, the same on every Linux architecture: ENOENT 2,
+// EEXIST 17, EXDEV 18, EINVAL 22.
+//
+//    1  a RELATIVE root is refused before any syscall: EINVAL (design D2)
+//    2  a root that does not exist: the kernel's ENOENT
+//    3  the absolute root itself derives
+//    4  `..` out of the root: EXDEV -- the kernel's RESOLVE_BENEATH
+//    5  `sub/../..` out through a sub-directory: EXDEV
+//    6  `sub/..` that stays beneath: allowed (the twin of 4 and 5)
+//    7  an ABSOLUTE path beneath a root: EXDEV, even one naming a file
+//       that exists (/tmp/exsecutor-radix/sub/intus.txt is the root's own)
+//    8  the same file by its relative name: allowed (the twin of 7)
+//    9  `crea("../x")`: EXDEV (design F6: a create is refused by the walk)
+//   10  `lege_ex` of a DIRECTORY: EINVAL (the prelude's fstat refusal)
+//   11  a child root cannot climb to its parent: `infra("sub")` then
+//       `..`: EXDEV (design F7)
+
+functio numerus(r: eventus<Directorium, erratum>) -> u16 {
+    discerne r {
+        casus prosperum(d) { redde 0; }
+        casus adversum(e) { redde e.numerus; }
+    }
+}
+
+functio numerus_lectionis(r: eventus<Lectorium, erratum>) -> u16 {
+    discerne r {
+        casus prosperum(l) { redde 0; }
+        casus adversum(e) { redde e.numerus; }
+    }
+}
+
+functio numerus_creationis(r: eventus<Scriptorium, erratum>) -> u16 {
+    discerne r {
+        casus prosperum(w) { redde 0; }
+        casus adversum(e) { redde e.numerus; }
+    }
+}
+
+functio intra(d: Directorium) -> u8 poscit sicut d {
+    si numerus(d.infra("..")) ne 18 { redde 4; }
+    si numerus(d.infra("sub/../..")) ne 18 { redde 5; }
+    si numerus(d.infra("sub/..")) ne 0 { redde 6; }
+    si numerus_lectionis(d.lege_ex("/tmp/exsecutor-radix/sub/intus.txt")) ne 18 { redde 7; }
+    si numerus_lectionis(d.lege_ex("sub/intus.txt")) ne 0 { redde 8; }
+    si numerus_creationis(d.crea("../x")) ne 18 { redde 9; }
+    si numerus_lectionis(d.lege_ex("sub")) ne 22 { redde 10; }
+    discerne d.infra("sub") {
+        casus prosperum(s) {
+            si numerus_lectionis(s.lege_ex("../sub/intus.txt")) ne 18 { redde 11; }
+        }
+        casus adversum(e) { redde 11; }
+    }
+    redde 0;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.archivum();
+    sub archivum = a;
+    si numerus(Directorium.ad_radicem(a, "tmp/exsecutor-radix")) ne 22 { redde 1; }
+    si numerus(Directorium.ad_radicem(a, "/tmp/exsecutor-radix/nusquam")) ne 2 { redde 2; }
+    discerne Directorium.ad_radicem(a, "/tmp/exsecutor-radix") {
+        casus prosperum(d) { redde intra(d); }
+        casus adversum(e) { redde 3; }
+    }
+}

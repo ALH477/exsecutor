@@ -656,11 +656,18 @@ routines are `compiler/x86_64/prelude/archivum.asm` (code) and
 readable`), both gated on `EXS_POTESTAS_ARCHIVUM` and run by
 `tests/unit/prelude_archivum.asm`; `tools/syscall-audit.sh --potestates`
 carries this row and proves every `openat2` site (`tests/unit/audit_openat2.asm`).
-`lseek(8)` is in the row and issued by no routine `[OPEN]`. **Not yet
-carried into `OUT`**: `backend_fasmg/program.inc` copies only `prelude.asm`
-and `prelude_data.asm`, and no compiled program's closure can hold
-`archivum` until the surface derivation exists, which waits on `eventus`
-(stage 2). The audit also refuses the i386 gates `int 0x80` and `sysenter`
+`lseek(8)` is in the row and issued by no routine `[OPEN]`. **Stage 2 is
+built (2026-10-02)**: the surface (`m.archivum()`, `Directorium.ad_radicem`,
+`d.infra`, `d.lege_ex`, `d.crea`, and the reader and writer `Lectorium` and
+`Scriptorium`) has `bfausr_exsrt_` entry points at the end of
+`archivum.asm` that add no syscall and no `openat2` site of their own, and
+`backend_fasmg/program.inc` carries both blobs into `OUT` -- but only when
+the program's mask holds `archivum`, so every other `OUT` is unchanged
+(`docs/design/archivum-beneath.md` section 10). The carrier `m.archivum()`
+returns is the Mundus record's address and is never dereferenced: the
+atom's authority is to derive a root, and a root is a descriptor in the
+`Directorium`. `tests/programs/archivum_*/` run under `--potestates
+Mundus,archivum`. The audit also refuses the i386 gates `int 0x80` and `sysenter`
 everywhere, in both modes: the i386 ABI numbers syscalls from another
 table, so no row here could judge one.
 

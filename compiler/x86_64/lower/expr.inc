@@ -533,6 +533,37 @@ proc __lwr_path, lwrsp, lwrn
 	mov	eax, ecx
 	test	eax, LWR_PRELUDE_TAG
 	jnz	.prelude
+	; A capability ATOM named as a value -- `archivum` in
+	; `Directorium.ad_radicem(archivum, v)` inside a function declaring
+	; `poscit archivum`. The checker resolved the `Path` to the atom's own
+	; declaration (resolve.inc's `__chk_draw`); the VALUE is the innermost
+	; provider's carrier, found exactly as a call's hidden carrier is
+	; (`__lwr_stage_carriers`). Before 2026-10-02 this fell through to
+	; `__lwr_module_const` and trapped -- for `ambitus` as much as for
+	; `archivum` -- so a function could hold an atom in its row and not
+	; pass it on. tests/unit/lwr_directorium.asm's `radix` pins it.
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, [lwrd]
+	call	ast_decl_at
+	cmp	byte [rax + AstDecl.kind], AST_D_CAPATOM
+	jne	.notatom
+	mov	rdi, [rbx + LwrState.tree]
+	call	ast_cap_base
+	rassert	rax ge 1
+	mov	ecx, [lwrd]
+	sub	ecx, eax
+	inc	ecx			; the atom's 1-based spec 4.6 ordinal
+	mov	rdi, rbx
+	mov	esi, ecx
+	call	lwr_cap_find
+	rassert	eax ne 0		; an unprovided atom is `EXS-E0421`, the
+					; checker's (lowering.md constraint 4)
+	mov	rdi, rbx
+	mov	esi, eax
+	mov	edx, [rbx + LwrState.cur]
+	call	lwr_read_var
+	return
+  .notatom:
 	mov	rdi, rbx
 	mov	esi, [lwrn]
 	call	__lwr_nty

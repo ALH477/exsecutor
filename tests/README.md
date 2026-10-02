@@ -390,6 +390,8 @@ directive's style):
 | `abort=N` | spec §6.6's one abort shape: killed by `SIGILL`, with a stderr line ending `abortus N`. Not shell status 132, which `redde 132;` also produces — the runner tells a signal from an exit status |
 | `stdout=PATH` | stdout byte-identical to `PATH`, relative to the repo root. Absent: stdout must be empty |
 | `stdin=PATH` | the program's stdin is that file, repo-root-relative exactly as `stdout=` is. Absent: `/dev/null`, which is what every fixture written before a reader existed assumed |
+| `potestates=A,B` | the atoms the binary's syscall audit admits (`tools/syscall-audit.sh --potestates`). Absent: `Mundus,ambitus`. A closed set -- spec §4.6's eleven names -- so a typo fails the fixture |
+| `radix=yes` | (programs only; not with `cross=` or `device=`) a filesystem root for ADR 0017's `Directorium`: under an exclusive lock on `/tmp/exsecutor-radix.lock`, the runner re-creates `/tmp/exsecutor-radix` as a copy of the directory's own `radix/` tree (empty without one), runs the binary -- the reference's and each C build alike -- and removes it. A fixed path, because a program names its root as a literal and a relative root is refused by design |
 
 Exactly one of `expect-exit=` / `abort=` is required for anything that
 runs. **An unknown key fails the fixture** — the unit directive silently

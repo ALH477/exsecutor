@@ -1,7 +1,11 @@
 # 0017 — `archivum` reaches the filesystem only beneath a `Directorium`, through `openat2`
 
 **Status:** Accepted, 2026-10-02, by the repository owner; stage 1
-implemented 2026-10-02, stage 2 (surface API) waits on eventus.
+implemented 2026-10-02; stage 2 (the surface API) implemented 2026-10-02,
+without D11's `EXS-E0425`, which is not registered. As built, `d.a` and
+`d.descriptor` are `EXS-E0305`, not the `EXS-E0301` written below, and the
+reader and writer are `Lectorium` and `Scriptorium`
+(`docs/design/archivum-beneath.md` section 10).
 **Relates to:** spec §4.1, §4.2, §4.3, §4.6, §4.7, §9.5, §10.3, §13;
 `docs/design/runtime.md` section 2.6; `docs/design/checker.md` sections 2.1
 and 2.8; `docs/design/sum-types.md` D5; `docs/asm-conventions.md` section 6.

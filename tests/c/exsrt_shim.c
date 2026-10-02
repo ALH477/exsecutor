@@ -22,7 +22,13 @@
  *                         reads both backends.
  *
  *   six of the ten prelude routines -- the {Mundus, ambitus} closure that
- *   tests/ir/emit_ir.asm fixes, over the records interface.inc lays out.
+ *   tests/ir/emit_ir.asm fixes, over the records interface.inc lays out --
+ *   and the eight of ADR 0017's `archivum` surface (`exsrt_mundus_archivum`,
+ *   `exsrt_directorium_*`, `exsrt_lectorium_exlege_octeto`,
+ *   `exsrt_scriptorium_inscribe*`), which make the same openat2 calls with
+ *   the same four `open_how` values as compiler/x86_64/prelude/archivum.asm
+ *   and write the same `eventus` bytes, so the tests/programs/archivum_ dirs hold
+ *   the C backend to the reference on them.
  *
  *   main(), which calls exs_initium and returns its value.
  *
@@ -39,9 +45,15 @@
  * The _Static_asserts below at least pin the sizes the emitted `slot`s use.
  */
 
+/* `syscall(2)` and `O_PATH` are not ISO C; the archivum routines below need
+ * both (glibc exposes neither under plain -std=c11). */
+#define _GNU_SOURCE 1
 #include <stdint.h>
 #include <stddef.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/syscall.h>
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
@@ -193,6 +205,212 @@ uint64_t exsrt_lector_lege_octeto(unsigned char *lp)
         if (r < 0 && errno == EINTR) continue;
         return 256;
     }
+}
+
+/* ---- `archivum` beneath a root (ADR 0017 stage 2) ---------------------- */
+/* compiler/x86_64/prelude/archivum.asm, routine for routine, hosted: the
+ * same refusals before any syscall (a relative root, an interior NUL, 4096
+ * bytes or more, a negative directory descriptor), the same four `open_how`
+ * values (<fcntl.h>'s names, not archivum_rodata.asm's x86-64 numbers, so
+ * the shim stays right wherever it is compiled), the same 16 EAGAIN retries
+ * after the first try, the same fstat refusal of a non-regular file, and the
+ * same `eventus` bytes: tag at 0 (`prosperum` 0, `adversum` 1), payload at 1
+ * (interface.inc part A). No fallback to openat, as in the reference. */
+#ifndef SYS_openat2
+# define SYS_openat2 437      /* every Linux ABI, 5.6 on */
+#endif
+#define EXS_RESOLVE_NO_XDEV       0x01u
+#define EXS_RESOLVE_NO_MAGICLINKS 0x02u
+#define EXS_RESOLVE_BENEATH       0x08u
+#define EXS_RESOLVE_SUB (EXS_RESOLVE_BENEATH | EXS_RESOLVE_NO_MAGICLINKS | EXS_RESOLVE_NO_XDEV)
+#define EXS_VIA_MAX 4096u
+#define EXS_ITERUM 16
+
+/* Directorium, Lectorium, Scriptorium: `Scriptor`'s record. */
+typedef struct { void *a; int32_t descriptor; int32_t pad; } ExsManubrium;
+_Static_assert(sizeof(ExsManubrium) == 16, "shim: a handle is 16 bytes");
+_Static_assert(offsetof(ExsManubrium, descriptor) == 8, "shim: descriptor at 8");
+
+static void exs_adversum(unsigned char *ret, long err)
+{
+    uint16_t n = (uint16_t)err;
+    ret[0] = 1;
+    memcpy(ret + 1, &n, sizeof n);
+}
+
+static void exs_manubrium(unsigned char *ret, void *a, long r)
+{
+    ExsManubrium m;
+    if (r < 0) { exs_adversum(ret, -r); return; }
+    m.a = a;
+    m.descriptor = (int32_t)r;
+    m.pad = 0;
+    ret[0] = 0;
+    memcpy(ret + 1, &m, sizeof m);
+}
+
+static void exs_mensura(unsigned char *ret, long r)
+{
+    uint64_t n;
+    if (r < 0) { exs_adversum(ret, -r); return; }
+    n = (uint64_t)r;
+    ret[0] = 0;
+    memcpy(ret + 1, &n, sizeof n);
+}
+
+/* The textus into a NUL-terminated buffer: 0, -ENAMETOOLONG or -EINVAL. */
+static long exs_via(const unsigned char *tp, char *buf)
+{
+    ExsTextus t;
+    memcpy(&t, tp, sizeof t);
+    if (t.len >= EXS_VIA_MAX) return -ENAMETOOLONG;
+    if (t.len != 0) {
+        if (memchr(t.ptr, 0, (size_t)t.len) != NULL) return -EINVAL;
+        memcpy(buf, t.ptr, (size_t)t.len);
+    }
+    buf[t.len] = 0;
+    return 0;
+}
+
+static long exs_openat2(int dirfd, const char *p, uint64_t flags, uint64_t mode,
+                        uint64_t resolve)
+{
+    struct { uint64_t flags, mode, resolve; } how;
+    int i;
+    _Static_assert(sizeof how == 24, "shim: open_how VER0 is 24 bytes");
+    how.flags = flags;
+    how.mode = mode;
+    how.resolve = resolve;
+    for (i = 0; i <= EXS_ITERUM; i++) {
+        long r = syscall(SYS_openat2, dirfd, p, &how, sizeof how);
+        if (r >= 0) return r;
+        if (errno != EAGAIN) return -errno;
+    }
+    return -EAGAIN;
+}
+
+/* exsrt_mundus_archivum(m: ptr) -> ptr -- an opaque token, the reference's
+ * choice: the Mundus record's own address. Nothing dereferences it. */
+unsigned char *exsrt_mundus_archivum(unsigned char *m)
+{
+    return m;
+}
+
+void exsrt_directorium_ad_radicem(unsigned char *ret, unsigned char *a,
+                                  unsigned char *via)
+{
+    char buf[EXS_VIA_MAX];
+    long r = exs_via(via, buf);
+    if (r == 0) {
+        if (buf[0] != '/') r = -EINVAL;
+        else r = exs_openat2(AT_FDCWD, buf, O_PATH | O_DIRECTORY | O_CLOEXEC, 0,
+                             EXS_RESOLVE_NO_MAGICLINKS);
+    }
+    exs_manubrium(ret, a, r);
+}
+
+/* The three opens beneath a root: `kind` 0 infra, 1 lege_ex, 2 crea. */
+static void exs_infra(unsigned char *ret, unsigned char *dp, unsigned char *via,
+                      int kind)
+{
+    ExsManubrium d;
+    char buf[EXS_VIA_MAX];
+    long r;
+    memcpy(&d, dp, sizeof d);
+    if (d.descriptor < 0) { exs_manubrium(ret, d.a, -EBADF); return; }
+    r = exs_via(via, buf);
+    if (r == 0) {
+        if (kind == 0)
+            r = exs_openat2(d.descriptor, buf, O_PATH | O_DIRECTORY | O_CLOEXEC,
+                            0, EXS_RESOLVE_SUB);
+        else if (kind == 1)
+            r = exs_openat2(d.descriptor, buf,
+                            O_RDONLY | O_NOCTTY | O_NONBLOCK | O_CLOEXEC, 0,
+                            EXS_RESOLVE_SUB);
+        else
+            r = exs_openat2(d.descriptor, buf,
+                            O_WRONLY | O_CREAT | O_EXCL | O_NOCTTY | O_CLOEXEC,
+                            0600, EXS_RESOLVE_SUB);
+    }
+    if (kind == 1 && r >= 0) {
+        struct stat st;
+        if (fstat((int)r, &st) != 0) {
+            long e = -errno;
+            close((int)r);
+            r = e;
+        } else if (!S_ISREG(st.st_mode)) {
+            close((int)r);
+            r = -EINVAL;
+        }
+    }
+    exs_manubrium(ret, d.a, r);
+}
+
+void exsrt_directorium_infra(unsigned char *ret, unsigned char *d, unsigned char *via)
+{
+    exs_infra(ret, d, via, 0);
+}
+
+void exsrt_directorium_lege_ex(unsigned char *ret, unsigned char *d, unsigned char *via)
+{
+    exs_infra(ret, d, via, 1);
+}
+
+void exsrt_directorium_crea(unsigned char *ret, unsigned char *d, unsigned char *via)
+{
+    exs_infra(ret, d, via, 2);
+}
+
+/* exsrt_lectorium_exlege_octeto(ret: ptr, r: ptr) -> void --
+ * eventus<u16, erratum>: the byte, or 256 at end of file, or adversum. */
+void exsrt_lectorium_exlege_octeto(unsigned char *ret, unsigned char *rp)
+{
+    ExsManubrium r;
+    unsigned char one;
+    memcpy(&r, rp, sizeof r);
+    for (;;) {
+        ssize_t n = read(r.descriptor, &one, 1);
+        uint16_t v;
+        if (n < 0 && errno == EINTR) continue;
+        if (n < 0) { exs_adversum(ret, errno); return; }
+        v = (n == 1) ? (uint16_t)one : (uint16_t)256;
+        ret[0] = 0;
+        memcpy(ret + 1, &v, sizeof v);
+        return;
+    }
+}
+
+/* Every byte or the errno that stopped it -- never a short count. */
+static long exs_inscribe(int fd, const unsigned char *p, uint64_t len)
+{
+    uint64_t remaining = len;
+    while (remaining != 0) {
+        ssize_t w = write(fd, p, (size_t)remaining);
+        if (w < 0) {
+            if (errno == EINTR) continue;
+            return -errno;
+        }
+        p += w;
+        remaining -= (uint64_t)w;
+    }
+    return (long)len;
+}
+
+void exsrt_scriptorium_inscribe(unsigned char *ret, unsigned char *wp, unsigned char *tp)
+{
+    ExsManubrium w;
+    ExsTextus t;
+    memcpy(&w, wp, sizeof w);
+    memcpy(&t, tp, sizeof t);
+    exs_mensura(ret, exs_inscribe(w.descriptor, t.ptr, t.len));
+}
+
+void exsrt_scriptorium_inscribe_octeto(unsigned char *ret, unsigned char *wp, uint64_t b)
+{
+    ExsManubrium w;
+    unsigned char one = (unsigned char)(b & 0xFFu);
+    memcpy(&w, wp, sizeof w);
+    exs_mensura(ret, exs_inscribe(w.descriptor, &one, 1));
 }
 
 /* ---- the entry point --------------------------------------------------- */

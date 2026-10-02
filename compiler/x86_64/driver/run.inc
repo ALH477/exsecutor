@@ -568,7 +568,33 @@ proc __drv_cap_of_ty, drp_t2, drp_ty, drp_base
 	je	.row
 	cmp	ecx, AST_TY_DYN
 	je	.row
+	cmp	ecx, AST_TY_STRUCT
+	je	.struc
 	xor	eax, eax
+	return
+  .struc:
+	; ADR 0017's three prelude structs carry `archivum` (their mark,
+	; checker/rows/compute.inc's `chk_row_pre_marks`), and a program whose
+	; only mention of the atom is a `Directorium`-typed value still calls
+	; routines the atom gates -- without this arm such a module's OUT names
+	; `bfausr_exsrt_directorium_*` and carries no archivum.asm to define
+	; them. Only these three: `Scriptor` and `Lector` keep contributing
+	; nothing here, so no existing program's mask, and so no existing OUT,
+	; moves. The same over-approximation as the rest of this routine, in
+	; the same safe direction.
+	mov	ecx, [rax + AstType.a]
+	bt	ecx, 31
+	jnc	.none
+	and	ecx, CHK_TY_PRE_MASK
+	cmp	ecx, CHK_TY_PRE_DIRECTORIUM
+	je	.archivum
+	cmp	ecx, CHK_TY_PRE_LECTORIUM
+	je	.archivum
+	cmp	ecx, CHK_TY_PRE_SCRIPTORIUM
+	je	.archivum
+	jmp	.none
+  .archivum:
+	mov	eax, 1 shl (AST_CAP_ARCHIVUM - 1)
 	return
   .cap:
 	; `AstType.a` is the atom's own declaration (ast/kinds.inc, AST_TY_CAP),

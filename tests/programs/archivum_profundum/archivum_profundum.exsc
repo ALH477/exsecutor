@@ -1,0 +1,86 @@
+// ADR 0017 stage 2: a `Directorium` forwarded through two helper levels, each
+// declaring only `poscit sicut d` -- the shape spec 4.2's recorded checker
+// defect refused until it was fixed (tests/unit/chk_row_sicut_forward.asm),
+// and the shape every library that takes a root has. The lowest level gets a
+// root DERIVED beneath the one `initium` derived, and none of the three
+// helpers holds `archivum` itself: their rows read `{archivum}` through
+// `sicut d`, and none of them could name a second root (design D6's R1,
+// tests/unit/chk_directorium.asm). The root is the harness's (`radix=yes`;
+// archivum_radix's header): /tmp/exsecutor-radix holding `arca/LEGE.txt`.
+//
+//    1  the root derives
+//    2  `summus` attenuates to `arca` and hands the child down
+//    3  `medius` forwards it unchanged
+//    4  `imus` creates `arca/scriptum.txt` beneath the child and writes it
+//    5  back in `initium`, the file reads "facta" and a newline (a literal's
+//       bytes are verbatim, spec 8.1, so the newline is `inscribe_octeto`'s)
+//       beneath the TOP root --
+//       the helpers wrote where the child root pointed, and nowhere else
+//    6  and the child could not reach above itself: `imus` tried `../x`
+//       and was refused EXDEV (18)
+
+functio imus(d: Directorium) -> u8 poscit sicut d {
+    discerne d.crea("../x") {
+        casus prosperum(w) { redde 6; }
+        casus adversum(e) { si e.numerus ne 18 { redde 6; } }
+    }
+    discerne d.crea("scriptum.txt") {
+        casus prosperum(w) {
+            discerne w.inscribe("facta") {
+                casus prosperum(n) { si n ne 5 { redde 4; } }
+                casus adversum(e) { redde 4; }
+            }
+            discerne w.inscribe_octeto(10) {
+                casus prosperum(n) { si n ne 1 { redde 4; } }
+                casus adversum(e) { redde 4; }
+            }
+        }
+        casus adversum(e) { redde 4; }
+    }
+    redde 0;
+}
+
+functio medius(d: Directorium) -> u8 poscit sicut d {
+    redde imus(d);
+}
+
+functio summus(d: Directorium) -> u8 poscit sicut d {
+    discerne d.infra("arca") {
+        casus prosperum(c) { redde medius(c); }
+        casus adversum(e) { redde 2; }
+    }
+}
+
+functio sequitur(r: Lectorium, b: u16) -> u1 poscit sicut r {
+    discerne r.exlege_octeto() {
+        casus prosperum(c) { si c eq b { redde 1; } redde 0; }
+        casus adversum(e) { redde 0; }
+    }
+}
+
+functio facta(r: Lectorium) -> u1 poscit sicut r {
+    si sequitur(r, 102) eq 0 { redde 0; }
+    si sequitur(r, 97) eq 0 { redde 0; }
+    si sequitur(r, 99) eq 0 { redde 0; }
+    si sequitur(r, 116) eq 0 { redde 0; }
+    si sequitur(r, 97) eq 0 { redde 0; }
+    si sequitur(r, 10) eq 0 { redde 0; }
+    redde sequitur(r, 256);
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.archivum();
+    sub archivum = a;
+    discerne Directorium.ad_radicem(a, "/tmp/exsecutor-radix") {
+        casus prosperum(d) {
+            firma k = summus(d);
+            si k ne 0 { redde k; }
+            discerne d.lege_ex("arca/scriptum.txt") {
+                casus prosperum(r) { si facta(r) eq 0 { redde 5; } }
+                casus adversum(e) { redde 5; }
+            }
+            redde 0;
+        }
+        casus adversum(e) { redde 1; }
+    }
+}
