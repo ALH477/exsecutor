@@ -44,6 +44,9 @@
 ;	11 `@transitus` over a `Directorium`                     {EXS-E0321}
 ;	12 `d sicut acies<u8, 16>`                               {EXS-E0305}
 ;	13 `b sicut Directorium`                                 {EXS-E0305}
+;	14 the exploit: `sub archivum = d;` in a `sicut d` fn   {EXS-E0303}
+;	15 `sub rete = <u32>`                                    {EXS-E0303}
+;	16 `sub alloc = <u32>` (the arena, `[OPEN]`)             clean
 ;
 ; NON-VACUITY, run when this fixture was written (each mutant in a scratch
 ; copy of the tree; the exit given is the one measured -- the first three
@@ -482,6 +485,53 @@ segment readable
 		db '}', 10
   fx_s13_LEN = $ - fx_s13
 
+  ; s14: BLOCKER 1, the exploit itself. `initium` derives a root and a child
+  ; beneath it; `salva` receives only the child and declares only `sicut d`.
+  ; `sub archivum = d;` used to bind the raw atom (the provider was never
+  ; typed unless it was ANOTHER atom's `cap`), after which `ad_radicem` opened
+  ; /tmp/exs-xp, outside the child's root -- built and run: it read a file
+  ; there and exited 42. EXS-E0303 now: `d` is a `Directorium`, not an
+  ; `archivum`. This is the row that fails if `__chk_ty_sub`'s provider check
+  ; goes back to half-applied.
+  fx_s14:	db 'functio salva(d: Directorium) -> u8 poscit sicut d {', 10
+		db 9, 'sub archivum = d;', 10
+		db 9, 'discerne Directorium.ad_radicem(archivum, "/tmp/exs-xp") {', 10
+		db 9, 9, 'casus prosperum(o) { redde 42; }', 10
+		db 9, 9, 'casus adversum(e) { redde 4; }', 10
+		db 9, '}', 10
+		db '}', 10
+		db 'publica functio initium(m: Mundus) -> u8 {', 10
+		db 9, 'firma a = m.archivum();', 10
+		db 9, 'sub archivum = a;', 10
+		db 9, 'discerne Directorium.ad_radicem(a, "/tmp/exs-xp/root") {', 10
+		db 9, 9, 'casus prosperum(d) {', 10
+		db 9, 9, 9, 'discerne d.infra("sub") {', 10
+		db 9, 9, 9, 9, 'casus prosperum(c) { redde salva(c); }', 10
+		db 9, 9, 9, 9, 'casus adversum(x) { redde 5; }', 10
+		db 9, 9, 9, '}', 10
+		db 9, 9, '}', 10
+		db 9, 9, 'casus adversum(e) { redde 6; }', 10
+		db 9, '}', 10
+		db '}', 10
+  fx_s14_LEN = $ - fx_s14
+  ; s15: the same hole with no struct in it: `sub rete = a;` with a `u32`.
+  ; EXS-E0303. (tests/unit/chk_e0422_sub_twice.asm used to rely on exactly
+  ; this being accepted.)
+  fx_s15:	db 'publica functio f(a: u32) -> u8 {', 10
+		db 9, 'sub rete = a;', 10
+		db 9, 'redde 0;', 10
+		db '}', 10
+  fx_s15_LEN = $ - fx_s15
+  ; s16: the ONE exemption, pinned so it cannot move silently. Spec §4.5's
+  ; `sub alloc = a;` binds "an arena", a value whose type no section names
+  ; (`[OPEN]`), so `alloc` still takes a provider that is not a `cap`. Clean.
+  ; When the spec names the arena's type this row changes with it.
+  fx_s16:	db 'publica functio f(a: u32) -> u8 {', 10
+		db 9, 'sub alloc = a;', 10
+		db 9, 'redde 0;', 10
+		db '}', 10
+  fx_s16_LEN = $ - fx_s16
+
   fx_tab:
 	dq fx_s01, fx_s01_LEN
 	dd 0, 0, 0, 0
@@ -509,6 +559,12 @@ segment readable
 	dd 1, 305, 0, 0
 	dq fx_s13, fx_s13_LEN
 	dd 1, 305, 0, 0
+	dq fx_s14, fx_s14_LEN
+	dd 1, 303, 0, 0
+	dq fx_s15, fx_s15_LEN
+	dd 1, 303, 0, 0
+	dq fx_s16, fx_s16_LEN
+	dd 0, 0, 0, 0
   FX_NROWS = ($ - fx_tab) / FX_ROW
   assert ($ - fx_tab) mod FX_ROW = 0
 
