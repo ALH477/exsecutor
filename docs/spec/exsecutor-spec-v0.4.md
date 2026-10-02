@@ -2281,9 +2281,14 @@ refusing symbolic comparisons — is what makes that last one possible.
   (`tests/unit/chk_row_layout_sum.asm`, `tests/unit/chk_ty_typus_sum.asm`,
   which also pins that a recursive sum is refused as `EXS-E0303`, class C,
   whichever `typus` form spells the infinite type). An instance of a generic
-  sum is sized from its substituted payloads. `[UNIMPLEMENTED]` as of this
-  amendment: the LOWERING of a constructor and of a sum-typed `discerne`. Still
-  `[OPEN]`, each deferred
+  sum is sized from its substituted payloads. Both are LOWERED with no new IR
+  instruction (`compiler/x86_64/lower/sum.inc`): a constructor is a `store`
+  of the tag and one store per payload element, a sum-typed `discerne` loads
+  the tag once and compares it with each arm's variant index, the last arm of
+  an exhaustive match taken without a test, and a binding is a load of its
+  element (`tests/unit/lwr_discerne.asm`, `tests/programs/summa/`,
+  `tests/programs/eventus/`, on the reference backend and the C backend's
+  differential builds). Still `[OPEN]`, each deferred
   there by name rather than folded in: nested patterns (refused as
   `EXS-E0201` at the parse), range patterns, the unreachable-arm rule, `?`'s
   meaning (the next bullet) and recursive sums beyond their refusal.
@@ -2747,8 +2752,8 @@ A dependency that gains `rete` in a new version is a one-line diff in a checked-
   two arguments: `eventus<mensura>` and a bare `eventus` are `EXS-E0304`
   (`tests/unit/chk_ty_eventus_arity.asm`). This bullet said until 2026-10-02
   that the spellings below were one parameter short and the type uninhabited;
-  it is inhabited — constructed and matched exhaustively by the checker and
-  laid out by pass 4; its lowering is `[UNIMPLEMENTED]` (§8.6).
+  it is inhabited — constructed, matched exhaustively, laid out and lowered
+  on both backends (§8.6; `tests/programs/eventus/`).
 - **I/O reports failure as `eventus`; a count is never silently short.** A
   closed descriptor is discovered at the write, which a bare `mensura` cannot
   report, so `Scriptor.scribe` returns `eventus<mensura, erratum>`

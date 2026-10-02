@@ -2143,6 +2143,13 @@ proc lwr_expr_into, lwrsp, lwrn, lwrdst
 		slot lwrk, dd
 	endl
 	mov	rbx, [lwrsp]
+	; a CONSTRUCTOR -- `prosperum(n)`, or a bare `ordinata` -- writes its
+	; tag and payload straight through `lwrdst` (lower/sum.inc)
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_isctor
+	test	eax, eax
+	jnz	.ctor
 	mov	rdi, rbx
 	mov	esi, [lwrn]
 	call	__lwr_nkind
@@ -2194,6 +2201,12 @@ proc lwr_expr_into, lwrsp, lwrn, lwrdst
 	mov	edx, [lwrdst]
 	call	__lwr_structlit
 	return
+  .ctor:
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	mov	edx, [lwrdst]
+	call	__lwr_ctor
+	return
   .arraylit:
 	mov	rdi, rbx
 	mov	esi, [lwrn]
@@ -2235,6 +2248,12 @@ proc lwr_expr_agg, lwrsp, lwrn
 		slot lwrs, dd
 	endl
 	mov	rbx, [lwrsp]
+	; a bare variant names no storage: it is built, like a call
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_isctor
+	test	eax, eax
+	jnz	.fresh
 	mov	rdi, rbx
 	mov	esi, [lwrn]
 	call	__lwr_nkind

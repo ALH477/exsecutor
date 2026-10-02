@@ -37,6 +37,7 @@
 ; -----------------------------------------------------------------------------
 
 include 'expr.inc'
+include 'sum.inc'
 
 ; ============================================================================
 ; the loop stack (`rumpe` / `perge`)
@@ -1608,6 +1609,15 @@ proc __lwr_si, lwrsp, lwrn
   .nosealnext:
 	mov	eax, [lwrbb]
 	mov	[rbx + LwrState.cur], eax
+  .armbody:
+	cmp	dword [lwrsum], 0
+	je	.nobind
+	mov	rdi, rbx
+	mov	esi, [lwrcs]
+	mov	edx, [lwrsp2]
+	mov	ecx, [lwrsty]
+	call	__lwr_sum_bind
+  .nobind:
 	mov	rdi, rbx
 	mov	esi, [lwrbody]
 	call	lwr_block
@@ -2102,12 +2112,19 @@ endp
 ; section 7. `mensura` is its own `AST_TY_*` kind (spec 5.2's `usize`), and
 ; asserting `AST_TY_INT` alone trapped on it.
 ;
-; With no `aliter` the last false edge goes to the join, so a scrutinee that
-; matches no arm RUNS NOTHING -- `si` without `aliter`'s behaviour. This said
-; the edge was unreachable because "the checker enforces" spec 8.5's
-; exhaustiveness; it does not and cannot yet (spec 8.6 lists exhaustiveness
-; as presupposing an enumeration that is `[OPEN]`, and 13 has no code for a
-; missing arm), and tests/programs/discerne/ reaches the edge on purpose.
+; A SUM scrutinee (docs/design/sum-types.md D2, D6) is compared by its TAG,
+; loaded once from its storage; each arm's constant is its variant's index,
+; and the arm's bindings are loaded from the payload on entry
+; (lower/sum.inc's `__lwr_sum_bind`).
+;
+; WITH NO `aliter` THE CHECKER HAS PROVED THE ARMS EXHAUSTIVE (D3,
+; `EXS-E0351` otherwise): a scalar `discerne` needs `aliter`, and a sum's arms
+; cover every variant, so the last arm of a sum match is entered WITHOUT a
+; test -- the only value that can reach it is its own variant. The chain's
+; last false edge going to the join, which a scalar `discerne` without
+; `aliter` used to reach on purpose (tests/programs/discerne/'s header kept
+; the record), is still emitted for a scalar if one ever arrives here, and
+; none can.
 ;
 ; Each test and each body has exactly one predecessor and is sealed when the
 ; `br` that made its edge is emitted, as in `__lwr_si`; the join's phis are
@@ -2126,6 +2143,10 @@ proc __lwr_discerne, lwrsp, lwrn
 		slot lwrnext, dd
 		slot lwrlast, dd
 		slot lwrbody, dd
+		slot lwrsum, dd		; 1 for a sum scrutinee
+		slot lwrsp2, dd		; ... its address
+		slot lwrsty, dd		; ... and its type
+		slot lwrcs, dd		; the current `Casus`
 	endl
 	mov	rbx, [lwrsp]
 	mov	rdi, rbx
@@ -2141,6 +2162,7 @@ proc __lwr_discerne, lwrsp, lwrn
 	mov	[lwralt], ecx
 	mov	dword [lwrjoin], 0
 
+	mov	dword [lwrsum], 0
 	mov	rdi, rbx
 	mov	esi, [lwrscr]
 	call	__lwr_nty
@@ -2148,9 +2170,34 @@ proc __lwr_discerne, lwrsp, lwrn
 	mov	rdi, rbx
 	mov	esi, eax
 	call	lwr_ty_kind
+	cmp	eax, AST_TY_SUM
+	je	.sumscr
 	cmp	eax, AST_TY_MENSURA		; spec 5.2's `usize`: its own kind,
 	je	.intscr				; an integer all the same
 	rassert	eax eq AST_TY_INT
+	jmp	.intscr
+  .sumscr:
+	; A SUM: the chain compares the TAG (lower/sum.inc), loaded once from
+	; the scrutinee's storage; each arm's constant is its variant's index.
+	mov	dword [lwrsum], 1
+	mov	[lwrsty], r12d
+	mov	rdi, rbx
+	mov	esi, [lwrscr]
+	call	lwr_expr_agg
+	mov	[lwrsp2], eax
+	mov	rdi, rbx
+	mov	esi, [lwrsty]
+	call	__lwr_sum_tag
+	mov	[lwrir], eax
+	mov	rdi, rbx
+	mov	esi, eax
+	mov	edx, [lwrsp2]
+	xor	ecx, ecx
+	xor	r8, r8			; BFA_ORDER_NATIVUS (D6)
+	call	lwr_load
+	mov	[lwrsv], eax
+	xor	r12d, r12d
+	jmp	.arm
   .intscr:
 	mov	rdi, rbx
 	mov	esi, r12d
@@ -2180,6 +2227,7 @@ proc __lwr_discerne, lwrsp, lwrn
 	mov	esi, [lwroff]
 	mov	edx, r12d
 	call	__lwr_listat
+	mov	[lwrcs], eax
 	mov	rdi, rbx
 	mov	esi, eax
 	call	__lwr_node
@@ -2187,10 +2235,48 @@ proc __lwr_discerne, lwrsp, lwrn
 	mov	ecx, [rax + AstNode.b]		; the arm's block
 	mov	[lwrbody], ecx
 
+	cmp	dword [lwrsum], 0
+	je	.scalarpat
+	; THE LAST ARM OF A SUM WITH NO `aliter` IS TAKEN WITHOUT A TEST. The
+	; checker proved the arms cover every variant (sum-types.md D3,
+	; `EXS-E0351` otherwise), so a value that reached this arm matched no
+	; earlier one and can only be this arm's variant: the false edge would
+	; have no source value and no target, and is not emitted.
+	cmp	dword [lwrlast], 0
+	jne	.untested
+	mov	rdi, rbx
+	mov	esi, r13d
+	call	__lwr_node
+	mov	edx, [rax + AstNode.d]		; the variant
+	mov	rdi, rbx
+	mov	esi, [lwrsty]
+	call	__lwr_sum_vidx
+	mov	rdi, rbx
+	mov	esi, [lwrir]
+	mov	edx, eax
+	xor	ecx, ecx
+	call	lwr_iconst
+	mov	r13d, eax
+	jmp	.havepat
+  .untested:
+	mov	rdi, rbx
+	call	lwr_blk_new
+	mov	[lwrbb], eax
+	mov	rdi, rbx
+	mov	esi, eax
+	call	lwr_jmp
+	mov	rdi, rbx
+	mov	esi, [lwrbb]
+	call	lwr_seal
+	mov	eax, [lwrbb]
+	mov	[rbx + LwrState.cur], eax
+	jmp	.armbody
+  .scalarpat:
 	mov	rdi, rbx
 	mov	esi, r13d
 	call	__lwr_pattern
 	mov	r13d, eax
+  .havepat:
 	mov	rdi, rbx
 	mov	esi, BFA_OP_CMP
 	mov	edx, BFA_PRED_EQ
@@ -2232,6 +2318,15 @@ proc __lwr_discerne, lwrsp, lwrn
   .nosealnext:
 	mov	eax, [lwrbb]
 	mov	[rbx + LwrState.cur], eax
+  .armbody:
+	cmp	dword [lwrsum], 0
+	je	.nobind
+	mov	rdi, rbx
+	mov	esi, [lwrcs]
+	mov	edx, [lwrsp2]
+	mov	ecx, [lwrsty]
+	call	__lwr_sum_bind
+  .nobind:
 	mov	rdi, rbx
 	mov	esi, [lwrbody]
 	call	lwr_block

@@ -1,6 +1,6 @@
 # Sum types, constructor patterns, and `eventus`
 
-**Status: D1, D2 (grammar, scoping and typing), D3, D5 and D6 are implemented in the checker as of 2026-10-02, with D4's interim refusal of `?`; D4 itself is design, and the LOWERING of constructors and of a sum-typed `discerne` is not yet built.** §8 records what implementing them measured, including two places this document was wrong. Until 2026-10-02 this line read "D1 (grammar), D2 (grammar and pass-1 scoping), D6 (layout) and the declaration's typing are implemented as of 2026-09-27; D2's typing, D3, D4 and D5 are design. When this document was written nothing here was implemented. Every decision below is `D`-numbered
+**Status: D1, D2 (grammar, scoping and typing), D3, D5 and D6 are implemented and lowered on both backends as of 2026-10-02, with D4's interim refusal of `?`; D4 itself is design.** §8 records what implementing them measured, including two places this document was wrong. Until 2026-10-02 this line read "D1 (grammar), D2 (grammar and pass-1 scoping), D6 (layout) and the declaration's typing are implemented as of 2026-09-27; D2's typing, D3, D4 and D5 are design. When this document was written nothing here was implemented. Every decision below is `D`-numbered
 so the spec and the fixtures can cite one rather than quote the argument, and every
 claim about what the tree does today was measured on 2026-09-26 at `747fa30` plus the
 working tree. Prose designs are hypotheses until code runs; this document is a
@@ -588,7 +588,12 @@ check starts holding this document to them. Item 0 has crossed over.
    one-sided count) was fixed independently, as it said it should be. D2's
    typing has its own fixture, which this plan did not name:
    `tests/unit/chk_ty_sum_typing.asm` (sixteen rows).
-5. **tests/programs/eventus/** — D4 end to end on both backends: a program that
+5. **`tests/programs/eventus/`** — **exists and runs on both backends, for
+   D5 and not D4**: `eventus<mensura, erratum>` round trips through results,
+   parameters and assignments, a second and a nested instance, the
+   expectation supplying a constructor's arguments; `tests/programs/summa/`
+   beside it runs D2's and D6's shapes (sub-byte payloads included). What
+   this item asked for is still owed: a program that
    reads with `lege_octeto`, propagates with `?`, and distinguishes end-of-input
    from a read error, which no program in this tree can currently do. This is the
    one that makes §11's claim true rather than promised, and it is the deliverable
@@ -674,8 +679,23 @@ deleted.
 `u1` whose two arms name both values; implemented as written
 (`tests/unit/chk_ty_exhaustive.asm` row 9), not special-cased.
 
-**What remains, in order:** the lowering (constructors, the tag test, the
-bindings); then the prelude I/O migration D5 calls for — `lege_octeto` and
+**F9 — the lowering needed no new instruction, and one rule from D6 had to
+be restated in the lowering.** A constructor stores the tag (`iconst` +
+`store` at byte 0, the tag's own width) and each payload element at the tag
+width plus the preceding elements' LAYOUT widths in bits; a match loads the
+tag once; a binding loads its element (`loadbits`/`storebits` below a byte,
+`addr` + `copy` for an aggregate, which the binding then owns: a binding is a
+value, and an arm assigning the scrutinee does not change it —
+`tests/programs/summa/` check 10). Those widths must be pass 4's, so
+`lower/sum.inc`'s `lwr_ty_lbits` restates `__chk_lay_ty`'s for every kind it
+sizes and TRAPS on the kinds pass 4 answers 0 for (`textus`, `fn`, a
+capability): a payload of one of those has a layout "wrong rather than absent"
+(§6), and writing it would overrun the next element. The last arm of an
+exhaustive match with no `aliter` is entered without a test: D3 proved the
+remaining value can only be its variant. The C backend needed nothing — it
+lowers the IR, not the tree.
+
+**What remains, in order:** the prelude I/O migration D5 calls for — `lege_octeto` and
 `scribe` returning `eventus<…, erratum>` with the blob, the rows and every
 caller moved together — which this change deliberately did not make; then D4;
 then retiring the builtin (F5).
