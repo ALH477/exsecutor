@@ -9,19 +9,20 @@
 //
 //    1-3  lata(1 / 3 / 4)      u64, a literal and a module `firma` pattern,
 //                              `aliter`; arms assign             10 30 99
-//    4-7  octo(7 / 0 / 9 / 255) u8, NO `aliter`, an empty arm, a u8 module
-//                              constant; 9 matches nothing and runs
-//                              nothing (see below)                70 1 1 2
+//    4-7  octo(7 / 0 / 9 / 255) u8, an EMPTY `aliter`, an empty arm, a u8
+//                              module constant; 9 matches no `casus`
+//                              and runs the empty `aliter` (below) 70 1 1 2
 //    8-10 sedecim(...)         u16, every arm and `aliter` `redde`: the
 //                              join is never made                 2 1 3
-//   11-13 triginta(...)        u32, every arm `redde`, no `aliter`: the
-//                              last false edge is the only way on 5 6 7
+//   11-13 triginta(...)        u32, every arm `redde`, an empty
+//                              `aliter`: the only way on        5 6 7
 //   14-15 mens(8 / 9)          `mensura`, an empty `aliter`       80 0
 //   16-18 signa(...)           i32, a hex pattern at the top      50 60 9
 //   19-20 veritas(5 / 1)       u1 -- a comparison as scrutinee    1 2
 //   21    duplex(4)            two arms for one value: the first  1
 //   22-25 nidus(a, b)          a `discerne` inside an arm         11 12 20 0
-//   26    vacua(1)             no arms at all, then only `aliter` 9
+//   26    vacua(1)             only an empty `aliter`, then only
+//                              `aliter`                           9
 //   27    localis(5)           a LOCAL `firma` with a literal     1
 //   28    ansa(10)             inside a `per`: arms reassign the  4121
 //                              loop-carried `s` (phis at the join
@@ -32,12 +33,20 @@
 //                              one arm writing the loop variable
 //   30    quaere(10)           a `redde` from an arm inside a loop 12
 //
-// NO `aliter` AND NO MATCH RUNS NOTHING (checks 6, 13, 15, 25): the chain's
-// last false edge goes to the join. Spec 8.5 says `discerne` is exhaustive,
-// but 8.6 lists exhaustiveness as presupposing an enumeration that is
-// `[OPEN]`, and 13 has no code for a missing arm, so nothing refuses these.
-// Pinned here as what the compiler does, not as what the spec settles.
-//
+// EVERY `discerne` HERE WRITES `aliter`, because a scalar `discerne` without
+// one is `EXS-E0351` (spec 8.5, docs/design/sum-types.md D3: a scalar's value
+// space is 2^N, so exhaustive means the catch-all). This fixture used to pin
+// the opposite -- "NO `aliter` AND NO MATCH RUNS NOTHING (checks 6, 13, 15,
+// 25): the chain's last false edge goes to the join", recorded as what the
+// compiler did and not what 8.5 settled. D3 settled it. Every `discerne`
+// that had no `aliter` gained an EMPTY one, which runs nothing, so all thirty
+// expected values are unchanged and the checks that reached the old
+// fall-through (6, 13, 18, 25, and every non-matching iteration of 28-30) now
+// reach the `aliter` block instead. sum-types.md 6 predicted four of these
+// checks would have to be DELETED; measured, none did -- recorded there.
+// (Its list also named 15, `mens(9)`, which always had an `aliter` and never
+// fell through; 18, `signa(9)`, did and was not listed.)
+
 // Every constant is declared BEFORE its first use. A module `firma` named
 // above its declaration is typed as the error type with no diagnostic (its
 // `Decl.ty` is still 0 when the body is checked), so a mismatch there is
@@ -68,6 +77,7 @@ functio octo(x: u8) -> u8 {
         casus 0 { }
         casus SEPTEM { r = 70; }
         casus 255 { r = 2; }
+        aliter { }
     }
     redde r;
 }
@@ -84,6 +94,7 @@ functio triginta(x: u32) -> u32 {
     discerne x {
         casus 4294967295 { redde 5; }
         casus 0 { redde 6; }
+        aliter { }
     }
     redde 7;
 }
@@ -101,6 +112,7 @@ functio signa(x: i32) -> i32 {
     discerne x {
         casus 5 { redde 50; }
         casus 0x7FFFFFFF { redde 60; }
+        aliter { }
     }
     redde x;
 }
@@ -109,6 +121,7 @@ functio veritas(x: u64) -> u64 {
     discerne x gt 3 {
         casus 1 { redde 1; }
         casus 0 { redde 2; }
+        aliter { }
     }
     redde 3;
 }
@@ -133,12 +146,13 @@ functio nidus(a: u64, b: u64) -> u64 {
             }
         }
         casus 2 { r = 20; }
+        aliter { }
     }
     redde r;
 }
 
 functio vacua(x: u64) -> u64 {
-    discerne x { }
+    discerne x { aliter { } }
     discerne x { aliter { redde 9; } }
 }
 
@@ -146,6 +160,7 @@ functio localis(x: u64) -> u64 {
     firma k: u64 = 5;
     discerne x {
         casus k { redde 1; }
+        aliter { }
     }
     redde 2;
 }
@@ -174,6 +189,7 @@ functio circuit(n: u64) -> u64 {
             casus 2 { a = a + 1; }
             casus 3 { b = b + 1; a = a + 2; }
             casus 7 { k = n; }
+            aliter { }
         }
         k = k + 1;
     }
@@ -184,6 +200,7 @@ functio quaere(n: u64) -> u64 {
     per i in 0..n {
         discerne i {
             casus 6 { redde i * 2; }
+            aliter { }
         }
     }
     redde 0;
@@ -193,6 +210,7 @@ functio classis(x: u8) -> u8 {
     discerne x {
         casus 1 { redde 100; }
         casus TRES_OCTETI { redde 200; }
+        aliter { }
     }
     redde 0;
 }

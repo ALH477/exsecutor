@@ -240,6 +240,35 @@ proc ast_decl_at, tree, id
 	return
 endp
 
+; ast_decl_synth(tree, id) -> eax = 1 if declaration `id` was SYNTHESIZED
+; rather than written: a prelude declaration (compiler/x86_64/prelude/
+; eventus.inc's `ast_prelude_push`). Its mark is the span it does not have --
+; file 0, offset 0, length 0, which no written name can have, since a name is
+; at least one byte -- the same zero span `ast_cap_push` gives an atom, and so
+; a property that survives `ast_dump`/`ast_load` with no field of its own.
+; Atoms are excluded by kind: they are found by `ast_cap_of_name`, never by
+; this test.
+proc ast_decl_synth, tree, id
+	locals
+	endl
+	mov	rdi, [tree]
+	mov	rsi, [id]
+	call	ast_decl_at
+	cmp	byte [rax + AstDecl.kind], AST_D_CAPATOM
+	je	.no
+	cmp	dword [rax + AstDecl.span.len], 0
+	jne	.no
+	cmp	dword [rax + AstDecl.span.start], 0
+	jne	.no
+	cmp	dword [rax + AstDecl.span.file_id], 0
+	jne	.no
+	mov	eax, 1
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
 proc ast_type_at, tree, id
 	locals
 	endl

@@ -1,4 +1,4 @@
-; tests/unit/chk_pattern_scope.asm
+; tests/unit/chk_ty_eventus_arity.asm
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ; Copyright (C) 2026 The Exsecutor authors.
 ;
@@ -20,32 +20,32 @@
 ; Code produced by this compiler is not covered by the GPL --
 ; see Exception A in LICENSE.EXCEPTION.
 ; -----------------------------------------------------------------------------
-; checker fixture: a constructor pattern's bindings are scoped to their arm
-; (docs/design/sum-types.md D2; checker/resolve/resolve.inc's `.casus` arm),
-; measured through the whole front end -- and everything pass 2 says about a
-; constructor pattern TODAY, pinned so that D2's typing flips it on purpose.
+; checker fixture: the prelude's `eventus<T, E>` and `erratum` --
+; docs/design/sum-types.md D5 (compiler/x86_64/prelude/eventus.inc), from
+; source through the whole front end. sum-types.md §7 item 4 owed exactly
+; this file: "`eventus<mensura>` with one argument is `EXS-E0304`". Every row
+; pins the diagnostics EXACTLY (count, codes, offsets, measured with
+; `exsc --diagnostica json` on the row's own source).
 ;
-; Rows (source -> the diagnostics, exactly, in order):
-;   1. `casus ordinata { … } casus arborea(n) { … }`, `n` unused: NO
-;      diagnostic. This row was `EXS-E0301` at `ordinata` and at `arborea`,
-;      pinned while pass 2 looked a pattern's path up in the VALUE namespace
-;      only; D2's typing (checker/types/sum.inc's `__chk_ty_pattern`) looks it
-;      up among the SCRUTINEE'S variants first, and both are found. No
-;      diagnostic touches `n`: binding it is pass 1's, and it worked.
-;   2. `n` used OUTSIDE its arm (`redde n;` after the `discerne`): `EXS-E0301`
-;      at that `n` -- the arm is a frame of its own; the name does not leak --
-;      and then `EXS-E0351`, because `ordinata` is not covered and there is no
-;      `aliter` (D3). The `E0301` at `arborea` this row used to carry is gone
-;      with row 1's.
-;   3. `n` used INSIDE its arm (`redde n;`, the function now returning
-;      `mensura`, the payload's type): NO diagnostic. It was `EXS-E0307`, from
-;      pass 2's definite-assignment rule -- a binding with no initializer read
-;      before any assignment -- because nothing said that the MATCH assigns
-;      it; `__chk_ty_bindto` now does, and gives it the payload's type, which
-;      is why the result type had to be `mensura` for the row to be clean: a
-;      `u32` result was `EXS-E0303` at `n` once `n` had a type at all.
+;   row 1  `eventus<mensura>` -- one argument short of D5's two  E0304 at `<`
+;   row 2  bare `eventus` (spec §5.1's old spelling)            E0304 at the
+;          name: no clause, so no `<` to point at
+;   row 3  `eventus<mensura, erratum>`                           clean
+;   row 4  three arguments                                       E0304
+;   row 5  a module's OWN `eventus` shadows the prelude's -- a function, as
+;          examples/onus/onus.exsc declares -- with no `EXS-E0302`  clean
+;   row 6  ... and a module's own `typus eventus = u8;`          clean
+;   row 7  `?` on an `eventus`: REFUSED, `EXS-E0305` at the `?` (D4's
+;          interim state; the operator is not built)
+;   row 8  `erratum`: a literal, a field read of `numerus: u16`   clean
+;   row 9  `prosperum(5)` with no expectation: `E` cannot come from the
+;          payload                                              E0304
+;   row 10 a whole round trip: constructed by `redde`, from a parameter, and
+;          matched with both arms                               clean
+;   row 11 a payload of the wrong type: `prosperum(e)` with `e: erratum`
+;          where `T` is `mensura`                               E0303
 ;
-; Exit 0 = every row held; 10+N = row N's diagnostics were wrong.
+; Exit 0 = every row held; 10+N = row N's diagnostics were wrong; 99 = setup.
 ;
 ; TEST: run=yes expect-exit=0 audit=pass
 
@@ -113,8 +113,23 @@ segment readable executable
 	test	eax, eax
 	jz	.row_bad
   .row_ok:
+	; the fix, where the row names one: -1 = there must be none
+	mov	rax, r12
+	shl	rax, 4
+	lea	rcx, [fx_fixes]
+	mov	rsi, [rcx + rax]
+	test	rsi, rsi
+	jz	.fix_ok
+	mov	rdx, [rcx + rax + 8]
+	call	fx_fix_is
+	test	eax, eax
+	jz	.fix_bad
+  .fix_ok:
 	inc	r12
 	jmp	.row
+  .fix_bad:
+	lea	rdi, [r12 + 31]
+	call	sys_exit_group
   .row_bad:
 	lea	rdi, [r12 + 11]
 	call	sys_exit_group
@@ -252,6 +267,45 @@ include '../../compiler/x86_64/checker/checker.inc'
 	pop	rbx
 	ret
 
+; fx_fix_is(rsi = text or -1, rdx = length) -> eax = 1 if diagnostic 0 carries
+; an INSERT fix with exactly that text (or, for -1, carries no fix at all).
+  fx_fix_is:
+	push	rbx
+	push	r12
+	push	r13
+	mov	r12, rsi
+	mov	r13, rdx
+	lea	rdi, [fx_diags]
+	xor	esi, esi
+	call	vec_get
+	mov	rbx, rax
+	cmp	r12, -1
+	jne	.text
+	cmp	dword [rbx + Diag.fix.kind], DIAG_FIX_NONE
+	jne	.no
+	jmp	.yes
+  .text:
+	cmp	dword [rbx + Diag.fix.kind], DIAG_FIX_INSERT
+	jne	.no
+	cmp	[rbx + Diag.fix.text_len], r13
+	jne	.no
+	mov	rsi, [rbx + Diag.fix.text_ptr]
+	mov	rdi, r12
+	mov	rcx, r13
+	cld
+	repe	cmpsb
+	jne	.no
+  .yes:
+	mov	eax, 1
+	jmp	.out
+  .no:
+	xor	eax, eax
+  .out:
+	pop	r13
+	pop	r12
+	pop	rbx
+	ret
+
 ; fx_diag_is(edi = i, esi = code, edx = span start or FX_ANY) -> eax = 1 if
 ; diagnostic `i` has that code at that offset.
   fx_diag_is:
@@ -342,46 +396,118 @@ include '../../compiler/x86_64/checker/checker.inc'
 segment readable
   include '../../compiler/shared/unicode/tables/tables.inc'
 
-  fx_path:	db 'pattern_scope.exsc'
+  fx_path:	db 'eventus.exsc'
   FX_PATH_LEN = $ - fx_path
 
-  fx_c1:	db 'typus modus = casus ordinata, casus arborea(mensura);', 10
-		db 'functio f(m: modus) -> u32 {', 10
-		db '    discerne m {', 10
-		db '        casus ordinata { redde 0; }', 10
-		db '        casus arborea(n) { redde 1; }', 10
-		db '    }', 10
-		db '    redde 3;', 10
+  fx_c1:	db 'functio f(r: eventus<mensura>) -> u8 {', 10
+		db '    redde 0;', 10
 		db '}', 10
   fx_c1_LEN = $ - fx_c1
-  fx_c2:	db 'typus modus = casus ordinata, casus arborea(mensura);', 10
-		db 'functio g(m: modus) -> u32 {', 10
-		db '    discerne m {', 10
-		db '        casus arborea(n) { redde 1; }', 10
-		db '    }', 10
-		db '    redde n;', 10
+  fx_c2:	db 'functio f(r: eventus) -> u8 {', 10
+		db '    redde 0;', 10
 		db '}', 10
   fx_c2_LEN = $ - fx_c2
-  fx_c3:	db 'typus modus = casus ordinata, casus arborea(mensura);', 10
-		db 'functio h(m: modus) -> mensura {', 10
-		db '    discerne m {', 10
-		db '        casus arborea(n) { redde n; }', 10
-		db '        casus ordinata { redde 0; }', 10
-		db '    }', 10
-		db '    redde 3;', 10
+  fx_c3:	db 'functio f(r: eventus<mensura, erratum>) -> u8 {', 10
+		db '    redde 0;', 10
 		db '}', 10
   fx_c3_LEN = $ - fx_c3
+  fx_c4:	db 'functio f(r: eventus<mensura, erratum, u8>) -> u8 {', 10
+		db '    redde 0;', 10
+		db '}', 10
+  fx_c4_LEN = $ - fx_c4
+  fx_c5:	db 'functio eventus(x: u8) -> u8 { redde x; }', 10
+		db 'functio f() -> u8 {', 10
+		db '    redde eventus(3);', 10
+		db '}', 10
+  fx_c5_LEN = $ - fx_c5
+  fx_c6:	db 'typus eventus = u8;', 10
+		db 'functio f(x: eventus) -> u8 {', 10
+		db '    redde x;', 10
+		db '}', 10
+  fx_c6_LEN = $ - fx_c6
+  fx_c7:	db 'functio g() -> eventus<u8, erratum> { redde prosperum(1); }', 10
+		db 'functio f() -> u8 {', 10
+		db '    firma x = g()?;', 10
+		db '    redde 0;', 10
+		db '}', 10
+  fx_c7_LEN = $ - fx_c7
+  fx_c8:	db 'functio f() -> u16 {', 10
+		db '    firma e = erratum { numerus: 22 };', 10
+		db '    redde e.numerus;', 10
+		db '}', 10
+  fx_c8_LEN = $ - fx_c8
+  fx_c9:	db 'functio f() -> u8 {', 10
+		db '    firma r = prosperum(5);', 10
+		db '    redde 0;', 10
+		db '}', 10
+  fx_c9_LEN = $ - fx_c9
+  fx_c10:	db 'functio g(a: mensura) -> eventus<mensura, erratum> {', 10
+		db '    si a eq 0 { redde adversum(erratum { numerus: 9 }); }', 10
+		db '    redde prosperum(a);', 10
+		db '}', 10
+		db 'functio f(a: mensura) -> mensura {', 10
+		db '    discerne g(a) {', 10
+		db '        casus prosperum(n) { redde n; }', 10
+		db '        casus adversum(e) { redde e.numerus sicut mensura; }', 10
+		db '    }', 10
+		db '    redde 0;', 10
+		db '}', 10
+  fx_c10_LEN = $ - fx_c10
+  fx_c11:	db 'functio f(e: erratum) -> eventus<mensura, erratum> {', 10
+		db '    redde prosperum(e);', 10
+		db '}', 10
+  fx_c11_LEN = $ - fx_c11
 
-  ; the harness takes FX_ANY where the exact byte adds nothing.
   fx_tab:
+	; row 1: one argument
 	dq fx_c1, fx_c1_LEN
-	dd 0, 0, FX_ANY, 0, FX_ANY, 0
+	dd 1, 304, 20, 0, 0, 0
+	; row 2: no argument
 	dq fx_c2, fx_c2_LEN
-	dd 2, 301, FX_ANY, 351, FX_ANY, 0
+	dd 1, 304, 13, 0, 0, 0
+	; row 3: two
 	dq fx_c3, fx_c3_LEN
-	dd 0, 0, FX_ANY, 0, FX_ANY, 0
+	dd 0, 0, 0, 0, 0, 0
+	; row 4: three
+	dq fx_c4, fx_c4_LEN
+	dd 1, 304, 20, 0, 0, 0
+	; row 5: a module function named eventus
+	dq fx_c5, fx_c5_LEN
+	dd 0, 0, 0, 0, 0, 0
+	; row 6: a module alias named eventus
+	dq fx_c6, fx_c6_LEN
+	dd 0, 0, 0, 0, 0, 0
+	; row 7: ? refused
+	dq fx_c7, fx_c7_LEN
+	dd 1, 305, 94, 0, 0, 0
+	; row 8: erratum
+	dq fx_c8, fx_c8_LEN
+	dd 0, 0, 0, 0, 0, 0
+	; row 9: prosperum without expectation
+	dq fx_c9, fx_c9_LEN
+	dd 1, 304, 34, 0, 0, 0
+	; row 10: a round trip
+	dq fx_c10, fx_c10_LEN
+	dd 0, 0, 0, 0, 0, 0
+	; row 11: a payload of the wrong type
+	dq fx_c11, fx_c11_LEN
+	dd 1, 303, 73, 0, 0, 0
   FX_NROWS = ($ - fx_tab) / FX_ROW
   assert ($ - fx_tab) mod FX_ROW = 0
+
+  fx_fixes:
+	dq 0, 0
+	dq 0, 0
+	dq 0, 0
+	dq 0, 0
+	dq 0, 0
+	dq 0, 0
+	dq 0, 0
+	dq 0, 0
+	dq 0, 0
+	dq 0, 0
+	dq 0, 0
+  assert ($ - fx_fixes) = FX_NROWS * 16
 
 segment readable writeable
   fx_arena:	rb sizeof.Arena

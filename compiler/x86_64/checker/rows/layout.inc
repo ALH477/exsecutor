@@ -91,8 +91,11 @@ include 'compute.inc'
 ;
 ; A SUM TYPE (`AST_TY_SUM`, docs/design/sum-types.md D6) is sized too: its
 ; `typus` declaration is laid out on demand by `__chk_lay_sum`, below, and
-; `.sum` reads the size back exactly as `.struc` does. `eventus` stays width
-; 0 until it is that document's prelude `typus` rather than the builtin.
+; `.sum` reads the size back exactly as `.struc` does. `eventus` IS that
+; document's prelude `typus` now (D5, compiler/x86_64/prelude/eventus.inc), so
+; its instances are sums sized here; the builtin `AST_TY_EVENTUS` kind below
+; is unreachable from source -- a declaration is found before the primitive
+; table -- and keeps its width 0 only for a hand-built tree.
 proc __chk_lay_ty, chkl_wk, chkl_ty, chkl_dp
 	uses	rbx, r12, r13
 	locals
@@ -235,7 +238,22 @@ proc __chk_lay_ty, chkl_wk, chkl_ty, chkl_dp
   .sum:
 	; a sum's size is its `typus` declaration's entry, written by
 	; `__chk_lay_sum` (sum-types.md D6) -- pulled forward here exactly as a
-	; struct named before its declaration is, and laid out once.
+	; struct named before its declaration is, and laid out once. An
+	; INSTANCE of a generic sum (`b` != 0, `eventus<mensura, erratum>`) has
+	; no declaration of its own to hold a size: its payloads are the
+	; declaration's with the arguments substituted, so it is sized here,
+	; on demand, by `__chk_lay_suminst`.
+	mov	ecx, [rax + AstType.b]
+	test	ecx, ecx
+	jz	.sum_decl
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, [chkl_dp]
+	inc	rdx
+	call	__chk_lay_suminst
+	xor	edx, edx
+	return
+  .sum_decl:
 	mov	r12d, [rax + AstType.a]		; the `typus` DECLARATION
 	mov	rdi, rbx
 	mov	rsi, r12
@@ -799,6 +817,123 @@ proc __chk_lay_sum, chkl_wk, chkl_sd, chkl_dp
 	mov	rdx, 2
 	call	__chk_row_s1
   .done:
+	return
+endp
+
+; ---- the size of a generic sum's INSTANCE -----------------------------------
+;     __chk_lay_suminst(wk, sum type, depth) -> rax = its width in BITS
+;
+; D6's rule, applied to the instance rather than the declaration: the tag
+; (the declaration's, which depends only on the variant count), then the
+; widest payload, each payload's elements packed and the payload rounded up
+; to whole bytes. The element types are the declaration's payload nodes'
+; types with the instance's arguments substituted -- `ast_sum_subst`
+; (ast/types.inc), the same routine `lower/ty.inc` sizes a `slot` with, so the
+; layout and the lowering cannot disagree about an instance's size. The
+; declaration is laid out first, which is what writes its variants' payload
+; offsets (the tag width) and marks it for the cycle test below.
+proc __chk_lay_suminst, chkl_wk3, chkl_ty3, chkl_dp3
+	uses	rbx, r12, r13, r14
+	locals
+		slot chkl_d3,   dq
+		slot chkl_vi3,  dq
+		slot chkl_vn3,  dq
+		slot chkl_pi3,  dq
+		slot chkl_pn3,  dq
+		slot chkl_pb3,  dq
+		slot chkl_mx3,  dq
+		slot chkl_tg3,  dq
+	endl
+	mov	rbx, [chkl_wk3]
+	mov	r14, [rbx + ChkRowWork.wtree]
+	mov	rax, [chkl_dp3]
+	mov	rcx, CHK_ROW_DEPTH_MAX
+	rassert	rax le rcx
+	mov	rdi, r14
+	mov	rsi, [chkl_ty3]
+	call	ast_type_at
+	mov	ecx, [rax + AstType.a]
+	mov	[chkl_d3], rcx
+	mov	rdi, rbx
+	mov	rsi, rcx
+	mov	rdx, [chkl_dp3]
+	call	__chk_lay_sum
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wlay
+	mov	rsi, [chkl_d3]
+	call	__chk_row_g1
+	cmp	rax, 2
+	jne	.cycle				; reached itself: the `.sum` arm's
+						; cycle-break value, 0
+	mov	rdi, r14
+	mov	rsi, [chkl_d3]
+	call	ast_sum_body
+	test	rax, rax
+	jz	.cycle
+	mov	[chkl_vn3], rdx
+	mov	rdi, r14
+	mov	rsi, rax
+	call	ast_node_at
+	mov	ecx, [rax + AstNode.a]
+	mov	[chkl_vi3], rcx
+	mov	rdi, [chkl_vn3]
+	call	ast_sum_tagw
+	mov	[chkl_tg3], rax
+	mov	qword [chkl_mx3], 0
+  .variant:
+	cmp	qword [chkl_vn3], 0
+	jle	.finish
+	mov	rdi, r14
+	mov	rsi, [chkl_vi3]
+	call	ast_extra_at
+	mov	rdi, r14
+	mov	rsi, rax
+	call	ast_node_at
+	mov	ecx, [rax + AstNode.b]
+	mov	[chkl_pi3], rcx
+	mov	ecx, [rax + AstNode.c]
+	mov	[chkl_pn3], rcx
+	mov	qword [chkl_pb3], 0
+  .payload:
+	cmp	qword [chkl_pn3], 0
+	jle	.payload_done
+	mov	rdi, r14
+	mov	rsi, [chkl_pi3]
+	call	ast_extra_at
+	mov	rdi, r14
+	mov	rsi, rax
+	call	ast_node_at
+	mov	edx, [rax + AstNode.ty]
+	mov	rdi, r14
+	mov	rsi, [chkl_ty3]
+	call	ast_sum_subst
+	mov	rdi, rbx
+	mov	rsi, rax
+	mov	rdx, [chkl_dp3]
+	inc	rdx
+	call	__chk_lay_ty
+	add	[chkl_pb3], rax
+	inc	qword [chkl_pi3]
+	dec	qword [chkl_pn3]
+	jmp	.payload
+  .payload_done:
+	mov	rax, [chkl_pb3]
+	add	rax, 7
+	shr	rax, 3
+	cmp	rax, [chkl_mx3]
+	jbe	.variant_next
+	mov	[chkl_mx3], rax
+  .variant_next:
+	inc	qword [chkl_vi3]
+	dec	qword [chkl_vn3]
+	jmp	.variant
+  .finish:
+	mov	rax, [chkl_tg3]
+	add	rax, [chkl_mx3]
+	shl	rax, 3
+	return
+  .cycle:
+	xor	eax, eax
 	return
 endp
 

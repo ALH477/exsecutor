@@ -4979,6 +4979,23 @@ proc __ast_w_node, w, red
 	call	__ast_w_inners
 	mov	r13, rax
 	mov	r14, rdx
+	; THE PRELUDE'S `eventus` AND `erratum` (compiler/x86_64/prelude/
+	; eventus.inc, docs/design/sum-types.md D5), appended to the item list
+	; when the module names one of them -- that file says why only then,
+	; and why as items: they are declarations like any of the module's own.
+	; The list is re-emitted with the two appended; the old run stays in
+	; `extra` unreferenced, as every superseded staging run does.
+	mov	rdi, [rbx + AstWalk.ast]
+	call	ast_prelude_wanted
+	test	eax, eax
+	jz	.module_mk
+	mov	rdi, rbx
+	mov	rsi, r13
+	mov	rdx, r14
+	call	__ast_w_prelude
+	mov	r13, rax
+	mov	r14, rdx
+  .module_mk:
 	mov	rdi, rbx
 	mov	rsi, r12
 	mov	rdx, AST_MODULE
@@ -5287,6 +5304,49 @@ proc __ast_w_node, w, red
 endp
 
 ; ---- the entry point -------------------------------------------------------
+; __ast_w_prelude(w, off, n) -> rax, rdx = the module's item list `[off, off+n)`
+; re-emitted with the prelude's two items after it.
+proc __ast_w_prelude, w, wpl_off, wpl_n
+	uses	rbx, r12, r13, r14
+	locals
+		slot wpl_ty, dq
+		slot wpl_st, dq
+	endl
+	mov	rbx, [w]
+	mov	rbx, [rbx + AstWalk.ast]
+	mov	rdi, rbx
+	call	ast_prelude_push
+	mov	[wpl_ty], rax
+	mov	[wpl_st], rdx
+	mov	rdi, rbx
+	call	ast_list_mark
+	mov	r12, rax
+	xor	r13, r13
+  .item:
+	cmp	r13, [wpl_n]
+	jae	.items
+	mov	rdi, rbx
+	mov	rsi, [wpl_off]
+	add	rsi, r13
+	call	ast_extra_at
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	ast_list_push
+	inc	r13
+	jmp	.item
+  .items:
+	mov	rdi, rbx
+	mov	rsi, [wpl_ty]
+	call	ast_list_push
+	mov	rdi, rbx
+	mov	rsi, [wpl_st]
+	call	ast_list_push
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	ast_list_emit
+	return
+endp
+
 ; ast_from_cst(tree, t, file_id) -> rax = the root node's id.
 ;
 ; `tree` must be freshly `ast_init`ed and share its interner with the lexer

@@ -54,12 +54,16 @@
 ; `u16` -- kind int, unsigned, width 16. "No diagnostic" alone was also the
 ; answer of the checker that never looked at the pattern, which is the bug.
 ;
+; EVERY ROW WRITES `aliter { }`. A scalar `discerne` without one is
+; `EXS-E0351` now (docs/design/sum-types.md D3, tests/unit/chk_ty_exhaustive.asm),
+; and this fixture is about the PATTERN: the catch-all keeps each row's
+; diagnostics the pattern's alone, at the same offsets as before (the `aliter`
+; is appended after the arms the offsets point into).
+;
 ; NOT JUDGED HERE, because nothing in spec §13 can be said about them:
-; duplicate `casus` values, a `discerne` with no `aliter` (spec §8.5 says
-; the arms are exhaustive; §8.6 lists that as presupposing an enumeration
-; that is `[OPEN]`), and a `Path` pattern naming a non-constant (a
-; `mutabilis` binding, a parameter -- lower/stmt.inc's `__lwr_pattern` traps
-; on those, for want of a code).
+; duplicate `casus` values (D3 leaves the unreachable arm `[OPEN]`), and a
+; `Path` pattern naming a non-constant (a `mutabilis` binding, a parameter --
+; lower/stmt.inc's `__lwr_pattern` traps on those, for want of a code).
 ;
 ; Exit 0 = every check passed; 10+N = table row N failed (the diagnostics the
 ; row did produce are rendered first); 41 = the pattern literal has no type,
@@ -401,21 +405,21 @@ segment readable
 	name#_LEN = $ - name
   end macro
 
-  fx_src fx_c01, '// -',              'publica functio f(x: u8) -> u8 {',      'discerne x { casus 256 { } }'
-  fx_src fx_c02, '// -',              'publica functio f(x: i8) -> u8 {',      'discerne x { casus 200 { } }'
-  fx_src fx_c03, 'firma K: u64 = 3;', 'publica functio f(x: u8) -> u8 {',      'discerne x { casus K { } }'
-  fx_src fx_c04, 'firma K: u64 = 3;', 'publica functio f(x: mensura) -> u8 {', 'discerne x { casus K { } }'
-  fx_src fx_c05, '// -',              'publica functio f(x: u64) -> u8 {',     'discerne x { casus "a" { } }'
+  fx_src fx_c01, '// -',              'publica functio f(x: u8) -> u8 {',      'discerne x { casus 256 { } aliter { } }'
+  fx_src fx_c02, '// -',              'publica functio f(x: i8) -> u8 {',      'discerne x { casus 200 { } aliter { } }'
+  fx_src fx_c03, 'firma K: u64 = 3;', 'publica functio f(x: u8) -> u8 {',      'discerne x { casus K { } aliter { } }'
+  fx_src fx_c04, 'firma K: u64 = 3;', 'publica functio f(x: mensura) -> u8 {', 'discerne x { casus K { } aliter { } }'
+  fx_src fx_c05, '// -',              'publica functio f(x: u64) -> u8 {',     'discerne x { casus "a" { } aliter { } }'
   fx_src fx_c06, 'functio g() -> u64 { redde 1; }', \
-		 'publica functio f(x: u64) -> u8 {',     'discerne x { casus g { } }'
-  fx_src fx_c07, 'firma K: u16 = 3;', 'publica functio f(x: u8) -> u8 {',      'discerne x { casus 256 { } casus K { } }'
-  fx_src fx_a01, '// -',              'publica functio f(x: u16) -> u8 {',     'discerne x { casus 5 { } }'
-  fx_src fx_a02, '// -',              'publica functio f(x: u8) -> u8 {',      'discerne x { casus 255 { } }'
-  fx_src fx_a03, '// -',              'publica functio f(x: i8) -> u8 {',      'discerne x { casus 127 { } }'
+		 'publica functio f(x: u64) -> u8 {',     'discerne x { casus g { } aliter { } }'
+  fx_src fx_c07, 'firma K: u16 = 3;', 'publica functio f(x: u8) -> u8 {',      'discerne x { casus 256 { } casus K { } aliter { } }'
+  fx_src fx_a01, '// -',              'publica functio f(x: u16) -> u8 {',     'discerne x { casus 5 { } aliter { } }'
+  fx_src fx_a02, '// -',              'publica functio f(x: u8) -> u8 {',      'discerne x { casus 255 { } aliter { } }'
+  fx_src fx_a03, '// -',              'publica functio f(x: i8) -> u8 {',      'discerne x { casus 127 { } aliter { } }'
   fx_src fx_a04, 'firma K: u8 = 3;',  'publica functio f(x: u8) -> u8 {',      'discerne x { casus K { } aliter { } }'
-  fx_src fx_a05, '// -',              'publica functio f(x: mensura) -> u8 {', 'discerne x { casus 8 { } }'
-  fx_src fx_a06, '// -',              'publica functio f(x: u1) -> u8 {',      'discerne x { casus 1 { } casus 0 { } }'
-  fx_src fx_a07, '// -',              'publica functio f(x: u32) -> u8 {',     'discerne x { casus 0xFFFFFFFF { } }'
+  fx_src fx_a05, '// -',              'publica functio f(x: mensura) -> u8 {', 'discerne x { casus 8 { } aliter { } }'
+  fx_src fx_a06, '// -',              'publica functio f(x: u1) -> u8 {',      'discerne x { casus 1 { } casus 0 { } aliter { } }'
+  fx_src fx_a07, '// -',              'publica functio f(x: u32) -> u8 {',     'discerne x { casus 0xFFFFFFFF { } aliter { } }'
 
   fx_tab:
 	; u8 casus 256: the literal took the scrutinee's u8 and does not fit it

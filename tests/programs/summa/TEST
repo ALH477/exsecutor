@@ -1,0 +1,11 @@
+# Sum types end to end (docs/design/sum-types.md D2, D3, D6): constructors of
+# every payload shape, complete matches with no `aliter` (the last arm taken
+# without a test), nested payloads, a struct payload, sub-byte payload
+# elements packed into one byte (`storebits`/`loadbits`), value-semantic
+# bindings, and sums as parameters, results and assignment targets. The
+# header of summa.exsc numbers the checks; the exit status is the first wrong
+# one, 0 when all hold. Run under the reference backend and all four
+# differential C builds; `cross=yes` asks for the big-endian mips64 row,
+# which a multi-byte payload (`u16`, `mensura`) stored and loaded in
+# `:nativus` order is meant to survive.
+TEST: expect-exit=0 cross=yes

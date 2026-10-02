@@ -574,7 +574,9 @@ no `copy`, which is the IR RT 5 writes down.
 | `Member` field read | `load T %p off order` / `loadbits T %p byte bit` from `Ast.layout[field decl]` — `loadbits` when the width is not a whole number of bytes at a byte boundary (IR 2.7) |
 | `Assign` | lhs `Path` → `writeVariable` or `store`; `Member` → `store`/`storebits`; `Index` → `chk`, `index`, `store`; `*p` → `store`; an `ACCUM` lhs → `contrib` (section 2.5); an aggregate rhs → `copy n %dst %src` plus one `retain` per reference field `[UNTESTED]` |
 | `Call` | section 2.7 |
-| `Try` `?` | `eventus` representation `[OPEN]` (IR 6); `rassert` in the first slice |
+| `Try` `?` | refused by the checker (`EXS-E0305`, sum-types.md D4's interim rule), so it never reaches this pass; the `rassert` stays |
+| constructor `prosperum(n)`, bare `ordinata` | into `%dst`: every payload evaluated, then `store uT %dst 0 nativus %tag`, then one `store`/`storebits`/`addr`+`copy` per element at the tag width plus the preceding elements' layout bits (`lower/sum.inc`, sum-types.md D6) |
+| `discerne` on a sum | the tag loaded once; each arm's constant is its variant's index; an exhaustive match's last arm is entered untested; bindings loaded from their elements (`lower/stmt.inc`'s `__lwr_discerne`, `lower/sum.inc`'s `__lwr_sum_bind`) |
 | `Lambda` | section 2.7 |
 | `Member` call of `plica_unicode` `plica_sermone` `octeti` `numerus` | **refused by name**, `rassert` at `__lwr_call_member`'s `.prelude:`. Spec §5.1's text operations are resolved by the checker (`checker/types/prim.inc` rows 12–15) and have no `prelude/interface.inc` part B record — no symbol, no IR signature, nothing to call — so `__lwr_pre_row` answers 0 and the trap fires. Not a diagnostic: no registered code means "unimplemented", §8.3 makes codes permanent, and inventing one is forbidden. Consequence: a `shape=code` conformance fixture never lowers and is unaffected, and **no `tests/programs/` directory may call these four** until the runtime has a UTF-8 case folder and a view type |
 

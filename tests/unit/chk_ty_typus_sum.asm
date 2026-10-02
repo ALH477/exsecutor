@@ -38,8 +38,11 @@
 ;   1. the sum and a plain struct holding it: no diagnostic; then, read back
 ;      from the tree: the `typus` declaration's type is `AST_TY_SUM` over
 ;      itself, `m` sits at byte 0 with 72 bits recorded, `b` at byte 9, `S`
-;      is 10 bytes, and both variant declarations still have `Decl.ty` = 0
-;      (a constructor's type is D2's, not written, and said so).
+;      is 10 bytes, and both variant declarations have `Decl.ty` = the
+;      sum's own type. They had `Decl.ty` = 0 until D2's typing landed
+;      (checker/types/sig.inc's `__chk_ty_sumbody` now writes it: a variant
+;      names a value of its sum), and this row pinned the 0 on purpose so
+;      that the change would flip it rather than slip past.
 ;   2. `typus arbor = casus folium, casus nodus(arbor);` -- `EXS-E0303`, once:
 ;      an infinite type is class C whichever `typus` form spells it, and
 ;      this is how D1's "refuse a recursive sum by name" is met without a
@@ -159,20 +162,24 @@ segment readable executable
 	jne	.rb_bad
 	cmp	dword [rax + AstType.a], 1
 	jne	.rb_bad
-	; decls 2 and 3 are the variants: untyped, deliberately
+	; decls 2 and 3 are the variants: typed as the sum itself (D2)
+	lea	rdi, [fx_tree]
+	mov	rsi, 1
+	call	ast_decl_at
+	mov	r14d, [rax + AstDecl.ty]
 	lea	rdi, [fx_tree]
 	mov	rsi, 2
 	call	ast_decl_at
 	cmp	byte [rax + AstDecl.kind], AST_D_VARIANT
 	jne	.rb_bad
-	cmp	dword [rax + AstDecl.ty], 0
+	cmp	[rax + AstDecl.ty], r14d
 	jne	.rb_bad
 	lea	rdi, [fx_tree]
 	mov	rsi, 3
 	call	ast_decl_at
 	cmp	byte [rax + AstDecl.kind], AST_D_VARIANT
 	jne	.rb_bad
-	cmp	dword [rax + AstDecl.ty], 0
+	cmp	[rax + AstDecl.ty], r14d
 	jne	.rb_bad
 	; decl 4 is `S`, 5 is `m`, 6 is `b`
 	mov	rsi, 5

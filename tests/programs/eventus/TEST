@@ -1,0 +1,8 @@
+# The prelude's `eventus<T, E>` and `erratum` end to end (docs/design/
+# sum-types.md D5): round trips of `eventus<mensura, erratum>` through results,
+# parameters and assignments, a second instance (`eventus<u8, erratum>`), a
+# nested instance, and the expectation supplying a generic constructor's type
+# arguments. The header of eventus.exsc numbers the checks; the exit status is
+# the first wrong one, 0 when all hold. Reference backend and all four
+# differential C builds; `cross=yes` for the big-endian row.
+TEST: expect-exit=0 cross=yes

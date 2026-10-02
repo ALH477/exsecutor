@@ -109,6 +109,7 @@ proc __chk_ty_stmt, chkt_wST, chkt_nST
 		slot chkt_dST, dq
 		slot chkt_xST, dq
 		slot chkt_iST, dq
+		slot chkt_vST, dq	; `discerne`: the variant coverage
 	endl
 	mov	rbx, [chkt_wST]
 	mov	r12, [chkt_nST]
@@ -406,20 +407,22 @@ proc __chk_ty_stmt, chkt_wST, chkt_nST
 	jmp	.unit
 
   ; ---- Discerne ----------------------------------------------------------
-  ; The scrutinee, every arm's PATTERN and every arm's block are typed. A
-  ; pattern is typed exactly as the right operand of `s eq p` would be
-  ; (`__chk_ty_want` against the scrutinee's type): a literal takes the
-  ; scrutinee's width -- `E0308` when it does not fit -- and a `Path` naming a
-  ; constant of another type is `E0303`. That is the comparison the lowering
-  ; emits (lower/stmt.inc `__lwr_discerne`: `cmp.eq T %s %k`).
+  ; The scrutinee, every arm's PATTERN and bindings (sum.inc's
+  ; `__chk_ty_pattern`) and every arm's block are typed, and then, when no
+  ; `aliter` is written, the match is checked EXHAUSTIVE (`__chk_ty_exhaust`,
+  ; sum-types.md D3, `EXS-E0351`): spec §8.5's "Exhaustive, with no
+  ; fallthrough", true now for a sum by covering its variants and for a scalar
+  ; by requiring `aliter`. Against a scalar a pattern is typed exactly as the
+  ; right operand of `s eq p` would be (`__chk_ty_want` against the
+  ; scrutinee's type): a literal takes the scrutinee's width -- `E0308` when
+  ; it does not fit -- and a `Path` naming a constant of another type is
+  ; `E0303`. That is the comparison the lowering emits (lower/stmt.inc
+  ; `__lwr_discerne`: `cmp.eq T %s %k`); against a sum it compares the tag.
   ;
   ; THE PATTERN USED TO BE SKIPPED, and that was the bug behind "every
   ; `discerne` traps under `-o`": a literal pattern left with `ty` = 0 and no
   ; `konst`, which `__lwr_lit`'s `__lwr_nty` asserts against. Checking
   ; without `-o` never lowers, so it passed.
-  ;
-  ; What a `Path` pattern MEANS beyond "a constant of the scrutinee's type" is
-  ; still not decided -- types.inc's header.
   .discerne:
 	mov	rdi, rbx
 	mov	rsi, [chkt_aST]
@@ -429,6 +432,10 @@ proc __chk_ty_stmt, chkt_wST, chkt_nST
 	mov	rdx, [chkt_aST]
 	call	__chk_ty_settled
 	mov	r13, rax			; the scrutinee's type
+	mov	rdi, rbx
+	mov	rsi, r13
+	call	__chk_ty_covalloc
+	mov	[chkt_vST], rax			; 0 for a scalar
 	mov	qword [chkt_iST], 0
   .di_arm:
 	mov	rax, [chkt_iST]
@@ -438,22 +445,31 @@ proc __chk_ty_stmt, chkt_wST, chkt_nST
 	mov	rsi, [chkt_bST]
 	add	rsi, [chkt_iST]
 	call	ast_extra_at
-	mov	rdi, rbx
-	mov	rsi, rax
-	call	__chk_ty_node
-	mov	ecx, [rax + AstNode.b]		; `Casus.b` = the block
-	mov	r14, rcx
-	mov	ecx, [rax + AstNode.a]		; `Casus.a` = the pattern
-	mov	rdi, rbx
-	mov	rsi, rcx
-	mov	rdx, r13
-	call	__chk_ty_want
+	mov	r14, rax			; the `Casus`
 	mov	rdi, rbx
 	mov	rsi, r14
+	mov	rdx, r13
+	mov	rcx, [chkt_vST]
+	call	__chk_ty_pattern
+	mov	rdi, rbx
+	mov	rsi, r14
+	call	__chk_ty_node
+	mov	ecx, [rax + AstNode.b]		; `Casus.b` = the block
+	mov	rdi, rbx
+	mov	rsi, rcx
 	call	__chk_ty_stmt
 	inc	qword [chkt_iST]
 	jmp	.di_arm
   .di_else:
+	cmp	qword [chkt_dST], 0
+	jne	.di_aliter
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, r13
+	mov	rcx, [chkt_vST]
+	call	__chk_ty_exhaust
+	jmp	.unit
+  .di_aliter:
 	mov	rdi, rbx
 	mov	rsi, [chkt_dST]
 	call	__chk_ty_stmt

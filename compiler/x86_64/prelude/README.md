@@ -12,10 +12,12 @@ Design: `docs/design/runtime.md` sections 2.1–2.7 (decisions), 3 (fixtures),
 | `prelude.asm` | the blob: entry stub, carriers, `Scriptor`, ARC, arena, abort | `exsc` carries it as data (`file`) and copies it verbatim into `OUT` |
 | `prelude_data.asm` | the blob's mutable state, a second verbatim blob | ditto, written after the data segment |
 | `interface.inc` | the pre-seeded `Decl` table and the layout facts | `checker/resolve/`, and every `tests/unit/prelude_*.asm` |
+| `eventus.inc` | the prelude's `typus eventus<T, E>` and `structura erratum`, built as the tree of their source and appended to a module that names them (`docs/design/sum-types.md` D5) | `ast/` (`ast_from_cst`) |
 | `README.md` | this file | you |
 
-Only the first two are emitted. `interface.inc` is `include`d into `exsc`
-itself and never reaches `OUT`.
+Only the first two are emitted. `interface.inc` and `eventus.inc` are
+`include`d into `exsc` itself and never reach `OUT`; `eventus.inc` declares a
+sum and a struct, which have no code.
 
 ## Status
 

@@ -1,0 +1,97 @@
+// The prelude's `eventus<T, E>` and `erratum` (docs/design/sum-types.md D5;
+// compiler/x86_64/prelude/eventus.inc), through `-o` on the reference backend
+// and through the C backend under the differential phase. Nothing here is
+// declared by the program: `eventus`, `prosperum`, `adversum` and `erratum`
+// are the prelude's. `initium` returns the number of the first check that is
+// wrong, or 0 when all are right.
+//
+//    1-2  `eventus<mensura, erratum>` ROUND TRIPS: built by `redde` through
+//         the hidden result pointer, read back by a complete match -- the
+//         success value and the error number both survive
+//    3    the two outcomes are DISTINCT VALUES, which is what `lege_octeto`'s
+//         256 cannot say (spec 4.6; the prelude I/O is still `-> u16`, its
+//         migration is the next step, sum-types.md D5)
+//    4    a different instance of the same sum, `eventus<u8, erratum>`: a
+//         two-byte value where the first is nine
+//    5    a NESTED instance, `eventus<eventus<u8, erratum>, erratum>`, matched
+//         twice
+//    6    `erratum` alone: a literal, a field read
+//    7    an `eventus` passed down as a parameter, assigned, and passed again
+//    8    the expectation supplies the type arguments: an annotation, a
+//         parameter, an assignment target and `redde` each build an instance
+//         from a bare `prosperum`/`adversum`
+//
+// Mutation (run before committing): in lower/sum.inc's `__lwr_sum_bind`,
+// load every scalar binding at bit offset 0 -> exit 1.
+
+functio divide(a: mensura, b: mensura) -> eventus<mensura, erratum> {
+    si b eq 0 { redde adversum(erratum { numerus: 33 }); }
+    redde prosperum(a / b);
+}
+
+functio valor(r: eventus<mensura, erratum>) -> mensura {
+    discerne r {
+        casus prosperum(n) { redde n; }
+        casus adversum(e) { redde 1000000 + (e.numerus sicut mensura); }
+    }
+}
+
+functio est_error(r: eventus<mensura, erratum>) -> u1 {
+    discerne r {
+        casus adversum(e) { redde 1; }
+        aliter { redde 0; }
+    }
+}
+
+functio octetus(b: u8) -> eventus<u8, erratum> {
+    si b gt 200 { redde adversum(erratum { numerus: b sicut u16 }); }
+    redde prosperum(b);
+}
+
+functio intimum(r: eventus<eventus<u8, erratum>, erratum>) -> mensura {
+    discerne r {
+        casus prosperum(i) {
+            discerne i {
+                casus prosperum(v) { redde v sicut mensura; }
+                casus adversum(e) { redde 2000 + (e.numerus sicut mensura); }
+            }
+        }
+        casus adversum(e) { redde 3000 + (e.numerus sicut mensura); }
+    }
+}
+
+functio transmitte(r: eventus<mensura, erratum>) -> mensura {
+    mutabilis s: eventus<mensura, erratum> = adversum(erratum { numerus: 1 });
+    s = r;
+    redde valor(s);
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    si valor(divide(84, 2)) ne 42 { redde 1; }
+    si valor(divide(7, 0)) ne 1000033 { redde 2; }
+    si est_error(divide(0, 5)) ne 0 { redde 3; }
+    si est_error(divide(5, 0)) ne 1 { redde 3; }
+    discerne octetus(250) {
+        casus adversum(e) { si e.numerus ne 250 { redde 4; } }
+        casus prosperum(v) { redde 4; }
+    }
+    discerne octetus(17) {
+        casus prosperum(v) { si v ne 17 { redde 4; } }
+        aliter { redde 4; }
+    }
+    firma in1: eventus<u8, erratum> = prosperum(9);
+    firma n1: eventus<eventus<u8, erratum>, erratum> = prosperum(in1);
+    si intimum(n1) ne 9 { redde 5; }
+    firma n2: eventus<eventus<u8, erratum>, erratum> = prosperum(adversum(erratum { numerus: 4 }));
+    si intimum(n2) ne 2004 { redde 5; }
+    firma n3: eventus<eventus<u8, erratum>, erratum> = adversum(erratum { numerus: 5 });
+    si intimum(n3) ne 3005 { redde 5; }
+    firma e: erratum = erratum { numerus: 65535 };
+    si e.numerus ne 65535 { redde 6; }
+    si transmitte(divide(9, 3)) ne 3 { redde 7; }
+    si transmitte(prosperum(11)) ne 11 { redde 8; }
+    mutabilis r: eventus<mensura, erratum> = prosperum(1);
+    r = adversum(e);
+    si valor(r) ne 1065535 { redde 8; }
+    redde 0;
+}
