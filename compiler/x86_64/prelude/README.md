@@ -19,7 +19,7 @@ itself and never reaches `OUT`.
 
 ## Status
 
-`prelude.asm` and `prelude_data.asm` assemble and run, under twelve fixtures
+`prelude.asm` and `prelude_data.asm` assemble and run, under thirteen fixtures
 (below). `interface.inc` part A — the layout constants — is checked against
 the blob every time both are assembled together. `interface.inc` part B — the
 serialized `Decl` rows, `EXS_IFACE_DECL_COUNT = 11` since `8524028` added
@@ -196,7 +196,8 @@ audit a property of the artifact.
 | core (always) | `exit_group(231)`; `write(1)` to fd 2 | `exsrt_start`, `exsrt_abort` |
 | `ambitus` | `write(1)`, `read(0)` | `exsrt_scriptor_scribe`, `exsrt_scriptor_scribe_octeto`; `exsrt_lector_lege_octeto` is the `read` — the row's other half, tabulated since the blob was written and `[UNIMPLEMENTED]` until it landed |
 | `alloc` | `mmap(9)`, `munmap(11)` | `exsrt_alloc_novum`, `exsrt_alloc_dimitte` |
-| `archivum` `horologium` `fortuna` `rete` `Filum` `machina` `sermo` `Crudum` | `[OPEN]` | none |
+| `archivum` | `openat2(437)`, `close(3)`, `fstat(5)`, `read(0)`, `write(1)`; `lseek(8)` admitted, issued by none `[OPEN]`; **not** `openat(257)` | `archivum.asm` (separate blob, ADR 0017 stage 1): `exsrt_archivum_radix` (the one unscoped open: an absolute root from `AT_FDCWD`, `how_radix`), `exsrt_archivum_infra`, `exsrt_archivum_lege_ex` (+ `fstat`, `close` on a non-regular file), `exsrt_archivum_crea`, `exsrt_archivum_lege`, `exsrt_archivum_scribe`. Not yet carried into `OUT` and not IR-callable (stage 2, after `eventus`) |
+| `horologium` `fortuna` `rete` `Filum` `machina` `sermo` `Crudum` | `[OPEN]` | none |
 
 Measured, not asserted — `tools/syscall-audit.sh` on each fixture binary:
 
@@ -208,6 +209,7 @@ Measured, not asserted — `tools/syscall-audit.sh` on each fixture binary:
 | `prelude_sine_ambitus` | Mundus | `exit_group`, `write` (abort only) |
 | `prelude_arc`, `prelude_arc_resurrectio`, `prelude_abortus_terminus`, `prelude_mxcsr*` | Mundus | `exit_group`, `write` (abort only) |
 | `prelude_arena`, `prelude_arena_exhausta` | Mundus, alloc | `exit_group`, `mmap`, `munmap`, `write` (abort only) |
+| `prelude_archivum` | Mundus, archivum | `exit_group`, `openat2` ×4 (one per constant), `fstat`, `close`, `read`, `write` ×2 (`exsrt_archivum_scribe`, and `exsrt_abort`'s unreached path); passes `--potestates Mundus,archivum` with all four `openat2` sites proven, fails under `Mundus` and under `Mundus,ambitus` (`tools/syscall-audit.sh --self-test`) |
 
 The gating is therefore checked in both directions: `scribe`'s `write` and
 `lege_octeto`'s `read` disappear when `ambitus` is 0, and `mmap`/`munmap`
@@ -240,7 +242,7 @@ resolve is a *failure*, not a skip.
 
 ## The fixtures
 
-Twelve, all under `tests/unit/`, all discovered and run by `tests/run.sh` from
+Thirteen, all under `tests/unit/`, all discovered and run by `tests/run.sh` from
 their `; TEST:` directive. Each assembles the blob **alone**, with a
 hand-written `bfausr_initium` in place of an emitted one — the way
 `emit.inc` was proven against hand-written IR before a lowering existed.
@@ -259,6 +261,7 @@ hand-written `bfausr_initium` in place of an emitted one — the way
 | `prelude_mxcsr.asm` | Mundus | `exit=0` | `stmxcsr` after the stub is `0x1F80` — `ad_parem`, `conservata` — checked field by field |
 | `prelude_mxcsr_inferius.asm` | Mundus | `exit=0` | the same for `0x3F80`, `ad_inferius` |
 | `prelude_mxcsr_superius.asm` | Mundus | `exit=0` | the same for `0x5F80`, `ad_superius` |
+| `prelude_archivum.asm` | Mundus, archivum | `exit=0`, `audit=fail` (against the compiler's nine, which has no `openat2`; the per-atom audit is the self-test's) | `archivum.asm`'s routines on the running kernel, through the prelude's own four `open_how` constants: in-root opens succeed; `..` out, an escaping symlink, an absolute path, an absolute symlink, a magic link and a mount crossing are refused, each with a legal twin reaching the same target; a relative root, an interior NUL, a 4096-byte path and a negative directory descriptor are refused before any syscall; `lege_ex` refuses a directory and releases its descriptor; `crea` refuses every existing name and creates, writes and reads back a new one in the harness's scratch directory. Each constant's resolve flags were mutated in a scratch copy and every mutation made this fixture fail |
 
 Three MXCSR fixtures rather than one because `EXS_MXCSR` is a single constant
 and the stub runs once: one binary can prove one image, and re-executing the

@@ -543,7 +543,7 @@ can be told the atoms and compute the same union:
 | core (always) | `exit_group(231)`, `write(1)` to fd 2 from `exsrt_abort` only | yes |
 | `ambitus` | `write(1)`, `read(0)` | yes |
 | `alloc` | `mmap(9)`, `munmap(11)` | no |
-| `archivum` | `openat(257)`, `close(3)`, `fstat(5)`, `lseek(8)`, `read(0)`, `write(1)` | no |
+| `archivum` | `openat2(437)`, `close(3)`, `fstat(5)`, `lseek(8)`, `read(0)`, `write(1)` to any fd — **not** `openat(257)` (ADR 0017); each `openat2` site must pass the audit's rules W, A1–A6 | no |
 | `horologium` | `clock_gettime(228)` `[OPEN]` | no |
 | `fortuna` | `getrandom(318)` `[OPEN]` | no |
 | `rete` | the socket family `[OPEN]` | no |
@@ -575,6 +575,25 @@ program with `horologium` fails it until it takes `--potestates`.
 `clock_gettime` and the rest are added to a program's surface *only* by
 the declaration, never by the prelude's presence — that is the whole
 point of `if` in the blob rather than a monolithic prelude.
+
+**`archivum`'s row changed with ADR 0017 (accepted 2026-10-02).** This
+table gave the atom `openat(257)`, which resolves any path from any
+directory: holding the atom would have meant naming every file the process
+can reach. It now gives `openat2(437)` and nothing that opens without
+`RESOLVE_BENEATH`, except one site that derives a root from an absolute
+path (`docs/design/archivum-beneath.md` D2–D5). Stage 1 is built: the
+routines are `compiler/x86_64/prelude/archivum.asm` (code) and
+`archivum_rodata.asm` (the four `open_how` constants, in `segment
+readable`), both gated on `EXS_POTESTAS_ARCHIVUM` and run by
+`tests/unit/prelude_archivum.asm`; `tools/syscall-audit.sh --potestates`
+carries this row and proves every `openat2` site (`tests/unit/audit_openat2.asm`).
+`lseek(8)` is in the row and issued by no routine `[OPEN]`. **Not yet
+carried into `OUT`**: `backend_fasmg/program.inc` copies only `prelude.asm`
+and `prelude_data.asm`, and no compiled program's closure can hold
+`archivum` until the surface derivation exists, which waits on `eventus`
+(stage 2). The audit also refuses the i386 gates `int 0x80` and `sysenter`
+everywhere, in both modes: the i386 ABI numbers syscalls from another
+table, so no row here could judge one.
 
 ### 2.7 Spec §5.4 at program start: the MXCSR image
 

@@ -1,12 +1,7 @@
 # 0017 — `archivum` reaches the filesystem only beneath a `Directorium`, through `openat2`
 
-**Status:** Proposed, 2026-10-02. **Nothing implemented.** The kernel
-behaviour it rests on is measured (`prototypes/beneath/`, one host,
-`docs/design/archivum-beneath.md` section 2). The design is
-`docs/design/archivum-beneath.md`. This record proposes the decisions and
-the spec text. It does not apply them: §4.6, §4.7, §13,
-`compiler/x86_64/diag/codes.inc`, `compiler/x86_64/prelude/`,
-`compiler/x86_64/rt/sys.inc` and `tools/syscall-audit.sh` are untouched.
+**Status:** Accepted, 2026-10-02, by the repository owner; stage 1
+implemented 2026-10-02, stage 2 (surface API) waits on eventus.
 **Relates to:** spec §4.1, §4.2, §4.3, §4.6, §4.7, §9.5, §10.3, §13;
 `docs/design/runtime.md` section 2.6; `docs/design/checker.md` sections 2.1
 and 2.8; `docs/design/sum-types.md` D5; `docs/asm-conventions.md` section 6.

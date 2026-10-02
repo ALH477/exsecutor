@@ -1,11 +1,20 @@
 # `archivum` beneath one root — `Directorium`, `openat2` and the audit
 
-**Status:** `[OPEN]` — design only. No compiler, prelude or audit code
-exists for any of it. Section 2 is measured, on one machine, by
-`prototypes/beneath/`. Everything after section 2 is a hypothesis with its
-refutation conditions written down. The decisions to adopt are proposed in
-[ADR 0017](../decisions/0017-archivum-beneath.md), which is `Proposed` and
-not `Accepted`.
+**Status:** stage 1 implemented; stage 2 waits on eventus.
+[ADR 0017](../decisions/0017-archivum-beneath.md) was accepted by the
+repository owner on 2026-10-02. **Built (stage 1):** the prelude routines
+(`compiler/x86_64/prelude/archivum.asm`, `archivum_rodata.asm`), the
+audit's openat2 site rules W and A1–A6 (`tools/syscall-audit.sh`), and the
+fixtures that run and audit them (`tests/unit/prelude_archivum.asm`,
+`tests/unit/audit_openat2.asm`); section 9 records what building them
+found. **Not built (stage 2):** every surface name in section 4 —
+`Directorium`, `ad_radicem`, `infra`, `lege_ex`, `crea`, the
+`interface.inc` rows, the checker and lowering, carrying the blobs into
+`OUT` — because each returns `eventus<_, erratum>` and `eventus` is not
+inhabited (`docs/design/sum-types.md` D5). Section 2 is measured, on one
+machine, by `prototypes/beneath/`; the routines re-measure its refusals
+through the prelude's own constants. Everything about the surface in
+section 4 remains a hypothesis with its refutation conditions written down.
 **Relates to:** spec §4.1, §4.2, §4.3, §4.6, §4.7, §9.5, §10.3, §11, §13;
 `docs/design/runtime.md` section 2.6; `docs/design/checker.md` sections 2.1
 and 2.8; `compiler/x86_64/prelude/README.md` ("The syscall table, per
@@ -431,7 +440,7 @@ ever emits one (section 8). The audit is also atom-granular, not
 descriptor-granular. A `write(1)` to an unresolved fd under `archivum` is a
 file write or a stdout write, and the binary does not say which (section 5).
 
-**Self-test fixtures, when this is built.** `site.asm`'s three shapes become
+**Self-test fixtures — built (stage 1; section 9 has the result).** `site.asm`'s three shapes become
 `tests/unit/` fixtures: site 1 must PASS under `--potestates archivum`,
 site 2 (rdx from a register) must FAIL as indeterminate, and site 3
 (constant in the `RW` segment) must FAIL. A fourth fixture needs a constant
@@ -663,6 +672,8 @@ bytes and appends a NUL. A `via` with an interior NUL is refused. It cannot
 escape, because truncation only shortens and B still applies, but it would
 open a different file from the one the program named. A `via` of 4096
 bytes or more is refused. The buffer is prelude-owned and not reentrant.
+*(As built, section 9: the buffer is in the calling routine's stack frame,
+which is reentrant now; the limit and the refusals are the same.)*
 `[OPEN]` until threads exist (`Filum`, §4.6).
 
 ### D11. A compile-time check for path literals (optional)
@@ -706,7 +717,7 @@ unused anywhere in the tree: a grep for `E0425` over every `.md`, `.inc`,
 - The **compiler's** own nine are unchanged (section 1).
 - `docs/design/runtime.md` section 2.6's row and the prelude README's row are
   the two places this lands when it is built. ADR 0017 gives the spec text.
-  This document edits neither.
+  This document edited neither; ADR 0017's stage 1 changed both (section 9).
 
 ---
 
@@ -771,5 +782,91 @@ recorded in section 2.4.
   `poscit sicut d` in §10.3's view** (D6).
 - **`mkdirat`/`unlinkat`/`renameat2`/`getdents64`** under the
   single-component rule (section 5).
-- **A4's constants as prelude bytes**: the probe passes them from C (F15).
-  They have not been assembled by fasmg into a prelude segment.
+- ~~**A4's constants as prelude bytes**~~ — closed by stage 1: fasmg
+  assembles them into `segment readable` (`archivum_rodata.asm`), the audit
+  reads them back byte for byte, and `tests/unit/prelude_archivum.asm`
+  passes them to the kernel (section 9).
+
+---
+
+## 9. Stage 1, as built (2026-10-02)
+
+ADR 0017 was accepted on 2026-10-02 and built in two stages. Stage 1 is
+everything that does not need `eventus`. Nothing below refutes a decision;
+three implementation choices go beyond or differ from the text above, and
+they are recorded as such.
+
+**The routines.** `compiler/x86_64/prelude/archivum.asm` is a second
+executable blob beside `prelude.asm`, not an `include` in it (runtime.md H1
+forbids `include` there: `OUT` is self-contained). The four constants are a
+third file, `archivum_rodata.asm`, for `segment readable`: in the
+executable segment the audit's linear sweep would decode them as
+instructions. Both are gated on `EXS_POTESTAS_ARCHIVUM` and assemble to
+zero bytes when it is 0, so a binary without the atom is unchanged. The
+routines carry the private prefix (`exsrt_archivum_radix`, `_infra`,
+`_lege_ex`, `_crea`, `_lege`, `_scribe`) because `interface.inc` declares
+none of them: no IR can call them until stage 2. They return the result or
+a negated errno, the raw kernel convention, until `erratum` has variants.
+
+**Departures from the text, each deliberate:**
+
+- **D10's buffer is in the caller's frame** (4096 bytes), not
+  prelude-owned. Same limit, same refusals, and reentrant without waiting
+  for threads.
+- **A negative directory descriptor is refused at run time** (-EBADF) on
+  every scoped call. A6 refuses `AT_FDCWD` as an *immediate*; this refuses
+  it as a *value*, which A6 cannot see. Defence in depth, not in D1–D11.
+- **The prelude's own refusals are spelled with errnos**: -EINVAL for a
+  relative root, an interior NUL and a non-regular `lege_ex` target;
+  -ENAMETOOLONG for 4096 bytes or more. Provisional, for `erratum`.
+
+**Measured through the routines** (`tests/unit/prelude_archivum.asm`, 51
+checks, exit 0, Linux 6.18.44 in this Firecracker VM, as uid 0): every
+section 2 refusal reproduces through the prelude's bytes — `..` out,
+`nexus_foras` (a relative symlink out), an absolute path and an absolute
+symlink are EXDEV; a magic link beneath a root is ELOOP; `/` to
+`proc/self/status` is EXDEV (X); a child root cannot reach its parent's
+file (F7); `how_crea` refuses an existing file, an in-root symlink and an
+escaping one with EEXIST (F15); `how_radix` refuses `/proc/self/cwd` with
+ELOOP and follows `nexus_absolutus -> /`. Each refusal has a legal twin.
+**Non-vacuity, measured by mutation** in a scratch copy: changing the
+scoped constants' resolve to 0x00, 0x03 (B dropped), 0x0a (X dropped),
+0x09 (M dropped) or 0x0f (S added) made the fixture fail at checks 6, 6,
+22, 18 and 5 respectively, and `how_radix` with resolve 0 failed at
+check 19. The EAGAIN retry, ENOSYS/EPERM and EINTR remain `[UNTESTED]`
+(no racer, no seccomp); that there is no fallback is proven statically
+instead — the binary has no `openat(257)` and passes `--potestates
+Mundus,archivum`.
+
+**The audit.** Rules W and A1–A6 are as section 3 states; W (the four
+instructions contiguous, in order) is checked as its own rule. A1 computes
+a `lea`'s target from the *next* instruction's address, not from a byte
+count (objdump wraps long instructions) and never from objdump's comment.
+`tests/unit/audit_openat2.asm` holds eleven cases under one `CASUS` symbol;
+the self-test requires case 0 (four sites, the prelude's own four
+constants) to pass and each other case to fail naming exactly its rule set:
+resolve 0 {A4}, B|M {A4}, writable segment {A3}, `rdx` from `rcx` {W, A1},
+`r10` = 32 {A2}, `how_radix` with `rdi` from memory {A5}, `how_lege` with
+`rdi` = AT_FDCWD {A6}, an unrelated instruction in the window {W},
+`openat(257)` (not admitted), a constant cut short by its segment's end
+{A3}. Two changes reach beyond `openat2`: `xchg`/`xadd`/`cmpxchg` and
+implicit writers now unresolve every tracked register they write (they
+could only turn a PASS into a FAIL), and the i386 gates `int 0x80` and
+`sysenter` are refused everywhere, in both modes (`tests/unit/legacy_gate.asm`;
+found missing by another agent's measurement while this was built).
+
+**Still `[OPEN]` after stage 1**, beyond section 8: the routines are not
+carried into `OUT` (`backend_fasmg/program.inc` copies two blobs; it must
+copy these two as well, which is a backend change for stage 2); `lseek(8)`
+is in the row and issued by no routine.
+
+**Stage 2 needs from `eventus`:** a two-variant `eventus<T, E>` with a
+layout the lowering can return from an IR call, a constructor for each
+variant, and a pattern to take it apart, so that `Directorium.ad_radicem`,
+`d.infra`, `d.lege_ex` and `d.crea` can return `eventus<_, erratum>`; and an
+`erratum` that can carry at least the kernel's errno and the prelude's
+four refusals. With those, stage 2 is: `interface.inc` rows (and
+`bfausr_`-prefixed entry points) for the four calls and `m.archivum()`,
+the reader and writer types (D4), the checker's R1–R3 as tests, D11's
+compile-time check with `EXS-E0425` registered in §13 first, and
+`program.inc` carrying both blobs.
