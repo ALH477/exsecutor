@@ -1,8 +1,10 @@
 # Runtime prelude — design plan (Stage 3)
 
-Status: **built** (decc0f0): `compiler/x86_64/prelude/` runs under twelve
+Status: **built** (decc0f0): `compiler/x86_64/prelude/` runs under fourteen
 fixtures (nine when this line was first written; `scribe_octeto`,
-`lege_octeto` and `sine_ambitus` since), its `scribe` binary prints
+`lege_octeto` and `sine_ambitus` since, then `alveus_scribendi` and
+`alveus_legendi` when the standard streams were buffered -- section 2.4,
+"Buffered standard streams"), its `scribe` binary prints
 `examples/saluta.expected` with `write` and `exit_group` only, and 612b0c9's
 `program.inc` wrapped it into a program that ran. Since `8524028` the blob
 also holds `Lector`, the standard-input reader (section 2.4, as amended), and
@@ -367,9 +369,11 @@ Lector { a: ambitus, descriptor: i32 }`, the same 16-byte record with the
 same mark `{ambitus}`, obtained by `Lector.ab_introitu(a)` —
 `exsrt_lector_ab_introitu(ret, a)`, `ad_exitum`'s three instructions reading
 `ExsAmbitus.in` where that reads `.out`, total — and read one byte at a time
-by `l.lege_octeto() -> u16` — `exsrt_lector_lege_octeto(l) -> u16`: one
-`read(0)` of one byte into the routine's own frame (the syscall wants an
-address), returning the byte, 0–255, or **256** at end of input. `EINTR` is
+by `l.lege_octeto() -> u16` — `exsrt_lector_lege_octeto(l) -> u16`:
+returning the byte, 0–255, or **256** at end of input. (As first built it
+issued one `read(0)` of one byte per call into its own frame; since the
+streams were buffered it hands bytes out of a 64 KiB block filled by one
+`read(0)` -- "Buffered standard streams", below.) `EINTR` is
 retried; a zero-length read is *not* retried, since for `read` that is the
 end of input, not `scribe`'s "nothing moved, go again"; `EAGAIN` and every
 other `-errno` return 256 too, so **end of input and error are not
@@ -388,6 +392,71 @@ compiler's nine, `read` included, and would not notice an ungated one.
 `Lector` has no field rows in `interface.inc`: members resolve by name
 through one pool, so a second `a` behind `Scriptor.a` would be unreachable;
 its mark is written down once, in `chk_row_pre_marks`.
+
+**Buffered standard streams (amended; `tests/unit/prelude_alveus_*.asm`).**
+As first built, `scribe_octeto` was one `write(2)` per byte and
+`lege_octeto` one `read(2)` per byte: `examples/somnium/` paid 48,000
+syscalls a frame, `examples/custos/filtrum` 5.27 million for 200,000
+records, and `examples/arca` could not be an audited process at all because
+reliquary streams gigabytes. The prelude now buffers both directions, with
+**no new syscall, no new routine in `interface.inc`, and no change to the
+bytes any descriptor receives**:
+
+- *Storage.* Two 64 KiB reservations (`EXS_ALVEUS_SCRIBENDI`,
+  `EXS_ALVEUS_LEGENDI`) and seven scalars in `prelude_data.asm`, inside
+  the same `if EXS_POTESTAS_AMBITUS` as the routines. The reservations are
+  `rb` at the very end of the last segment, so they are bss: the ELF
+  segment's file size stops before them and the kernel zero-fills them —
+  no `mmap`, no `brk`, no binary bytes (measured: `p_filesz 0x94`,
+  `p_memsz 0x20094` on `prelude_scribe`). A program without `ambitus`
+  reserves nothing; `prelude_sine_ambitus.asm` asserts every new label is
+  absent there.
+- *Writes* go into one buffer that belongs to one descriptor at a time and
+  leave in `write(1)` loops (the old `scribe` loop, now
+  `exsrt_scriptor_directe`) at five points: (1) the buffer cannot take the
+  request (a request of a whole buffer or more then goes straight through,
+  uncopied); (2) a write names another descriptor — pending bytes first, so
+  the order across descriptors is the order of the calls; (3) before every
+  `read(0)` — a read may block, so nothing written may wait behind it, which
+  keeps request/response pipes (somnium's host) from deadlocking on a held
+  reply; (4) `initium` returned — `exsrt_start` drains before
+  `exit_group`; (5) an abort — `exsrt_abort` drains before the `abortus N`
+  line, so stdout bytes written before a trap are on stdout, and precede
+  the line when both streams are one file.
+- *Reads* come out of one buffer that belongs to one descriptor; an empty
+  buffer is refilled by one `read(0)` of up to 64 KiB, after draining the
+  writer. A call naming another descriptor while bytes are pending reads
+  that descriptor unbuffered, one byte, so pending bytes are never lost or
+  misdelivered. End of input and errors are not cached: the next call asks
+  the kernel again, exactly as before.
+- *Failure.* The first write after a descriptor is bound goes straight
+  through and returns what it always did, so a descriptor the kernel
+  refuses is still discovered by the call that names it (0 bytes;
+  `prelude_scribe_octeto.asm` pins it). A failure found later, at a drain,
+  is **sticky**: the descriptor becomes FRACTUS, pending bytes are dropped,
+  and every later call on it returns 0 without a syscall
+  (`prelude_alveus_scribendi.asm` closes stdout under a buffered byte and
+  checks). The calls whose bytes were pending when the drain failed already
+  returned their full count — that is the one failure a buffered count
+  cannot report, it is C stdio's hole too, and it closes with `eventus`
+  (spec §11's bullet; `[OPEN]` there already).
+
+What is observable and was not before, stated so it is not discovered:
+**`write(2)` boundaries move** (a datagram socket as stdout would see
+merged datagrams; no file or pipe can tell); **output can lag** in a
+long-running program that writes without reading, until 64 KiB or exit —
+there is no explicit flush call (`s.purga()` would need an `interface.inc`
+row and a checker entry, `[OPEN]`); **input is read ahead** by up to 64 KiB,
+so on a file description shared with another process (`{ prog; cat; } <
+file`) the other process starts later than before, and giving bytes back
+needs `lseek`, which `ambitus` does not hold (`[OPEN]`, not added); a
+process **killed by a signal** (SIGSEGV from a stack overflow, a SIGKILL)
+loses what it had buffered, where it used to lose nothing. SIGPIPE now
+arrives at a drain rather than at the call, and ends the process either
+way. Measured (strace -c, this change's commit message): filtrum on 200,000
+records, 5,274,809 syscalls → 159; `cat` on 8 MiB, 16,777,218 → 259;
+somnium plasma's two-frame fixture, 96,019 → 6. Every `tests/programs/`
+and conformance golden is unchanged, byte for byte.
 
 **Where `Scriptor` lives, and what changes with `norma`.** Today: prelude
 assembly with an interface the checker pre-seeds — there is no module
@@ -620,7 +689,7 @@ eleven constants and `EXS_MXCSR` itself, supplies a hand-written
 `bfausr_initium`, runs, and is audited — before any emitted program
 exists (section 6 names them). `emit.inc` was proven the same way against
 hand-written IR. The claims below were `[UNTESTED]` until those ran; all
-but the last are now pinned by the twelve `tests/unit/prelude_*.asm`
+but the last are now pinned by the fourteen `tests/unit/prelude_*.asm`
 fixtures `prelude/README.md` tables, and the last is still `[UNTESTED]`
 for the reason it gives:
 
@@ -633,6 +702,18 @@ for the reason it gives:
 - `exsrt_retain` on `rc = 2⁶⁴−1` aborts with `abortus 2`; on `rc = 0` with
   `abortus 3`; `exsrt_release` from 1 calls the destructor exactly once
   with `rc = 0` during it, and a retain inside that destructor aborts 3.
+- The buffered streams (section 2.4, "Buffered standard streams"): the
+  first write binds and goes through, the next 65,536 bytes wait, the
+  65,537th drains them, a whole-buffer `scribe` goes through uncopied, a
+  `read` drains the writer, a drain that fails makes the descriptor
+  sticky-failed (`prelude_alveus_scribendi.asm`, every step measured by
+  `lseek` on stdout); the reader takes 64 KiB per `read`, hands back all
+  135,169 bytes of a self-describing input in order, and serves a foreign
+  descriptor unbuffered without losing its pending bytes
+  (`prelude_alveus_legendi.asm`). The abort drain is
+  `tests/programs/abortus_post_scripturam/`; the exit drain is every
+  write-only program test (`octeti` keeps 1 of its 26 bytes without it —
+  measured by deleting the drain).
 - `stmxcsr` after the stub equals `EXS_MXCSR` for each of the three
   rounding images.
 - The audit on each fixture binary reports exactly the union in section
@@ -640,6 +721,8 @@ for the reason it gives:
 - A partial write (a pipe with a small buffer) is looped, and `EINTR` is
   retried — **no fixture can produce either without a second process**,
   which `tests/run.sh` does not have; `[UNTESTED]` and stated as such.
+  Buffering made the partial-write path likelier (a 64 KiB drain into a
+  pipe another process is slow to empty), not testable.
 
 ## 4. Determinism audit
 
@@ -797,12 +880,21 @@ neither of which it may write itself.
   IR-callable names a redefinition at the checker (class B, CHK 2.4); the
   private `exsrt_` names have no `Decl` and the collision is fasmg's to
   report `[OPEN]` — reserve the prefix in the checker, or mangle.
+- **H7 the stream buffers are reserved LAST.** `prelude_data.asm` ends with
+  the two `rb` reservations so they are bss; initialised data written after
+  them (by this file or by a wrapper appending to the writeable segment)
+  turns 128 KiB of reservation into 128 KiB of zeros in every binary
+  (measured: one `db 1` appended after the include took `prelude_scribe`
+  from 1,688 bytes to 132,761). Not a correctness defect; a size one, and
+  silent.
 
 ## 8. Unresolved
 
 The eight atoms without a routine and their records; `m.alloc(n)`'s
 spelling and unit; `scribe`'s `eventus`; `EAGAIN`; `SIGPIPE`; weak
-references and `dtor` conventions for fields; a size-class free list; the
+references and `dtor` conventions for fields; a size-class free list; an
+explicit flush call on `Scriptor`, and giving read-ahead back on a shared
+file description (both section 2.4, "Buffered standard streams"); the
 seventh SysV argument in emitted `call`s; label mangling for non-ASCII
 names; `grapha`/`scalares` and the Unicode tables inside a program; MXCSR
 after `externus`; a trapping-float mode; toward-zero rounding's name; the

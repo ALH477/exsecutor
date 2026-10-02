@@ -1,0 +1,34 @@
+// Output, then a trap: the bytes written BEFORE an abort must still be on
+// stdout. With one `write(2)` per call that was automatic; with the buffered
+// prelude (docs/design/runtime.md 2.4, as amended) it holds only because
+// `exsrt_abort` drains the write buffer before it writes `abortus N` to fd 2
+// and executes `ud2`. Remove that drain and this fixture loses "B\n".
+//
+// WHY THREE CALLS AND NOT ONE. The first write after a descriptor is bound
+// goes straight through, unbuffered -- that is where a descriptor the kernel
+// refuses is discovered -- so a program that wrote one byte and trapped would
+// pass with or without the drain and prove nothing. "A" goes straight
+// through; "B" and the newline wait in the buffer, and only the abort's
+// drain can deliver them.
+//
+// The trap is tests/programs/abortus_differentia's: `-` on unsigned integers
+// traps (spec 5.4), so 3 - 5 in u64 is abort kind 1, and neither `redde` is
+// reached.
+
+functio differentia(a: u64, b: u64) -> u64 {
+    redde a - b;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma s = Scriptor.ad_exitum(a);
+    firma w0 = s.scribe_octeto(0x41);
+    firma w1 = s.scribe_octeto(0x42);
+    firma w2 = s.scribe_octeto(10);
+    si differentia(3, 5) lt 10 {
+        redde 9;
+    } aliter {
+        redde 7;
+    }
+}

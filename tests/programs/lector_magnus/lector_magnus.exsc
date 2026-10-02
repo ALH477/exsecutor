@@ -1,0 +1,57 @@
+// `cat`, in Exsecutor: every byte of standard input, unchanged, on standard
+// output. `Lector.ab_introitu(a)` is the reader `Scriptor.ad_exitum(a)` is the
+// writer -- spec 4.6 puts all three streams in `ambitus` -- and
+// `l.lege_octeto()` is `s.scribe_octeto(b)` turned round.
+//
+// WHY IT IS A `u16`. A byte has 256 values and the loop needs a 257th thing
+// to mean "the input ended", so `lege_octeto` answers 0..255 or 256. That is
+// provisional exactly as `scribe`'s count is (spec 11 wants `eventus`, which
+// has no syntax yet), and it is why the comparison below is against 256 and
+// the write takes `c sicut u8`: inside the loop the value IS a byte.
+//
+// EOF AND ERROR ARE THE SAME ANSWER. A broken stream also reads 256, so this
+// program cannot tell a truncated input from a complete one. Stated here
+// because a `cat` that silently stops at an I/O error is a real hazard; the
+// fix is `eventus`, not a second sentinel.
+//
+// THIS COPY READS A LARGE STREAM. tests/programs/lector is `cat` over 41
+// bytes, which a one-byte-per-syscall runtime and a buffered one pass alike.
+// This is the same program, unchanged below the comment, over
+// tests/data/alveus_legendi.bin: 135,169 bytes, byte i being
+// `(i ^ (i >> 8) ^ (i >> 16)) & 0xff`. That is two whole 64 KiB read
+// buffers and a short third. On the way out the write buffer is drained
+// before every refill (a read may block, so nothing written may wait behind
+// it) -- which is also what delivers the tail here: the read that finds end
+// of input drains it, so the EXIT drain has nothing left to do in this
+// program. The exit drain is guarded by every write-only fixture
+// (tests/programs/octeti loses 25 of its 26 bytes without it -- measured by
+// removing it), and the abort drain by tests/programs/abortus_post_scripturam
+// (docs/design/runtime.md 2.4, as amended, lists all five flush points).
+// A block lost, doubled or reordered at any boundary shows
+// as a `cmp` difference, and the `i >> 16` term makes even a whole lost
+// 64 KiB block visible. stdout is compared against the input file itself,
+// as tests/programs/lector's is.
+//
+// `lege` is `emitte`'s shape in tests/programs/octeti: the authority is the
+// reader's own (spec 4.2's table -- a capability-bearing type's row is its
+// mark), so its declared row is `poscit sicut l` and nothing else.
+
+functio lege(l: Lector) -> u16 poscit sicut l {
+    redde l.lege_octeto();
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma l = Lector.ab_introitu(a);
+    firma s = Scriptor.ad_exitum(a);
+
+    mutabilis c: u16 = lege(l);
+    dum c ne 256 {
+        si s.scribe_octeto(c sicut u8) ne 1 {
+            redde 2;
+        }
+        c = lege(l);
+    }
+    redde 0;
+}

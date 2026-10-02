@@ -38,6 +38,12 @@
 ; (`Lector.ab_introitu`, `Lector.lege_octeto`), and the ExsAmbitus record in
 ; the data blob. Moving any of them out of the gate is an assembly failure
 ; here, naming the label. The run itself is the entry stub and a `redde 0`.
+; Since the standard streams were buffered (runtime.md 2.4, as amended) the
+; list also holds the four private routines behind them -- the write loop,
+; the drain, `scribe`'s shared body, the one `read` site -- and their state,
+; the two 64 KiB reservations included: a Mundus-only program reserves
+; nothing for streams it cannot open, and exsrt_start/exsrt_abort reach the
+; drain only under the same gate.
 ;
 ; THE READER IS WHY THE GATE IS NOW CHECKED IN BOTH DIRECTIONS AND NOT ONE.
 ; `read(0)` is the atom's other syscall, and the unit phase audits against
@@ -102,6 +108,42 @@ if defined bfausr_exsrt_lector_lege_octeto
 end if
 if defined exsrt_ambitus
 	err 'prelude_data: exsrt_ambitus is assembled with EXS_POTESTAS_AMBITUS = 0 -- it is outside the ambitus gate'
+end if
+if defined exsrt_scriptor_directe
+	err 'prelude: exsrt_scriptor_directe is assembled with EXS_POTESTAS_AMBITUS = 0 -- it is outside the ambitus gate'
+end if
+if defined exsrt_scriptor_purga
+	err 'prelude: exsrt_scriptor_purga is assembled with EXS_POTESTAS_AMBITUS = 0 -- it is outside the ambitus gate'
+end if
+if defined exsrt_scriptor_scribe_corpus
+	err 'prelude: exsrt_scriptor_scribe_corpus is assembled with EXS_POTESTAS_AMBITUS = 0 -- it is outside the ambitus gate'
+end if
+if defined exsrt_lector_lege
+	err 'prelude: exsrt_lector_lege is assembled with EXS_POTESTAS_AMBITUS = 0 -- it is outside the ambitus gate'
+end if
+if defined exsrt_scriptor_status
+	err 'prelude_data: exsrt_scriptor_status is assembled with EXS_POTESTAS_AMBITUS = 0 -- it is outside the ambitus gate'
+end if
+if defined exsrt_scriptor_fd
+	err 'prelude_data: exsrt_scriptor_fd is assembled with EXS_POTESTAS_AMBITUS = 0 -- it is outside the ambitus gate'
+end if
+if defined exsrt_scriptor_numerus
+	err 'prelude_data: exsrt_scriptor_numerus is assembled with EXS_POTESTAS_AMBITUS = 0 -- it is outside the ambitus gate'
+end if
+if defined exsrt_lector_fd
+	err 'prelude_data: exsrt_lector_fd is assembled with EXS_POTESTAS_AMBITUS = 0 -- it is outside the ambitus gate'
+end if
+if defined exsrt_lector_positio
+	err 'prelude_data: exsrt_lector_positio is assembled with EXS_POTESTAS_AMBITUS = 0 -- it is outside the ambitus gate'
+end if
+if defined exsrt_lector_numerus
+	err 'prelude_data: exsrt_lector_numerus is assembled with EXS_POTESTAS_AMBITUS = 0 -- it is outside the ambitus gate'
+end if
+if defined exsrt_scriptor_alveus
+	err 'prelude_data: exsrt_scriptor_alveus is assembled with EXS_POTESTAS_AMBITUS = 0 -- it is outside the ambitus gate'
+end if
+if defined exsrt_lector_alveus
+	err 'prelude_data: exsrt_lector_alveus is assembled with EXS_POTESTAS_AMBITUS = 0 -- it is outside the ambitus gate'
 end if
 
 ; And the converse, so the checks above cannot pass by testing nothing: the

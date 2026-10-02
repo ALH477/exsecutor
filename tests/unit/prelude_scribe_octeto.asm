@@ -24,47 +24,52 @@
 ; (docs/design/wire-codec.md D7) -- run from the prelude blob alone, with a
 ; hand-written `bfausr_initium`, exactly as prelude_scribe.asm runs `scribe`.
 ;
-; WHAT IT PROVES:
-;   1. Each call writes EXACTLY ONE byte, and the kernel says so, not the
-;      routine: after every call the fixture asks `lseek(1, 0, SEEK_CUR)` for
-;      stdout's file offset and requires it to have moved by one. A routine
-;      that wrote the byte twice, or not at all, and still returned 1 fails
-;      here. tests/run.sh points stdout at a regular file (`>$name.runlog`),
-;      so the offset exists; run by hand into a pipe or a terminal the
-;      fixture exits 50 and says why rather than guessing.
-;   2. Each call RETURNS 1, the count, as `scribe` returns its count.
-;   3. The bytes include 0x00, 0xff, 0x80 and 0xd3 -- none of which is UTF-8
+; WHAT IT PROVES (the buffered contract, runtime.md 2.4 as amended):
+;   1. The FIRST call binds stdout and goes STRAIGHT THROUGH: stdout's file
+;      offset, asked of the kernel with `lseek(1, 0, SEEK_CUR)`, moves by
+;      exactly one. The kernel says so, not the routine.
+;   2. Every later call is BUFFERED: it returns 1 and the offset does NOT
+;      move. A routine that still wrote per byte fails here (40+k), as does
+;      one that wrote the byte twice.
+;   3. `exsrt_scriptor_purga` -- the drain exsrt_start and exsrt_abort run --
+;      moves the offset by exactly the six pending bytes, in one go.
+;   4. The bytes include 0x00, 0xff, 0x80 and 0xd3 -- none of which is UTF-8
 ;      on its own, which is the point: `scribe` takes a `textus` and spec 5.1
 ;      makes that UTF-8, so only this routine can write them.
-;   4. Only `b`'s LOW BYTE matters. Two calls pass `rsi` with garbage in bits
-;      8-63 (SysV leaves them unspecified for a `u8`); the count and the
-;      offset are still exactly 1. The program test (tests/programs/octeti)
-;      checks the byte VALUES, with `cmp` against a binary expected.out; this
-;      fixture cannot read its own stdout back without a syscall the prelude
-;      does not have.
-;   5. The error convention is `scribe`'s: on a descriptor the kernel refuses
-;      (-1, EBADF) the call returns 0 and the offset does not move.
-;   6. The routine touches no callee-saved register: `rbx` and `r15` carry
+;   5. Only `b`'s LOW BYTE matters. Two calls pass `rsi` with garbage in bits
+;      8-63 (SysV leaves them unspecified for a `u8`); the count is still
+;      exactly 1. The program test (tests/programs/octeti) checks the byte
+;      VALUES, with `cmp` against a binary expected.out; this fixture cannot
+;      read its own stdout back without a syscall the prelude does not have.
+;   6. A descriptor the kernel refuses (-1, EBADF) is discovered at the call
+;      that names it -- that call binds it and goes straight through -- and
+;      returns 0 with the offset unmoved; a SECOND call on it returns 0 too
+;      (FRACTUS is sticky). Naming stdout again re-binds it: the call goes
+;      straight through, returns 1, and the offset moves by one.
+;   7. The routine touches no callee-saved register: `rbx` and `r15` carry
 ;      sentinels across every call, and `r12`-`r14` carry this fixture's own
 ;      state, so a clobber shows as a wrong exit, not a crash.
-;   7. The binary's syscall surface passes the audit. `write` and
+;   8. The binary's syscall surface passes the audit. `write`, `read` and
 ;      `exit_group` are the prelude's; the one `lseek` is THIS FIXTURE's
 ;      measuring instrument (`exsfx_positio`, below), not the blob's, and is
 ;      on the compiler's nine that `audit=pass` checks against. The prelude's
-;      own surface under {Mundus, ambitus} -- write and exit_group, nothing
-;      added -- is what tests/programs/octeti audits with `--potestates`.
+;      own surface under {Mundus, ambitus} is what tests/programs/octeti
+;      audits with `--potestates`.
 ;
 ; WHAT IT CANNOT PROVE: the EINTR retry and the zero-return retry, for
 ; `scribe`'s reason -- both need a second process. `[UNTESTED]`.
 ;
-; Exit: 7 = every check above (seven bytes written, seven counts of 1).
-; 21 = Scriptor.descriptor was not 1. 30+k = call k (0-based) returned a
-; count other than 1. 40+k = after call k the offset did not move by exactly
-; one. 50 = stdout is not seekable (not run under tests/run.sh). 51 = the
-; EBADF call returned non-zero. 52 = the EBADF call moved the offset.
-; 53 = a callee-saved register was clobbered.
+; Exit: 8 = every check above (seven bytes buffered and drained, seven
+; counts of 1, and the re-bind's 1). 21 = Scriptor.descriptor was not 1.
+; 30+k = call k (0-based) returned a count other than 1. 40+k = after call k
+; the offset was not where the contract puts it. 50 = stdout is not seekable
+; (not run under tests/run.sh). 51 = the EBADF call returned non-zero.
+; 52 = the EBADF call moved the offset. 53 = a callee-saved register was
+; clobbered. 54 = the drain did not move the offset by exactly six. 55 = the
+; second EBADF call returned non-zero. 56 = the re-bind did not return 1 or
+; did not move the offset by one.
 ;
-; TEST: run=yes expect-exit=7 audit=pass
+; TEST: run=yes expect-exit=8 audit=pass
 
 include 'format/format.inc'
 
@@ -135,13 +140,23 @@ bfausr_initium:
 	cmp	rax, 1
 	jne	.numerus_malus
 	add	r13, rax
+	test	r14, r14			; only call 0 goes straight through;
+	jnz	.retenta			; the rest wait in the buffer
 	inc	r12
+  .retenta:
 	call	exsfx_positio
 	cmp	rax, r12
 	jne	.positio_mala
 	inc	r14
 	cmp	r14, EXSFX_OCTETI_N
 	jb	.proba
+
+	; the drain: the six pending bytes, in one go
+	call	exsrt_scriptor_purga
+	add	r12, EXSFX_OCTETI_N - 1
+	call	exsfx_positio
+	cmp	rax, r12
+	jne	.purga_mala
 
 	; the error path: the same Scriptor, a descriptor the kernel refuses
 	mov	rax, [rbp - 64]
@@ -157,6 +172,23 @@ bfausr_initium:
 	call	exsfx_positio
 	cmp	rax, r12
 	jne	.error_movit
+	; FRACTUS is sticky: the same refused descriptor again, still 0
+	lea	rdi, [rbp - 80]
+	mov	esi, 0x42
+	call	bfausr_exsrt_scriptor_scribe_octeto
+	test	rax, rax
+	jnz	.error_iterum
+	; stdout again: re-bound, straight through, one byte
+	lea	rdi, [rbp - 64]
+	mov	esi, 0x0a
+	call	bfausr_exsrt_scriptor_scribe_octeto
+	cmp	rax, 1
+	jne	.religatio_mala
+	add	r13, rax
+	inc	r12
+	call	exsfx_positio
+	cmp	rax, r12
+	jne	.religatio_mala
 
 	mov	rax, EXSFX_SENTINEL_B
 	cmp	rbx, rax
@@ -165,7 +197,7 @@ bfausr_initium:
 	cmp	r15, rax
 	jne	.conservata_mala
 
-	mov	rax, r13			; 7: the counts, summed
+	mov	rax, r13			; 8: the counts, summed
 	jmp	.exi
 
   .descriptor_malus:
@@ -188,6 +220,15 @@ bfausr_initium:
 	jmp	.exi
   .conservata_mala:
 	mov	eax, 53
+	jmp	.exi
+  .purga_mala:
+	mov	eax, 54
+	jmp	.exi
+  .error_iterum:
+	mov	eax, 55
+	jmp	.exi
+  .religatio_mala:
+	mov	eax, 56
   .exi:
 	add	rsp, 56
 	pop	r15
