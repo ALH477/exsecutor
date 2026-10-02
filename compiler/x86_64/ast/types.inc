@@ -280,3 +280,289 @@ proc ast_type_dyn, tree, iface, row
 	call	ast_type_intern
 	return
 endp
+
+; =============================================================================
+; generic sum instances (docs/design/sum-types.md D5)
+; =============================================================================
+; `eventus<mensura, erratum>` is the declaration's sum applied to two type
+; arguments. It is ONE `AST_TY_SUM` record whose `b` is an `AST_TY_ARGS`
+; list (ast/kinds.inc says why a cons list of interned cells and not an
+; `extra` run: equal argument lists must be one id), so two spellings of the
+; same instance are one id and every type comparison in the checker -- which
+; is id equality -- holds for instances with no special case.
+;
+; THE DECLARATION'S OWN TYPE STAYS `b` = 0. Its variants' payload nodes are
+; typed in it (a payload `T` is `AST_TY_PARAM` over the generic parameter's
+; declaration), and an instance's payload element types are computed from
+; them on demand by `ast_sum_subst` -- never stored -- so the layout pass and
+; the lowering, which both need them and cannot share a checker routine
+; (lower/ssa.inc's header, D1), read one rule from here.
+
+; `ast_type_args(tree, head, tail)` -> rax = the `args` cell (head . tail).
+proc ast_type_args, tree, ta_head, ta_tail
+	locals
+		slot t0, 16
+	endl
+	lea	rdi, [t0]
+	call	ast_type_clear
+	mov	byte [t0 + AstType.kind], AST_TY_ARGS
+	mov	rax, [ta_head]
+	mov	[t0 + AstType.a], eax
+	mov	rax, [ta_tail]
+	mov	[t0 + AstType.b], eax
+	mov	rdi, [tree]
+	lea	rsi, [t0]
+	call	ast_type_intern
+	return
+endp
+
+; `ast_type_sum(tree, decl, args)` -> rax = the sum over `typus` declaration
+; `decl`, applied to the `args` list (0 for none).
+proc ast_type_sum, tree, ts_decl, ts_args
+	locals
+		slot t0, 16
+	endl
+	lea	rdi, [t0]
+	call	ast_type_clear
+	mov	byte [t0 + AstType.kind], AST_TY_SUM
+	mov	rax, [ts_decl]
+	mov	[t0 + AstType.a], eax
+	mov	rax, [ts_args]
+	mov	[t0 + AstType.b], eax
+	mov	rdi, [tree]
+	lea	rsi, [t0]
+	call	ast_type_intern
+	return
+endp
+
+; `ast_sum_body(tree, decl)` -> rax = the `SumBody` node of sum `typus`
+; declaration `decl`, rdx = its variant count; rax = 0 when `decl` is not a
+; sum (an alias, or a declaration with no node).
+proc ast_sum_body, tree, sb_decl
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [tree]
+	mov	rdi, rbx
+	mov	rsi, [sb_decl]
+	call	ast_decl_at
+	cmp	byte [rax + AstDecl.kind], AST_D_TYPUS
+	jne	.no
+	mov	esi, [rax + AstDecl.node]
+	test	esi, esi
+	jz	.no
+	mov	rdi, rbx
+	call	ast_node_at
+	mov	r12d, [rax + AstNode.a]		; `Typus.a`
+	test	r12d, r12d
+	jz	.no
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	ast_node_at
+	cmp	word [rax + AstNode.kind], AST_SUMBODY
+	jne	.no
+	mov	edx, [rax + AstNode.b]
+	mov	rax, r12
+	return
+  .no:
+	xor	eax, eax
+	xor	edx, edx
+	return
+endp
+
+; `ast_sum_tagw(nvariants)` -> rax = the tag's width in BYTES: the smallest of
+; 1, 2, 4 that holds the variant count (D6). The same arithmetic as
+; checker/rows/layout.inc's `__chk_lay_sum`, which writes it into every
+; variant's `Ast.layout` entry; this is for a reader with no layout.
+proc ast_sum_tagw, tw_n
+	locals
+	endl
+	mov	rax, [tw_n]
+	cmp	rax, 256
+	jbe	.one
+	cmp	rax, 65536
+	jbe	.two
+	mov	eax, 4
+	return
+  .one:
+	mov	eax, 1
+	return
+  .two:
+	mov	eax, 2
+	return
+endp
+
+; `ast_sum_genidx(tree, sumdecl, gpdecl)` -> rax = the 0-based position of
+; generic parameter declaration `gpdecl` in sum `typus` `sumdecl`'s
+; `Generics` list, or -1 when it is not one of them.
+proc ast_sum_genidx, tree, sg_sum, sg_gp
+	uses	rbx, r12, r13, r14
+	locals
+	endl
+	mov	rbx, [tree]
+	mov	rdi, rbx
+	mov	rsi, [sg_sum]
+	call	ast_decl_at
+	mov	esi, [rax + AstDecl.node]
+	test	esi, esi
+	jz	.no
+	mov	rdi, rbx
+	call	ast_node_at
+	mov	esi, [rax + AstNode.c]		; `Typus.c` = `Generics` or 0
+	test	esi, esi
+	jz	.no
+	mov	rdi, rbx
+	call	ast_node_at
+	mov	r12d, [rax + AstNode.a]		; the `GenericParam` list
+	mov	r13d, [rax + AstNode.b]		; its count
+	xor	r14d, r14d
+  .scan:
+	cmp	r14d, r13d
+	jae	.no
+	mov	rdi, rbx
+	lea	rsi, [r12 + r14]
+	call	ast_extra_at
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	ast_node_at
+	mov	ecx, [rax + AstNode.d]
+	cmp	rcx, [sg_gp]
+	je	.hit
+	inc	r14d
+	jmp	.scan
+  .hit:
+	mov	eax, r14d
+	return
+  .no:
+	mov	rax, -1
+	return
+endp
+
+; `ast_sum_subst(tree, sumty, ty)` -> rax = type `ty` with every generic
+; parameter of `sumty`'s declaration replaced by `sumty`'s argument in that
+; position. `ty` is a type written in the declaration (a payload element);
+; `sumty` is the instance it is read through. A sum with no arguments, a
+; parameter belonging to something else, and every kind that names no type
+; come back unchanged.
+;
+; THE RECORD IS COPIED BEFORE ANY RECURSION, because `ast_type_intern` may
+; grow `Ast.types` and move it (this file's header), and a recursive call
+; interns. Kinds whose `a` is a type id (`ptr` `ref` `refc` `borrow` `acies`
+; `eventus` `red`) substitute through `a`; a sum substitutes through its own
+; argument list; an `args` cell through both halves. A `fn` type's parameter
+; run is an `extra` offset and is NOT rebuilt: a function-typed payload of a
+; generic sum keeps its parameters as written -- `[OPEN]`, and nothing in the
+; tree has one.
+proc ast_sum_subst, tree, su_sum, su_ty
+	uses	rbx, r12, r13
+	locals
+		slot su_t, 16
+		slot su_x, dq
+	endl
+	mov	rbx, [tree]
+	mov	rax, [su_ty]
+	test	rax, rax
+	jz	.same
+	mov	rax, [su_sum]
+	test	rax, rax
+	jz	.same
+	mov	rdi, rbx
+	mov	rsi, [su_sum]
+	call	ast_type_at
+	mov	r12d, [rax + AstType.b]		; the argument list
+	test	r12d, r12d
+	jz	.same
+	mov	r13d, [rax + AstType.a]		; the sum declaration
+	mov	rdi, rbx
+	mov	rsi, [su_ty]
+	call	ast_type_at
+	mov	rcx, [rax]
+	mov	[su_t], rcx
+	mov	rcx, [rax + 8]
+	mov	[su_t + 8], rcx
+	movzx	ecx, byte [su_t + AstType.kind]
+	cmp	ecx, AST_TY_PARAM
+	je	.param
+	cmp	ecx, AST_TY_PTR
+	je	.via_a
+	cmp	ecx, AST_TY_REF
+	je	.via_a
+	cmp	ecx, AST_TY_REFC
+	je	.via_a
+	cmp	ecx, AST_TY_BORROW
+	je	.via_a
+	cmp	ecx, AST_TY_ACIES
+	je	.via_a
+	cmp	ecx, AST_TY_EVENTUS
+	je	.via_a
+	cmp	ecx, AST_TY_RED
+	je	.via_a
+	cmp	ecx, AST_TY_SUM
+	je	.via_b
+	cmp	ecx, AST_TY_ARGS
+	je	.via_ab
+  .same:
+	mov	rax, [su_ty]
+	return
+
+  .param:
+	mov	rdi, rbx
+	mov	esi, r13d
+	mov	edx, [su_t + AstType.a]
+	call	ast_sum_genidx
+	test	rax, rax
+	js	.same
+	mov	rcx, rax			; walk the list that many cells
+  .walk:
+	test	r12d, r12d
+	jz	.same				; fewer arguments than parameters:
+						; the checker's `EXS-E0304` case
+	mov	[su_x], rcx
+	mov	rdi, rbx
+	mov	esi, r12d
+	call	ast_type_at
+	mov	rcx, [su_x]
+	test	rcx, rcx
+	jz	.head
+	mov	r12d, [rax + AstType.b]
+	dec	rcx
+	jmp	.walk
+  .head:
+	mov	eax, [rax + AstType.a]
+	return
+
+  .via_a:
+	mov	rdi, rbx
+	mov	rsi, [su_sum]
+	mov	edx, [su_t + AstType.a]
+	call	ast_sum_subst
+	mov	[su_t + AstType.a], eax
+	jmp	.intern
+  .via_b:
+	mov	edx, [su_t + AstType.b]
+	test	edx, edx
+	jz	.same
+	mov	rdi, rbx
+	mov	rsi, [su_sum]
+	call	ast_sum_subst
+	mov	[su_t + AstType.b], eax
+	jmp	.intern
+  .via_ab:
+	mov	rdi, rbx
+	mov	rsi, [su_sum]
+	mov	edx, [su_t + AstType.a]
+	call	ast_sum_subst
+	mov	[su_t + AstType.a], eax
+	mov	edx, [su_t + AstType.b]
+	test	edx, edx
+	jz	.intern
+	mov	rdi, rbx
+	mov	rsi, [su_sum]
+	call	ast_sum_subst
+	mov	[su_t + AstType.b], eax
+  .intern:
+	mov	rdi, rbx
+	lea	rsi, [su_t]
+	call	ast_type_intern
+	return
+endp

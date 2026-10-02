@@ -35,9 +35,11 @@
 ;   3. `__drv_dump_buf`'s arithmetic: a fresh arena, one nearly exhausted by
 ;      six bytes short of an 8-aligned boundary, and one already past its
 ;      limit (the defensive clamp a real arena should never reach).
-;   4. `--emitte`'s parse through `drv_parse`: the FOUR accepted
+;   4. `--emitte`'s parse through `drv_parse`: the SIX accepted
 ;      values -- tokens, cst, ast and c (c-backend.md D2's reach-backend
-;      artifact) -- a rejected one, and the repeated-option refusal every other
+;      artifact), and h and rs (D9, the unit's C and Rust face) -- two
+;      rejected ones (`xml`, and `r`, a prefix of `rs` that an
+;      accept-on-prefix compare would take), and the repeated-option refusal every other
 ;      `aedifica` option already gets (§9.3's reasoning, applied here by
 ;      driver/cli.inc exactly as it is to `--diagnostica`).
 ;
@@ -361,7 +363,12 @@ DE_KIND_COUNT = (de_kindtab_end - de_kindtab) / 16
   ; table: it must set DrvCtx.emitte to DRV_EMIT_C and must be refused when
   ; repeated, exactly as the other three are.
   de_s_c        db 'c',0
+  ; The fifth and sixth (D9): the unit's FACE, a C header and a Rust extern
+  ; block. Artifacts like `c`, and parsed as two more rows of the same table.
+  de_s_h        db 'h',0
+  de_s_rs       db 'rs',0
   de_s_bogus    db 'xml',0
+  de_s_r        db 'r',0
 
 de_av_tokens:
 	dq de_s_exsc, de_s_aedifica, de_s_hospes, de_s_triple
@@ -387,20 +394,36 @@ de_av_c:
 de_av_c_end:
 DE_AV_C_N = (de_av_c_end - de_av_c) / 8
 
+de_av_h:
+	dq de_s_exsc, de_s_aedifica, de_s_hospes, de_s_triple
+	dq de_s_emitte, de_s_h, de_s_src
+de_av_h_end:
+DE_AV_H_N = (de_av_h_end - de_av_h) / 8
+
+de_av_rs:
+	dq de_s_exsc, de_s_aedifica, de_s_hospes, de_s_triple
+	dq de_s_emitte, de_s_rs, de_s_src
+de_av_rs_end:
+DE_AV_RS_N = (de_av_rs_end - de_av_rs) / 8
+
 de_accept_tab:
 	dq DE_AV_TOKENS_N, de_av_tokens
 	dq DE_AV_CST_N,    de_av_cst
 	dq DE_AV_AST_N,    de_av_ast
 	dq DE_AV_C_N,      de_av_c
+	dq DE_AV_H_N,      de_av_h
+	dq DE_AV_RS_N,     de_av_rs
 de_accept_tab_end:
 DE_ACCEPT_COUNT = (de_accept_tab_end - de_accept_tab) / 16
-  assert DE_ACCEPT_COUNT = 4
+  assert DE_ACCEPT_COUNT = 6
 
 de_accept_want:
 	dd DRV_EMIT_TOKENS
 	dd DRV_EMIT_CST
 	dd DRV_EMIT_AST
 	dd DRV_EMIT_C
+	dd DRV_EMIT_H
+	dd DRV_EMIT_RS
 de_accept_want_end:
   assert (de_accept_want_end - de_accept_want) / 4 = DE_ACCEPT_COUNT
 
@@ -410,6 +433,12 @@ de_av_bogus:
 	dq de_s_emitte, de_s_bogus, de_s_src
 de_av_bogus_end:
 DE_AV_BOGUS_N = (de_av_bogus_end - de_av_bogus) / 8
+
+de_av_prefix:
+	dq de_s_exsc, de_s_aedifica, de_s_hospes, de_s_triple
+	dq de_s_emitte, de_s_r, de_s_src
+de_av_prefix_end:
+DE_AV_PREFIX_N = (de_av_prefix_end - de_av_prefix) / 8
 
 de_av_repeat:
 	dq de_s_exsc, de_s_aedifica, de_s_hospes, de_s_triple
@@ -426,9 +455,10 @@ de_refuse_tab:
 	dq DE_AV_BOGUS_N,  de_av_bogus,  DRV_EXIT_USAGE
 	dq DE_AV_REPEAT_N, de_av_repeat, DRV_EXIT_USAGE
 	dq DE_AV_NOVAL_N,  de_av_noval,  DRV_EXIT_USAGE
+	dq DE_AV_PREFIX_N, de_av_prefix, DRV_EXIT_USAGE
 de_refuse_tab_end:
 DE_REFUSE_COUNT = (de_refuse_tab_end - de_refuse_tab) / 24
-  assert DE_REFUSE_COUNT = 3
+  assert DE_REFUSE_COUNT = 4
 
   include '../../compiler/shared/unicode/tables/tables.inc'
 

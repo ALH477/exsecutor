@@ -340,12 +340,23 @@ proc lwr_ty_size, lwrsp, lwrt
 	mov	rax, rcx
 	return
   .sum:
-	; never prelude-tagged today: `eventus` is still the width-0 builtin,
-	; not sum-types.md's prelude `typus`; when it becomes one, this arm
-	; grows `.prestruct`'s tag test and reads the row's extent the same way
+	; never prelude-tagged: the prelude's `eventus` is a real `typus`
+	; declaration (compiler/x86_64/prelude/eventus.inc), laid out by pass 4
+	; like any other. An INSTANCE of a generic sum (`b` != 0) has no
+	; declaration of its own to read a size from and is sized from its
+	; substituted elements (lower/sum.inc's `lwr_sum_size`, the mirror of
+	; pass 4's `__chk_lay_suminst`).
 	mov	rdi, [rbx + LwrState.tree]
 	mov	esi, [lwrt]
 	call	ast_type_at
+	mov	ecx, [rax + AstType.b]
+	test	ecx, ecx
+	jz	.sumdecl
+	mov	rdi, rbx
+	mov	esi, [lwrt]
+	call	lwr_sum_size
+	return
+  .sumdecl:
 	mov	ecx, [rax + AstType.a]
 	mov	rdi, [rbx + LwrState.tree]
 	mov	esi, ecx

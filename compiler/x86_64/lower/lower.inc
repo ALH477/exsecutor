@@ -1078,14 +1078,21 @@ proc __lwr_scan_prelude, lwrsp
 	return
 endp
 
-; lwr_module(lwrtree, lwrmodp, lwriarn, lwrsarn) -> rax = 0 on success.
+; lwr_module(lwrtree, lwrmodp, lwriarn, lwrsarn) -> rax = 0 on success, else
+; the id of the first node at which a capability atom had no provider.
 ;
 ; `lwrtree` is a CHECKED typed AST -- CHK 2.5's invariant, which this pass
 ; assumes and never re-checks: Stage 2 emitted no diagnostic, so every
 ; `Node.ty` is non-zero, every `Member.d`/`Seg.d` is filled, `konst` is set on
 ; every `Lit` and `Decl.flags` is complete. A tree that reaches here and still
 ; needs a diagnostic is a CHECKER bug and an `rassert`, never an `EXS-E` code:
-; this pass raises nothing.
+; this pass raises nothing -- WITH ONE EXCEPTION, which is the non-zero return.
+; An atom drawn where `lwr_cap_find` finds no carrier is `EXS-E0421`, and
+; instead of trapping (SIGILL, which `docs/asm-conventions.md` reserves for a
+; compiler bug) it is recorded (`lwr_unprovided`) and answered HERE, so the
+; driver can say it in the checker's own code. The pass still emits nothing it
+; would not have emitted -- it carries on with a null `ptr` and the module is
+; discarded.
 ;
 ; `lwrmodp` is a `BfaModule` `bfa_module_init` has already been called on;
 ; `lwriarn` backs the IR for the module's lifetime; `lwrsarn` is the builder's
@@ -1237,6 +1244,6 @@ proc lwr_module, lwrtree, lwrmodp, lwriarn, lwrsarn
 	mov	r8d, [lwrcnt2]
 	call	__lwr_items
 
-	xor	eax, eax
+	mov	eax, [rbx + LwrState.badn]	; 0, or the first unprovided atom
 	return
 endp

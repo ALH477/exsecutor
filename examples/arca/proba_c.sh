@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # examples/arca/proba_c.sh -- arca checked the way reliquary consumes it.
 #
-#   1. exsc emits the C unit twice; the two must be byte-identical.
+#   1. exsc emits the C unit twice; the two must be byte-identical. So must
+#      its generated C face (`--emitte h`) and Rust face (`--emitte rs`,
+#      docs/design/c-backend.md D9). arca.h, the hand-written header, must
+#      declare a subset of the generated one with the same prototypes.
 #   2. proba.c (the host loop reliquary runs in Rust) is built against the unit
-#      with every C compiler given, at -O0 and -O2, under UBSan, with arca.h
-#      force-included so a drifted signature is a compile error.
+#      with every C compiler given, at -O0 and -O2, under UBSan, with the
+#      GENERATED header force-included -- and proba.c's own `#include
+#      "arca.h"` then holds the two headers to each other.
 #   3. proba.py runs each build: reliquary's own archives admitted with the
 #      member list `tar -tvf` reads, a hostile corpus refused verdict by
 #      verdict, and a 3000-mutant fuzz in which every admitted mutant must be
@@ -13,10 +17,23 @@
 #   4. behaviour mutants of arca.exsc must each FAIL proba.py.
 #   5. capability: arca is pure by spec §4.1 rule 6. Drawing ambient
 #      authority must be refused EXS-E0421; taking a capability parameter
-#      must break arca.h.
+#      must break arca.h, and the header generated from the unmutated
+#      source (the stale consumer).
+#   6. the Rust face, where cargo exists: tests/c/facies/crate links the unit
+#      and calls caput_iudica, nomen_iudica and saltus through the generated
+#      extern block; the Scriptor mutant's regenerated block must refuse to
+#      compile that same consumer.
+#
+# arca.h is KEPT beside the generated header because it says what a
+# generator cannot -- how many bytes `h` and `l` point at, that neither is
+# written, what 0xffffffffffffffff from magnitudo means -- and because
+# reliquary's API is four of the unit's five publica functions (`octalis` is
+# publica for the fuzz harness, not for a host). Step 1's subset check and
+# step 2's force-include fail the moment it drifts.
 #
 # Usage: examples/arca/proba_c.sh [CC...]   (default: gcc clang)
-# Needs build/exsc (make all), python3 and GNU tar. Writes only to a temp dir.
+# Needs build/exsc (make all), python3 and GNU tar; cargo for step 6
+# (skipped, by name, without it). Writes only to a temp dir.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -29,15 +46,19 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 fail=0
 
-emit() { "$exsc" aedifica --hospes x86_64-linux --emitte c "$1" -o "$2" >/dev/null 2>&1; }
+emit() { "$exsc" aedifica --hospes x86_64-linux --emitte "${3:-c}" "$1" -o "$2" >/dev/null 2>&1; }
 
-emit "$here/arca.exsc" "$work/arca.gen.c"
-emit "$here/arca.exsc" "$work/again.gen.c"
-if cmp -s "$work/arca.gen.c" "$work/again.gen.c"; then
-  echo "  [ok]   emitted twice, byte-identical ($(wc -c <"$work/arca.gen.c") bytes)"
-else
-  echo "  [FAIL] two emissions differ"; fail=1
-fi
+for k in c h rs; do
+  emit "$here/arca.exsc" "$work/arca.gen.$k" "$k"
+  emit "$here/arca.exsc" "$work/again.gen.$k" "$k"
+  if [ -s "$work/arca.gen.$k" ] && cmp -s "$work/arca.gen.$k" "$work/again.gen.$k"; then
+    echo "  [ok]   --emitte $k emitted twice, byte-identical ($(wc -c <"$work/arca.gen.$k") bytes)"
+  else
+    echo "  [FAIL] --emitte $k: two emissions differ, or wrote nothing"; fail=1
+  fi
+done
+python3 "$root/tests/c/facies/protos.py" "$here/arca.h" "$work/arca.gen.h" \
+  || { echo "  [FAIL] arca.h and the generated header disagree"; fail=1; }
 
 build() {   # build CC OPT UNIT OUT
   local cc=$1 opt=$2 gen=$3 out=$4 san
@@ -45,8 +66,8 @@ build() {   # build CC OPT UNIT OUT
   if "$cc" --version 2>/dev/null | head -1 | grep -qi clang; then
     san=(-fsanitize=undefined -fsanitize-trap=undefined)
   fi
-  "$cc" -std=c11 "$opt" -Wall -Wextra -Werror -Wno-unused-function "${san[@]}" \
-    -include "$here/arca.h" -I "$here" "$gen" "$here/proba.c" -o "$out"
+  "$cc" -std=c11 "$opt" -Wall -Wextra -Werror -Wno-unused-function -Wno-cpp -Wno-#warnings "${san[@]}" \
+    -include "$work/arca.gen.h" -I "$here" "$gen" "$here/proba.c" -o "$out"
 }
 
 for cc in "${ccs[@]}"; do
@@ -106,6 +127,57 @@ if "${ccs[0]}" -std=c11 -fsyntax-only -Wno-unused-function -include "$here/arca.
   echo "  [FAIL] capability 'Scriptor parameter' still matches arca.h"; fail=1
 else
   echo "  [ok]   capability 'Scriptor parameter' breaks arca.h"
+fi
+emit "$work/cap.exsc" "$work/cap.gen.h" h
+if ! "${ccs[0]}" -std=c11 -fsyntax-only -Wno-unused-function -include "$work/cap.gen.h" "$work/cap.gen.c" 2>/dev/null; then
+  echo "  [FAIL] the Scriptor mutant's own generated header does not compile against it"; fail=1
+elif "${ccs[0]}" -std=c11 -fsyntax-only -Wno-unused-function -include "$work/arca.gen.h" "$work/cap.gen.c" 2>"$work/stale.err"; then
+  echo "  [FAIL] capability 'Scriptor parameter' still matches the generated header"; fail=1
+elif grep -q 'conflicting types' "$work/stale.err"; then
+  echo "  [ok]   capability 'Scriptor parameter' breaks the stale generated header (conflicting types)"
+else
+  echo "  [FAIL] the stale generated header is refused, but not for conflicting types"; fail=1
+fi
+
+if command -v cargo >/dev/null; then
+  cat >"$work/consumer.rs" <<'RS'
+fn consume() -> i32 {
+    let mut h = [0u8; 512];
+    let mut l = [0u8; 4096];
+    let mut b = [0u8; 4096];
+    unsafe {
+        // a zero block ends the archive (3), or follows a long name (25)
+        if exs_caput_iudica(h.as_mut_ptr(), l.as_mut_ptr(), 0, 0) != 3 { return 1; }
+        if exs_caput_iudica(h.as_mut_ptr(), l.as_mut_ptr(), 0, 1) != 25 { return 2; }
+        b[..6].copy_from_slice(b"a/../x");
+        if exs_nomen_iudica(b.as_mut_ptr(), 6) != 21 { return 3; }
+        b[..2].copy_from_slice(b"/x");
+        if exs_nomen_iudica(b.as_mut_ptr(), 2) != 20 { return 4; }
+        if exs_saltus(1) != 512 || exs_saltus(512) != 512 || exs_saltus(0) != 0 { return 5; }
+    }
+    0
+}
+RS
+  cp -r "$root/tests/c/facies/crate" "$work/crate"
+  rs_build() {  # UNIT FACE
+    ( cd "$work/crate" && EXS_FACIES_UNIT="$1" EXS_FACIES_RS="$2" EXS_FACIES_USE="$work/consumer.rs" \
+        CC="${ccs[0]}" CARGO_TARGET_DIR="$work/crate/target" cargo build --offline --quiet ) >"$work/cargo.log" 2>&1
+  }
+  if rs_build "$work/arca.gen.c" "$work/arca.gen.rs" && "$work/crate/target/debug/facies"; then
+    echo "  [ok]   Rust: the generated extern block links the unit; caput_iudica, nomen_iudica, saltus answer"
+  else
+    echo "  [FAIL] Rust: the generated extern block did not build or did not answer"; head -20 "$work/cargo.log"; fail=1
+  fi
+  emit "$work/cap.exsc" "$work/cap.gen.rs" rs
+  if rs_build "$work/cap.gen.c" "$work/cap.gen.rs"; then
+    echo "  [FAIL] Rust: the stale consumer still builds against the Scriptor mutant's face"; fail=1
+  elif grep -q 'E0061' "$work/cargo.log"; then
+    echo "  [ok]   Rust: the Scriptor mutant's regenerated face breaks the stale consumer (E0061)"
+  else
+    echo "  [FAIL] Rust: the mutant's face fails, but not on the argument count"; head -20 "$work/cargo.log"; fail=1
+  fi
+else
+  echo "  [skip] Rust face: cargo is not on PATH"
 fi
 
 [ "$fail" -eq 0 ] && echo "arca: PASS" || { echo "arca: FAIL"; exit 1; }

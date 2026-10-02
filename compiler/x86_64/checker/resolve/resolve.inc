@@ -1671,13 +1671,26 @@ proc __chk_mods, chk_c
 	mov	ecx, [r13 + AstDecl.parent]
 	test	ecx, ecx
 	jz	.scoped
-	; module-visible only through an `externus` block
+	; module-visible only through an `externus` block -- or as a VARIANT of
+	; a module-level sum `typus` (docs/design/sum-types.md D2: a variant is
+	; a name in the scope its type is declared in, which is why it collides
+	; with a constant of the same name as `EXS-E0302`, and why a
+	; constructor `prosperum(n)` resolves in expression position at all)
+	movzx	eax, byte [r13 + AstDecl.kind]
+	mov	[chk_k], eax
 	mov	rdi, [rbx + ChkCtx.tree]
 	mov	rsi, rcx
 	call	ast_decl_at
 	movzx	ecx, byte [rax + AstDecl.kind]
 	cmp	ecx, AST_D_EXTERNUS
+	je	.visible
+	cmp	ecx, AST_D_TYPUS
 	jne	.next
+	cmp	dword [chk_k], AST_D_VARIANT
+	jne	.next
+	cmp	dword [rax + AstDecl.parent], 0
+	jne	.next
+  .visible:
 	mov	rdi, [rbx + ChkCtx.tree]
 	mov	rsi, r12
 	call	ast_decl_at
@@ -1694,6 +1707,18 @@ proc __chk_mods, chk_c
 	test	rax, rax
 	jz	.insert
 	mov	r14, rax		; the EARLIER declaration
+	; A PRELUDE DECLARATION NEVER COLLIDES: a module's own declaration
+	; shadows it (spec §12, and `__chk_ty_path_type`'s order for the
+	; primitive table). The prelude's are pushed after every source
+	; declaration (`ast_prelude_push`, compiler/x86_64/prelude/eventus.inc),
+	; so the earlier one is always the module's and the prelude's is the
+	; one left out -- `functio eventus(...)` in examples/onus/onus.exsc
+	; keeps its name and is not `EXS-E0302`.
+	mov	rdi, [rbx + ChkCtx.tree]
+	mov	rsi, r12
+	call	ast_decl_synth
+	test	eax, eax
+	jnz	.checks
 	mov	rdi, [rbx + ChkCtx.tree]
 	mov	rsi, r12
 	call	ast_decl_at
@@ -2401,6 +2426,12 @@ proc __chk_path_genargs, chk_c, chk_n
 	return
 endp
 
+; `chk_pos` = 2: a `casus` PATTERN (docs/design/sum-types.md D2). Passed by the
+; `.casus` arm of `__chk_walk` to the pattern node alone; nothing inherits it
+; past a `Path`, because a pattern is a `Lit` or a `Path` and a path's only
+; walked children are its generic arguments, which are walked as types.
+CHK_POS_PATTERN = 2
+
 ; __chk_path(chk_c, chk_n, chk_pos) -- resolve `Path` node `chk_n`.
 ; `chk_pos` = 0 in expression position, 1 in type position (this file's header
 ; explains why a type-position miss is silent).
@@ -2437,6 +2468,8 @@ proc __chk_path, chk_c, chk_n, chk_pos
 	call	ast_cap_of_name
 	mov	r14, rax		; the §4.6 ordinal, or 0
 
+	cmp	qword [chk_pos], CHK_POS_PATTERN
+	je	.patpos
 	cmp	qword [chk_pos], 0
 	jne	.typepos
 
@@ -2473,6 +2506,15 @@ proc __chk_path, chk_c, chk_n, chk_pos
 	mov	rcx, r13
 	call	chk_raise
 	xor	rax, rax
+	jmp	.have
+
+  .patpos:
+	; a `casus` pattern (the `.casus` arm says why a miss is silent here,
+	; and why an atom is not a draw in this position)
+	mov	rdi, rbx
+	mov	rsi, [chk_nm]
+	xor	rdx, rdx
+	call	__chk_lookup
 	jmp	.have
 
   .typepos:
@@ -2534,7 +2576,7 @@ proc __chk_member, chk_c, chk_n
 	return
 endp
 
-; __chk_rowitem(chk_c, chk_n) -- one item of a declared `poscit` row.
+; __chk_rowitem(chk_c, chk_n, chk_rpos) -- one item of a `poscit` row.
 ;
 ; `sicut IDENT` (aux has AST_ROW_SICUT): `a` is an interner id naming a
 ; PARAMETER and `d` becomes an ordinal, positionally, under spec §4.2's
@@ -2547,7 +2589,22 @@ endp
 ; caller's carrier". A non-atom is a `potestas` name, resolved through the
 ; module table; spec §4.1 flattens it to its atoms at interning, which is pass
 ; 3's, so nothing is bound for it here. A name that is neither is `EXS-E0301`.
-proc __chk_rowitem, chk_c, chk_n
+;
+; ONLY A DECLARED ROW BINDS. `chk_rpos` is the walk's position: 0 for the row
+; of a function's own `Sig` (the declaration's `poscit`), 1 for a row written
+; inside a TYPE -- `functio(A) -> B poscit {P}` as a parameter's or a result's
+; type, `dyn I poscit {P}` in a cast. A type's row says what a VALUE of that
+; type carries (spec §4.2: "rows travel with values"); it provides no carrier
+; to the function whose signature happens to mention the type. Until
+; 2026-10-02 every item bound, so `f(s: Scriptor, g: functio(u8) -> u8
+; poscit {ambitus}) -> u8 poscit sicut s` could name `ambitus` in its body
+; and was accepted -- measured with `exsc aedifica`, and the hole
+; docs/design/archivum-beneath.md D6's R1 (the raw `archivum` atom cannot be
+; obtained from a `Directorium`) depends on being shut.
+; A type-position item is still RESOLVED (`d` set), because pass 3 interns
+; that row; it is just not a provider. `tests/unit/chk_directorium.asm`
+; pins it.
+proc __chk_rowitem, chk_c, chk_n, chk_rpos
 	uses	rbx, r12, r13, r14
 	locals
 		slot	chk_p, dq
@@ -2624,6 +2681,8 @@ proc __chk_rowitem, chk_c, chk_n
 	call	__chk_setd
 	cmp	qword [chk_o], 0
 	je	.out
+	cmp	qword [chk_rpos], 0
+	jne	.out			; a type's row: resolved, never a provider
 	mov	rdi, rbx
 	mov	rsi, [chk_o]
 	mov	rdx, r14
@@ -2838,6 +2897,7 @@ proc __chk_walk, chk_c, chk_n, chk_pos
   .rowitem:
 	mov	rdi, rbx
 	mov	rsi, r12
+	mov	rdx, [chk_pos]
 	call	__chk_rowitem
 	jmp	.out
 
@@ -3019,13 +3079,22 @@ proc __chk_walk, chk_c, chk_n, chk_pos
 	; through `.binding` would bind them too, but in whichever frame
 	; happened to be innermost -- the FUNCTION's, since an arm is not a
 	; block -- and two arms binding `n` would then be `EXS-E0302`.
+	;
+	; THE PATTERN IS WALKED IN PATTERN POSITION (`chk_pos` = 2), where a
+	; name that resolves to nothing is SILENT: D2 resolves a pattern's path
+	; against the SCRUTINEE'S VARIANTS FIRST and only then against the value
+	; namespace, and the scrutinee's type is pass 2's, so pass 2 is where a
+	; pattern that names nothing becomes `EXS-E0301`
+	; (checker/types/stmt.inc's `__chk_ty_pattern`). What this pass binds is
+	; the value-namespace answer, which pass 2 overrides with the variant
+	; when the scrutinee is a sum.
 	mov	rdi, rbx
 	mov	rsi, r12
 	mov	rdx, CHK_FR_BLOCK
 	call	__chk_frame_push
 	mov	rdi, rbx
 	mov	rsi, [chk_a]
-	xor	rdx, rdx
+	mov	rdx, CHK_POS_PATTERN
 	call	__chk_walk
 	mov	qword [chk_i], 0
   .casus_bind:

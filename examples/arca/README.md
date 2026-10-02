@@ -55,20 +55,37 @@ verdicts:
 The host never interprets a header itself, so there is no second parser to
 disagree with this one.
 
+The host must obey the order of those steps. `saltus(magnitudo(h))` on a
+header the gate has not admitted overflows on `magnitudo`'s sentinel, and
+that is a trap. A trap calls a `_Noreturn` hook, which in reliquary would
+end a root process. `examples/abortus/` shows a guard that turns the trap
+into a returned error instead, and it uses exactly this call as one of its
+test cases.
+
 ## Why in-process, not a process
 
 `examples/custos/filtrum.exsc` shows the gate pattern as a freestanding
 process whose syscalls are audited (`read`, `write`, `exit_group`). That would
-be stronger here too, but the reference prelude's `lege_octeto` is one
-`read(2)` per byte (`docs/design/runtime.md`), and a payload is gigabytes of
-file data the host must stream past. Until `Lector` reads in blocks, `arca`
-is linked as C (`--emitte c`), the way the bridge links `custos`.
+be stronger here too. When `arca` was written, the reference prelude's
+`lege_octeto` was one `read(2)` per byte, and a payload is gigabytes of file
+data the host must stream past, so `arca` is linked as C (`--emitte c`), the
+way the bridge links `custos`.
+
+That reason no longer holds. Since the buffered prelude (`bc2ec69`,
+`docs/design/runtime.md`), a reference-backend program reads and writes in
+64 KiB blocks: `cat` over 8 MiB fell from 16,777,218 syscalls to 259 and runs
+at about 181 MiB/s, limited now by the per-byte loop rather than by syscalls.
+At that rate, an audited `arca` child process costs about 6 s per GiB of
+payload. Moving reliquary to the process form is `[OPEN]`, and is a change
+to Oligarchy, not to this file.
 
 ## Checks: `proba_c.sh` (after `make all`; needs python3 and GNU tar)
 
 1. Emits the unit twice and requires byte-identical output (63,400 bytes).
 2. Builds `proba.c` against the unit with gcc and clang, at `-O0` and `-O2`,
-   under UBSan, with `arca.h` force-included.
+   under UBSan, with the header `exsc --emitte h` generates force-included
+   (`proba.c` includes `arca.h` itself, so the compiler holds the two to
+   each other; `docs/design/c-backend.md` D9).
 3. Runs `proba.py` on each build:
    - reliquary's own archives are admitted, and the member list equals
      `tar -tvf`'s, in order. The archives include long names, UTF-8 names

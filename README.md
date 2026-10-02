@@ -204,11 +204,13 @@ What the two proofs prove:
   one thing a hermetic sandbox does not do, so `reproduce` runs from the
   devShell and in CI.
 
-`nix flake check` runs nine sandboxed derivations -- `smoke`, `test`, `audit`,
-`buildExsecutorPackage-smoke` and the five vendor-integrity checks
-(`vendor-integrity`, `wire-vendor-integrity`, `modem-vendor-integrity`,
-`rx-vendor-integrity`, `streamdb-vendor-integrity`, one per tree under
-`vendor/`) -- over the git-tracked tree only. `tests/run.sh`, which the `test` check runs,
+`nix flake check` runs thirteen sandboxed derivations -- `smoke`, `test`,
+`audit`, `readme`, `buildExsecutorPackage-smoke` and the eight
+vendor-integrity checks (`vendor-integrity`, `wire-vendor-integrity`,
+`modem-vendor-integrity`, `rx-vendor-integrity`, `melos-vendor-integrity`,
+`bicinium-vendor-integrity`, `auditus-vendor-integrity`,
+`streamdb-vendor-integrity`, one per tree under `vendor/`) -- over the
+git-tracked tree only. `tests/run.sh`, which the `test` check runs,
 carries a floor on the number of fixtures it must discover, because this
 project has produced green checks that saw nothing four times, and the floor is
 what stopped a fifth.
@@ -248,9 +250,9 @@ with no arguments prints its usage, its options, and its exit-status table.
 id: adr-count
 kind: glob_count
 glob: docs/decisions/0*.md
-equals: 16
+equals: 19
 -->
-`docs/decisions/` holds sixteen ADRs, `0001` through `0016`, immutable once
+`docs/decisions/` holds nineteen ADRs, `0001` through `0019`, immutable once
 written; superseded, never edited (a status line and an Open list may be
 updated).
 <!-- truth:end -->
@@ -258,7 +260,7 @@ updated).
 ```text truth:ignore
 compiler/           the compiler: x86_64/ is the machine-specific body, shared/ is not
 docs/spec/          the specification -- source of truth
-docs/decisions/     ADRs 0001-0016, immutable once written; superseded, never edited (a status line and an Open list may be updated)
+docs/decisions/     ADRs 0001-0019, immutable once written; superseded, never edited (a status line and an Open list may be updated)
 docs/design/        design documents: hypotheses with a status line, built against, and amended by what building found
 docs/asm-conventions.md   the binding rules for every line of assembly here
 examples/           the hello world, its golden output, HydraModem's transmitter and receiver, and their READMEs
@@ -351,12 +353,13 @@ drift. A new code is a spec amendment first.
 id: conformance-count
 kind: file_contains
 path: docs/spec/exsecutor-spec-v0.4.md
-pattern: twenty-eight
+pattern: twenty-nine
 -->
-**Conformance is §14 of `docs/spec/exsecutor-spec-v0.4.md`.** Twenty-eight entries, each a fixture under
-`tests/conformance/`. The runner distinguishes five rule shapes (reject with
+**Conformance is §14 of `docs/spec/exsecutor-spec-v0.4.md`.** Twenty-nine entries, each a fixture under
+`tests/conformance/`. The runner distinguishes six rule shapes (reject with
 exactly this code; byte-identical output; external certificate; runtime abort;
-capability absence) and reports an entry it cannot yet run as `DEFERRED`,
+capability absence; differential agreement with a reference implementation)
+and reports an entry it cannot yet run as `DEFERRED`,
 naming what it waits on; deferred entries are never counted as passing.
 <!-- truth:end -->
 
@@ -655,13 +658,14 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   the lane rasterizers too (the soft `vector_size` lowering keeps every
   lane's bits), and the thing
   that finally tests §9.5's standing claim that the emitted text assumes
-  nothing about byte order. 21 of the 26 conformance FIXTURES run, each
+  nothing about byte order. 22 of the 27 conformance FIXTURES run, each
   required to emit exactly its expected code and nothing else -- or, for the
-  four byte-shape entries, to emit byte-identical output, and for entry 1, to
-  refuse with that code AND a machine fix declaring the capability -- and 5
+  four byte-shape entries, to emit byte-identical output, for entry 1, to
+  refuse with that code AND a machine fix declaring the capability, and for
+  entry 29, to agree with GNU tar on every case the judge admits -- and 5
   report `DEFERRED` and are never counted as passing; with entries 27 and 28,
-  which have no fixture and are carried by program directories, 23 of the
-  spec's 28 entries run. 0 program directories deferred.
+  which have no fixture and are carried by program directories, 24 of the
+  spec's 29 entries run. 0 program directories deferred.
 
   This bullet read "1564 pass — 178 unit fixtures; 64 IR fixtures and 104
   Exsecutor programs … 184 IR builds and 136 program builds … ten of those

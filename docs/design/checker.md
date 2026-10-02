@@ -760,7 +760,10 @@ the contribution syntax itself — finding 9 — is closed: spec §5.4 now carri
 settled as truncation in spec §5.4 — the checker already admitted it and
 needs nothing); `numeri` coercion
 between modules (there are no modules yet); `sub` in loop bodies; what
-`sub alloc = a` accepts as `a`; whether the standard streams' owner is
+`sub alloc = a` accepts as `a` (every OTHER atom's provider is settled: it
+must have that atom's own `cap` type, `EXS-E0303` otherwise, ADR 0017 D6 —
+`sub archivum = d;` over a `Directorium` was a capability escape while it was
+not); whether the standard streams' owner is
 `ambitus` (amendment in progress); the morpheme table as an `ego`
 dependency (§3.8) — the generated `.inc` from §3.3–§3.5 is a stand-in;
 `E0105` once imports exist.

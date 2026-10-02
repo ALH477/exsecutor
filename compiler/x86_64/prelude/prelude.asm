@@ -175,6 +175,14 @@ EXS_LECTOR_SIZE		= 16		; align 8 -- Scriptor's representation,
 					; the other direction (spec 3.3: `leg-`
 					; supine `lect-`, `-or` an agent noun)
 
+; The standard-stream buffers (runtime.md 2.4, as amended). Storage is in
+; prelude_data.asm, reserved (bss) and gated with the routines that use it.
+EXS_ALVEUS_SCRIBENDI	= 65536		; write buffer: bytes held before a write(1)
+EXS_ALVEUS_LEGENDI	= 65536		; read buffer: the most one read(0) takes
+EXS_SCRIPTOR_NULLUS	= 0		; exsrt_scriptor_status: nothing bound yet
+EXS_SCRIPTOR_LIGATUS	= 1		;   bound; its writes have succeeded
+EXS_SCRIPTOR_FRACTUS	= 2		;   bound; a write to it failed (sticky)
+
 EXS_TEXTUS_PTR		= 0		; textus.ptr          ptr    (runtime.md 2.3)
 EXS_TEXTUS_LEN		= 8		; textus.len          u64
 EXS_TEXTUS_SIZE		= 16
@@ -245,6 +253,14 @@ exsrt_start:
 	call	bfausr_initium		; IR 2.9: carriers first; initium has one
 					; carrier and no declared parameters
 	movzx	edi, al			; u8 result -> process exit status (spec 4.7)
+if EXS_POTESTAS_AMBITUS
+	; Flush point 4 (the write buffer, below): `initium` returned, so what
+	; it wrote leaves now, before the process does. `ebx` holds the status
+	; across the drain -- callee-saved, and free: this code never returns.
+	mov	ebx, edi
+	call	exsrt_scriptor_purga
+	mov	edi, ebx
+end if
 	mov	eax, 231		; exit_group -- immediate, adjacent to its
 	syscall				; syscall, so the audit resolves it
 
@@ -293,65 +309,203 @@ bfausr_exsrt_scriptor_ad_exitum:
 	mov	[rdi + EXS_SCRIPTOR_DESCRIPTOR], eax
 	ret
 
-; bfausr_exsrt_scriptor_scribe(s: ptr, t: ptr) -> u64
-;   `s.scribe(t)`. Both parameters are aggregates and travel by pointer:
-;   `s` is a Scriptor, `t` a two-word textus view (runtime.md 2.3).
+; ---- the write buffer -- runtime.md 2.4 (as amended) ------------------------
+; Every `Scriptor` write lands in ONE buffer, `exsrt_scriptor_alveus`
+; (EXS_ALVEUS_SCRIBENDI bytes, prelude_data.asm, bss), which belongs to ONE
+; descriptor at a time, `exsrt_scriptor_fd`. It leaves in `write(1)` calls
+; looped over partial writes -- `scribe`'s old loop, moved into
+; `exsrt_scriptor_directe` -- at exactly these points:
 ;
-;   Returns the count written. Spec 11 (as amended) says I/O reports failure
-;   as `eventus` and never a silently short count, and that `scribe` returns
-;   `eventus<mensura>` -- which is [OPEN] until `eventus` has syntax. Until
-;   then this returns the COUNT, which is less than `t`'s length exactly when
-;   something failed, and that is the whole of what it can say. Stated here
-;   because the difference is observable: `examples/initium.exsc` discards
-;   this result, so the hello world exits 0 even with stdout closed.
+;   1. the buffer cannot take the next request (a request of a whole buffer
+;      or more is then written straight through, never copied);
+;   2. a write names a DIFFERENT descriptor: the pending bytes go first, so
+;      the order of bytes ACROSS descriptors is the order of the calls, as
+;      it was when every call was its own `write`;
+;   3. before EVERY `read(0)` the reader issues (`exsrt_lector_lege`): a
+;      read may block, and nothing written before it may be held back while
+;      it does -- the prompt, the frame, the reply reaches the other end of
+;      a request/response pipe before this process waits for the next
+;      request;
+;   4. `initium` returned: exsrt_start drains it before `exit_group`;
+;   5. an abort: exsrt_abort drains it before the `abortus N` line, so
+;      stdout bytes written before a trap are on stdout, and are there
+;      BEFORE the line on fd 2 when both are one file.
 ;
-;   Partial writes are looped. EINTR is retried. Any other -errno ends the
-;   loop. EAGAIN on a non-blocking descriptor would spin here [OPEN];
-;   SIGPIPE on a closed pipe kills the process under the ambient disposition
-;   and the prelude does not change it -- rt_sigaction is on no allowlist
-;   [OPEN]. Neither a partial write nor an EINTR can be produced by a fixture
-;   without a second process, which tests/run.sh does not have: both paths
-;   are [UNTESTED] (runtime.md 3).
+; The byte STREAM on every descriptor is therefore exactly what it was with
+; one `write` per call; what moves is where the `write(2)` boundaries fall,
+; which no API exposes and no test can see in a file or a pipe's bytes.
 ;
-;   DEFECT FOUND BY RUNNING THIS. runtime.md 2.4 publishes this routine with
-;   the total request held in `r11` across the `syscall`. The x86-64 Linux
-;   syscall ABI destroys `rax`, `rcx` and `r11` and preserves everything else
-;   (syscall(2)), so `r11` comes back holding the saved RFLAGS and the routine
-;   returns that instead of a byte count: the first run of this fixture wrote
-;   all 101 bytes correctly and exited 6. The total lives in the frame here
-;   instead, which is what the routine has a frame for. THE DESIGN IS WRONG
-;   AND THIS IS RIGHT; an amendment to runtime.md 2.4's code block is in this
-;   agent's report. Nothing else in this file holds a live value in `rcx` or
-;   `r11` across a `syscall`.
-bfausr_exsrt_scriptor_scribe:
-	push	rbp
-	mov	rbp, rsp
-	sub	rsp, 16
-	mov	r8d, [rdi + EXS_SCRIPTOR_DESCRIPTOR]
-	mov	r9, [rsi + EXS_TEXTUS_PTR]
-	mov	r10, [rsi + EXS_TEXTUS_LEN]	; remaining
-	mov	[rbp - 8], r10			; total requested -- NOT a register
+; FAILURE, which a buffer would otherwise hide. `scribe` returns a count
+; (spec 11 wants `eventus<mensura>`, [OPEN]) and a buffered write cannot
+; know its own fate. Two rules keep the count honest about the failures it
+; can still see:
+;   - The FIRST write after a descriptor is bound (the first call ever, or
+;     the first after a switch) goes STRAIGHT THROUGH, unbuffered, and
+;     returns what it returned before this buffer existed. A descriptor the
+;     kernel refuses -- closed, never opened, opened read-only -- is
+;     discovered there, by the call that used it: 0 bytes, as
+;     tests/unit/prelude_scribe_octeto.asm pins.
+;   - A failure discovered LATER, at a flush (EIO, ENOSPC, EAGAIN), is
+;     STICKY: the descriptor's status becomes FRACTUS, the pending bytes are
+;     dropped, and every later call on it returns 0 without a syscall. The
+;     calls whose bytes were pending when the flush failed have already
+;     returned their full count; that is the one thing this cannot report,
+;     and it is C stdio's hole too. [OPEN] with `eventus`.
+; EAGAIN, SIGPIPE: as before (this file's `scribe` notes, below) -- SIGPIPE
+; now arrives at the flush rather than at the call, and kills the process
+; either way.
+;
+; NO NEW SYSCALL AND NO NEW ROUTINE IN interface.inc. The buffer is static
+; storage inside the same `if EXS_POTESTAS_AMBITUS`; the routines below are
+; private (`exsrt_`, unprefixed: the emitter never names them); the syscalls
+; are `write(1)` and, in the reader, `read(0)`, as they were.
+
+; exsrt_scriptor_directe(fd: edi, p: rsi, n: rdx) -> rax = bytes written,
+;                                                    rdx = bytes NOT written
+;   The write loop. Partial writes advance and go again; EINTR retries; a
+;   zero return goes again (the loop `scribe` always had); any other -errno
+;   stops. The kernel preserves rdi, rsi, rdx and r8, so the loop carries
+;   its state in them and nothing lives in rcx or r11 (this file's header).
+;   Clobbers rax rcx rdx rsi r8 r11.
+exsrt_scriptor_directe:
+	mov	r8, rdx				; total requested
   .loop:
-	test	r10, r10
+	test	rdx, rdx
 	jz	.done
-	mov	edi, r8d
-	mov	rsi, r9
-	mov	rdx, r10
-	mov	eax, 1				; write
+	mov	eax, 1				; write -- immediate, adjacent
 	syscall
 	cmp	rax, -4096			; the Linux raw-syscall error range
 	ja	.err
-	add	r9, rax				; partial write: advance, go again
-	sub	r10, rax
+	add	rsi, rax			; partial write: advance, go again
+	sub	rdx, rax
 	jmp	.loop
   .err:
 	cmp	eax, -4				; -EINTR: nothing was written, retry
 	je	.loop
   .done:
-	mov	rax, [rbp - 8]
-	sub	rax, r10			; bytes actually written
-	mov	rsp, rbp
-	pop	rbp
+	mov	rax, r8
+	sub	rax, rdx			; bytes actually written
+	ret
+
+; exsrt_scriptor_purga() -> void
+;   Drains the buffer to its descriptor. Nothing pending: returns at once,
+;   no syscall. A drain that leaves bytes unwritten marks the descriptor
+;   FRACTUS (sticky; see above). The pending count is zeroed BEFORE the
+;   write, so whatever happens to it the buffer is empty afterwards and a
+;   failure is never re-sent. Clobbers rax rcx rdx rsi rdi r8 r11.
+exsrt_scriptor_purga:
+	mov	rdx, [exsrt_scriptor_numerus]
+	test	rdx, rdx
+	jz	.done
+	mov	qword [exsrt_scriptor_numerus], 0
+	mov	edi, [exsrt_scriptor_fd]
+	lea	rsi, [exsrt_scriptor_alveus]
+	call	exsrt_scriptor_directe
+	test	rdx, rdx
+	jz	.done
+	mov	dword [exsrt_scriptor_status], EXS_SCRIPTOR_FRACTUS
+  .done:
+	ret
+
+; bfausr_exsrt_scriptor_scribe(s: ptr, t: ptr) -> u64
+;   `s.scribe(t)`. Both parameters are aggregates and travel by pointer:
+;   `s` is a Scriptor, `t` a two-word textus view (runtime.md 2.3).
+;
+;   Returns the count ACCEPTED: the count written, for a write that goes
+;   straight through; the whole length, for one the buffer takes; 0 on a
+;   descriptor already FRACTUS. Spec 11 (as amended) says I/O reports
+;   failure as `eventus` and never a silently short count, and that
+;   `scribe` returns `eventus<mensura>` -- which is [OPEN] until `eventus`
+;   has syntax. `examples/initium.exsc` discards this result, so the hello
+;   world exits 0 even with stdout closed.
+;
+;   EAGAIN on a non-blocking descriptor ends a write short [OPEN]; SIGPIPE
+;   on a closed pipe kills the process under the ambient disposition and the
+;   prelude does not change it -- rt_sigaction is on no allowlist [OPEN].
+;   Neither a partial write nor an EINTR can be produced by a fixture
+;   without a second process, which tests/run.sh does not have: both paths
+;   are [UNTESTED] (runtime.md 3).
+;
+;   DEFECT FOUND BY RUNNING THE FIRST VERSION. runtime.md 2.4 published this
+;   routine with the total request held in `r11` across the `syscall`. The
+;   x86-64 Linux syscall ABI destroys `rax`, `rcx` and `r11` and preserves
+;   everything else (syscall(2)), so `r11` came back holding the saved
+;   RFLAGS and the routine returned that instead of a byte count: the first
+;   run of tests/unit/prelude_scribe.asm wrote all 101 bytes correctly and
+;   exited 6. `exsrt_scriptor_directe` keeps the total in `r8`, which the
+;   kernel preserves; nothing in this file holds a live value in `rcx` or
+;   `r11` across a `syscall`.
+bfausr_exsrt_scriptor_scribe:
+	mov	r8d, [rdi + EXS_SCRIPTOR_DESCRIPTOR]
+	mov	r9, [rsi + EXS_TEXTUS_PTR]
+	mov	r10, [rsi + EXS_TEXTUS_LEN]
+	; falls into the body, which `scribe_octeto`'s slow path calls too
+
+; exsrt_scriptor_scribe_corpus(fd: r8d, p: r9, n: r10) -> rax
+;   The body. Clobbers the SysV caller-saved set and nothing else.
+exsrt_scriptor_scribe_corpus:
+	mov	eax, [exsrt_scriptor_status]
+	cmp	eax, EXS_SCRIPTOR_NULLUS
+	je	.novus
+	cmp	r8d, [exsrt_scriptor_fd]
+	jne	.novus				; another descriptor: its own chance
+	cmp	eax, EXS_SCRIPTOR_LIGATUS
+	jne	.nihil				; FRACTUS: sticky, no syscall
+	mov	rax, [exsrt_scriptor_numerus]
+	mov	rcx, EXS_ALVEUS_SCRIBENDI
+	sub	rcx, rax			; room left
+	cmp	r10, rcx
+	jbe	.copia
+	; does not fit: drain, then buffer it or, if it is a whole buffer or
+	; more, send it straight through rather than copy it
+	push	r8
+	push	r9
+	push	r10
+	call	exsrt_scriptor_purga
+	pop	r10
+	pop	r9
+	pop	r8
+	cmp	dword [exsrt_scriptor_status], EXS_SCRIPTOR_LIGATUS
+	jne	.nihil				; the drain failed: this call too
+	cmp	r10, EXS_ALVEUS_SCRIBENDI
+	jb	.copia
+	jmp	.directe
+  .copia:
+	mov	rax, [exsrt_scriptor_numerus]
+	lea	rdi, [exsrt_scriptor_alveus]
+	add	rdi, rax
+	add	rax, r10
+	mov	[exsrt_scriptor_numerus], rax
+	mov	rsi, r9
+	mov	rcx, r10
+	rep	movsb				; DF is clear on entry (SysV)
+	mov	rax, r10
+	ret
+  .novus:
+	; bind this descriptor: the other one's pending bytes go first (order
+	; across descriptors), then THIS request goes straight through and
+	; its result decides the binding's status
+	push	r8
+	push	r9
+	push	r10
+	call	exsrt_scriptor_purga
+	pop	r10
+	pop	r9
+	pop	r8
+	mov	[exsrt_scriptor_fd], r8d
+	mov	dword [exsrt_scriptor_status], EXS_SCRIPTOR_LIGATUS
+  .directe:
+	mov	edi, r8d
+	mov	rsi, r9
+	mov	rdx, r10
+	call	exsrt_scriptor_directe
+	test	rdx, rdx
+	jz	.done
+	mov	dword [exsrt_scriptor_status], EXS_SCRIPTOR_FRACTUS
+  .done:
+	ret
+  .nihil:
+	xor	eax, eax
 	ret
 
 ; bfausr_exsrt_scriptor_scribe_octeto(s: ptr, b: u8) -> u64
@@ -369,45 +523,40 @@ bfausr_exsrt_scriptor_scribe:
 ;   to be anything: it stores one byte and never reads `rsi` wider.
 ;
 ;   Provisional exactly as `scribe` is (interface.inc marks the row
-;   EXS_IFACE_F_APERTUM): returns the COUNT written, 1 on success and 0 on
-;   failure, because spec 11 (as amended) wants `eventus<mensura>` and
-;   `eventus` has no syntax yet. SAME ERROR CONVENTION AS `scribe`: EINTR is
-;   retried, a zero-byte return is retried (it is `scribe`'s loop with
-;   `remaining` = 1, and `scribe` goes round again on 0), and any other
-;   -errno ends the call with nothing written. EAGAIN and SIGPIPE are
-;   `scribe`'s [OPEN] items, unchanged. The EINTR and zero-return paths need
-;   a second process to produce and are [UNTESTED], as `scribe`'s are.
+;   EXS_IFACE_F_APERTUM): returns 1 when the byte is accepted and 0 when it
+;   is not, `scribe`'s convention with a length of one -- including that the
+;   first byte after a descriptor is bound goes straight through, so a
+;   descriptor the kernel refuses returns 0 at the call that used it.
 ;
-;   The byte lives in the frame, not in a register, because `write` takes a
-;   buffer ADDRESS. `rdi`, `rsi` and `rdx` are syscall arguments and the
-;   kernel preserves them, so the retry re-issues the same call without
-;   reloading; nothing is held in `rcx` or `r11` (this file's header).
-;
-;   SAME GATE, SAME SYSCALL. It sits inside `if EXS_POTESTAS_AMBITUS` next to
-;   `scribe` and issues `write(1)` with `edi` loaded from the Scriptor field,
-;   which tools/syscall-audit.sh admits under `ambitus` and under nothing
-;   else. No syscall is added to either closed set.
+;   THE FAST PATH IS THE POINT. A bound, healthy descriptor with room in the
+;   buffer costs one store and no syscall -- this routine used to be one
+;   `write(2)` per byte, which is what made somnium's reference build 48,000
+;   syscalls a frame. Anything else takes the slow path: the byte goes to
+;   the frame (the general body wants an ADDRESS) and through `scribe`'s
+;   body as a one-byte textus.
 bfausr_exsrt_scriptor_scribe_octeto:
+	mov	r8d, [rdi + EXS_SCRIPTOR_DESCRIPTOR]
+	cmp	dword [exsrt_scriptor_status], EXS_SCRIPTOR_LIGATUS
+	jne	.lente
+	cmp	r8d, [exsrt_scriptor_fd]
+	jne	.lente
+	mov	rax, [exsrt_scriptor_numerus]
+	cmp	rax, EXS_ALVEUS_SCRIBENDI
+	jae	.lente
+	lea	rcx, [exsrt_scriptor_alveus]
+	mov	[rcx + rax], sil		; the byte: `b`'s low 8 bits only
+	inc	rax
+	mov	[exsrt_scriptor_numerus], rax
+	mov	eax, 1
+	ret
+  .lente:
 	push	rbp
 	mov	rbp, rsp
 	sub	rsp, 16
-	mov	[rbp - 8], sil			; the byte: `b`'s low 8 bits only
-	mov	edi, [rdi + EXS_SCRIPTOR_DESCRIPTOR]
-	lea	rsi, [rbp - 8]
-	mov	edx, 1
-  .loop:
-	mov	eax, 1				; write
-	syscall
-	cmp	rax, -4096			; the Linux raw-syscall error range
-	ja	.err
-	test	rax, rax			; 0 bytes and no error: go again, as
-	jz	.loop				; `scribe`'s loop does with 1 remaining
-	jmp	.done				; rax = 1: the byte is written
-  .err:
-	cmp	eax, -4				; -EINTR: nothing was written, retry
-	je	.loop
-	xor	eax, eax			; any other -errno: 0 bytes written
-  .done:
+	mov	[rbp - 8], sil
+	lea	r9, [rbp - 8]
+	mov	r10d, 1
+	call	exsrt_scriptor_scribe_corpus
 	mov	rsp, rbp
 	pop	rbp
 	ret
@@ -430,10 +579,30 @@ bfausr_exsrt_lector_ab_introitu:
 	ret
 
 ; bfausr_exsrt_lector_lege_octeto(l: ptr) -> u16
-;   `l.lege_octeto()`. Reads EXACTLY ONE byte from the Lector's descriptor
-;   with `read(0)` and returns it, 0..255 -- or 256, which no byte is, at end
-;   of input. `l` is an aggregate and travels by pointer; the result is a
-;   scalar in `eax`, zero-extended, so a `u16` slot holds it whole.
+;   `l.lege_octeto()`. Returns the next byte of the Lector's descriptor,
+;   0..255 -- or 256, which no byte is, at end of input. `l` is an aggregate
+;   and travels by pointer; the result is a scalar in `eax`, zero-extended,
+;   so a `u16` slot holds it whole.
+;
+;   BUFFERED (runtime.md 2.4, as amended). The bytes come out of
+;   `exsrt_lector_alveus`; an empty buffer is refilled by ONE `read(0)` of
+;   up to EXS_ALVEUS_LEGENDI bytes, and the write buffer is drained first
+;   (`exsrt_lector_lege`). This routine used to be one `read(2)` per byte.
+;   A short read is not a failure: the buffer simply holds what the kernel
+;   gave, and the next refill asks again.
+;
+;   THE BUFFER BELONGS TO ONE DESCRIPTOR, `exsrt_lector_fd`, set at each
+;   refill. A call naming a different descriptor while bytes are still
+;   pending reads that descriptor UNBUFFERED, one byte, as before -- so the
+;   pending bytes are never lost and never handed to the wrong Lector. Only
+;   an empty buffer is re-targeted.
+;
+;   READ-AHEAD IS OBSERVABLE IN ONE WAY. The process now takes up to a
+;   buffer's worth of input past the last byte it asked for. On a pipe that
+;   is invisible; on a file description SHARED with another process
+;   (`{ prog; cat; } < file`) the other process starts later in the file
+;   than it did. Giving the bytes back needs `lseek`, which `ambitus` does
+;   not hold and which this change does not add. [OPEN]
 ;
 ;   256 IS THE SENTINEL AND IT IS NOT A BYTE. Spec 5.1 gives `octeti` a byte
 ;   per element, so a reader returning `u8` has no value left to spell "the
@@ -448,52 +617,83 @@ bfausr_exsrt_lector_ab_introitu:
 ;   kernel `read` returning 0 is end of input; any -errno other than EINTR --
 ;   a closed descriptor, EIO, a directory handed in as fd 0 -- returns 256
 ;   too, so a program cannot tell "the input ended" from "the input broke".
-;   `scribe` has the same hole in the other direction (its count is 0 on
-;   every failure) and for the same reason: there is no `eventus` to carry
-;   the difference. Stated here rather than implied, because a codec driver
-;   that loops until 256 will treat a broken stream as a complete one.
+;   `scribe` has the same hole in the other direction and for the same
+;   reason. Neither is CACHED: the next call asks the kernel again, as it
+;   always did, so 256 is sticky on a file only because the file is.
 ;
 ;   ERROR CONVENTION, `scribe`'s: EINTR retries the same call. A zero-length
-;   read is NOT retried -- for `read` that is end of input, not `scribe`'s
-;   "nothing moved, go again". EAGAIN on a non-blocking descriptor returns
-;   256 here rather than spinning as `scribe` does [OPEN]. The EINTR path
-;   needs a second process to produce and is [UNTESTED], as `scribe`'s is.
-;
-;   The byte lands in the frame because `read` takes a buffer ADDRESS; the
-;   kernel preserves rdi, rsi and rdx, so the EINTR retry re-issues the same
-;   call without reloading them, and nothing is held in `rcx` or `r11` (this
-;   file's header).
-;
-;   SAME GATE, THE ATOM'S OTHER SYSCALL. It sits inside
-;   `if EXS_POTESTAS_AMBITUS` next to `scribe`, and `read(0)` is what
-;   runtime.md 2.6's `ambitus` row has always tabulated and nothing has
-;   issued until now. No syscall is added to either closed set: `read` is on
-;   the compiler's nine as well, and tools/syscall-audit.sh admits it under
-;   `ambitus` and under nothing else.
+;   read is NOT retried -- for `read` that is end of input. EAGAIN on a
+;   non-blocking descriptor returns 256 [OPEN]. The EINTR path needs a
+;   second process to produce and is [UNTESTED], as `scribe`'s is.
 bfausr_exsrt_lector_lege_octeto:
+	mov	edi, [rdi + EXS_LECTOR_DESCRIPTOR]
+	mov	rax, [exsrt_lector_positio]
+	cmp	rax, [exsrt_lector_numerus]
+	jae	.vacuum
+	cmp	edi, [exsrt_lector_fd]
+	jne	.alienus			; pending bytes are another fd's
+	lea	rcx, [exsrt_lector_alveus]
+	movzx	edx, byte [rcx + rax]
+	inc	rax
+	mov	[exsrt_lector_positio], rax
+	mov	eax, edx			; 0..255, zero-extended
+	ret
+  .vacuum:
+	mov	[exsrt_lector_fd], edi
+	lea	rsi, [exsrt_lector_alveus]
+	mov	edx, EXS_ALVEUS_LEGENDI
+	call	exsrt_lector_lege
+	test	rax, rax
+	jle	.finis				; 0 = end of input; < 0 = -errno
+	mov	[exsrt_lector_numerus], rax
+	mov	qword [exsrt_lector_positio], 1
+	movzx	eax, byte [exsrt_lector_alveus]
+	ret
+  .finis:
+	xor	eax, eax
+	mov	[exsrt_lector_numerus], rax	; empty, and re-targetable
+	mov	[exsrt_lector_positio], rax
+	mov	eax, 256			; EOF, and every other -errno with it
+	ret
+  .alienus:
 	push	rbp
 	mov	rbp, rsp
 	sub	rsp, 16
-	mov	edi, [rdi + EXS_LECTOR_DESCRIPTOR]
-	lea	rsi, [rbp - 8]
+	lea	rsi, [rbp - 8]			; one byte, into the frame
 	mov	edx, 1
+	call	exsrt_lector_lege
+	test	rax, rax
+	jle	.alienus_finis
+	movzx	eax, byte [rbp - 8]
+	jmp	.alienus_done
+  .alienus_finis:
+	mov	eax, 256
+  .alienus_done:
+	mov	rsp, rbp
+	pop	rbp
+	ret
+
+; exsrt_lector_lege(fd: edi, p: rsi, n: rdx) -> rax = bytes read (> 0),
+;                                              0 at end of input, or -errno
+;   The ONE `read(0)` site. Drains the write buffer first -- flush point 3,
+;   above: a read may block, and nothing written before it may be held back
+;   while it does. Then reads, retrying EINTR only. The kernel preserves
+;   rdi, rsi and rdx, so the retry re-issues the same call without
+;   reloading. Clobbers rax rcx rdx rsi rdi r8 r11 (rdi/rsi/rdx are saved
+;   across the drain, not after the read).
+exsrt_lector_lege:
+	push	rdi
+	push	rsi
+	push	rdx
+	call	exsrt_scriptor_purga
+	pop	rdx
+	pop	rsi
+	pop	rdi
   .loop:
 	mov	eax, 0				; read -- an immediate, adjacent to
 	syscall					; its syscall, so the audit resolves it
-	cmp	rax, -4096			; the Linux raw-syscall error range
-	ja	.err
-	test	rax, rax			; 0 bytes and no error: END OF INPUT,
-	jz	.finis				; never a retry
-	movzx	eax, byte [rbp - 8]		; 0..255, zero-extended
-	jmp	.done
-  .err:
-	cmp	eax, -4				; -EINTR: nothing was read, retry
+	cmp	rax, -4				; -EINTR: nothing was read, retry
 	je	.loop
-  .finis:
-	mov	eax, 256			; EOF, and every other -errno with it
-  .done:
-	mov	rsp, rbp
-	pop	rbp
 	ret
 
 end if	; EXS_POTESTAS_AMBITUS
@@ -722,6 +922,17 @@ exsrt_abort_terminus:
 ;   carries one syscall site here instead of three; the bytes on fd 2 are
 ;   identical either way. Clobbers freely: it never returns.
 exsrt_abort:
+if EXS_POTESTAS_AMBITUS
+	; Flush point 5: what the program wrote before the trap reaches its
+	; descriptor BEFORE the `abortus N` line reaches fd 2 -- byte-for-byte
+	; what an unbuffered prelude produced, including the order when stdout
+	; and stderr are one file. No abort is raised inside the Scriptor or
+	; Lector routines, so the buffer is never caught mid-update here.
+	; `ebx` keeps the kind across the drain; this routine never returns.
+	mov	ebx, edi
+	call	exsrt_scriptor_purga
+	mov	edi, ebx
+end if
 	mov	r8, rdi				; kind
 	lea	r9, [exsrt_abortus_calc + 20]	; one past the scratch digits
 	mov	rax, r8

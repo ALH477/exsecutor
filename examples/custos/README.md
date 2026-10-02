@@ -68,8 +68,9 @@ The stream format:
 - **Truncation.** A record cut off mid-way exits with status 2 and gets no
   verdict.
 
-Built on the reference backend it is a freestanding binary of 5,287 bytes,
-with no interpreter and no dynamic section. `tools/syscall-audit.sh
+Built on the reference backend it is a freestanding binary of 5,745 bytes
+(5,287 before the buffered prelude, `bc2ec69`, added its block reader and
+writer), with no interpreter and no dynamic section. `tools/syscall-audit.sh
 --potestates Mundus,ambitus` passes on it: the only syscall sites are
 `read(0)` and `write(1)`. The same audit with `--potestates Mundus` alone fails,
 which shows the audit is reading the binary's real surface.
@@ -88,7 +89,10 @@ Over the 14,523 datagrams of the differential run in the commit that added
 imports, `exsrt_abortus`. A bounds or overflow trap is the only thing that
 reaches it. `admitte` reads at most `d[0..32)`, and nothing a caller passes
 with `n <= 32` traps. A trap is a defect, so a host's `exsrt_abortus` should
-stop the process.
+stop the process. A host that must keep running anyway (a relay should not die
+on one datagram) can wrap its calls in `examples/abortus/`'s guard. The
+trap's kind then comes back as a return value. That example drives
+`redundantia_sarcinae(d, 33)`, which reads `d[32]`, as one of its traps.
 
 ## Checks
 

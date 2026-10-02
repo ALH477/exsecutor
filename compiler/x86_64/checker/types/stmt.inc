@@ -109,6 +109,7 @@ proc __chk_ty_stmt, chkt_wST, chkt_nST
 		slot chkt_dST, dq
 		slot chkt_xST, dq
 		slot chkt_iST, dq
+		slot chkt_vST, dq	; `discerne`: the variant coverage
 	endl
 	mov	rbx, [chkt_wST]
 	mov	r12, [chkt_nST]
@@ -406,20 +407,22 @@ proc __chk_ty_stmt, chkt_wST, chkt_nST
 	jmp	.unit
 
   ; ---- Discerne ----------------------------------------------------------
-  ; The scrutinee, every arm's PATTERN and every arm's block are typed. A
-  ; pattern is typed exactly as the right operand of `s eq p` would be
-  ; (`__chk_ty_want` against the scrutinee's type): a literal takes the
-  ; scrutinee's width -- `E0308` when it does not fit -- and a `Path` naming a
-  ; constant of another type is `E0303`. That is the comparison the lowering
-  ; emits (lower/stmt.inc `__lwr_discerne`: `cmp.eq T %s %k`).
+  ; The scrutinee, every arm's PATTERN and bindings (sum.inc's
+  ; `__chk_ty_pattern`) and every arm's block are typed, and then, when no
+  ; `aliter` is written, the match is checked EXHAUSTIVE (`__chk_ty_exhaust`,
+  ; sum-types.md D3, `EXS-E0351`): spec §8.5's "Exhaustive, with no
+  ; fallthrough", true now for a sum by covering its variants and for a scalar
+  ; by requiring `aliter`. Against a scalar a pattern is typed exactly as the
+  ; right operand of `s eq p` would be (`__chk_ty_want` against the
+  ; scrutinee's type): a literal takes the scrutinee's width -- `E0308` when
+  ; it does not fit -- and a `Path` naming a constant of another type is
+  ; `E0303`. That is the comparison the lowering emits (lower/stmt.inc
+  ; `__lwr_discerne`: `cmp.eq T %s %k`); against a sum it compares the tag.
   ;
   ; THE PATTERN USED TO BE SKIPPED, and that was the bug behind "every
   ; `discerne` traps under `-o`": a literal pattern left with `ty` = 0 and no
   ; `konst`, which `__lwr_lit`'s `__lwr_nty` asserts against. Checking
   ; without `-o` never lowers, so it passed.
-  ;
-  ; What a `Path` pattern MEANS beyond "a constant of the scrutinee's type" is
-  ; still not decided -- types.inc's header.
   .discerne:
 	mov	rdi, rbx
 	mov	rsi, [chkt_aST]
@@ -429,6 +432,10 @@ proc __chk_ty_stmt, chkt_wST, chkt_nST
 	mov	rdx, [chkt_aST]
 	call	__chk_ty_settled
 	mov	r13, rax			; the scrutinee's type
+	mov	rdi, rbx
+	mov	rsi, r13
+	call	__chk_ty_covalloc
+	mov	[chkt_vST], rax			; 0 for a scalar
 	mov	qword [chkt_iST], 0
   .di_arm:
 	mov	rax, [chkt_iST]
@@ -438,22 +445,31 @@ proc __chk_ty_stmt, chkt_wST, chkt_nST
 	mov	rsi, [chkt_bST]
 	add	rsi, [chkt_iST]
 	call	ast_extra_at
-	mov	rdi, rbx
-	mov	rsi, rax
-	call	__chk_ty_node
-	mov	ecx, [rax + AstNode.b]		; `Casus.b` = the block
-	mov	r14, rcx
-	mov	ecx, [rax + AstNode.a]		; `Casus.a` = the pattern
-	mov	rdi, rbx
-	mov	rsi, rcx
-	mov	rdx, r13
-	call	__chk_ty_want
+	mov	r14, rax			; the `Casus`
 	mov	rdi, rbx
 	mov	rsi, r14
+	mov	rdx, r13
+	mov	rcx, [chkt_vST]
+	call	__chk_ty_pattern
+	mov	rdi, rbx
+	mov	rsi, r14
+	call	__chk_ty_node
+	mov	ecx, [rax + AstNode.b]		; `Casus.b` = the block
+	mov	rdi, rbx
+	mov	rsi, rcx
 	call	__chk_ty_stmt
 	inc	qword [chkt_iST]
 	jmp	.di_arm
   .di_else:
+	cmp	qword [chkt_dST], 0
+	jne	.di_aliter
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, r13
+	mov	rcx, [chkt_vST]
+	call	__chk_ty_exhaust
+	jmp	.unit
+  .di_aliter:
 	mov	rdi, rbx
 	mov	rsi, [chkt_dST]
 	call	__chk_ty_stmt
@@ -863,20 +879,29 @@ endp
 
 ; __chk_ty_sub(w, n) -- `sub P = e;` and `sub P = e { ... }`.
 ;
-; WHAT THE PROVIDER'S TYPE MUST BE IS `[OPEN]`, and checker.md section 8 says so
-; in as many words: "what `sub alloc = a` accepts as `a`" is on its unresolved
-; list. Spec §4.1 rule 4 makes `sub` the binding of a carrier and checker.md
-; section 2.8 makes every atom's carrier one `ptr`, which argues for requiring
-; the atom's own `cap` type -- and `sub ambitus = m.ambitus();` satisfies that
-; exactly. But spec §4.5's `sub alloc = a` binds "an arena", a value whose
-; surface type no section names.
+; THE PROVIDER'S TYPE MUST BE THE ATOM'S OWN `cap` TYPE, or `EXS-E0303`.
+; Spec §4.1 rule 4 makes `sub` the binding of a carrier and checker.md section
+; 2.8 makes every atom's carrier one `ptr`; `sub ambitus = m.ambitus();`
+; satisfies that exactly.
 ;
-; SO THE RULE IS HALF-APPLIED, deliberately: when the provider's type IS a
-; capability type, it must be THIS capability's (`sub rete = someAmbitus` is
-; `EXS-E0303`); when it is anything else, the provider is typed and accepted.
-; That rejects the case the spec does decide -- a carrier for the wrong atom --
-; and declines to invent the case it does not. Tightening it is a spec question,
-; not a code one.
+; WHY THE RULE IS NOT HALF-APPLIED ANY MORE. It used to accept a provider whose
+; type was anything but a DIFFERENT atom's `cap` type -- "declines to invent the
+; case the spec does not decide" -- and that was a capability escape, found by
+; review and reproduced: with `d: Directorium` (a `structura`, not a `cap`),
+; `sub archivum = d;` bound the raw `archivum` atom with no value of that type
+; anywhere, after which `Directorium.ad_radicem(archivum, "/outside")` opened
+; any path. `sub` is the one statement that MINTS an atom, so it is the one place
+; a provider cannot be left untyped (ADR 0017, D6/R1). `sub rete = <u32>` was
+; the same hole.
+;
+; THE ONE EXEMPTION IS `alloc`, and it is deliberate, not forgotten. Spec §4.5's
+; `sub alloc = a;` binds "an arena", a value whose surface type no section
+; names (checker.md section 8 lists it as unresolved; `[OPEN]`), so `alloc`
+; keeps the rule's old form: a `cap` provider must be `alloc`'s own, anything
+; else is typed and accepted. Nothing is lost by it that matters here: `alloc`
+; derives no path and no descriptor, and the one structura an `alloc` provider
+; could be (`Directorium`) bears `{archivum}` and gains nothing by being named
+; `alloc`. Tightening it waits on the spec naming the arena's type.
 proc __chk_ty_sub, chkt_wSB, chkt_nSB
 	uses	rbx, r12, r13, r14
 	locals
@@ -884,6 +909,7 @@ proc __chk_ty_sub, chkt_wSB, chkt_nSB
 		slot chkt_bSB, dq
 		slot chkt_cSB, dq
 		slot chkt_dSB, dq
+		slot chkt_eSB, dq		; the atom's declaration id, or 0
 	endl
 	mov	rbx, [chkt_wSB]
 	mov	r12, [chkt_nSB]
@@ -908,6 +934,7 @@ proc __chk_ty_sub, chkt_wSB, chkt_nSB
 	mov	rsi, r14
 	call	__chk_ty_node
 	mov	r13d, [rax + AstNode.d]
+	mov	[chkt_eSB], r13
 	test	r13, r13
 	jz	.noatom
 	mov	rdi, rbx
@@ -953,7 +980,18 @@ proc __chk_ty_sub, chkt_wSB, chkt_nSB
 	mov	rsi, r14
 	call	__chk_ty_kindof
 	cmp	rax, AST_TY_CAP
-	jne	.blk			; not a carrier at all -- `[OPEN]`
+	je	.same
+	; not a `cap` type at all. Only `alloc`'s arena is left untyped (above);
+	; for every other atom the mismatch is EXS-E0303 -- `__chk_ty_same`
+	; raises it, and stays silent on an already-diagnosed type.
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	call	ast_cap_base
+	test	rax, rax
+	jz	.same
+	add	rax, AST_CAP_ALLOC - 1
+	cmp	rax, [chkt_eSB]
+	je	.blk			; `alloc`: the arena's type is `[OPEN]`
+  .same:
 	mov	rdi, rbx
 	mov	rsi, r14
 	mov	rdx, r13

@@ -1,0 +1,44 @@
+// examples/abortus/probatio.exsc -- TEST-ONLY. Three functions that exist to
+// be driven into a trap, so that examples/abortus/proba.c can show what a host
+// gets back through the guard in tutela.c. Nothing links this but that test.
+//
+// custos and arca already have host-reachable traps of their own -- arca's
+// `saltus(0xffffffffffffffff)` overflows and custos's
+// `redundantia_sarcinae(d, 33)` reads past its window -- and the test uses
+// them first, on the real units. What they cannot show is below:
+//
+//   imple_et_cade  a trap AFTER the callee has written caller-owned memory
+//                  through `&mutabilis` (ADR 0016): what is left there;
+//   circuitus      a trap of kind 5 (`terminus`), so the kind is carried, not
+//                  just "a trap happened";
+//   profunda       a trap k frames deep, so the jump abandons many Exsecutor
+//                  frames at once, not one.
+
+// Writes 0x41 into v[0..n). With n > 8 the ninth store fails its bounds check
+// (kind 1) after v[0..8) are already written.
+publica functio imple_et_cade(v: &mutabilis acies<u8, 8>, n: mensura) -> u8 {
+    per i in 0..n {
+        (*v)[i] = 0x41;
+    }
+    redde 0;
+}
+
+// Counts to n under `terminus 8`: n <= 8 returns n, n > 8 traps with kind 5
+// when the loop tries to enter its ninth iteration (spec 8.5).
+publica functio circuitus(n: u64) -> u64 {
+    mutabilis k: u64 = 0;
+    dum k lt n terminus 8 {
+        k = k + 1;
+    }
+    redde k;
+}
+
+// Recurses k times, then reads a[n] from a 4-byte local: n < 4 returns
+// 7 + k, n >= 4 traps (kind 1) with k + 1 frames of this function live.
+publica functio profunda(k: u64, n: mensura) -> u64 {
+    si k eq 0 {
+        firma a: acies<u8, 4> = [7; 4];
+        redde a[n] sicut u64;
+    }
+    redde profunda(k - 1, n) + 1;
+}

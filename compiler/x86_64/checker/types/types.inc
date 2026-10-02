@@ -267,9 +267,22 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 
   ; ---- names ---------------------------------------------------------------
   .path:
+	; a bare variant -- `ordinata` -- is a CONSTRUCTOR (sum.inc), typed
+	; with no expectation here; `__chk_ty_want` is where one arrives
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_isctor
+	test	rax, rax
+	jnz	.ctor
 	mov	rdi, rbx
 	mov	rsi, r12
 	call	__chk_ty_path_expr
+	jmp	.out
+  .ctor:
+	mov	rdi, rbx
+	mov	rsi, r12
+	xor	rdx, rdx
+	call	__chk_ty_ctor
 	jmp	.out
 
   .member:
@@ -279,6 +292,11 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	jmp	.out
 
   .call:
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_isctor
+	test	rax, rax
+	jnz	.ctor
 	mov	rdi, rbx
 	mov	rsi, r12
 	call	__chk_ty_call
@@ -393,9 +411,12 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	; `[OPEN]` -- see this file's header. Whether two AGGREGATES are is not:
 	; spec §5.2 admits exactly one pair, a `@transitus` struct and
 	; `acies<u8, sizeof>`, and every other aggregate `sicut` is `EXS-E0305`
-	; (member.inc's `__chk_ty_castagg`). A `sicut dyn I poscit {P}` cast's
-	; bound is pass 3's `EXS-E0510`, which reads the interned `dyn` type
-	; this builds.
+	; (member.inc's `__chk_ty_castagg`). Nor is a cast that touches a
+	; reference, a capability atom, a function type or a sum: only numeric
+	; scalars, one type to itself and `dyn` pass `__chk_ty_castrel`, and the
+	; rest is `EXS-E0305` (spec §5.2, a whitelist). A `sicut dyn I poscit {P}`
+	; cast's bound is pass 3's `EXS-E0510`, which reads the interned `dyn`
+	; type this builds.
 	mov	rdi, rbx
 	mov	rsi, [chkt_ap]
 	call	__chk_ty_expr
@@ -404,12 +425,12 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	mov	rsi, [chkt_bp]
 	call	chk_ty_of_node
 	mov	r14, rax			; the target
+	cmp	r14, 1
+	je	.cast_out			; AST_TY_ERROR: already diagnosed
 	test	r13, r13
-	jz	.cast_out
+	jz	.cast_rel			; a pending literal: only its target is judged
 	cmp	r13, 1
 	je	.cast_out			; AST_TY_ERROR: already diagnosed
-	cmp	r14, 1
-	je	.cast_out
 	; THE TARGET IS TESTED FIRST WHEN IT IS `dyn`, and only then, because
 	; this block's own comment above already says what the answer is: a
 	; trait-object cast's verdict is pass 3's `EXS-E0510` and nothing else.
@@ -443,13 +464,25 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	cmp	rax, AST_TY_STRUCT
 	je	.cast_agg
 	cmp	rax, AST_TY_ACIES
-	jne	.cast_out
+	jne	.cast_rel
   .cast_agg:
 	mov	rdi, rbx
 	mov	rsi, r12
 	mov	rdx, r13
 	mov	rcx, r14
 	call	__chk_ty_castagg
+	jmp	.cast_out
+  .cast_rel:
+	; NEITHER SIDE AN AGGREGATE: `__chk_ty_castrel` judges it (member.inc).
+	; Until it existed this arm accepted every pair the aggregate test did
+	; not catch, so `&d sicut &archivum` -- a `Directorium` reference
+	; reinterpreted as the raw atom -- was `sub`-able, and so were a
+	; function type's row stripped and an atom forged from an integer.
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, r13
+	mov	rcx, r14
+	call	__chk_ty_castrel
   .cast_out:
 	mov	rax, r14
 	jmp	.out
@@ -461,7 +494,19 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	jmp	.out
 
   .try:
-	; `e?` -- spec §6: the operand must be an `eventus`
+	; `e?` -- REFUSED, on every operand, as `EXS-E0305` at the `?`.
+	; docs/design/sum-types.md D4: "Until D4 is implemented, the checker's
+	; present arm should refuse `?` rather than unwrap it." This arm used to
+	; require the builtin `eventus` kind and answer its first argument --
+	; an unconditional unwrap with no error branch, which the lowering then
+	; refused by name (`rassert`), so a program that type-checked trapped
+	; the compiler. `eventus` is now the prelude's sum (D5), so no operand
+	; has that kind any more; and D4's meaning -- the `prosperum` payload,
+	; or an early `redde` of the `adversum` from a function returning the
+	; same `E` -- is not built. `EXS-E0305` is the code this arm already
+	; raised for a non-`eventus` operand (D4: "that half is settled by the
+	; tree"); no code is spent on a temporary state. The operand is still
+	; typed, so nothing under it goes untyped.
 	mov	rdi, rbx
 	mov	rsi, [chkt_ap]
 	call	__chk_ty_expr
@@ -469,14 +514,8 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	mov	rsi, rax
 	mov	rdx, r12
 	call	__chk_ty_settled
-	mov	r13, rax
-	mov	rdi, rbx
-	mov	rsi, r13
-	call	__chk_ty_kindof
-	cmp	rax, AST_TY_EVENTUS
-	je	.try_ok
-	cmp	rax, AST_TY_ERROR
-	je	.try_err
+	cmp	rax, 1
+	je	.try_err			; the error type: already said
 	mov	rdi, rbx
 	mov	rsi, 305
 	mov	rdx, r12
@@ -484,12 +523,6 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
   .try_err:
 	mov	rdi, rbx
 	call	__chk_ty_err
-	jmp	.out
-  .try_ok:
-	mov	rdi, rbx
-	mov	rsi, r13
-	mov	rdx, AstType.a
-	call	__chk_ty_field
 	jmp	.out
 
   .lambda:
@@ -1026,7 +1059,7 @@ proc __chk_ty_want, chkt_wW, chkt_nW, chkt_tW
 	mov	rsi, r12
 	call	__chk_ty_arraykind
 	test	eax, eax
-	jz	.plain
+	jz	.ctorq
 	mov	rdi, rbx
 	mov	rsi, r12
 	call	__chk_ty_ty
@@ -1036,6 +1069,31 @@ proc __chk_ty_want, chkt_wW, chkt_nW, chkt_tW
 	mov	rsi, r12
 	mov	rdx, r13
 	call	__chk_ty_arraylit
+	mov	[chkt_yW], rax
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, rax
+	call	__chk_ty_setty
+	mov	rax, [chkt_yW]
+	jmp	.have
+  .ctorq:
+	; A CONSTRUCTOR TAKES THE EXPECTATION TOO: a generic sum's type
+	; arguments come from it when the constructor does not write them
+	; (sum.inc's header, D5).
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_isctor
+	test	rax, rax
+	jz	.plain
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_ty
+	test	rax, rax
+	jnz	.plain
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, r13
+	call	__chk_ty_ctor
 	mov	[chkt_yW], rax
 	mov	rdi, rbx
 	mov	rsi, r12
@@ -2904,6 +2962,7 @@ endp
 
 include 'member.inc'
 include 'stmt.inc'
+include 'sum.inc'
 
 ; =============================================================================
 ; the pass

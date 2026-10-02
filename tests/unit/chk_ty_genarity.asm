@@ -35,7 +35,7 @@
 ;   spelling                     before      after
 ;   refero<u32, u32>             accepted    EXS-E0304
 ;   refero_communis<u32, u32>    accepted    EXS-E0304
-;   eventus<mensura, u32>        accepted    EXS-E0304
+;   eventus<mensura, u32>        accepted    EXS-E0304 (*)
 ;   eventus                      accepted    EXS-E0304
 ;   acies<f32>                   EXS-E0304   EXS-E0304
 ;   acies<f32, 4, 4>             accepted    EXS-E0304
@@ -46,6 +46,14 @@
 ;
 ; Bare `eventus` is the row that matters most: spec §5.1's own code block
 ; spells the type that way, and until this commit the checker took it silently.
+;
+; (*) `eventus` IS THE PRELUDE'S TWO-PARAMETER SUM NOW (docs/design/sum-types.md
+; D5; compiler/x86_64/prelude/eventus.inc), counted by `__chk_ty_decl_inst`
+; rather than by the builtin's `.una:` arm, so the two `eventus` rows that
+; pinned ONE parameter turned over: `eventus<mensura, u32>` is the accepted
+; twin and `eventus<mensura>` -- one too FEW -- the rejected row, at the same
+; offset 28. The bare spelling is `EXS-E0304` at 21 under both, as D5's "two
+; parameters, always written" requires.
 ;
 ; EXACTLY ONE DIAGNOSTIC PER ROW, and that is a rule and not an accident.
 ; `__chk_ty_raise` does not deduplicate (checker/types/prim.inc), and
@@ -340,7 +348,7 @@ segment readable
 
   fx_src fx_r01, 'refero<u32, u32>'
   fx_src fx_r02, 'refero_communis<u32, u32>'
-  fx_src fx_r03, 'eventus<mensura, u32>'
+  fx_src fx_r03, 'eventus<mensura>'
   fx_src fx_r04, 'eventus'
   fx_src fx_r05, 'acies<f32>'
   fx_src fx_r06, 'acies<f32, 4, 4>'
@@ -351,7 +359,7 @@ segment readable
 
   fx_src fx_a01, 'refero<u32>'
   fx_src fx_a02, 'refero_communis<u32>'
-  fx_src fx_a03, 'eventus<mensura>'
+  fx_src fx_a03, 'eventus<mensura, u32>'
   fx_src fx_a04, 'acies<f32, 4>'
   fx_src fx_a05, 'textus'
   fx_src fx_a06, 'mensura'
@@ -363,7 +371,7 @@ segment readable
 	dd 1, 304, 27, 0
 	dq fx_r02, fx_r02_LEN
 	dd 1, 304, 36, 0
-	; §5.1's `eventus`, the spelling D4 proposes two parameters for
+	; §5.1's one-parameter `eventus`, one SHORT under D5's two (*)
 	dq fx_r03, fx_r03_LEN
 	dd 1, 304, 28, 0
 	; ---- no clause at all: the diagnostic lands on the `Seg` -----------

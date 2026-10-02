@@ -9,7 +9,7 @@
 #      This is the only phase that can do anything today -- there is no
 #      compiler's own modules and the toolchain; exsc exists and the
 #      driver_* fixtures drive it.
-#   2. run_conformance_tests: tests/conformance/ (spec §14: 28 entries, 26
+#   2. run_conformance_tests: tests/conformance/ (spec §14: 29 entries, 27
 #      with a fixture file here -- 27 and 28 live in tests/programs/),
 #      driven by build/exsc; entries the built stages can decide are
 #      status=run, the rest DEFERRED and never counted as passing. This
@@ -247,6 +247,13 @@ DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-236}"
 #     floor moves in that commit and not a later one.
 DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-59}"
 DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-236}"
+# DISTINCT program UNITS whose generated header (`--emitte h`,
+# c-backend.md D9) compiles, force-included, against the unit it describes
+# under gcc and clang. Counted once per distinct unit, not per directory:
+# directories sharing a `sources=` share one unit and one face. Set to the
+# count measured when the face landed: 45, 2026-10-02; it moves with
+# the eligible corpus, in the commit that moves it.
+DIFFERENTIAL_FACE_FLOOR="${DIFFERENTIAL_FACE_FLOOR:-45}"
 
 # The cross phase's own floor, deliberately NOT folded into the differential
 # numbers above: a cross-compiled, emulated run of a 32-bit-`mensura` unit is
@@ -428,13 +435,14 @@ __conf_code_set() {
 
 run_conformance_tests() {
   # ---------------------------------------------------------------------
-  # spec §14, 28 entries, 26 with a fixture file here (was 24 when this
+  # spec §14, 29 entries, 27 with a fixture file here (was 24 when this
   # header was written; 25 appended with the mips64 cross row, 26 with the
   # float wave's RGB triangle; 27 and 28 -- the lane rasterizer and the
   # reduction shapes -- are carried by tests/programs/pictura_octonaria/
-  # and tests/programs/contractio/ and have no file here), FIVE
-  # rule shapes (tests/README.md, "entries, five rule shapes" -- a runner
-  # that assumes one shape quietly mishandles four):
+  # and tests/programs/contractio/ and have no file here; 29 appended with
+  # the sixth shape, differential agreement with a reference), SIX
+  # rule shapes (tests/README.md, "entries, six rule shapes" -- a runner
+  # that assumes one shape quietly mishandles five):
   #
   #   code   -- "exsc rejects this source with exactly code EXS-Exxxx"
   #             (entries 2-14, 18-22, 24)
@@ -446,6 +454,11 @@ run_conformance_tests() {
   #             vectors, not a case this project wrote for itself (23 only)
   #   abort  -- a RUNTIME abort, not a compile failure -- needs a built and
   #             EXECUTED binary (15 only)
+  #   reference -- DIFFERENTIAL AGREEMENT with an external reference program
+  #             off the build closure (29: examples/arca held to GNU tar):
+  #             a seeded generator, a one-directional property, non-vacuity
+  #             floors, and a mutant of the subject that must disagree.
+  #             Spec §14, "The sixth shape". reference_entry, below.
   #   nocap  -- a capability-absence violation with NO code assigned in
   #             §13 at all (1 only) -- confirmed directly against §2.4's
   #             unrepresentability table, whose "Locale case fold in
@@ -473,12 +486,14 @@ run_conformance_tests() {
   # anywhere in the fixture, `//`-commented, space-separated key=value
   # tokens, mirroring directive_of's own format one section up:
   #
-  #   // TEST: entry=<1-26> shape=<code|bytes|cert|abort|nocap>
+  #   // TEST: entry=<1-26|29> shape=<code|bytes|cert|abort|nocap|reference>
   #            [expect-code=EXS-E0XXX] status=<run|deferred> [needs=<token>]
   #            [sources=A,B] [atom=NAME]
+  #            [subject= host= header= driver= reference= seed=
+  #             min-cases= min-admitted= min-refused= mutants=]   (reference)
   #
   #   entry=N       the §14 entry number this fixture exercises.
-  #   shape=        one of the five above.
+  #   shape=        one of the six above.
   #   expect-code=  the exact EXS-Exxxx exsc must reject with. Required
   #                 when shape=code, and when shape=nocap -- where it names
   #                 the code the general rule draws on the way to a
@@ -512,6 +527,39 @@ run_conformance_tests() {
   #                 tests/conformance/. They live in a subdirectory
   #                 (entry23/) so the `*.exsc` glob below does not take
   #                 them for fixtures of their own.
+  #   subject=      shape=reference only: the Exsecutor source under test
+  #                 (repo-relative, emitted with --emitte c). Referenced, not
+  #                 copied: a copy is a second program that can drift from
+  #                 the one the consumer ships, and a differential over the
+  #                 copy would prove nothing about the original.
+  #   host=         the C host built against the emitted unit (repo-relative).
+  #   header=       a C header force-included into that build, so a drifted
+  #                 signature is a compile error (repo-relative).
+  #   driver=       the verification program, run as `python3 DRIVER HOST
+  #                 SEED` (repo-relative). It owns the generator and the
+  #                 comparison with the reference; it must print one summary
+  #                 line `N mutants: A admitted, R refused, D disagreements`
+  #                 and exit 0 only if every check it carries passed. The
+  #                 runner does NOT trust that verdict alone: it parses the
+  #                 line and applies the floors below itself.
+  #   reference=    the external program the subject is held to, looked up on
+  #                 PATH (`tar`). Absent, or python3 absent: the entry is
+  #                 reported DEFERRED, naming what it waits on, and is never
+  #                 counted as passing -- which also leaves `ran` below
+  #                 run_floor, so a machine that could not run it cannot turn
+  #                 the suite green by omission.
+  #   seed=         the generator's seed, an integer, printed in every result
+  #                 line so a disagreement is reproducible from the log.
+  #   min-cases=    floors, all three required: the number of generated cases
+  #   min-admitted= the subject ADMITTED and the number it REFUSED. A run in
+  #   min-refused=  which the subject admitted nothing, or refused nothing,
+  #                 compared nothing against the reference.
+  #   mutants=      a tab-separated file (relative to tests/conformance/),
+  #                 `NAME<TAB>SED-EXPRESSION` per line, each a deliberately
+  #                 wrong variant of the subject. Every one must change the
+  #                 subject, emit, build, and produce disagreements > 0 from
+  #                 the same driver: a differential that no wrong subject can
+  #                 fail was never measuring agreement.
   #
   # WHY A DIRECTIVE PER FIXTURE RATHER THAN A TABLE HERE: codes.inc vs §13
   # is this project's own argument against a second, hand-maintained copy
@@ -566,6 +614,13 @@ run_conformance_tests() {
   #                         entry23/expecta.py builds from the vendored
   #                         certificate; then three mechanical mutants must
   #                         each fail at the vector the design names.
+  #   reference, status=run -- reference_entry, below: emit the subject twice
+  #                         (byte-identical), build the host with gcc and
+  #                         clang at -O0 and -O2, run the driver against each
+  #                         with the recorded seed, require disagreements == 0
+  #                         and the three floors on each, require the four
+  #                         builds to report identical counts, then require
+  #                         each mutant to produce disagreements.
   #   abort / nocap       -- no fixture claims status=run for these this
   #                         wave (no executed-binary abort check, no
   #                         capability checker). Dispatched defensively
@@ -577,7 +632,7 @@ run_conformance_tests() {
   # (this project has produced four green checks that saw nothing; a
   # conformance suite silently running zero entries -- or silently losing
   # fixtures -- would be the fifth):
-  #   fixture_floor -- 26 entries have a fixture file; fewer *.exsc files
+  #   fixture_floor -- 27 entries have a fixture file; fewer *.exsc files
   #                    than that means fixtures went missing, not that §14
   #                    shrank.
   #   run_floor     -- 19 as of 2026-09-27: entries 3, 5, 18, 20 (lexically
@@ -615,10 +670,21 @@ run_conformance_tests() {
   #                    was fixed. If the number that actually RUN ever
   #                    drops below the floor, something silently stopped
   #                    working.
+  #                    21 -> 22 is entry 29 (the reference shape), measured
+  #                    running in this tree before the floor moved -- see
+  #                    its commit message for the counts. It is the first
+  #                    entry that can be DEFERRED by the machine rather than
+  #                    by its own directive (no GNU tar, no python3), and when
+  #                    it is, `ran` falls under this floor and the suite
+  #                    fails: a green run that skipped the reference would be
+  #                    the sixth false-green.
   echo "== conformance suite (tests/conformance/, spec §14) =="
   local dir="$REPO_ROOT/tests/conformance"
-  local fixture_floor=26
-  local run_floor=21
+  local fixture_floor=27
+  local run_floor=22
+  # The §14 entries that have a fixture file here. 27 and 28 are carried by
+  # tests/programs/ and are neither required nor allowed in this directory.
+  local -a fixture_entries=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 29)
 
   if [[ ! -d "$dir" ]]; then
     bad "tests/conformance/ does not exist"
@@ -684,6 +750,8 @@ run_conformance_tests() {
     fi
 
     local entry="" shape="" expect_code="" status="" needs="" sources="" atom=""
+    local r_subject="" r_host="" r_header="" r_driver="" r_reference="" r_seed=""
+    local r_min_cases="" r_min_adm="" r_min_ref="" r_mutants=""
     local kv
     for kv in $directive; do
       case "$kv" in
@@ -694,6 +762,16 @@ run_conformance_tests() {
         needs=*) needs="${kv#needs=}" ;;
         sources=*) sources="${kv#sources=}" ;;
         atom=*) atom="${kv#atom=}" ;;
+        subject=*) r_subject="${kv#subject=}" ;;
+        host=*) r_host="${kv#host=}" ;;
+        header=*) r_header="${kv#header=}" ;;
+        driver=*) r_driver="${kv#driver=}" ;;
+        reference=*) r_reference="${kv#reference=}" ;;
+        seed=*) r_seed="${kv#seed=}" ;;
+        min-cases=*) r_min_cases="${kv#min-cases=}" ;;
+        min-admitted=*) r_min_adm="${kv#min-admitted=}" ;;
+        min-refused=*) r_min_ref="${kv#min-refused=}" ;;
+        mutants=*) r_mutants="${kv#mutants=}" ;;
       esac
     done
 
@@ -701,8 +779,8 @@ run_conformance_tests() {
       bad "$name: directive missing entry=/shape=/status= (got: '$directive')"
       continue
     fi
-    if [[ ! "$entry" =~ ^[0-9]+$ || "$entry" -lt 1 || "$entry" -gt 26 ]]; then
-      bad "$name: entry='$entry' is not a §14 entry number (1-26)"
+    if [[ ! " ${fixture_entries[*]} " == *" $entry "* ]]; then
+      bad "$name: entry='$entry' is not a §14 entry with a fixture here (1-26, 29; 27 and 28 live in tests/programs/)"
       continue
     fi
     seen_entries[$entry]=$(( ${seen_entries[$entry]:-0} + 1 ))
@@ -856,6 +934,20 @@ run_conformance_tests() {
           sed 's/^/         /' "$errlog"
         fi
         ;;
+      reference)
+        if [[ "$exsc_ok" -ne 1 ]]; then
+          bad "$name: entry $entry claims status=run but exsc is not available this run"
+          continue
+        fi
+        local rrc=0
+        reference_entry "$f" "$exsc_bin" "$workdir" "$entry" "$r_subject" "$r_host" \
+          "$r_header" "$r_driver" "$r_reference" "$r_seed" "$r_min_cases" \
+          "$r_min_adm" "$r_min_ref" "$r_mutants" || rrc=$?
+        case "$rrc" in
+          0) ran=$((ran + 1)) ;;
+          2) deferred=$((deferred + 1)) ;;   # reference_entry said why, loudly
+        esac
+        ;;
       abort)
         bad "$name: entry $entry: shape=abort has no status=run implementation"
         bad "in this runner -- fix the fixture's directive, or write the branch."
@@ -873,7 +965,7 @@ run_conformance_tests() {
 
   local missing=() dup=()
   local i
-  for ((i = 1; i <= 26; i++)); do
+  for i in "${fixture_entries[@]}"; do
     case "${seen_entries[$i]:-0}" in
       0) missing+=("$i") ;;
       1) ;;
@@ -881,7 +973,7 @@ run_conformance_tests() {
     esac
   done
   if [[ ${#missing[@]} -gt 0 ]]; then
-    bad "no fixture claims entry=${missing[*]} -- §14 has 26 entries, all must be represented"
+    bad "no fixture claims entry=${missing[*]} -- §14 has ${#fixture_entries[@]} entries with a fixture here, all must be represented"
   fi
   if [[ ${#dup[@]} -gt 0 ]]; then
     bad "more than one fixture claims entry=${dup[*]} -- each §14 entry should have exactly one"
@@ -891,12 +983,229 @@ run_conformance_tests() {
 
   if [[ "$ran" -lt "$run_floor" ]]; then
     bad "only $ran entries actually ran (checked against a real exsc diagnostic), floor is $run_floor"
+    if [[ "$deferred" -gt 0 ]]; then
+      note "$deferred entries were DEFERRED this run; a deferral is never a pass,"
+      note "so the floor is not lowered for it"
+    fi
     note "a conformance suite that silently ran zero (or too few) entries is"
     note "exactly the fifth false-green this project has already produced"
     note "four times over -- see UNIT_FIXTURE_FLOOR's header, above"
   else
     note "$ran/$nfix entries RAN and passed; $deferred/$nfix entries DEFERRED (not counted as passing)"
   fi
+}
+
+# ===========================================================================
+# §14's sixth shape, `reference`: differential agreement with an external
+# reference implementation. Entry 29 is its first (examples/arca held to GNU
+# tar). The rule is spec §14, "The sixth shape"; this is its runner.
+#
+# reference_entry FIXTURE EXSC WORKDIR ENTRY SUBJECT HOST HEADER DRIVER
+#                 REFERENCE SEED MIN_CASES MIN_ADMITTED MIN_REFUSED MUTANTS
+#
+# Returns 0 iff every check passed, 1 on a failure, 2 when the entry is
+# DEFERRED (the reference program or python3 is not on PATH). Every check
+# counts ok/bad itself, as cert_entry23 does. In order:
+#
+#   0. the directive is complete and every named file exists.
+#   1. DEFERRED, never a pass, when REFERENCE or python3 is absent. gcc and
+#      clang are NOT deferred on: the differential phase already treats a
+#      missing compiler as a failure of the phase, and so does this.
+#   2. the subject emits twice (--emitte c) to byte-identical units (§9.3).
+#   3. the host is built against the unit by gcc and clang at -O0 and -O2,
+#      UBSan on, HEADER force-included, and DRIVER runs against each build
+#      with SEED. A build passes iff the driver exits 0 AND the runner's own
+#      reading of its summary line gives disagreements == 0, cases >=
+#      MIN_CASES, admitted >= MIN_ADMITTED and refused >= MIN_REFUSED. The
+#      driver's verdict is necessary, not sufficient.
+#   4. the four builds report IDENTICAL counts. The generator is seeded and
+#      the subject is deterministic, so a count that differs across
+#      toolchains is a build that behaves differently, which is the bug the
+#      differential phase exists to catch and this one would otherwise miss.
+#   5. every mutant in MUTANTS, applied by sed to a COPY of the subject, must
+#      change it, emit, build, and make the same driver report
+#      disagreements > 0. A mutant that merely fails some other check of the
+#      driver (a corpus verdict, say) does not count: it shows the driver can
+#      fail, not that the differential can.
+#
+# On disagreement the first lines the driver printed for it are echoed, with
+# the seed and the build, so the case can be replayed from the log.
+# ===========================================================================
+
+# __ref_summary FILE -- sets REF_CASES/REF_ADM/REF_REF/REF_DIS from the
+# driver's `N mutants: A admitted, R refused, D disagreements` line, or all
+# empty when there is none.
+__ref_summary() {
+  REF_CASES="" REF_ADM="" REF_REF="" REF_DIS=""
+  local line
+  line="$(grep -m1 -E '[0-9]+ mutants: [0-9]+ admitted, [0-9]+ refused, [0-9]+ disagreements' "$1" || true)"
+  if [[ "$line" =~ ([0-9]+)\ mutants:\ ([0-9]+)\ admitted,\ ([0-9]+)\ refused,\ ([0-9]+)\ disagreements ]]; then
+    REF_CASES="${BASH_REMATCH[1]}" REF_ADM="${BASH_REMATCH[2]}"
+    REF_REF="${BASH_REMATCH[3]}" REF_DIS="${BASH_REMATCH[4]}"
+  fi
+}
+
+# __ref_build CC OPT HEADER UNIT HOST OUT -- the host against the emitted
+# unit, as examples/arca/proba_c.sh builds it. clang gets -fsanitize-trap
+# rather than a runtime library, which a minimal LLVM install may not carry.
+__ref_build() {
+  local cc="$1" opt="$2" header="$3" unit="$4" host="$5" out="$6" san
+  san=(-fsanitize=undefined -fno-sanitize-recover=all)
+  if "$cc" --version 2>/dev/null | head -1 | grep -qi clang; then
+    san=(-fsanitize=undefined -fsanitize-trap=undefined)
+  fi
+  # -Wno-cpp / -Wno-#warnings: nixpkgs' cc-wrapper appends
+  # -D_FORTIFY_SOURCE=2, and glibc's <features.h> #warnings at -O0; under
+  # -Werror that failed every -O0 build of entry 29 inside `nix flake
+  # check` (CI run 95 onwards). Same suppression, same reason, as the
+  # differential phase's cflags below.
+  "$cc" -std=c11 "$opt" -Wall -Wextra -Werror -Wno-unused-function -Wno-cpp -Wno-#warnings "${san[@]}" \
+    -include "$header" -I "$(dirname "$header")" "$unit" "$host" -o "$out"
+}
+
+reference_entry() {
+  local fixture="$1" exsc="$2" work="$3" entry="$4" subject="$5" host="$6"
+  local header="$7" driver="$8" reference="$9"
+  local seed="${10}" min_cases="${11}" min_adm="${12}" min_ref="${13}" mutants="${14}"
+  local name; name="$(basename "$fixture")"
+  local cdir="$REPO_ROOT/tests/conformance"
+  local rc=0
+  local w; w="$(mktemp -d "$work/ref.XXXXXX")"
+
+  # 0. the directive
+  local key val
+  for key in subject host header driver reference seed min_cases min_adm min_ref mutants; do
+    val="${!key}"
+    if [[ -z "$val" ]]; then
+      bad "$name: entry $entry: shape=reference needs subject= host= header= driver= reference= seed= min-cases= min-admitted= min-refused= mutants= (missing: $key)"
+      return 1
+    fi
+  done
+  for key in seed min_cases min_adm min_ref; do
+    val="${!key}"
+    if [[ ! "$val" =~ ^[0-9]+$ ]]; then
+      bad "$name: entry $entry: $key='$val' is not an integer"
+      return 1
+    fi
+  done
+  if [[ "$min_adm" -lt 1 || "$min_ref" -lt 1 || "$min_cases" -lt 1 ]]; then
+    bad "$name: entry $entry: min-cases, min-admitted and min-refused must each be at least 1 -- a floor of 0 is no floor"
+    return 1
+  fi
+  subject="$REPO_ROOT/$subject" host="$REPO_ROOT/$host"
+  header="$REPO_ROOT/$header" driver="$REPO_ROOT/$driver" mutants="$cdir/$mutants"
+  for key in subject host header driver mutants; do
+    val="${!key}"
+    if [[ ! -f "$val" ]]; then
+      bad "$name: entry $entry: $key= names $val, which does not exist"
+      return 1
+    fi
+  done
+
+  # 1. DEFERRED, loudly, when the verification tools are absent
+  local missing=()
+  command -v "$reference" >/dev/null 2>&1 || missing+=("reference:$reference")
+  command -v python3 >/dev/null 2>&1 || missing+=("python3")
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    note "$name: entry $entry DEFERRED (shape=reference needs=$(IFS=,; echo "${missing[*]}")) -- not counted as passing, and the suite's run floor will not be met"
+    return 2
+  fi
+  local cc ccs=(gcc clang)
+  for cc in "${ccs[@]}"; do
+    if ! command -v "$cc" >/dev/null 2>&1; then
+      bad "$name: entry $entry: $cc not found on PATH -- the reference shape builds with gcc and clang, like the differential phase"
+      return 1
+    fi
+  done
+  local refver; refver="$("$reference" --version 2>&1 | head -1)"
+
+  # 2. the subject emits twice, byte-identically
+  if ! "$exsc" aedifica --hospes x86_64-linux --emitte c "$subject" -o "$w/unit.c" >"$w/emit1.log" 2>&1 \
+     || ! "$exsc" aedifica --hospes x86_64-linux --emitte c "$subject" -o "$w/again.c" >"$w/emit2.log" 2>&1; then
+    bad "$name: entry $entry: exsc could not emit $(basename "$subject") as C:"
+    sed 's/^/         /' "$w/emit1.log" "$w/emit2.log"
+    return 1
+  fi
+  if cmp -s "$w/unit.c" "$w/again.c"; then
+    ok "$name: entry $entry: $(basename "$subject") emitted twice, byte-identical ($(wc -c <"$w/unit.c" | tr -d ' ') bytes)"
+  else
+    bad "$name: entry $entry: two emissions of $(basename "$subject") differ"
+    rc=1
+  fi
+
+  # 3 and 4. four builds, each held to the reference; counts must agree
+  local opt first_counts="" counts
+  for cc in "${ccs[@]}"; do
+    for opt in -O0 -O2; do
+      local tag="$cc $opt" bin="$w/host.$cc$opt" out="$w/driver.$cc$opt"
+      if ! __ref_build "$cc" "$opt" "$header" "$w/unit.c" "$host" "$bin" >"$w/build.$cc$opt" 2>&1; then
+        bad "$name: entry $entry [$tag]: the host does not build against the emitted unit:"
+        sed 's/^/         /' "$w/build.$cc$opt" | head -8; rc=1; continue
+      fi
+      local drc=0
+      python3 "$driver" "$bin" "$seed" >"$out" 2>&1 || drc=$?
+      __ref_summary "$out"
+      if [[ -z "$REF_CASES" ]]; then
+        bad "$name: entry $entry [$tag]: the driver printed no 'N mutants: A admitted, R refused, D disagreements' line (exit $drc) -- nothing was compared"
+        sed 's/^/         /' "$out" | head -8; rc=1; continue
+      fi
+      counts="$REF_CASES/$REF_ADM/$REF_REF/$REF_DIS"
+      local why=()
+      [[ "$drc" -eq 0 ]] || why+=("the driver exited $drc")
+      [[ "$REF_DIS" -eq 0 ]] || why+=("$REF_DIS disagreements with $reference")
+      [[ "$REF_CASES" -ge "$min_cases" ]] || why+=("$REF_CASES cases < floor $min_cases")
+      [[ "$REF_ADM" -ge "$min_adm" ]] || why+=("$REF_ADM admitted < floor $min_adm")
+      [[ "$REF_REF" -ge "$min_ref" ]] || why+=("$REF_REF refused < floor $min_ref")
+      if [[ ${#why[@]} -eq 0 ]]; then
+        ok "$name: entry $entry [$tag] seed $seed: $REF_CASES cases, $REF_ADM admitted, $REF_REF refused, 0 disagreements with $refver"
+      else
+        bad "$name: entry $entry [$tag] seed $seed: $(printf '%s; ' "${why[@]}" | sed 's/; $//')"
+        grep -E 'disagreement:|\[FAIL\]' "$out" | head -6 | sed 's/^/         /'
+        rc=1; continue
+      fi
+      if [[ -z "$first_counts" ]]; then
+        first_counts="$counts"
+      elif [[ "$counts" != "$first_counts" ]]; then
+        bad "$name: entry $entry [$tag]: counts $counts (cases/admitted/refused/disagreements) differ from the first build's $first_counts"
+        rc=1
+      fi
+    done
+  done
+  [[ "$rc" -eq 0 ]] && ok "$name: entry $entry: all four builds report identical counts ($first_counts, cases/admitted/refused/disagreements)"
+
+  # 5. the mutants: each must make the DIFFERENTIAL disagree
+  local mname mexpr nmut=0
+  while IFS=$'\t' read -r mname mexpr; do
+    [[ -z "$mname" || "$mname" == \#* ]] && continue
+    nmut=$((nmut + 1))
+    local m="$w/mut$nmut"
+    sed "$mexpr" "$subject" >"$m.exsc"
+    if cmp -s "$m.exsc" "$subject"; then
+      bad "$name: entry $entry: mutant '$mname' changed nothing -- its pattern moved"; rc=1; continue
+    fi
+    if ! "$exsc" aedifica --hospes x86_64-linux --emitte c "$m.exsc" -o "$m.c" >"$m.emit" 2>&1; then
+      bad "$name: entry $entry: mutant '$mname' does not emit -- it must be a well-formed wrong program:"
+      sed 's/^/         /' "$m.emit" | head -5; rc=1; continue
+    fi
+    if ! __ref_build "${ccs[0]}" -O0 "$header" "$m.c" "$host" "$m.bin" >"$m.build" 2>&1; then
+      bad "$name: entry $entry: mutant '$mname' does not build:"
+      sed 's/^/         /' "$m.build" | head -5; rc=1; continue
+    fi
+    local mrc=0
+    python3 "$driver" "$m.bin" "$seed" >"$m.out" 2>&1 || mrc=$?
+    __ref_summary "$m.out"
+    if [[ -n "$REF_DIS" && "$REF_DIS" -gt 0 && "$mrc" -ne 0 ]]; then
+      ok "$name: entry $entry: mutant '$mname' is caught by the differential itself ($REF_DIS disagreements with $reference in $REF_CASES cases)"
+    else
+      bad "$name: entry $entry: mutant '$mname' produced '${REF_DIS:-no summary}' disagreements (driver exit $mrc) -- the differential did not catch it, so it has not shown it can"
+      rc=1
+    fi
+  done <"$mutants"
+  if [[ "$nmut" -lt 1 ]]; then
+    bad "$name: entry $entry: $(basename "$mutants") holds no mutant -- a differential that has never been shown to fail has not been shown to measure anything"
+    rc=1
+  fi
+  return "$rc"
 }
 
 # ===========================================================================
@@ -1147,6 +1456,26 @@ cert_entry23() {
 #                   reader existed assumed. A `cat` program is
 #                   `stdin=F stdout=F` and proves identity against the one
 #                   file rather than against a copy of it.
+#   potestates=A,B  the atoms the binary's syscall audit admits (spec 10.3,
+#                   tools/syscall-audit.sh --potestates). Absent:
+#                   Mundus,ambitus, the publish gate's own invocation. A
+#                   closed set -- spec 4.6's eleven names -- so a typo fails
+#                   the fixture instead of auditing against nothing.
+#   radix=yes       a FILESYSTEM ROOT the program may derive (ADR 0017; a
+#                   tests/programs/ directory only). Under an exclusive lock
+#                   on /tmp/exsecutor-radix.lock, run_binary removes
+#                   /tmp/exsecutor-radix, re-creates it as a copy of the
+#                   directory's own `radix/` tree (empty when there is none),
+#                   runs the program, and removes it again. So every run --
+#                   the reference's and each C build's -- starts from the
+#                   same tree whatever ran before, and two suites running
+#                   at once take turns rather than share it. The path is
+#                   fixed because the program must NAME its root as a
+#                   literal: `Directorium.ad_radicem` takes an absolute path,
+#                   a relative one and /proc/self/cwd are refused by design
+#                   (archivum-beneath.md D2), and nothing in the language
+#                   carries a path in from outside yet. Not with cross= or
+#                   device=.
 #
 # Exactly one of expect-exit= / abort= is required for anything that runs.
 # An UNKNOWN KEY FAILS THE FIXTURE: the unit directive ignores one, and a
@@ -1165,26 +1494,50 @@ cert_entry23() {
 # run_binary BIN OUT ERR [STDIN] -- prints "exit N", "signal N" or "timeout".
 # STDIN is a path (absolute, or already resolved by the caller); absent or
 # empty means /dev/null.
-# run_binary BIN OUT ERR [STDIN] [RUNNER] [TIMEOUT]
+# run_binary BIN OUT ERR [STDIN] [RUNNER] [TIMEOUT] [RADIX]
 # RUNNER, when given, is prepended to the command -- `qemu-mipsn32` for the
 # cross phase, which cannot execute a big-endian MIPS binary directly. The
 # empty environment is kept: qemu-user needs nothing from it.
+# RADIX, when given, is `radix=yes`'s tree (above): a directory to copy into
+# /tmp/exsecutor-radix, or `@vacuum` for an empty root. The lock is held from
+# before the tree is made until after it is removed.
 run_binary() {
-  python3 - "$1" "$2" "$3" "${4:-}" "${5:-}" "${6:-20}" <<'PY'
-import subprocess, sys
-exe, out, err, inp, runner, tmo = sys.argv[1:7]
+  python3 - "$1" "$2" "$3" "${4:-}" "${5:-}" "${6:-20}" "${7:-}" <<'PY'
+import os, shutil, subprocess, sys
+exe, out, err, inp, runner, tmo, radix = sys.argv[1:8]
 cmd = ([runner] if runner else []) + [exe]
-with open(out, 'wb') as o, open(err, 'wb') as e:
-    i = open(inp, 'rb') if inp else None
-    try:
-        r = subprocess.run(cmd, stdin=(i or subprocess.DEVNULL), stdout=o,
-                           stderr=e, env={}, timeout=float(tmo))
-    except subprocess.TimeoutExpired:
-        print('timeout')
-        sys.exit(0)
-    finally:
-        if i is not None:
-            i.close()
+ROOT = '/tmp/exsecutor-radix'
+lock = None
+def tollere():
+    if os.path.islink(ROOT) or os.path.isfile(ROOT):
+        os.unlink(ROOT)
+    elif os.path.isdir(ROOT):
+        shutil.rmtree(ROOT)
+if radix:
+    import fcntl
+    lock = open(ROOT + '.lock', 'w')
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    tollere()
+    if radix == '@vacuum':
+        os.mkdir(ROOT)
+    else:
+        shutil.copytree(radix, ROOT, symlinks=True)
+try:
+    with open(out, 'wb') as o, open(err, 'wb') as e:
+        i = open(inp, 'rb') if inp else None
+        try:
+            r = subprocess.run(cmd, stdin=(i or subprocess.DEVNULL), stdout=o,
+                               stderr=e, env={}, timeout=float(tmo))
+        except subprocess.TimeoutExpired:
+            print('timeout')
+            sys.exit(0)
+        finally:
+            if i is not None:
+                i.close()
+finally:
+    if lock is not None:
+        tollere()
+        lock.close()
 if r.returncode < 0:
     print('signal %d' % -r.returncode)
 else:
@@ -1213,7 +1566,11 @@ check_run() {
   local out="$work.stdout" err="$work.stderr" status rcode=0
   local inp=""
   [[ -n "$sref" ]] && inp="$REPO_ROOT/$sref"
-  status="$(run_binary "$bin" "$out" "$err" "$inp" "$runner" "$tmo")"
+  # CHECK_RADIX and CHECK_POTESTATES: radix= and potestates=, which
+  # parse_run_keys resets for every fixture and a program loop resolves
+  # (radix_of) -- globals rather than two more positions on a call that
+  # already has ten.
+  status="$(run_binary "$bin" "$out" "$err" "$inp" "$runner" "$tmo" "${CHECK_RADIX:-}")"
 
   if [[ -n "$want_abort" ]]; then
     if [[ "$status" == "signal 4" ]] &&
@@ -1250,14 +1607,23 @@ check_run() {
   fi
 
   if [[ "$doaudit" == "audit" ]]; then
-    if "$AUDIT" --potestates Mundus,ambitus "$bin" >"$work.auditlog" 2>&1; then
-      ok "$label: syscall surface within {Mundus, ambitus}"
+    local pot="${CHECK_POTESTATES:-Mundus,ambitus}"
+    if "$AUDIT" --potestates "$pot" "$bin" >"$work.auditlog" 2>&1; then
+      ok "$label: syscall surface within {${pot//,/, }}"
     else
-      bad "$label: syscall surface exceeds {Mundus, ambitus}"
+      bad "$label: syscall surface exceeds {${pot//,/, }}"
       sed 's/^/         /' "$work.auditlog"; rcode=1
     fi
   fi
   return "$rcode"
+}
+
+# radix_of DIR -- after parse_run_keys, resolve radix=yes for program directory
+# DIR into CHECK_RADIX: DIR/radix when that tree exists, else `@vacuum`.
+radix_of() {
+  if [[ "$k_radix" == "yes" ]]; then
+    if [[ -d "$1/radix" ]]; then CHECK_RADIX="$1/radix"; else CHECK_RADIX="@vacuum"; fi
+  fi
 }
 
 # parse_run_keys LABEL KV... -- sets k_expect_exit k_abort k_stdout k_emit_exit
@@ -1272,6 +1638,7 @@ parse_run_keys() {
   # the reference's own key applies". A default of "0" would silently claim
   # parity with success even where emit-exit= says the reference refuses.
   k_c_emit_exit=""; k_c_exsc_exit=""; k_c_differentia=""; k_cross=""; k_device=""
+  k_radix=""; CHECK_RADIX=""; CHECK_POTESTATES="Mundus,ambitus"
   local kv
   for kv in "$@"; do
     case "$kv" in
@@ -1315,6 +1682,8 @@ parse_run_keys() {
       # typo is a failed fixture. See run_device_tests.
       device=*)      k_device="${kv#device=}" ;;
       sources=*)     k_sources="${kv#sources=}" ;;
+      potestates=*)  CHECK_POTESTATES="${kv#potestates=}" ;;
+      radix=*)       k_radix="${kv#radix=}" ;;
       status=*)      k_status="${kv#status=}" ;;
       needs=*)       k_needs="${kv#needs=}" ;;
       *) bad "$label: unknown directive key '$kv'"; return 1 ;;
@@ -1326,6 +1695,19 @@ parse_run_keys() {
   if [[ -n "$k_device" && "$k_device" != "amdgcn" ]]; then
     bad "$label: device='$k_device' -- the only value is 'amdgcn'"; return 1
   fi
+  if [[ -n "$k_radix" && "$k_radix" != "yes" ]]; then
+    bad "$label: radix='$k_radix' -- the only value is 'yes'"; return 1
+  fi
+  if [[ -n "$k_radix" && -n "$k_cross$k_device" ]]; then
+    bad "$label: radix= needs the host's filesystem -- not with cross= or device="; return 1
+  fi
+  local atom
+  for atom in ${CHECK_POTESTATES//,/ }; do
+    case "$atom" in
+      Mundus|alloc|sermo|horologium|archivum|rete|fortuna|ambitus|Filum|machina|Crudum) ;;
+      *) bad "$label: potestates= names '$atom', which is not a spec 4.6 atom"; return 1 ;;
+    esac
+  done
   if [[ "$k_status" != "run" && "$k_status" != "deferred" ]]; then
     bad "$label: unknown status='$k_status' (expected run|deferred)"; return 1
   fi
@@ -1753,6 +2135,142 @@ run_differential_tests() {
       bad "driver: exsc --emitte c and emit_c disagree on the hello world"
       diff "$workdir/hw.c" "$workdir/x86.c" 2>&1 | head -20 | sed 's/^/         /'
     fi
+
+    # -----------------------------------------------------------------------
+    # The unit's FACE: `--emitte h` and `--emitte rs` (c-backend.md D9). The
+    # first two library consumers (examples/custos, examples/arca) each
+    # carried a hand-written header and a hand-written Rust extern block, and
+    # drift was caught only by force-including the hand-written header. The
+    # face is now generated from the same module and the same signature
+    # routine as the unit, and these rows hold it to that:
+    #   - h and rs are artifacts exactly as c is: -o required, stdout empty;
+    #   - tests/c/facies/facies.exsc's two faces are PINNED byte for byte
+    #     (facies.{h,rs}.expected): one function per row of the type table,
+    #     and two non-publica ones (one of them called) that must be absent;
+    #   - two emissions of each are byte-identical (D5 within one process;
+    #     tools/reproduce.sh does it across two condition sets);
+    #   - the header compiles against the unit, force-included, under gcc
+    #     and clang at -Werror, so a prototype the unit does not spell the
+    #     same way is a "conflicting types" error;
+    #   - THE STALE CONSUMER: `quiesce` gains a parameter. The mutant's own
+    #     header still compiles against the mutant's unit (so the source is
+    #     fine), and the ORIGINAL header against the mutant's unit does not --
+    #     a consumer holding yesterday's header is refused at compile time;
+    #   - the Rust face, where cargo exists: tests/c/facies/crate links the
+    #     unit and calls every face function (tests/c/facies/consumer.rs);
+    #     the mutant's regenerated face then breaks that same consumer.
+    # flake.nix's checks.test has gcc and clang but not cargo, so the Rust
+    # leg is a NAMED note when cargo is absent, never a silent pass.
+    drv_case "--emitte h without -o" 2 \
+      aedifica --hospes x86_64-linux --emitte h "${hw[@]}"
+    drv_case "--emitte rs without -o" 2 \
+      aedifica --hospes x86_64-linux --emitte rs "${hw[@]}"
+    drv_case "--emitte h" 0 \
+      aedifica --hospes x86_64-linux --emitte h "${hw[@]}" -o "$workdir/hw.h"
+    drv_case "--emitte rs" 0 \
+      aedifica --hospes x86_64-linux --emitte rs "${hw[@]}" -o "$workdir/hw.rs"
+    local fdir="$REPO_ROOT/tests/c/facies" fx="$workdir/facies"
+    local fsrc="$fdir/facies.exsc" k
+    for k in c h rs; do
+      "$exsc" aedifica --hospes x86_64-linux --emitte "$k" "$fsrc" -o "$fx.$k" >/dev/null 2>&1 ||
+        bad "face: exsc --emitte $k on facies.exsc failed"
+    done
+    for k in h rs; do
+      "$exsc" aedifica --hospes x86_64-linux --emitte "$k" "$fsrc" -o "$fx.again.$k" >/dev/null 2>&1 || true
+      if [[ -s "$fx.$k" ]] && cmp -s "$fx.$k" "$fx.again.$k"; then
+        ok "face: --emitte $k emitted twice, byte-identical ($(wc -c <"$fx.$k" | tr -d ' ') bytes)"
+      else
+        bad "face: --emitte $k: two emissions differ, or wrote nothing"
+      fi
+      if cmp -s "$fx.$k" "$fdir/facies.$k.expected"; then
+        ok "face: --emitte $k matches tests/c/facies/facies.$k.expected byte for byte"
+      else
+        bad "face: --emitte $k differs from tests/c/facies/facies.$k.expected"
+        diff "$fdir/facies.$k.expected" "$fx.$k" 2>&1 | head -20 | sed 's/^/         /'
+      fi
+    done
+    if grep -q 'exs_arcana\|exs_gradus' "$fx.h" "$fx.rs" 2>/dev/null; then
+      bad "face: a non-publica function (arcana, gradus) is in a face"
+    elif grep -q 'exs_arcana(' "$fx.c" && grep -q 'exs_gradus(' "$fx.c"; then
+      ok "face: the unit defines arcana and gradus, and neither face declares them"
+    else
+      bad "face: the unit no longer defines arcana and gradus -- the absence check is vacuous"
+    fi
+    # face_cc CC HEADER UNIT -- 0 iff the header compiles against the unit
+    face_cc() {
+      local fcc="$1" nowarn="-Wno-cpp"
+      # clang under nixpkgs' cc-wrapper also gets the wrapper's -Wl,...
+      # linker flags, which -fsyntax-only leaves unused; -Werror turned
+      # that into a failure of both clang face checks in `nix flake check`.
+      [[ "$fcc" == clang ]] && nowarn="-Wno-#warnings -Wno-unused-command-line-argument"
+      # shellcheck disable=SC2086
+      "$fcc" -std=c11 -Wall -Wextra -Werror -Wno-unused-function $nowarn \
+        -fsyntax-only -include "$2" "$3" >"$workdir/face.cclog" 2>&1
+    }
+    for cc in gcc clang; do
+      if face_cc "$cc" "$fx.h" "$fx.c"; then
+        ok "face: [$cc] the header compiles against its unit (-include, -Werror)"
+      else
+        bad "face: [$cc] the header does not compile against its own unit"
+        sed 's/^/         /' "$workdir/face.cclog" | head -20
+      fi
+    done
+    local fmut="$workdir/facies_mutans.exsc"
+    sed 's/^publica functio quiesce() {/publica functio quiesce(x: u64) {/' "$fsrc" >"$fmut"
+    if cmp -s "$fmut" "$fsrc"; then
+      bad "face: the stale-consumer mutant changed nothing -- its pattern moved"
+    else
+      for k in c h rs; do
+        "$exsc" aedifica --hospes x86_64-linux --emitte "$k" "$fmut" -o "$fx.mut.$k" >/dev/null 2>&1 ||
+          bad "face: exsc --emitte $k on the mutant failed"
+      done
+      for cc in gcc clang; do
+        if ! face_cc "$cc" "$fx.mut.h" "$fx.mut.c"; then
+          bad "face: [$cc] the mutant's OWN header does not compile against it -- the next check would prove nothing"
+          sed 's/^/         /' "$workdir/face.cclog" | head -10
+        elif face_cc "$cc" "$fx.h" "$fx.mut.c"; then
+          bad "face: [$cc] a stale header still compiles against a unit whose publica signature changed"
+        elif grep -q 'conflicting types' "$workdir/face.cclog"; then
+          ok "face: [$cc] the stale header is refused against the changed unit (conflicting types)"
+        else
+          bad "face: [$cc] the stale header is refused, but not for conflicting types:"
+          sed 's/^/         /' "$workdir/face.cclog" | head -10
+        fi
+      done
+    fi
+    if command -v cargo >/dev/null 2>&1; then
+      local fcr="$workdir/facies_crate"
+      rm -rf "$fcr" && cp -r "$fdir/crate" "$fcr"
+      face_cargo() {  # UNIT FACE -- builds the crate with the stock consumer
+        ( cd "$fcr" && EXS_FACIES_UNIT="$1" EXS_FACIES_RS="$2" \
+            EXS_FACIES_USE="$fdir/consumer.rs" CC=gcc CARGO_TARGET_DIR="$fcr/target" \
+            cargo build --offline --quiet ) >"$workdir/face.cargolog" 2>&1
+      }
+      local frc=0
+      if face_cargo "$fx.c" "$fx.rs"; then
+        "$fcr/target/debug/facies" >/dev/null 2>&1 || frc=$?
+        if [[ "$frc" -eq 0 ]]; then
+          ok "face: the Rust face links its unit and every call answers (cargo, tests/c/facies/crate)"
+        else
+          bad "face: the Rust host ran and consumer.rs answered $frc (0 = all agree)"
+        fi
+      else
+        bad "face: the Rust face does not build against its unit"
+        sed 's/^/         /' "$workdir/face.cargolog" | head -20
+      fi
+      if [[ -s "$fx.mut.rs" ]] && ! face_cargo "$fx.mut.c" "$fx.mut.rs"; then
+        if grep -q 'E0061' "$workdir/face.cargolog"; then
+          ok "face: the mutant's regenerated Rust face breaks the stale consumer (E0061)"
+        else
+          bad "face: the mutant's Rust face fails, but not on the argument count:"
+          sed 's/^/         /' "$workdir/face.cargolog" | head -10
+        fi
+      else
+        bad "face: the stale Rust consumer still builds against the mutant's face"
+      fi
+    else
+      note "face: cargo is not on PATH -- the Rust face is pinned byte for byte above but NOT compiled in this run [UNTESTED here]"
+    fi
   else
     bad "exsc.asm failed to assemble -- the driver's half of D2 cannot be checked"
     sed 's/^/         /' "$workdir/exsc.asmlog"
@@ -1903,7 +2421,7 @@ run_differential_tests() {
   # single run of one `exsc`, and it is reported as one rather than silently
   # recompiled.
   echo "== differential tests (C backend vs the reference, tests/programs/) =="
-  local pfound=0 pagree=0 pbuilds=0 pskip=0 pdefer=0 dir
+  local pfound=0 pagree=0 pbuilds=0 pskip=0 pdefer=0 pface=0 dir
   local -A unit_of=()        # sources= key -> the work prefix whose binaries
                              # are already built for that exact unit text
   shopt -s nullglob
@@ -1941,6 +2459,7 @@ run_differential_tests() {
 
     local srcs=()
     program_sources "$name" "$dir" || continue
+    radix_of "$dir"
     srcs=("${p_srcs[@]}")
 
     local ref="$k_stdout"
@@ -2005,6 +2524,36 @@ run_differential_tests() {
       unit_of[$key]="$w"
     fi
 
+    # The FACE of the same unit (c-backend.md D9), once per distinct unit:
+    # the generated header, force-included into the unit it describes, must
+    # compile under both compilers -- so every eligible program, not only
+    # the face fixture, has a header that agrees with its own prototypes.
+    if [[ "$share" == "$w" ]]; then
+      local hrc=0
+      "$exsc" aedifica --hospes x86_64-linux "${srcs[@]}" --emitte h -o "$w.h" \
+        >/dev/null 2>"$w.hlog" || hrc=$?
+      if [[ "$hrc" -ne 0 ]]; then
+        bad "$name: exsc --emitte h exit=$hrc on a unit --emitte c accepted"
+        sed 's/^/         /' "$w.hlog"
+      else
+        local hok=1 fcc
+        for fcc in gcc clang; do
+          local hnowarn="-Wno-cpp"
+          [[ "$fcc" == clang ]] && hnowarn="-Wno-#warnings"
+          # shellcheck disable=SC2086
+          if ! "$fcc" $cflags $hnowarn -fsyntax-only -include "$w.h" "$w.c" >"$w.hcc" 2>&1; then
+            bad "$name/ [$fcc]: the generated header does not compile against its unit"
+            sed 's/^/         /' "$w.hcc" | head -10
+            hok=0
+          fi
+        done
+        if [[ "$hok" -eq 1 ]]; then
+          pface=$((pface + 1))
+          ok "$name/: its header ($(grep -c '^[a-z].*exs_' "$w.h") publica prototypes) compiles against its unit under gcc and clang"
+        fi
+      fi
+    fi
+
     local agree=1 opt
     for cc in gcc clang; do
       for opt in -O0 -O2; do
@@ -2040,6 +2589,8 @@ run_differential_tests() {
     "$pagree" "$DIFFERENTIAL_PROGRAM_FLOOR" DIFFERENTIAL_PROGRAM_FLOOR
   floor_check "differential program builds run and checked" "$pbuilds" \
     "$DIFFERENTIAL_PROGRAM_BUILD_FLOOR" DIFFERENTIAL_PROGRAM_BUILD_FLOOR
+  floor_check "distinct program units whose generated header compiles against them" \
+    "$pface" "$DIFFERENTIAL_FACE_FLOOR" DIFFERENTIAL_FACE_FLOOR
   if [[ "$pagree" -ne "$pfound" ]]; then
     bad "$pfound program directories were eligible but only $pagree agreed with the reference under all four builds"
   fi
@@ -2120,6 +2671,7 @@ run_program_tests() {
 
     local srcs=()
     program_sources "$name" "$dir" || continue
+    radix_of "$dir"
     srcs=("${p_srcs[@]}")
 
     local ref="$k_stdout"
@@ -2268,7 +2820,12 @@ run_cross_tests() {
   # up, and the program segfaults before reaching exs_initium. Found by
   # running it. `-fno-builtin` keeps the shim's own memcpy/memset honest.
   local cflags="--target=mips64-unknown-linux-musl -mabi=n32 -march=mips3"
-  cflags="$cflags -ffreestanding -fno-builtin -nostdlib -static -O2 -std=c11"
+  # -nostdlibinc: the unit and the shim are freestanding, so only the
+  # compiler's own headers belong on the path. A distribution clang (Ubuntu's
+  # 18.1, measured) adds the HOST's /usr/include even for a mips64 --target,
+  # and glibc's stdint.h then wants x86-64 bits/ headers: every unit failed
+  # to build. nixpkgs' clang has no such directory, so this is a no-op there.
+  cflags="$cflags -ffreestanding -fno-builtin -nostdlib -nostdlibinc -static -O2 -std=c11"
   cflags="$cflags -G0 -mno-abicalls -fno-pic -Wall -Wno-unused-function"
   local ldflags="-fuse-ld=lld -Wl,-e,_start -Wl,--build-id=none"
 

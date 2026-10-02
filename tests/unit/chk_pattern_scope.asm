@@ -26,22 +26,24 @@
 ; constructor pattern TODAY, pinned so that D2's typing flips it on purpose.
 ;
 ; Rows (source -> the diagnostics, exactly, in order):
-;   1. `casus ordinata { … } casus arborea(n) { … }`, `n` unused:
-;      `EXS-E0301` at `ordinata` and at `arborea`, nothing else. The variant
-;      paths do not resolve because pass 2 looks a pattern's path up in the
-;      VALUE namespace and a variant lives under its `typus` (D2: resolve
-;      against the scrutinee's type first -- the checker's next commit). No
+;   1. `casus ordinata { … } casus arborea(n) { … }`, `n` unused: NO
+;      diagnostic. This row was `EXS-E0301` at `ordinata` and at `arborea`,
+;      pinned while pass 2 looked a pattern's path up in the VALUE namespace
+;      only; D2's typing (checker/types/sum.inc's `__chk_ty_pattern`) looks it
+;      up among the SCRUTINEE'S variants first, and both are found. No
 ;      diagnostic touches `n`: binding it is pass 1's, and it worked.
-;   2. `n` used OUTSIDE its arm (`redde n;` after the `discerne`): the same
-;      `EXS-E0301` at `arborea`, then `EXS-E0301` at that `n`. The arm is a
-;      frame of its own; the name does not leak.
-;   3. `n` used INSIDE its arm (`redde n;` in the arm's block): NO `E0301` at
-;      `n` -- it resolves -- but `EXS-E0307` there, from pass 2's DEFINITE
-;      ASSIGNMENT rule (checker/types/types.inc: a binding declared without
-;      an initializer, read before any assignment names it). A pattern
-;      binding has no initializer node because the MATCH initializes it;
-;      D2's typing must say so when it gives the binding the payload's type.
-;      Pinned as measured; when that lands, this row's third entry goes.
+;   2. `n` used OUTSIDE its arm (`redde n;` after the `discerne`): `EXS-E0301`
+;      at that `n` -- the arm is a frame of its own; the name does not leak --
+;      and then `EXS-E0351`, because `ordinata` is not covered and there is no
+;      `aliter` (D3). The `E0301` at `arborea` this row used to carry is gone
+;      with row 1's.
+;   3. `n` used INSIDE its arm (`redde n;`, the function now returning
+;      `mensura`, the payload's type): NO diagnostic. It was `EXS-E0307`, from
+;      pass 2's definite-assignment rule -- a binding with no initializer read
+;      before any assignment -- because nothing said that the MATCH assigns
+;      it; `__chk_ty_bindto` now does, and gives it the payload's type, which
+;      is why the result type had to be `mensura` for the row to be clean: a
+;      `u32` result was `EXS-E0303` at `n` once `n` had a type at all.
 ;
 ; Exit 0 = every row held; 10+N = row N's diagnostics were wrong.
 ;
@@ -361,7 +363,7 @@ segment readable
 		db '}', 10
   fx_c2_LEN = $ - fx_c2
   fx_c3:	db 'typus modus = casus ordinata, casus arborea(mensura);', 10
-		db 'functio h(m: modus) -> u32 {', 10
+		db 'functio h(m: modus) -> mensura {', 10
 		db '    discerne m {', 10
 		db '        casus arborea(n) { redde n; }', 10
 		db '        casus ordinata { redde 0; }', 10
@@ -370,15 +372,14 @@ segment readable
 		db '}', 10
   fx_c3_LEN = $ - fx_c3
 
-  ; offsets: line 4 `casus ordinata` -> `ordinata` at 54+29+18+14 = 115;
   ; the harness takes FX_ANY where the exact byte adds nothing.
   fx_tab:
 	dq fx_c1, fx_c1_LEN
-	dd 2, 301, FX_ANY, 301, FX_ANY, 0
+	dd 0, 0, FX_ANY, 0, FX_ANY, 0
 	dq fx_c2, fx_c2_LEN
-	dd 2, 301, FX_ANY, 301, FX_ANY, 0
+	dd 2, 301, FX_ANY, 351, FX_ANY, 0
 	dq fx_c3, fx_c3_LEN
-	dd 3, 301, FX_ANY, 301, FX_ANY, 307
+	dd 0, 0, FX_ANY, 0, FX_ANY, 0
   FX_NROWS = ($ - fx_tab) / FX_ROW
   assert ($ - fx_tab) mod FX_ROW = 0
 

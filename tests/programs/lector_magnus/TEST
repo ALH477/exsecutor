@@ -1,0 +1,6 @@
+# `cat` over 135,169 bytes: the buffered reader and writer across every
+# buffer boundary (docs/design/runtime.md 2.4, as amended). stdin and the
+# expected stdout are the same file, compared with `cmp`, exactly as
+# tests/programs/lector does with its 41 bytes. lector_magnus.exsc says why
+# the file is shaped the way it is.
+TEST: expect-exit=0 stdin=tests/data/alveus_legendi.bin stdout=tests/data/alveus_legendi.bin

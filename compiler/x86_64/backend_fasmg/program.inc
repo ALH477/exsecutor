@@ -36,9 +36,11 @@
 ;   EXS_MXCSR               = 0x1F80       runtime.md 2.7's image
 ;   segment readable executable
 ;   <prelude.asm, byte for byte>           exsrt_start first: see below
+;   <archivum.asm>                         ONLY when `archivum` is in the mask
 ;   <bfa_emit_module's text>               the module's functions, then bfausr_trap
 ;   segment readable
 ;   bfausr_g0: db 0x41,...                 literals, global id order, HEX ONLY
+;   <archivum_rodata.asm>                  ONLY when `archivum` is in the mask
 ;   segment readable writeable
 ;   <prelude_data.asm, byte for byte>
 ;
@@ -147,6 +149,30 @@ __bfa_prelude_text_end:
 __bfa_prelude_data:
 	file	'../prelude/prelude_data.asm'
 __bfa_prelude_data_end:
+
+; ---- ADR 0017's two blobs, carried only when the atom is ------------------
+; `archivum.asm` (the openat2 routines and the stage-2 entry points the
+; surface calls) and `archivum_rodata.asm` (the four `open_how` constants
+; their sites point at). docs/design/archivum-beneath.md section 9 left this
+; `[OPEN]`: until stage 2 no program could hold `archivum`, so nothing
+; carried them. They are copied ONLY when `potestates` has
+; BFA_POTESTAS_ARCHIVUM -- not unconditionally behind their own `if
+; EXS_POTESTAS_ARCHIVUM` gate, which would assemble to the same binary but
+; change every OUT's TEXT, and an OUT is pinned byte for byte by more than
+; one fixture. The text goes after prelude.asm (exsrt_start stays first)
+; and before the module; the constants go into `segment readable` after
+; the literals: non-writable, which the audit's rule A3 requires, and not
+; executable, where the linear sweep would decode them. ASCII text, no 0x0F
+; byte, like the two above.
+	jmp	__bfa_archivum_text_end
+__bfa_archivum_text:
+	file	'../prelude/archivum.asm'
+__bfa_archivum_text_end:
+
+	jmp	__bfa_archivum_rodata_end
+__bfa_archivum_rodata:
+	file	'../prelude/archivum_rodata.asm'
+__bfa_archivum_rodata_end:
 
 ; __bfa_prog_hexnib(ctx, nib) -- one UPPERCASE hex digit. print.inc's own
 ; nibble printer emits lowercase for the IR's `data $N HEXBYTES` text; the
@@ -463,6 +489,15 @@ proc bfa_emit_program, module, arena, potestates, mxcsr
 	mov	rdx, __bfa_prelude_text_end - __bfa_prelude_text
 	call	__bfa_out_bytes
 
+	; archivum.asm, when the atom is in the program (above)
+	test	qword [potestates], BFA_POTESTAS_ARCHIVUM
+	jz	.no_archivum_text
+	mov	rdi, [ctx]
+	lea	rsi, [__bfa_archivum_text]
+	mov	rdx, __bfa_archivum_text_end - __bfa_archivum_text
+	call	__bfa_out_bytes
+  .no_archivum_text:
+
 	mov	rdi, [module]
 	mov	rsi, [arena]
 	call	bfa_emit_module
@@ -505,6 +540,15 @@ proc bfa_emit_program, module, arena, potestates, mxcsr
 	mov	[i], eax
 	jmp	.globloop
   .globdone:
+
+	; archivum_rodata.asm, in this non-writable segment (above)
+	test	qword [potestates], BFA_POTESTAS_ARCHIVUM
+	jz	.no_archivum_rodata
+	mov	rdi, [ctx]
+	lea	rsi, [__bfa_archivum_rodata]
+	mov	rdx, __bfa_archivum_rodata_end - __bfa_archivum_rodata
+	call	__bfa_out_bytes
+  .no_archivum_rodata:
 
 	; ---- writeable segment: the prelude's own mutable state ----------
 	mov	rdi, [ctx]

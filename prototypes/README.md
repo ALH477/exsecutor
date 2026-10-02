@@ -57,6 +57,15 @@ the answer it gives" is the bar — not "good enough to maintain."
   development -- parse the decimal string, never `m*10.0**e`; struct's
   f32 overflow refusal IS Inf. See `dec754/README.md`.
 
+- **`beneath/`** — a C measurement rather than a Python probe: what
+  `openat2(2)` with `RESOLVE_BENEATH` and its sibling flags refuses on the
+  running kernel, with which errno, and what it does not refuse (hard links,
+  device nodes, bind mounts without `RESOLVE_NO_XDEV`). It also measures a
+  rename race against `..`, composition with Landlock, and what a seccomp
+  filter can and cannot require of `struct open_how`. It is the evidence
+  under `docs/design/archivum-beneath.md` and ADR 0017. See
+  `beneath/README.md`.
+
 Every subdirectory README states plainly what exists, what doesn't, and
 which spec figures depend on the missing part. That is the point of writing
 them.

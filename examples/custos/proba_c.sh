@@ -2,11 +2,23 @@
 # examples/custos/proba_c.sh -- the C side of custos, checked the way Punctim's
 # dcf-ws-bridge consumes it: exsc emits one C11 library unit from §14 entry
 # 23's fixture, entry23/codex.exsc and custos.exsc; the unit is emitted twice
-# and must be byte-identical; custos.h is compiled against it; proba.c (one
-# anchor per verdict, plus SUPERPACK_SPEC.md's joint-CRC anchor 0x5B75) is
-# built with every C compiler given, at -O0 and -O2, under UBSan, and must
-# pass. Then five mutants of custos.exsc must each FAIL proba.c, so the
-# anchors are known to see what they claim to.
+# and must be byte-identical, and so is its generated C face (`--emitte h`)
+# and Rust face (`--emitte rs`, docs/design/c-backend.md D9); custos.h, the
+# hand-written header, must declare a subset of the generated one with the
+# same prototypes; proba.c (one anchor per verdict, plus SUPERPACK_SPEC.md's
+# joint-CRC anchor 0x5B75) is built against the GENERATED header,
+# force-included -- proba.c's own `#include "custos.h"` then makes the
+# compiler hold the two headers to each other -- with every C compiler
+# given, at -O0 and -O2, under UBSan, and must pass. Then five mutants of
+# custos.exsc must each FAIL proba.c, so the anchors are known to see what
+# they claim to.
+#
+# custos.h is KEPT, beside the generated header, because it carries what a
+# generator cannot: what each verdict means, how many bytes `d` must point
+# at, and that only three of the unit's seven publica functions are the
+# gate's API (the other four are entry 23's codec, publica in codex.exsc).
+# It can no longer drift silently: the subset check and the force-include
+# above fail the moment it does.
 #
 # Then the capability half. `admitte` is pure by spec §4.1 rule 6: its
 # declared row is empty (no `poscit`) AND it takes no capability parameter.
@@ -14,11 +26,18 @@
 # `sermo`) without declaring it must be refused by the checker as EXS-E0421,
 # and taking a capability parameter (`s: Scriptor`, which rule 4 makes
 # usable without `poscit`) must change the C prototype so that custos.h no
-# longer compiles against the unit. A mutant that slipped either check would
-# be a gate that could reach the host.
+# longer compiles against the unit -- nor does the header GENERATED from the
+# unmutated source, which is the stale consumer every face check is about.
+# A mutant that slipped either check would be a gate that could reach the
+# host.
+#
+# The Rust face, where cargo exists: tests/c/facies/crate links the unit and
+# calls admitte and lege through the generated extern block; the Scriptor
+# mutant's regenerated block must then refuse to compile that same consumer.
 #
 # Usage: examples/custos/proba_c.sh [CC...]    (default: gcc clang)
-# Needs build/exsc (make all). Writes only to a temp dir.
+# Needs build/exsc (make all) and python3; cargo for the Rust face (skipped,
+# by name, without it). Writes only to a temp dir.
 #
 # What is NOT here: the vectors. Punctim owns its golden, SuperPack and medium
 # vectors and does not vendor them here; its web/bridge runs this unit over
@@ -40,14 +59,27 @@ fail=0
 unit=("$root/tests/conformance/entry23_demodframe_golden_vectors.exsc"
       "$root/tests/conformance/entry23/codex.exsc")
 
-emit() { "$exsc" aedifica --hospes x86_64-linux --emitte c "${unit[@]}" "$1" -o "$2" >/dev/null 2>&1; }
+emit() { "$exsc" aedifica --hospes x86_64-linux --emitte "${3:-c}" "${unit[@]}" "$1" -o "$2" >/dev/null 2>&1; }
 
-emit "$here/custos.exsc" "$work/custos.gen.c"
-emit "$here/custos.exsc" "$work/again.gen.c"
-if cmp -s "$work/custos.gen.c" "$work/again.gen.c"; then
-  echo "  [ok]   emitted twice, byte-identical ($(wc -c <"$work/custos.gen.c") bytes)"
+for k in c h rs; do
+  emit "$here/custos.exsc" "$work/custos.gen.$k" "$k"
+  emit "$here/custos.exsc" "$work/again.gen.$k" "$k"
+  if [ -s "$work/custos.gen.$k" ] && cmp -s "$work/custos.gen.$k" "$work/again.gen.$k"; then
+    echo "  [ok]   --emitte $k emitted twice, byte-identical ($(wc -c <"$work/custos.gen.$k") bytes)"
+  else
+    echo "  [FAIL] --emitte $k: two emissions differ, or wrote nothing"; fail=1
+  fi
+done
+
+# The hand-written header against the generated one, prototype by prototype,
+# parameter names and comments dropped: every function custos.h declares must
+# be declared identically by the generated header. What the generated one
+# declares beyond that is reported, not failed -- publica functions the
+# hand-written header chose not to offer.
+if python3 "$root/tests/c/facies/protos.py" "$here/custos.h" "$work/custos.gen.h"; then
+  :
 else
-  echo "  [FAIL] two emissions differ"; fail=1
+  echo "  [FAIL] custos.h and the generated header disagree"; fail=1
 fi
 
 build() {   # build CC OPT UNIT OUT
@@ -56,8 +88,8 @@ build() {   # build CC OPT UNIT OUT
   if "$cc" --version 2>/dev/null | head -1 | grep -qi clang; then
     san=(-fsanitize=undefined -fsanitize-trap=undefined)
   fi
-  "$cc" -std=c11 "$opt" -Wall -Wextra -Werror -Wno-unused-function "${san[@]}" \
-    -include "$here/custos.h" -I "$here" "$gen" "$here/proba.c" -o "$out"
+  "$cc" -std=c11 "$opt" -Wall -Wextra -Werror -Wno-unused-function -Wno-cpp -Wno-#warnings "${san[@]}" \
+    -include "$work/custos.gen.h" -I "$here" "$gen" "$here/proba.c" -o "$out"
 }
 
 for cc in "${ccs[@]}"; do
@@ -127,6 +159,63 @@ if "${ccs[0]}" -std=c11 -fsyntax-only -Wno-unused-function -include "$here/custo
   echo "  [FAIL] capability 'Scriptor parameter' still matches custos.h"; fail=1
 else
   echo "  [ok]   capability 'Scriptor parameter' breaks custos.h"
+fi
+# The stale consumer: the header generated from the UNMUTATED source must
+# not compile against the mutant's unit, while the mutant's own regenerated
+# header must -- or the refusal would be the mutant's fault, not the drift's.
+emit "$work/cap.exsc" "$work/cap.gen.h" h
+if ! "${ccs[0]}" -std=c11 -fsyntax-only -Wno-unused-function -include "$work/cap.gen.h" \
+    "$work/cap.gen.c" 2>/dev/null; then
+  echo "  [FAIL] the Scriptor mutant's own generated header does not compile against it"; fail=1
+elif "${ccs[0]}" -std=c11 -fsyntax-only -Wno-unused-function -include "$work/custos.gen.h" \
+    "$work/cap.gen.c" 2>"$work/stale.err"; then
+  echo "  [FAIL] capability 'Scriptor parameter' still matches the generated header"; fail=1
+elif grep -q 'conflicting types' "$work/stale.err"; then
+  echo "  [ok]   capability 'Scriptor parameter' breaks the stale generated header (conflicting types)"
+else
+  echo "  [FAIL] the stale generated header is refused, but not for conflicting types"; fail=1
+fi
+
+# The Rust face: tests/c/facies/crate is the host; the consumer below is
+# written against admitte's and lege's signatures as they stand.
+if command -v cargo >/dev/null; then
+  cat >"$work/consumer.rs" <<'RS'
+fn consume() -> i32 {
+    // the filler frame filtrum's check uses (0), the same with a bad CRC
+    // (3), and 20 bytes (6); d always points at 32 readable bytes.
+    let mut f = [0u8; 32];
+    let good = [0xd3u8, 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x5b, 0x80];
+    f[..17].copy_from_slice(&good);
+    unsafe {
+        if exs_admitte(f.as_mut_ptr(), 17) != 0 { return 1; }
+        if exs_lege(f.as_mut_ptr()) != 0 { return 2; }
+        f[16] = 0x81;
+        if exs_admitte(f.as_mut_ptr(), 17) != 3 { return 3; }
+        if exs_admitte(f.as_mut_ptr(), 20) != 6 { return 4; }
+    }
+    0
+}
+RS
+  cp -r "$root/tests/c/facies/crate" "$work/crate"
+  rs_build() {  # UNIT FACE
+    ( cd "$work/crate" && EXS_FACIES_UNIT="$1" EXS_FACIES_RS="$2" EXS_FACIES_USE="$work/consumer.rs" \
+        CC="${ccs[0]}" CARGO_TARGET_DIR="$work/crate/target" cargo build --offline --quiet ) >"$work/cargo.log" 2>&1
+  }
+  if rs_build "$work/custos.gen.c" "$work/custos.gen.rs" && "$work/crate/target/debug/facies"; then
+    echo "  [ok]   Rust: the generated extern block links the unit; admitte and lege answer 0 0 3 6"
+  else
+    echo "  [FAIL] Rust: the generated extern block did not build or did not answer"; head -20 "$work/cargo.log"; fail=1
+  fi
+  emit "$work/cap.exsc" "$work/cap.gen.rs" rs
+  if rs_build "$work/cap.gen.c" "$work/cap.gen.rs"; then
+    echo "  [FAIL] Rust: the stale consumer still builds against the Scriptor mutant's face"; fail=1
+  elif grep -q 'E0061' "$work/cargo.log"; then
+    echo "  [ok]   Rust: the Scriptor mutant's regenerated face breaks the stale consumer (E0061)"
+  else
+    echo "  [FAIL] Rust: the mutant's face fails, but not on the argument count"; head -20 "$work/cargo.log"; fail=1
+  fi
+else
+  echo "  [skip] Rust face: cargo is not on PATH"
 fi
 
 # The process (filtrum.exsc): the reference backend, freestanding, audited.

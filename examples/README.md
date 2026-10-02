@@ -92,6 +92,17 @@ Exsecutor source, ten programs, all compiled and run by `tests/run.sh`:
   is judged by the certified `lege` itself. `proba_c.sh` checks reproducible
   emission, 19 anchors under gcc and clang with UBSan, and five mutants; the
   vector certification is the consumer's, in Punctim.
+- **`potestas/`, a plugin host's install-time policy** — for Oligarchy's
+  plugind, whose root acts on every answer. `potestas.exsc` is pure and
+  states, as one rule each, plugind's id grammar, the lexical half of its
+  forbidden-path check in both directions (`/` contains `/proc`), its
+  capability anchor rule, and the W^X rule that plugind's Rust and its Nix
+  module each state separately. `proba_c.sh` checks reproducible emission,
+  122 anchors from plugind's own tests under gcc and clang with UBSan, 16
+  mutants and the rule-6 capability checks. Like `arca/` and `custos/`, it
+  is run by its own `proba_c.sh`, not by `tests/run.sh`. The differential
+  certification against plugind and the Nix mirror is the consumer's, in
+  Oligarchy.
 - **`tempus/`, the time register** — one DeModFrame carrying a node's held
   time onto the Punctim wire, and the read of one that arrives. Built as one
   unit with §14 entry 23's fixture and codex, so the frame declaration is
@@ -149,6 +160,19 @@ written where no `fasmg` was available, so it is `[UNTESTED]` as Exsecutor
 until the first `tests/run.sh` that reaches it; `docs/design/somnium.md` is
 its design and says exactly what did and did not run. Oligarchy's
 `custom.screensaver` is its consumer, through this repo's flake.
+
+And one that is **not a program** and is not in the count either:
+**`abortus/`, a trap that returns.** A library-mode unit's traps call a
+`_Noreturn` hook, so in a long-running host (`custos` in Punctim's bridge,
+`arca` in reliquary, which runs as root) a trap that an input can reach
+kills the process. `tutela.c` is a hosted C guard: `setjmp` in one place,
+and `exsrt_abortus` jumps back to it. The host gets the trap's kind and
+keeps running. With no guard open it still aborts. There is no compiler
+change. `proba_c.sh` drives custos's, arca's and a test-only module's traps
+under gcc and clang with UBSan (and gcc with ASan), from C and from Rust,
+with three mutants. It also shows why none of this works in a kernel: there
+is no `<setjmp.h>`. `docs/design/returning-trap.md` is the kernel's half,
+design only.
 
 This file said "nothing here compiles — there is no compiler" until
 2026-09-10, and then, until the hydramodem commit, that nothing here was

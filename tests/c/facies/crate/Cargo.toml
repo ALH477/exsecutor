@@ -1,0 +1,17 @@
+# tests/c/facies/crate/Cargo.toml -- the smallest Rust host of a library unit.
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 The Exsecutor authors.
+#
+# It links one `exsc --emitte c` unit and calls it through the unit's
+# generated Rust face (`exsc --emitte rs`). No dependencies, so it builds
+# offline. docs/design/c-backend.md D9; driven by tests/run.sh and by
+# examples/{custos,arca}/proba_c.sh, which copy it to a temp dir first.
+[package]
+name = "facies"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "facies"
+path = "src/main.rs"

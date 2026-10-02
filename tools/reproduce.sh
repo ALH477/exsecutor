@@ -202,16 +202,17 @@ cmp_pair "the exsc binary" "$OUT_A" "$OUT_B" || RC=1
 # which is why they are reported as two lines and not one.
 if [[ "$TESTING_FIXTURE" -eq 0 ]]; then
   chmod +x "$OUT_A"
-  # emit_one WORKDIR EXSC OUT TZ LOCALE EPOCH UMASK HOSTNAME SRC...
-  # emit_one WORKDIR EXSC OUT TZ LOCALE EPOCH UMASK HOSTNAME HOSPES SRC...
+  # emit_one WORKDIR EXSC OUT TZ LOCALE EPOCH UMASK HOSTNAME HOSPES KIND SRC...
+  # KIND is the --emitte value: `c` for a unit, `h`/`rs` for its face
+  # (c-backend.md D9), which is emitted text under the same D5 contract.
   emit_one() {
     local workdir="$1" exsc="$2" out="$3" tz="$4" locale="$5" epoch="$6"
-    local umask_val="$7" host="$8" hospes="$9"; shift 9
+    local umask_val="$7" host="$8" hospes="$9" kind="${10}"; shift 10
     local inner srcs=""
     local s; for s in "$@"; do srcs="$srcs '$workdir/$s'"; done
     inner="cd '$workdir' && umask '$umask_val' && env -i PATH='$PATH' HOME='$HOME' \
 TZ='$tz' LC_ALL='$locale' LANG='$locale' SOURCE_DATE_EPOCH='$epoch' \
-'$exsc' aedifica --hospes '$hospes'$srcs --emitte c -o '$out' >/dev/null 2>&1"
+'$exsc' aedifica --hospes '$hospes'$srcs --emitte '$kind' -o '$out' >/dev/null 2>&1"
     if [[ "$HOSTNAME_VARY" -eq 1 ]]; then
       unshare --uts -r -- bash -c "hostname '$host' && $inner"
     else
@@ -220,29 +221,38 @@ TZ='$tz' LC_ALL='$locale' LANG='$locale' SOURCE_DATE_EPOCH='$epoch' \
   }
 
   echo
+  # The last two rows are a FACE, not a unit (c-backend.md D9): custos's C
+  # header and Rust extern block, from the three-file unit Punctim's bridge
+  # links. Their text carries an include guard derived from a hash of the
+  # declarations, so a hash over anything path- or time-dependent would show
+  # up here as a difference.
+  REPRO_CUSTOS="tests/conformance/entry23_demodframe_golden_vectors.exsc tests/conformance/entry23/codex.exsc examples/custos/custos.exsc"
   for unit in \
-    "saluta:x86_64-linux:examples/saluta.exsc examples/imprime.exsc examples/initium.exsc" \
-    "streamdb:x86_64-linux:examples/streamdb/lector_streamdb.exsc examples/streamdb/probatio.exsc" \
-    "streamdb-o64:mips64-none-o64:examples/streamdb/lector_streamdb.exsc examples/streamdb/probatio.exsc" \
-    "entry16:x86_64-linux:tests/conformance/entry16_reproducibility_conditions.exsc examples/imprime.exsc examples/initium.exsc"
+    "saluta:x86_64-linux:c:examples/saluta.exsc examples/imprime.exsc examples/initium.exsc" \
+    "streamdb:x86_64-linux:c:examples/streamdb/lector_streamdb.exsc examples/streamdb/probatio.exsc" \
+    "streamdb-o64:mips64-none-o64:c:examples/streamdb/lector_streamdb.exsc examples/streamdb/probatio.exsc" \
+    "entry16:x86_64-linux:c:tests/conformance/entry16_reproducibility_conditions.exsc examples/imprime.exsc examples/initium.exsc" \
+    "custos-h:x86_64-linux:h:$REPRO_CUSTOS" \
+    "custos-rs:x86_64-linux:rs:$REPRO_CUSTOS"
   do
     uname_="${unit%%:*}"
     uhospes="${unit#*:}"; uhospes="${uhospes%%:*}"
+    ukind="${unit#*:*:}"; ukind="${ukind%%:*}"
     # shellcheck disable=SC2206
     usrcs=(${unit##*:})
-    ca="$DIR_A/unit-$uname_.c"
-    cb="$DIR_B/unit-$uname_.c"
-    echo "reproduce: --emitte c, unit '$uname_' (--hospes $uhospes, ${#usrcs[@]} sources), condition sets A and B"
-    emit_one "$DIR_A" "$OUT_A" "$ca" "UTC" "C" "0" "022" "repro-host-a" "$uhospes" "${usrcs[@]}" || true
-    emit_one "$DIR_B" "$OUT_A" "$cb" "Pacific/Kiritimati" "C.UTF-8" "999999999" "077" "repro-host-b" "$uhospes" "${usrcs[@]}" || true
+    ca="$DIR_A/unit-$uname_.$ukind"
+    cb="$DIR_B/unit-$uname_.$ukind"
+    echo "reproduce: --emitte $ukind, unit '$uname_' (--hospes $uhospes, ${#usrcs[@]} sources), condition sets A and B"
+    emit_one "$DIR_A" "$OUT_A" "$ca" "UTC" "C" "0" "022" "repro-host-a" "$uhospes" "$ukind" "${usrcs[@]}" || true
+    emit_one "$DIR_B" "$OUT_A" "$cb" "Pacific/Kiritimati" "C.UTF-8" "999999999" "077" "repro-host-b" "$uhospes" "$ukind" "${usrcs[@]}" || true
     if [[ ! -s "$ca" || ! -s "$cb" ]]; then
-      echo "REPRODUCE: FAIL -- --emitte c wrote nothing for unit '$uname_'" >&2
+      echo "REPRODUCE: FAIL -- --emitte $ukind wrote nothing for unit '$uname_'" >&2
       echo "  (a unit of 0 bytes compared against another of 0 bytes is the" >&2
       echo "  vacuous pass this project has already shipped twice)" >&2
       RC=1
       continue
     fi
-    cmp_pair "the --emitte c unit '$uname_'" "$ca" "$cb" || RC=1
+    cmp_pair "the --emitte $ukind unit '$uname_'" "$ca" "$cb" || RC=1
   done
 else
   echo

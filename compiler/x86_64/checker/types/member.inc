@@ -66,7 +66,8 @@
 ; __chk_ty_pre_assoc(k) -> eax = 1 if prelude row `k` is ASSOCIATED (called as
 ; `Type.name(...)`, no receiver). `prelude/interface.inc`'s
 ; `EXS_IFACE_F_ASSOCIATA`: today `Scriptor.ad_exitum` and
-; `Lector.ab_introitu`, the two stream constructors, and nothing else.
+; `Lector.ab_introitu`, the two stream constructors, and
+; `Directorium.ad_radicem`, the derivation of a root (ADR 0017).
 proc __chk_ty_pre_assoc, chkt_kv
 	locals
 	endl
@@ -74,6 +75,8 @@ proc __chk_ty_pre_assoc, chkt_kv
 	cmp	rax, CHK_TY_PRE_AD_EXITUM
 	je	.yes
 	cmp	rax, CHK_TY_PRE_AB_INTROITU
+	je	.yes
+	cmp	rax, CHK_TY_PRE_AD_RADICEM
 	je	.yes
 	xor	eax, eax
 	return
@@ -87,9 +90,12 @@ endp
 ;
 ; Reachable this way: `Scriptor.a`, `Scriptor.descriptor`, `Scriptor.scribe`,
 ; `Scriptor.scribe_octeto` and `Scriptor.ad_exitum` on a `Scriptor`;
-; `Lector.lege_octeto` and `Lector.ab_introitu` on a `Lector`; and
-; `Mundus.ambitus` on the capability `Mundus` -- which is spec §4.7's
-; "derivation is by method on the root, `m.ambitus()`".
+; `Lector.lege_octeto` and `Lector.ab_introitu` on a `Lector`;
+; `ad_radicem`, `infra`, `lege_ex`, `crea` on a `Directorium`, `exlege_octeto`
+; on a `Lectorium`, `inscribe` and `inscribe_octeto` on a `Scriptorium`
+; (ADR 0017); and `Mundus.ambitus` and `Mundus.archivum` on the capability
+; `Mundus` -- which is spec §4.7's "derivation is by method on the root,
+; `m.ambitus()`".
 ;
 ; THE RECEIVER'S TYPE DECIDES, NOT THE NAME ALONE. `lege_octeto` on a
 ; `Scriptor` is no member at all (`EXS-E0305`), and so is `scribe_octeto` on a
@@ -117,9 +123,10 @@ proc __chk_ty_pre_member, chkt_wPM, chkt_tPM, chkt_mPM
 	cmp	rax, r12
 	jne	.views
 	cmp	r13, CHK_TY_PRE_AMBITUS
-	jne	.no
-	mov	rax, r13
-	return
+	je	.yes
+	cmp	r13, CHK_TY_PRE_ARCHIVUM	; `m.archivum()`, spec 4.7: total
+	je	.yes
+	jmp	.no
 
   ; ---- spec §5.1's text views: KEYED ON THE RECEIVER'S KIND ------------------
   ; THIS ARM EXISTS BECAUSE ITS RECEIVERS HAVE NO `AstDecl`. Every other member
@@ -196,10 +203,50 @@ proc __chk_ty_pre_member, chkt_wPM, chkt_tPM, chkt_mPM
 	mov	rsi, CHK_TY_PRE_LECTOR
 	call	chk_ty_prelude_type
 	cmp	rax, r12
-	jne	.no
+	jne	.directorium
 	cmp	r13, CHK_TY_PRE_LEGE_OCT
 	je	.yes
 	cmp	r13, CHK_TY_PRE_AB_INTROITU
+	je	.yes
+	jmp	.no
+
+  ; ---- ADR 0017. NO FIELD ROW IS A MEMBER OF ANY OF THE THREE -- not `a`,
+  ; not `descriptor` -- so `d.a` falls through to `.fields`, finds a prelude
+  ; struct, and is EXS-E0305 (design D1, R3). The `Scriptor.a` row (2) is
+  ; `Scriptor`'s and is compared against `recvty` like every other row here.
+  .directorium:
+	mov	rdi, rbx
+	mov	rsi, CHK_TY_PRE_DIRECTORIUM
+	call	chk_ty_prelude_type
+	cmp	rax, r12
+	jne	.lectorium
+	cmp	r13, CHK_TY_PRE_AD_RADICEM
+	je	.yes
+	cmp	r13, CHK_TY_PRE_INFRA
+	je	.yes
+	cmp	r13, CHK_TY_PRE_LEGE_EX
+	je	.yes
+	cmp	r13, CHK_TY_PRE_CREA
+	je	.yes
+	jmp	.no
+  .lectorium:
+	mov	rdi, rbx
+	mov	rsi, CHK_TY_PRE_LECTORIUM
+	call	chk_ty_prelude_type
+	cmp	rax, r12
+	jne	.scriptorium
+	cmp	r13, CHK_TY_PRE_EXLEGE_OCT
+	je	.yes
+	jmp	.no
+  .scriptorium:
+	mov	rdi, rbx
+	mov	rsi, CHK_TY_PRE_SCRIPTORIUM
+	call	chk_ty_prelude_type
+	cmp	rax, r12
+	jne	.no
+	cmp	r13, CHK_TY_PRE_INSCRIBE
+	je	.yes
+	cmp	r13, CHK_TY_PRE_INSCRIBE_OCT
 	je	.yes
 	jmp	.no
   .yes:
@@ -1756,6 +1803,87 @@ proc __chk_ty_castagg, chkt_wCA, chkt_nCA, chkt_sCA, chkt_tCA
 	mov	rsi, 305
 	mov	rdx, [chkt_nCA]
 	call	__chk_ty_raise
+	return
+endp
+
+; __chk_ty_castrel(w, n, src, dst) -- the cast that is NOT an aggregate cast,
+; judged. `EXS-E0305` at the `Cast` unless one of these holds:
+;
+;   1. both types are NUMERIC SCALARS -- an integer, a float or `mensura`
+;      (spec §5.2, §5.4). Whether two such types are related further than that
+;      is checker.md class E and still `[OPEN]`; this routine changes nothing
+;      there;
+;   2. the two types are the SAME type id: a cast that converts nothing mints
+;      nothing;
+;   3. the target is `dyn`: a trait-object cast's verdict is pass 3's
+;      `EXS-E0510` and nothing else (the dispatch's own comment);
+;   4. the source is a PENDING literal (`src` = 0) and the target is one of 1:
+;      the literal has no type yet and is an integer or a float by class.
+;
+; EVERYTHING ELSE IS REFUSED, and the list of what that covers is the point:
+; a reference `&T`, `refero<T>` or `refc<T>` reinterpreted as another pointee
+; (`&d sicut &archivum` took a `Directorium` and handed back the raw atom, and
+; `sub archivum = *p` then bound it); an integer made into a reference or a
+; reference into an integer; a capability atom made from, or made into, any
+; other type (spec §4.1 rule 1: "No literal, no cast, no default"); a function
+; type re-cast to another function type, which is the one way to take a row
+; OFF a value (`g sicut functio(u8) -> u8` where `g` draws `archivum`); a sum
+; carrying a `Directorium` re-cast to a sum that does not; a raw pointer `*T`.
+; A WHITELIST ON PURPOSE: a type kind added later is refused until someone
+; decides what a cast to or from it means, not accepted until someone notices.
+;
+; `Crudum` (spec §4.6: "raw pointers, unchecked casts, manual lifetimes") would
+; license an unchecked reinterpret, and nothing implements that yet: this
+; refuses outright, with or without the atom. `[OPEN]` -- when it is built, the
+; gate belongs HERE and must still refuse a cast whose source or target is a
+; capability atom or a capability-bearing type, which `Crudum` does not need.
+proc __chk_ty_castrel, chkt_wCR, chkt_nCR, chkt_sCR, chkt_tCR
+	uses	rbx, r13
+	locals
+	endl
+	mov	rbx, [chkt_wCR]
+	; the target's kind: `dyn` is pass 3's, a numeric scalar is r13 = 1
+	xor	r13d, r13d
+	mov	rdi, rbx
+	mov	rsi, [chkt_tCR]
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_DYN
+	je	.out
+	cmp	rax, AST_TY_INT
+	je	.tnum
+	cmp	rax, AST_TY_FLOAT
+	je	.tnum
+	cmp	rax, AST_TY_MENSURA
+	jne	.tother
+  .tnum:
+	mov	r13d, 1
+  .tother:
+	mov	rax, [chkt_sCR]
+	test	rax, rax
+	jz	.pending
+	cmp	rax, [chkt_tCR]
+	je	.out				; the same type: converts nothing
+	test	r13d, r13d
+	jz	.bad
+	mov	rdi, rbx
+	mov	rsi, [chkt_sCR]
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_INT
+	je	.out
+	cmp	rax, AST_TY_FLOAT
+	je	.out
+	cmp	rax, AST_TY_MENSURA
+	je	.out
+	jmp	.bad
+  .pending:
+	test	r13d, r13d
+	jnz	.out
+  .bad:
+	mov	rdi, rbx
+	mov	rsi, 305
+	mov	rdx, [chkt_nCR]
+	call	__chk_ty_raise
+  .out:
 	return
 endp
 

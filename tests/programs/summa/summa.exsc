@@ -1,0 +1,118 @@
+// Sum types, constructed, matched and lowered -- docs/design/sum-types.md D2
+// (constructors and constructor patterns), D3 (exhaustive `discerne`) and D6
+// (the layout: the tag at byte 0, then the payload, packed), through `-o` on
+// the reference backend and through the C backend under the differential
+// phase. `initium` returns the number of the first check that is wrong, or
+// 0 when all are right.
+//
+//    1-3  modus: a payload-less variant, a one-element and a two-element
+//         payload, built and read back by a COMPLETE match with no `aliter`
+//         (its last arm is taken without a test, lower/stmt.inc)
+//    4-5  `color`, every variant payload-less: a one-byte value, its tag
+//         the variant's index in declaration order (D6)
+//    6-7  a NESTED payload: a sum inside a sum's payload, matched twice
+//    8    a struct as a payload, copied out by the binding
+//    9    SUB-BYTE elements: `casus nibbae(u4, u4)` packs both into one
+//         byte (D6: a payload's elements pack as a struct's fields do), so
+//         the stores and loads are `storebits`/`loadbits`
+//   10    a binding is a VALUE: assigning the scrutinee inside the arm does
+//         not change what the binding holds
+//   11    a sum passed as a parameter, returned as a result, and assigned
+//   12    `aliter` catches the variants no arm names
+//   13    `figura`'s payload-less variant beside two that carry payloads
+//
+// Mutations (run before committing): in lower/sum.inc's `__lwr_ctor`, store
+// the tag as index + 1 -> exit 1; in `__lwr_sum_place`, drop the tag width
+// from the element offset -> exit 2.
+
+typus modus = casus ordinata, casus arborea(mensura), casus par(u8, u16);
+
+typus color = casus ruber, casus viridis, casus caeruleus;
+
+structura punctum { x: u16 y: u16 }
+
+typus figura = casus nihil, casus locus(punctum), casus intus(modus, u8);
+
+typus nibbae = casus vacuum, casus duo(u4, u4), casus tres(u4, u4, u8);
+
+functio valor(m: modus) -> mensura {
+    discerne m {
+        casus ordinata { redde 1; }
+        casus arborea(n) { redde n; }
+        casus par(a, b) { redde (a sicut mensura) * 100000 + (b sicut mensura); }
+    }
+}
+
+functio index(c: color) -> u8 {
+    discerne c {
+        casus ruber { redde 0; }
+        casus viridis { redde 1; }
+        casus caeruleus { redde 2; }
+    }
+}
+
+functio aliquid(c: color) -> u8 {
+    discerne c {
+        casus viridis { redde 7; }
+        aliter { redde 9; }
+    }
+}
+
+functio intima(f: figura) -> mensura {
+    discerne f {
+        casus nihil { redde 0; }
+        casus locus(p) { redde (p.x sicut mensura) * 1000 + (p.y sicut mensura); }
+        casus intus(m, k) { redde valor(m) + (k sicut mensura); }
+    }
+}
+
+functio nib(n: nibbae) -> mensura {
+    discerne n {
+        casus vacuum { redde 0; }
+        casus duo(a, b) { redde (a sicut mensura) * 16 + (b sicut mensura); }
+        casus tres(a, b, c) { redde ((a sicut mensura) * 16 + (b sicut mensura)) * 1000 + (c sicut mensura); }
+    }
+}
+
+functio duplica(m: modus) -> modus {
+    discerne m {
+        casus arborea(n) { redde arborea(n * 2); }
+        aliter { redde m; }
+    }
+}
+
+functio retinet() -> mensura {
+    mutabilis m: modus = arborea(41);
+    discerne m {
+        casus arborea(n) {
+            m = arborea(5);
+            redde n + valor(m);
+        }
+        aliter { }
+    }
+    redde 0;
+}
+
+publica functio initium(mm: Mundus) -> u8 {
+    si valor(ordinata) ne 1 { redde 1; }
+    si valor(arborea(123456789)) ne 123456789 { redde 2; }
+    si valor(par(7, 65535)) ne 765535 { redde 3; }
+    si index(ruber) ne 0 { redde 4; }
+    si index(caeruleus) ne 2 { redde 5; }
+    si intima(intus(par(1, 2), 3)) ne 100005 { redde 6; }
+    si intima(intus(arborea(40), 2)) ne 42 { redde 7; }
+    firma p: punctum = punctum { x: 12, y: 34 };
+    si intima(locus(p)) ne 12034 { redde 8; }
+    si nib(duo(3, 12)) ne 60 { redde 9; }
+    si nib(tres(15, 1, 200)) ne 241200 { redde 9; }
+    si retinet() ne 46 { redde 10; }
+    mutabilis q: modus = ordinata;
+    q = duplica(arborea(21));
+    si valor(q) ne 42 { redde 11; }
+    q = duplica(q);
+    si valor(q) ne 84 { redde 11; }
+    si aliquid(ruber) ne 9 { redde 12; }
+    si aliquid(viridis) ne 7 { redde 12; }
+    si intima(nihil) ne 0 { redde 13; }
+    redde 0;
+}

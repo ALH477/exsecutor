@@ -39,12 +39,25 @@ recommendation per question, with its reason. Nothing here is written into
    complete — the tree already answers: AST 2.4's contiguous decl ranges,
    `Decl.flags` (CHK 2.5), and the nesting of spec §8.5's constructs, each
    of which knows its own join (section 2.5).
-4. **The input invariant is CHK 2.5, and the lowering raises nothing.** It
+4. **The input invariant is CHK 2.5, and the lowering raises nothing** —
+   with one exception, added by ADR 0017. It
    runs only when Stage 2 emitted no diagnostic, so every `Node.ty` ≠ 0,
    every `Seg.d`/`Member.d` ≠ 0, `konst` on every `Lit`, `own` on every
    reference expression, `Decl.flags` complete. `EXS-E0341`, `E0342`,
    `E0306`, `E0307` are the checker's; a tree that reaches this pass and
    still needs one is a checker bug and an `rassert` here, never a code.
+   **The exception is a capability atom with no carrier in scope**
+   (`lwr_cap_find` answers 0, at an atom named as a value or at a call's
+   staged carriers): it is `EXS-E0421`, not a trap. The node is recorded
+   (`lwr_unprovided`), lowering carries on with a null `ptr`, and
+   `lwr_module` returns the node, so `driver/run.inc` raises the
+   checker's own code there and writes no object. The checker is meant
+   never to let it through; the reason it is not an `rassert` is that
+   what it guards is a capability, and a trap is a worse answer than a
+   code to a tool that matches codes. `tests/unit/lwr_unprovided.asm`
+   pins the lowering half; the driver's `.lower_refused` is `[UNTESTED]`
+   end to end, because no source reaches it (a lambda is refused by the
+   lowering before its body is read, section 2.7).
 5. **The output invariant is IR section 3 and RT section 5.** The verifier
    runs on every function this pass emits (section 2.11), and the three
    functions of RT 5 are the first fixture: the text `bfa_print` writes for
@@ -574,7 +587,9 @@ no `copy`, which is the IR RT 5 writes down.
 | `Member` field read | `load T %p off order` / `loadbits T %p byte bit` from `Ast.layout[field decl]` — `loadbits` when the width is not a whole number of bytes at a byte boundary (IR 2.7) |
 | `Assign` | lhs `Path` → `writeVariable` or `store`; `Member` → `store`/`storebits`; `Index` → `chk`, `index`, `store`; `*p` → `store`; an `ACCUM` lhs → `contrib` (section 2.5); an aggregate rhs → `copy n %dst %src` plus one `retain` per reference field `[UNTESTED]` |
 | `Call` | section 2.7 |
-| `Try` `?` | `eventus` representation `[OPEN]` (IR 6); `rassert` in the first slice |
+| `Try` `?` | refused by the checker (`EXS-E0305`, sum-types.md D4's interim rule), so it never reaches this pass; the `rassert` stays |
+| constructor `prosperum(n)`, bare `ordinata` | into `%dst`: every payload evaluated, then `store uT %dst 0 nativus %tag`, then one `store`/`storebits`/`addr`+`copy` per element at the tag width plus the preceding elements' layout bits (`lower/sum.inc`, sum-types.md D6) |
+| `discerne` on a sum | the tag loaded once; each arm's constant is its variant's index; an exhaustive match's last arm is entered untested; bindings loaded from their elements (`lower/stmt.inc`'s `__lwr_discerne`, `lower/sum.inc`'s `__lwr_sum_bind`) |
 | `Lambda` | section 2.7 |
 | `Member` call of `plica_unicode` `plica_sermone` `octeti` `numerus` | **refused by name**, `rassert` at `__lwr_call_member`'s `.prelude:`. Spec §5.1's text operations are resolved by the checker (`checker/types/prim.inc` rows 12–15) and have no `prelude/interface.inc` part B record — no symbol, no IR signature, nothing to call — so `__lwr_pre_row` answers 0 and the trap fires. Not a diagnostic: no registered code means "unimplemented", §8.3 makes codes permanent, and inventing one is forbidden. Consequence: a `shape=code` conformance fixture never lowers and is unaffected, and **no `tests/programs/` directory may call these four** until the runtime has a UTF-8 case folder and a view type |
 

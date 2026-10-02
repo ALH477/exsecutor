@@ -73,6 +73,23 @@ exsrt_ambitus:
 	dq	0				; argv       @24
 	dq	0				; envp       @32
 assert $ - exsrt_ambitus = EXS_AMBITUS_SIZE
+
+; ---- the standard-stream buffers' state -- runtime.md 2.4 (as amended) -----
+; Scalars here; the two buffers themselves are reserved at the very END of
+; this file, so they are bss (no bytes in the binary) -- see below.
+exsrt_scriptor_status:
+	dd	EXS_SCRIPTOR_NULLUS		; NULLUS / LIGATUS / FRACTUS
+exsrt_scriptor_fd:
+	dd	0				; the descriptor the buffer belongs to
+exsrt_scriptor_numerus:
+	dq	0				; bytes pending in exsrt_scriptor_alveus
+exsrt_lector_fd:
+	dd	0				; the descriptor the read buffer holds
+	dd	0				; padding
+exsrt_lector_positio:
+	dq	0				; next byte to hand out
+exsrt_lector_numerus:
+	dq	0				; bytes the last read(0) delivered
 end if
 
 ; ---- the abort line ---------------------------------------------------------
@@ -98,5 +115,21 @@ exsrt_abortus_calc:
 ; prefix is ever reworded, this fails at assembly rather than truncating or
 ; running past the end of the line.
 assert exsrt_abortus_numerus - exsrt_abortus_linea = EXS_ABORTUS_PRAEFIXUM_LEN
+
+; ---- the buffers -- reserved, LAST -----------------------------------------
+; 64 KiB each, `rb`, and the last thing in the last segment of OUT
+; (backend_fasmg/program.inc writes this file after everything else), so the
+; ELF segment's file size stops before them and the kernel zero-fills them:
+; they cost the binary no bytes and the process no syscall -- no `mmap`, no
+; `brk`, the atom's surface unchanged. Gated with the routines that use
+; them, so a program without `ambitus` reserves nothing. Nothing may be
+; `db`'d after this block: initialised data following it would turn the
+; reservation into 128 KiB of zeros in the file.
+if EXS_POTESTAS_AMBITUS
+exsrt_scriptor_alveus:
+	rb	EXS_ALVEUS_SCRIBENDI
+exsrt_lector_alveus:
+	rb	EXS_ALVEUS_LEGENDI
+end if
 
 ; ---- end of the prelude data blob -------------------------------------------

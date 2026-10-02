@@ -135,6 +135,43 @@ proc lwr_cap_bind, lwrsp, lwratom, lwrvid
 	return
 endp
 
+; lwr_unprovided(st, lwrn) -> eax = a placeholder `ptr` value, after recording
+; node `lwrn` as the first place a capability atom had no provider.
+;
+; ADR 0017, blocker 2. `lwr_cap_find` answering 0 means the checker passed a
+; tree in which an atom is drawn with no carrier anywhere in scope -- the
+; closure route was checker-clean for exactly that reason until
+; `__chk_row_lamof`. This pass used to `rassert` there (SIGILL, "a checker
+; bug"). It is `EXS-E0421` -- the checker's own code for it -- so the node is
+; recorded, lowering carries on with a null `ptr` it will never emit, and
+; `lwr_module` returns the node: `driver/run.inc`'s `.lower_refused` raises
+; `EXS-E0421` there and no object is written. Only the FIRST node is kept.
+;
+; NOT REACHED FROM A CLOSURE TODAY, and said so because the finding that asked
+; for this said it was: this pass refuses `Lambda` outright (`lwr_expr`'s
+; `rassert eax eq 0`, "closures are [OPEN] in five separate ways") before it
+; ever lowers a lambda body, so a lambda drawing `archivum` traps there, not
+; here -- and does so for a lambda that draws nothing at all. What reaches this
+; routine is a tree the CHECKER let through with an unprovided atom; the
+; fixture that does it on purpose is tests/unit/lwr_unprovided.asm.
+proc lwr_unprovided, lwrsp, lwrn
+	uses	rbx
+	locals
+	endl
+	mov	rbx, [lwrsp]
+	cmp	dword [rbx + LwrState.badn], 0
+	jne	.have
+	mov	eax, [lwrn]
+	mov	[rbx + LwrState.badn], eax
+  .have:
+	mov	rdi, rbx
+	mov	esi, [rbx + LwrState.tptr]
+	xor	edx, edx
+	xor	ecx, ecx
+	call	lwr_iconst
+	return
+endp
+
 ; lwr_cap_find(st, lwratom) -> eax = the variable id of the innermost provider
 ; of atom `lwratom`, or 0. The frame stack walked outward, exactly CHK 2.1's
 ; rule; the function's own hidden carrier `param` sits in the root frame, put
@@ -533,6 +570,42 @@ proc __lwr_path, lwrsp, lwrn
 	mov	eax, ecx
 	test	eax, LWR_PRELUDE_TAG
 	jnz	.prelude
+	; A capability ATOM named as a value -- `archivum` in
+	; `Directorium.ad_radicem(archivum, v)` inside a function declaring
+	; `poscit archivum`. The checker resolved the `Path` to the atom's own
+	; declaration (resolve.inc's `__chk_draw`); the VALUE is the innermost
+	; provider's carrier, found exactly as a call's hidden carrier is
+	; (`__lwr_stage_carriers`). Before 2026-10-02 this fell through to
+	; `__lwr_module_const` and trapped -- for `ambitus` as much as for
+	; `archivum` -- so a function could hold an atom in its row and not
+	; pass it on. tests/unit/lwr_directorium.asm's `radix` pins it.
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, [lwrd]
+	call	ast_decl_at
+	cmp	byte [rax + AstDecl.kind], AST_D_CAPATOM
+	jne	.notatom
+	mov	rdi, [rbx + LwrState.tree]
+	call	ast_cap_base
+	rassert	rax ge 1
+	mov	ecx, [lwrd]
+	sub	ecx, eax
+	inc	ecx			; the atom's 1-based spec 4.6 ordinal
+	mov	rdi, rbx
+	mov	esi, ecx
+	call	lwr_cap_find
+	test	eax, eax
+	jnz	.provided
+	mov	rdi, rbx		; no provider: `EXS-E0421`, recorded
+	mov	esi, [lwrn]		; (`lwr_unprovided`), never a trap
+	call	lwr_unprovided
+	return
+  .provided:
+	mov	rdi, rbx
+	mov	esi, eax
+	mov	edx, [rbx + LwrState.cur]
+	call	lwr_read_var
+	return
+  .notatom:
 	mov	rdi, rbx
 	mov	esi, [lwrn]
 	call	__lwr_nty
@@ -1668,12 +1741,12 @@ proc __lwr_func_index, lwrsp, lwrd
 	return
 endp
 
-; __lwr_stage_carriers(st, lwrrow) -- one `ptr` per ATOM item of the callee's
+; __lwr_stage_carriers(st, lwrrow, lwrcn) -- one `ptr` per ATOM item of the callee's
 ; row, in row order, which CHK 2.8 fixed as ascending atom declaration id.
 ; A `sicut` ordinal contributes NOTHING: docs/design/runtime.md section 5 says
 ; so in as many words -- its carriers travel inside the argument whose type
 ; carries them.
-proc __lwr_stage_carriers, lwrsp, lwrrow
+proc __lwr_stage_carriers, lwrsp, lwrrow, lwrcn
 	uses	rbx, r12, r13
 	locals
 		slot lwritems, dd
@@ -1719,14 +1792,18 @@ proc __lwr_stage_carriers, lwrsp, lwrrow
 	mov	rdi, rbx
 	mov	esi, eax
 	call	lwr_cap_find
-	rassert	eax ne 0		; an unprovided atom at a call site is
-					; `EXS-E0421`, the checker's -- a tree
-					; that reaches here with one is a
-					; checker bug (lowering.md constraint 4)
+	test	eax, eax
+	jnz	.cprov
+	mov	rdi, rbx		; an unprovided atom at a call site is
+	mov	esi, [lwrcn]		; `EXS-E0421`, the checker's: recorded at
+	call	lwr_unprovided		; the CALL (`lwr_unprovided`)
+	jmp	.cstage
+  .cprov:
 	mov	rdi, rbx
 	mov	esi, eax
 	mov	edx, [rbx + LwrState.cur]
 	call	lwr_read_var
+  .cstage:
 	mov	rdi, rbx
 	mov	esi, eax
 	call	__lwr_stage
@@ -1877,6 +1954,7 @@ proc __lwr_call_user, lwrsp, lwrn, lwrdst, lwrrecv
   .args:
 	mov	rdi, rbx
 	mov	esi, [lwrrow]
+	mov	edx, [lwrn]
 	call	__lwr_stage_carriers
 	cmp	dword [lwrrecv], 0
 	je	.declared
@@ -2143,6 +2221,13 @@ proc lwr_expr_into, lwrsp, lwrn, lwrdst
 		slot lwrk, dd
 	endl
 	mov	rbx, [lwrsp]
+	; a CONSTRUCTOR -- `prosperum(n)`, or a bare `ordinata` -- writes its
+	; tag and payload straight through `lwrdst` (lower/sum.inc)
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_isctor
+	test	eax, eax
+	jnz	.ctor
 	mov	rdi, rbx
 	mov	esi, [lwrn]
 	call	__lwr_nkind
@@ -2194,6 +2279,12 @@ proc lwr_expr_into, lwrsp, lwrn, lwrdst
 	mov	edx, [lwrdst]
 	call	__lwr_structlit
 	return
+  .ctor:
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	mov	edx, [lwrdst]
+	call	__lwr_ctor
+	return
   .arraylit:
 	mov	rdi, rbx
 	mov	esi, [lwrn]
@@ -2235,6 +2326,12 @@ proc lwr_expr_agg, lwrsp, lwrn
 		slot lwrs, dd
 	endl
 	mov	rbx, [lwrsp]
+	; a bare variant names no storage: it is built, like a call
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_isctor
+	test	eax, eax
+	jnz	.fresh
 	mov	rdi, rbx
 	mov	esi, [lwrn]
 	call	__lwr_nkind

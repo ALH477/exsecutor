@@ -38,6 +38,7 @@
 ;		discerne x {
 ;			casus 0 { r = 2; }
 ;			casus K { r = 3; }
+;			aliter { }
 ;		}
 ;		redde r;
 ;	}
@@ -47,14 +48,33 @@
 ;			aliter { redde 2; }
 ;		}
 ;	}
+;	typus modus = casus ordinata, casus arborea(u8), casus par(u8, u16);
+;	functio h(m: modus) -> u16 {
+;		discerne m {
+;			casus arborea(v) { redde v sicut u16; }
+;			casus par(a, b) { redde b; }
+;			casus ordinata { redde 0; }
+;		}
+;	}
 ;
 ; What to read in it: the pattern `0` is an `iconst u8` -- the SCRUTINEE's
 ; type, which only the checker's expectation could have given it; `K` is its
 ; initializer inlined at the use, also `u8`; the scrutinee is evaluated once
-; and every test reads that one value; with no `aliter` the last test's false
-; edge goes straight to the join, whose phi has three inputs (two arms and
-; the fall-through, `r` unchanged). In `g`, `mensura` is `u64` and every arm
-; ends in `ret`, so no join block is made at all.
+; and every test reads that one value; the last test's false edge goes to
+; the `aliter` block (empty, `b5`) and from there to the join, whose phi has
+; three inputs (two arms and the `aliter`, `r` unchanged). `f` had NO
+; `aliter` until docs/design/sum-types.md D3, and its last false edge went
+; straight to the join -- the "no match runs nothing" behaviour D3 outlaws: a
+; scalar `discerne` without `aliter` is `EXS-E0351` now. In `g`, `mensura` is
+; `u64` and every arm ends in `ret`, so no join block is made at all.
+;
+; `h` is a SUM scrutinee (lower/sum.inc): the TAG is loaded once (`load u8 %0
+; 0`, a one-byte tag for three variants, D6) and each arm compares it with
+; its variant's index -- `arborea` 1, `par` 2 -- and binds its payload by a
+; `load` at the tag width plus the preceding elements (`v` at byte 1; `a` at
+; 1, `b` at 2). The LAST arm, `ordinata`, has NO test: the checker proved the
+; arms exhaustive (D3), so the value reaching it can only be variant 0, and
+; the chain's last false edge simply enters it (`b4`).
 ;
 ; Exit 0 = the printed module matches. 10 = setup, 11 = the front end said
 ; something, 12 = `lwr_module` refused, 13 = the verifier named a rule,
@@ -311,6 +331,7 @@ segment readable
 		db 9, 'discerne x {', 10
 		db 9, 9, 'casus 0 { r = 2; }', 10
 		db 9, 9, 'casus K { r = 3; }', 10
+		db 9, 9, 'aliter { }', 10
 		db 9, '}', 10
 		db 9, 'redde r;', 10
 		db '}', 10
@@ -318,6 +339,14 @@ segment readable
 		db 9, 'discerne n {', 10
 		db 9, 9, 'casus 8 { redde 1; }', 10
 		db 9, 9, 'aliter { redde 2; }', 10
+		db 9, '}', 10
+		db '}', 10
+		db 'typus modus = casus ordinata, casus arborea(u8), casus par(u8, u16);', 10
+		db 'functio h(m: modus) -> u16 {', 10
+		db 9, 'discerne m {', 10
+		db 9, 9, 'casus arborea(v) { redde v sicut u16; }', 10
+		db 9, 9, 'casus par(a, b) { redde b; }', 10
+		db 9, 9, 'casus ordinata { redde 0; }', 10
 		db 9, '}', 10
 		db '}', 10
   FX_SRC_LEN = $ - fx_src
@@ -337,12 +366,14 @@ segment readable
 	db "b2:", 10
 	db "%5 = iconst u8 7", 10
 	db "%6 = cmp.eq u8 %0 %5", 10
-	db "br %6 b4 b3", 10
+	db "br %6 b4 b5", 10
 	db "b3:", 10
-	db "%7 = phi u8 b1 %4 b2 %1 b4 %8", 10
+	db "%7 = phi u8 b1 %4 b4 %8 b5 %1", 10
 	db "ret %7", 10
 	db "b4:", 10
 	db "%8 = iconst u8 3", 10
+	db "jmp b3", 10
+	db "b5:", 10
 	db "jmp b3", 10
 	db "}", 10
 	db "functio @g (u64) -> u64 numeri ad_parem vetita explicita conservata {", 10
@@ -357,6 +388,31 @@ segment readable
 	db "b2:", 10
 	db "%4 = iconst u64 2", 10
 	db "ret %4", 10
+	db "}", 10
+	db "functio @h (ptr) -> u16 numeri ad_parem vetita explicita conservata {", 10
+	db "b0:", 10
+	db "%0 = param ptr 0", 10
+	db "%1 = load u8 %0 0 nativus", 10
+	db "%2 = iconst u8 1", 10
+	db "%3 = cmp.eq u8 %1 %2", 10
+	db "br %3 b1 b2", 10
+	db "b1:", 10
+	db "%4 = load u8 %0 1 nativus", 10
+	db "%5 = zext u16 %4", 10
+	db "ret %5", 10
+	db "b2:", 10
+	db "%6 = iconst u8 2", 10
+	db "%7 = cmp.eq u8 %1 %6", 10
+	db "br %7 b3 b4", 10
+	db "b3:", 10
+	db "%8 = load u8 %0 1 nativus", 10
+	db "%9 = load u16 %0 2 nativus", 10
+	db "ret %9", 10
+	db "b4:", 10
+	db "jmp b5", 10
+	db "b5:", 10
+	db "%10 = iconst u16 0", 10
+	db "ret %10", 10
 	db "}", 10
   FX_EXP_LEN = $ - fx_exp
 

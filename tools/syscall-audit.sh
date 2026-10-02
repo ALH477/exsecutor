@@ -22,13 +22,21 @@
 #                                       and audit them, proving this script
 #                                       works before compiler/x86_64/exsc.asm
 #                                       exists to produce a real target.
-#                                       Covers both modes above, on three
+#                                       Covers both modes above, on six
 #                                       fixtures: clean_syscalls.asm,
-#                                       socket_syscall.asm, and
-#                                       prelude_lege_octeto.asm -- the last
-#                                       being a real prelude binary whose
-#                                       read(0) must pass under `ambitus` and
-#                                       fail without it.
+#                                       socket_syscall.asm,
+#                                       prelude_lege_octeto.asm (a real
+#                                       prelude binary whose read(0) must
+#                                       pass under `ambitus` and fail without
+#                                       it), audit_openat2.asm (eleven cases
+#                                       of the openat2 site rules, each
+#                                       refused for exactly its own rule),
+#                                       prelude_archivum.asm (the prelude's
+#                                       archivum routines: PASS under
+#                                       Mundus,archivum, FAIL without it) and
+#                                       legacy_gate.asm (int 0x80 and
+#                                       sysenter refused in both modes; their
+#                                       bytes inside immediates not).
 #
 # Exit status: 0 = audit passed. 1 = audit failed (disallowed syscall,
 # indeterminate syscall number, or not freestanding). 2 = usage/environment
@@ -46,14 +54,17 @@
 # table in `compiler/x86_64/prelude/README.md` ("The syscall table, per
 # atom") -- taken from there "as built" (grepped from prelude.asm's actual
 # `if EXS_POTESTAS_<atom>` gates), per this flag's design brief, NOT from
-# `docs/design/runtime.md` section 2.6, which disagrees for `archivum`,
+# `docs/design/runtime.md` section 2.6, which disagrees for
 # `horologium`, `fortuna` and `rete`: runtime.md pre-declares specific
-# syscalls for those atoms (openat/close/fstat/lseek/read/write for
-# archivum; clock_gettime for horologium; getrandom for fortuna; "the
-# socket family" for rete) while no routine gated on any of those four
-# atoms exists in prelude.asm yet -- the README's per-atom table agrees
-# with runtime.md that they are all `[OPEN]`, but tabulates them as
-# admitting nothing ("none") rather than runtime.md's specific numbers.
+# syscalls for those atoms (clock_gettime for horologium; getrandom for
+# fortuna; "the socket family" for rete) while no routine gated on any of
+# those three atoms exists in the prelude yet -- the README's per-atom
+# table agrees with runtime.md that they are all `[OPEN]`, but tabulates
+# them as admitting nothing ("none") rather than runtime.md's specific
+# numbers. `archivum` was the fourth until ADR 0017's stage 1 gave it
+# routines (prelude/archivum.asm); the two tables and this script now carry
+# one row for it. --potestates also adds one thing beyond the number: an
+# openat2 site is judged by rules W and A1-A6 (OPEN_HOW_ADMITTED below).
 # Where the two disagree, per this flag's brief, the README wins ("it is
 # what was assembled"); this script says so in its own output whenever an
 # atom whose two tables disagree is named.
@@ -108,9 +119,23 @@
 #                                       tool can perform. When `rete` IS
 #                                       named, every finding it admits says
 #                                       so explicitly in its own row.
-#   Mundus, sermo, horologium, archivum, fortuna, Filum, machina, Crudum:
+#   archivum:  openat2(437), close(3), fstat(5), lseek(8), read(0),
+#                                       write(1) to any fd -- ADR 0017,
+#                                       compiler/x86_64/prelude/archivum.asm.
+#                                       NOT openat(257): no program atom
+#                                       admits it. And 437 is admitted per
+#                                       SITE, not per number: each openat2
+#                                       must pass rules W and A1-A6 (the
+#                                       `open_how` it passes proven, byte for
+#                                       byte, to be one of four constants in
+#                                       a non-writable segment; see
+#                                       OPEN_HOW_ADMITTED in the engine and
+#                                       docs/design/archivum-beneath.md
+#                                       section 3). A site it cannot prove is
+#                                       a FAILURE.
+#   Mundus, sermo, horologium, fortuna, Filum, machina, Crudum:
 #     admit nothing beyond core today (README: "[OPEN]" / "none" -- no
-#     EXS_POTESTAS-gated routine exists for any of these eight yet). Naming
+#     EXS_POTESTAS-gated routine exists for any of these seven yet). Naming
 #     one is not an error -- it is a valid spec §4.6 atom -- it just adds
 #     no syscalls to the union until a routine exists.
 #
@@ -119,10 +144,11 @@
 # own `EXS_POTESTAS_*` guard requires all be defined: Mundus alloc sermo
 # horologium archivum rete fortuna ambitus Filum machina Crudum.
 #
-# Without --potestates, this script's behavior is byte-for-byte unchanged:
-# the compiler's own closed nine, socket-family always a hard failure,
-# --self-test unchanged in its original two cases (a third and fourth are
-# added, covering this mode, using the same two existing fixtures).
+# Without --potestates, this script checks the compiler's own closed nine,
+# socket-family always a hard failure. Two changes reach default mode too,
+# both only ever turning a PASS into a FAIL: the legacy gates (below), and
+# xchg/xadd/cmpxchg and implicit writers unresolving every register they
+# write (scan()'s docstring).
 # ---------------------------------------------------------------------------
 #
 # ---------------------------------------------------------------------------
@@ -189,6 +215,19 @@
 #     and inherits the same limits -- an indeterminate fd is treated as
 #     NOT the fd-2 core case (fails safe: falls through to needing
 #     `ambitus`), never silently assumed to be fd 2.
+#
+#   - The i386 LEGACY GATES, `int 0x80` and `sysenter`, are found by the
+#     same decoding sweep and are a FAILURE in both modes, whatever the
+#     atoms: the i386 ABI numbers syscalls from a different table, so no
+#     x86-64 row can judge one. Until this was added the sweep looked only
+#     for `syscall`, and a binary entering the kernel through `int 0x80`
+#     passed every allowlist (measured by another agent; legacy_gate.asm
+#     pins it). Because they are DECODED rather than grepped, the bytes CD 80
+#     or 0F 34 inside an immediate are not a finding; bytes the sweep never
+#     decodes at an instruction boundary are not seen either -- the same
+#     limit `syscall` has. A far transfer into a 32-bit code segment is not
+#     modelled at all `[OPEN]`; it would still need one of these gates or
+#     `syscall` to reach the kernel, and those are what the sweep finds.
 #
 # The freestanding check (no PT_INTERP, no dynamic section) is NOT a
 # heuristic -- readelf reports both directly from ELF structure -- and it
@@ -302,12 +341,22 @@ POTESTATES_CORE = {231: 'exit_group'}
 # spec §4.6 spelling that currently gates no EXS_POTESTAS-conditioned
 # syscall site in prelude.asm (README: "[OPEN]" / "none") -- naming it is
 # not an error, it just adds nothing yet.
+#
+# archivum (ADR 0017, accepted; docs/design/archivum-beneath.md section 5):
+# openat2(437), close(3), fstat(5), lseek(8), read(0), write(1) -- and NOT
+# openat(257), which no program atom admits. 437 is admitted only as a
+# NUMBER here; every site must also pass the openat2 site rules A1-A6
+# (OPEN_HOW_ADMITTED and judge_openat2_site, below), and a site that does
+# not is a FAILURE. write(1) is listed for completeness and still decided in
+# classify_potestates (any fd under ambitus OR archivum). The routines are
+# compiler/x86_64/prelude/archivum.asm's, gated on EXS_POTESTAS_ARCHIVUM.
 POTESTATES_TABLE = {
     'Mundus':     {},
     'alloc':      {9: 'mmap', 11: 'munmap'},
     'sermo':      {},
     'horologium': {},
-    'archivum':   {},
+    'archivum':   {437: 'openat2', 3: 'close', 5: 'fstat', 8: 'lseek',
+                   0: 'read', 1: 'write'},
     'rete':       {},   # special-cased in classify_potestates -- see below
     'fortuna':    {},
     'ambitus':    {0: 'read', 1: 'write'},  # read: exsrt_lector_lege_octeto
@@ -319,12 +368,9 @@ POTESTATES_TABLE = {
 # atom [OPEN], but runtime.md pre-declares specific syscall numbers the
 # README does not) -- named here so the tool can say so in its own output
 # per this flag's brief, rather than silently picking one.
+# archivum's entry was deleted when ADR 0017 was implemented: runtime.md,
+# the README and this table now carry the same row.
 POTESTATES_DISAGREEMENT = {
-    'archivum':   "runtime.md tabulates openat(257)/close(3)/fstat(5)/"
-                   "lseek(8)/read(0)/write(1) for archivum; no such "
-                   "EXS_POTESTAS_ARCHIVUM-gated routine exists in "
-                   "prelude.asm yet, so the README (as built) admits "
-                   "nothing for it -- using the README",
     'horologium': "runtime.md tabulates clock_gettime(228) [OPEN] for "
                   "horologium; the README lists no routine ('none') -- "
                   "using the README (admits nothing)",
@@ -332,6 +378,65 @@ POTESTATES_DISAGREEMENT = {
                   "fortuna; the README lists no routine ('none') -- "
                   "using the README (admits nothing)",
 }
+
+# ---------------------------------------------------------------------------
+# openat2 SITE RULES (--potestates mode, archivum named). ADR 0017 decision
+# 5; docs/design/archivum-beneath.md section 3, rules A1-A6. The flags that
+# make an openat2 beneath a root are in MEMORY, behind the pointer in rdx,
+# where no seccomp filter can see them (design F14) -- so the binary has to
+# be shown to pass only these 24-byte constants, and a site that cannot be
+# shown to is refused.
+#
+#   W   the four instructions are contiguous and in this order:
+#       `lea rdx,[rip+D]` / `mov r10d,24` / `mov eax,437` / `syscall`
+#   A1  rdx resolves: the ONE trusted form is a rip-relative `lea` into the
+#       rdx family, its target computed here as the NEXT instruction's
+#       address plus D (scan() strips objdump's `# 0x...` comment, so the
+#       comment is never trusted). Anything else that writes the family --
+#       a register copy, a load, a `call`, an implicit writer -- unresolves
+#       it until the next trusted `lea`.
+#   A2  r10 resolves, by an immediate `mov`, to EXACTLY 24. The kernel also
+#       accepts a larger size with a zero tail (design F9); then the bytes
+#       audited and the bytes acted on would differ, so it is refused.
+#   A3  the 24 bytes [T, T+24) lie inside ONE PT_LOAD segment's file-backed
+#       range (filesz, not memsz) and that segment is not writable.
+#   A4  those bytes equal one admitted constant below, byte for byte.
+#   A5  how_radix, the one constant without RESOLVE_BENEATH, is admitted
+#       only with rdi resolved to the immediate AT_FDCWD.
+#   A6  every scoped constant (B|M|X) is admitted only with rdi NOT
+#       resolved to any immediate: an immediate dirfd is AT_FDCWD (beneath
+#       the cwd -- ambient, design F10) or a guessed descriptor number.
+# Each refused site names every rule it broke. Nothing here is a warning.
+#
+# The table is compiler/x86_64/prelude/archivum_rodata.asm's, restated:
+# --self-test points four correct sites at THOSE labels, so the two copies
+# cannot drift without the self-test failing. Values are x86-64 Linux's;
+# design section 2.7 checks each against the UAPI headers and the kernel.
+#   name: (flags, mode, resolve, scoped)
+OPEN_HOW_ADMITTED = {
+    'how_radix': (0x290000, 0,     0x02, False),  # O_PATH|O_DIRECTORY|O_CLOEXEC; NO_MAGICLINKS
+    'how_infra': (0x290000, 0,     0x0b, True),   # O_PATH|O_DIRECTORY|O_CLOEXEC; B|M|X
+    'how_lege':  (0x80900,  0,     0x0b, True),   # O_RDONLY|O_NOCTTY|O_NONBLOCK|O_CLOEXEC; B|M|X
+    'how_crea':  (0x801c1,  0o600, 0x0b, True),   # O_WRONLY|O_CREAT|O_EXCL|O_NOCTTY|O_CLOEXEC; B|M|X
+}
+OPEN_HOW_SIZE = 24
+NR_OPENAT2 = 437
+AT_FDCWD32 = 0xffffff9c          # -100; the kernel reads dirfd as an int
+RDX_FAMILY = {'rdx', 'edx', 'dx', 'dl', 'dh'}
+R10_FAMILY = {'r10', 'r10d', 'r10w', 'r10b'}
+R10_FULL_WRITE_REGS = {'r10', 'r10d'}
+# Write (part of) rdx WITHOUT naming it as an operand.
+IMPLICIT_RDX_MNEMONICS = {
+    'cqo', 'cdq', 'cwd', 'div', 'idiv', 'mul', 'imul', 'mulx', 'cpuid',
+    'rdtsc', 'rdtscp', 'xgetbv', 'rdmsr', 'rdpkru', 'cmpxchg8b',
+    'cmpxchg16b', 'sysenter', 'sysexit',
+}
+# Write EVERY register they name, not only the first operand. `xchg rdx,rax`
+# rewrites rax as surely as rdx; the generic "first operand" rule below would
+# miss the second. Applied to all four tracked families (fails closed).
+SWAPPING_MNEMONICS = {'xchg', 'xadd', 'cmpxchg'}
+RIP_LEA_RE = re.compile(r'^\[rip([+-])0x([0-9a-f]+)\]$')
+# ---------------------------------------------------------------------------
 
 FULL_WRITE_REGS = {'rax', 'eax'}          # zero/replace the full 64 bits
 RAX_FAMILY = {'rax', 'eax', 'ax', 'al', 'ah'}
@@ -412,6 +517,10 @@ def readelf_segments(readelf_bin, path):
                 'vaddr': int(vaddr, 16),
                 'filesz': int(filesz, 16),
                 'exec': 'E' in flags,
+                # --potestates' openat2 rule A3 needs to know whether the
+                # bytes an `open_how` pointer names could be rewritten at
+                # run time. Default mode never reads this.
+                'write': 'W' in flags,
             })
     return segs, interp, dyn_phdr
 
@@ -429,9 +538,14 @@ def disassemble(objdump_bin, blob_path, vaddr):
 
 
 def scan(disasm_text):
-    """Walk one linear sweep, yielding (addr, resolved_nr_or_None,
-    resolved_fd_or_None) per `syscall` encountered, in the order documented
-    at the top of this script.
+    """Walk one linear sweep, yielding one dict per `syscall` encountered,
+    in the order documented at the top of this script: `addr`, `nr` (the
+    resolved rax, or None), `fd` (the resolved rdi, or None), and -- for the
+    openat2 site rules, which only --potestates mode reads -- `rdx` (the
+    resolved target of a rip-relative `lea`, or None), `r10` (resolved
+    immediate, or None) and `window` (True iff the three instructions before
+    this `syscall` are `lea rdx,[rip...]`, `mov r10/r10d,...`, `mov
+    eax/rax,<imm>` -- rule W).
 
     `fd` tracks the same two trusted forms, applied to the rdi/edi family
     (the Linux syscall ABI's first argument) instead of rax/eax. Default
@@ -445,10 +559,20 @@ def scan(disasm_text):
     prelude.asm; `exsrt_abort`'s write loads `edi, 2` as an immediate,
     unconditionally. The two are indistinguishable by syscall number alone
     (both are `mov eax,1` / `syscall`) -- resolving the fd the same way
-    rax is resolved is what tells them apart."""
+    rax is resolved is what tells them apart. The openat2 rules A5/A6 read
+    the same `fd`.
+
+    xchg/xadd/cmpxchg unresolve EVERY tracked register they name, not only
+    their first operand (SWAPPING_MNEMONICS). Before the openat2 rules this
+    function missed `xchg rdx,rax` rewriting rax; the change can only turn a
+    resolved value into an unresolved one, never the reverse."""
     findings = []
     known = None      # rax/eax family -- the syscall number
     known_fd = None    # rdi/edi family -- syscall arg1 (a write's fd)
+    known_rdx = None   # rdx family -- arg3, only via `lea rdx,[rip+D]`
+    rdx_pending = None # D of a `lea rdx,[rip+D]` whose length is not yet known
+    known_r10 = None   # r10 family -- arg4, immediate `mov` only
+    prev = []          # the last three parsed instructions: (mnem, operands)
     for line in disasm_text.splitlines():
         m = LINE_RE.match(line)
         if not m:
@@ -456,32 +580,95 @@ def scan(disasm_text):
         addr = int(m.group(1), 16)
         rest = m.group(3).split('#', 1)[0].strip()
         if not rest:
-            continue
+            continue   # an objdump continuation line: more bytes, same insn
         parts = rest.split(None, 1)
         mnem = parts[0].lower()
         operand_str = parts[1] if len(parts) > 1 else ''
         operands = [o.strip().lower() for o in operand_str.split(',')] if operand_str else []
 
-        if mnem == 'syscall':
-            findings.append((addr, known, known_fd))
-            known = None     # the return value is a dynamic quantity
-            known_fd = None
-            continue
-        if mnem == 'call':
-            # both rax and rdi are caller-saved; post-call values unknowable
+        # A1: a rip-relative operand is relative to the END of its
+        # instruction, which is this instruction's START. Taken from the
+        # address column, never from objdump's comment and never from a
+        # byte count of one line (objdump wraps long instructions).
+        if rdx_pending is not None:
+            known_rdx = (addr + rdx_pending) & 0xFFFFFFFFFFFFFFFF
+            rdx_pending = None
+
+        # LEGACY GATES: `int 0x80` (CD 80) and `sysenter` (0F 34) enter the
+        # kernel through the i386 ABI, whose syscall NUMBERS are a different
+        # table (i386 102 is socketcall, 11 is execve). A per-atom audit of
+        # x86-64 numbers says nothing about them, so neither may appear at
+        # all, under any mode or atom. Found by DECODING, in the same sweep
+        # that finds `syscall` -- not by grepping bytes, which would match
+        # CD 80 inside an immediate or a displacement. Inherits the sweep's
+        # limits (header): bytes the sweep never decodes as an instruction
+        # boundary are not seen, exactly as for `syscall`.
+        if mnem == 'sysenter' or (
+                mnem == 'int' and len(operands) == 1
+                and parse_imm(operands[0]) == 0x80):
+            findings.append({'addr': addr, 'nr': known, 'fd': known_fd,
+                             'rdx': None, 'r10': None, 'window': False,
+                             'legacy': 'int 0x80' if mnem == 'int'
+                             else 'sysenter'})
             known = None
             known_fd = None
+            known_rdx = None
+            known_r10 = None
+            prev = []
+            continue
+        if mnem == 'syscall':
+            window = (len(prev) == 3
+                      and prev[0][0] == 'lea' and len(prev[0][1]) == 2
+                      and prev[0][1][0] == 'rdx'
+                      and prev[1][0] == 'mov' and len(prev[1][1]) == 2
+                      and prev[1][1][0] in R10_FULL_WRITE_REGS
+                      and prev[2][0] == 'mov' and len(prev[2][1]) == 2
+                      and prev[2][1][0] in FULL_WRITE_REGS
+                      and parse_imm(prev[2][1][1]) is not None)
+            findings.append({'addr': addr, 'nr': known, 'fd': known_fd,
+                             'rdx': known_rdx, 'r10': known_r10,
+                             'window': window})
+            known = None     # the return value is a dynamic quantity
+            known_fd = None
+            known_rdx = None  # preserved by the kernel, but nothing
+            known_r10 = None  # needs to carry them past a syscall
+            prev = []
+            continue
+        prev = (prev + [(mnem, operands)])[-3:]
+        if mnem == 'call':
+            # rax, rdi, rdx and r10 are all caller-saved; post-call values
+            # unknowable
+            known = None
+            known_fd = None
+            known_rdx = None
+            known_r10 = None
             continue
         if mnem in NONWRITING_MNEMONICS:
             continue
+        if mnem in SWAPPING_MNEMONICS:
+            if any(o in RAX_FAMILY for o in operands) or mnem == 'cmpxchg':
+                known = None   # cmpxchg writes rax implicitly
+            if any(o in FD_FAMILY for o in operands):
+                known_fd = None
+            if any(o in RDX_FAMILY for o in operands):
+                known_rdx = None
+            if any(o in R10_FAMILY for o in operands):
+                known_r10 = None
+            continue
+        # Implicit writers unresolve what they write and then FALL THROUGH,
+        # so an explicit destination (`imul edi,eax,3`, `mulx rax,...`) is
+        # still seen below. This read `continue` while only rax was tracked,
+        # which let `imul edi,...` leave a resolved fd standing; falling
+        # through can only unresolve more, never resolve anything new.
         if mnem in IMPLICIT_RAX_MNEMONICS:
             known = None
-            continue
+        if mnem in IMPLICIT_RDX_MNEMONICS:
+            known_rdx = None
 
         # rax-family resolution -- same rules and same priority as before
         # this function also tracked rdi; only the early `continue`s became
         # `elif`s so that the rdi-family block below still sees every
-        # instruction that isn't syscall/call/nonwriting/implicit-rax.
+        # instruction that isn't syscall/call/nonwriting.
         if mnem == 'mov' and len(operands) == 2 and operands[0] in FULL_WRITE_REGS:
             known = parse_imm(operands[1])  # resolved int, or None
         elif (mnem in ('xor', 'sub') and len(operands) == 2
@@ -500,10 +687,37 @@ def scan(disasm_text):
         elif operands and operands[0] in FD_FAMILY:
             known_fd = None
         # else: doesn't touch rdi -- `known_fd` carries forward unchanged
+
+        # rdx-family resolution (rule A1): ONE trusted form, the full-width
+        # rip-relative `lea`. Every other write unresolves.
+        if operands and operands[0] in RDX_FAMILY:
+            known_rdx = None
+            if mnem == 'lea' and len(operands) == 2 and operands[0] == 'rdx':
+                mm = RIP_LEA_RE.match(operands[1])
+                if mm:
+                    d = int(mm.group(2), 16)
+                    rdx_pending = d if mm.group(1) == '+' else -d
+
+        # r10-family resolution (rule A2): the immediate `mov` and the
+        # self-zeroing idiom, as for rax.
+        if mnem == 'mov' and len(operands) == 2 and operands[0] in R10_FULL_WRITE_REGS:
+            known_r10 = parse_imm(operands[1])
+        elif (mnem in ('xor', 'sub') and len(operands) == 2
+                and operands[0] in R10_FULL_WRITE_REGS and operands[0] == operands[1]):
+            known_r10 = 0
+        elif operands and operands[0] in R10_FAMILY:
+            known_r10 = None
     return findings
 
 
-def classify(nr):
+LEGACY_NOTE = ('<<< LEGACY SYSCALL GATE -- HARD FAILURE: the i386 ABI '
+               'numbers syscalls from a different table, so no x86-64 '
+               'allowlist or atom row can judge it >>>')
+
+
+def classify(nr, legacy=None):
+    if legacy:
+        return 'FAIL', '??', legacy, LEGACY_NOTE
     if nr is None:
         return 'FAIL', '??', 'INDETERMINATE', (
             'rax not statically resolvable by linear sweep -- treated as '
@@ -534,7 +748,88 @@ def potestates_admitted(atoms):
     return admitted, rete_named
 
 
-def classify_potestates(nr, fd, admitted, rete_named, atoms):
+def judge_openat2_site(f, segs, bin_path):
+    """Rules W and A1-A6 (OPEN_HOW_ADMITTED's comment) for one openat2
+    site. Returns (failures, constant_name): `failures` is a list of
+    '[RULE] reason' strings, empty iff the site is proven; `constant_name`
+    is the admitted constant it matched, or None."""
+    fails = []
+    if not f['window']:
+        fails.append('[W] not the four contiguous instructions '
+                     '`lea rdx,[rip+D]` / `mov r10d,24` / `mov eax,437` / '
+                     '`syscall`')
+    target = f['rdx']
+    if target is None:
+        fails.append('[A1] rdx not statically resolvable: the one trusted '
+                     'form is `lea rdx,[rip+D]`')
+    if f['r10'] is None:
+        fails.append('[A2] r10 not statically resolvable to an immediate')
+    elif f['r10'] != OPEN_HOW_SIZE:
+        fails.append('[A2] r10 = %d, not exactly %d (VER0); the kernel would '
+                     'read bytes the audit did not' % (f['r10'], OPEN_HOW_SIZE))
+    if target is None:
+        return fails, None
+
+    seg = None
+    for sg in segs:
+        if sg['vaddr'] <= target < sg['vaddr'] + sg['filesz']:
+            seg = sg
+            break
+    if seg is None:
+        fails.append('[A3] open_how at 0x%x is in no PT_LOAD segment\'s '
+                     'file-backed range' % target)
+        return fails, None
+    if target + OPEN_HOW_SIZE > seg['vaddr'] + seg['filesz']:
+        fails.append('[A3] open_how at 0x%x straddles the end of the '
+                     'file-backed range of the segment at 0x%x'
+                     % (target, seg['vaddr']))
+        return fails, None
+    if seg['write']:
+        fails.append('[A3] open_how at 0x%x is in a WRITABLE segment (0x%x): '
+                     'the program could rewrite what the audit read'
+                     % (target, seg['vaddr']))
+        return fails, None
+
+    with open(bin_path, 'rb') as fh:
+        fh.seek(seg['offset'] + (target - seg['vaddr']))
+        raw = fh.read(OPEN_HOW_SIZE)
+    if len(raw) != OPEN_HOW_SIZE:
+        fails.append('[A3] open_how at 0x%x could not be read from the file'
+                     % target)
+        return fails, None
+    flags = int.from_bytes(raw[0:8], 'little')
+    mode = int.from_bytes(raw[8:16], 'little')
+    resolve = int.from_bytes(raw[16:24], 'little')
+    name = None
+    for cand, (cf, cm, cr, _scoped) in OPEN_HOW_ADMITTED.items():
+        if (flags, mode, resolve) == (cf, cm, cr):
+            name = cand
+            break
+    if name is None:
+        fails.append('[A4] open_how at 0x%x is {flags=0x%x, mode=0o%o, '
+                     'resolve=0x%x}, which matches no admitted constant'
+                     % (target, flags, mode, resolve))
+        return fails, None
+
+    fd = f['fd']
+    if OPEN_HOW_ADMITTED[name][3]:
+        if fd is not None:
+            fails.append('[A6] %s is scoped (RESOLVE_BENEATH) but rdi is the '
+                         'immediate 0x%x: an immediate dirfd is AT_FDCWD or a '
+                         'guessed number, never a root' % (name, fd))
+    else:
+        if fd is None or (fd & 0xFFFFFFFF) != AT_FDCWD32:
+            fails.append('[A5] %s (no RESOLVE_BENEATH) is admitted only with '
+                         'rdi = the immediate AT_FDCWD; rdi is %s'
+                         % (name, 'not an immediate' if fd is None
+                            else '0x%x' % fd))
+    return fails, name
+
+
+def classify_potestates(f, admitted, rete_named, atoms, segs, bin_path):
+    nr, fd = f['nr'], f['fd']
+    if f.get('legacy'):
+        return 'FAIL', '??', f['legacy'], LEGACY_NOTE
     if nr is None:
         return 'FAIL', '??', 'INDETERMINATE', (
             'rax not statically resolvable by linear sweep -- treated as '
@@ -548,6 +843,12 @@ def classify_potestates(nr, fd, admitted, rete_named, atoms):
         if 'ambitus' in atoms:
             return 'PASS', '1', 'write', (
                 "admitted: 'ambitus' is named -- write(1) to any fd")
+        if 'archivum' in atoms:
+            # The binary does not say whether an unresolved fd is a file or
+            # stdout (design section 5); archivum's row admits the write
+            # either way, exactly as ambitus' does.
+            return 'PASS', '1', 'write', (
+                "admitted: 'archivum' is named -- write(1) to any fd")
         if fd == 2:
             return 'PASS', '1', 'write', (
                 "admitted: core row -- fd resolves to 2, the unconditional "
@@ -556,8 +857,19 @@ def classify_potestates(nr, fd, admitted, rete_named, atoms):
         fd_desc = ('fd=%d' % fd) if fd is not None else 'fd INDETERMINATE'
         return 'FAIL', '1', 'write', (
             "not admitted: write(1) with %s is not the core fd-2 "
-            "(exsrt_abort) case, and 'ambitus' is not in the declared "
-            "potestates (%s)" % (fd_desc, ','.join(atoms)))
+            "(exsrt_abort) case, and neither 'ambitus' nor 'archivum' is in "
+            "the declared potestates (%s)" % (fd_desc, ','.join(atoms)))
+    if nr == NR_OPENAT2 and nr in admitted:
+        # Admitted as a number by 'archivum'; admitted as a SITE only if
+        # every rule holds. ADR 0017 decision 5: indeterminate is FAIL.
+        fails, name = judge_openat2_site(f, segs, bin_path)
+        if fails:
+            return 'FAIL', str(nr), 'openat2', (
+                'openat2 site refused: ' + '; '.join(fails))
+        return 'PASS', str(nr), 'openat2', (
+            'admitted: site proven [W A1-A6] -- %s, %s'
+            % (name, 'rdi not an immediate' if OPEN_HOW_ADMITTED[name][3]
+               else 'rdi = AT_FDCWD'))
     if nr in admitted:
         note = ''
         if rete_named and nr in SOCKET_FAMILY:
@@ -599,13 +911,20 @@ def main():
               + ', '.join(f'{name}({nr})'
                            for nr, name in sorted(admitted.items())
                            if nr != 1)
-              + ('; write(1) admitted to any fd' if 'ambitus' in atoms else
+              + ('; write(1) admitted to any fd'
+                 if ('ambitus' in atoms or 'archivum' in atoms) else
                  '; write(1) admitted only when its fd resolves to the '
                  'immediate 2 (exsrt_abort\'s core case)'))
         for atom in atoms:
             if atom in POTESTATES_DISAGREEMENT:
                 print(f"NOTE: README/runtime.md disagree for '{atom}' -- "
                       f"{POTESTATES_DISAGREEMENT[atom]}.")
+        if 'archivum' in atoms:
+            print("NOTE: 'archivum' is named -- openat2(437) is admitted only "
+                  "at a site that passes rules W and A1-A6 (an open_how "
+                  "constant proven byte for byte in a non-writable segment; "
+                  "ADR 0017, docs/design/archivum-beneath.md section 3). "
+                  "openat(257) is admitted under no atom.")
         if rete_named:
             print("NOTE: 'rete' is named -- the socket family is admitted "
                   "for this audit. This is what makes spec §10.3's audit a "
@@ -674,18 +993,19 @@ def main():
             os.unlink(tmp_path)
         findings.extend(scan(text))
 
-    findings.sort(key=lambda x: x[0])
+    findings.sort(key=lambda x: x['addr'])
     if not findings:
         print("No `syscall` instruction found in any executable segment.")
 
     print()
     print(f"{'ADDRESS':<12}{'NR':<6}{'NAME':<14}VERDICT")
-    for addr, nr, syscall_fd in findings:
+    for f in findings:
+        addr = f['addr']
         if potestates_mode:
             verdict, nr_s, name, note = classify_potestates(
-                nr, syscall_fd, admitted, rete_named, atoms)
+                f, admitted, rete_named, atoms, segs, bin_path)
         else:
-            verdict, nr_s, name, note = classify(nr)
+            verdict, nr_s, name, note = classify(f['nr'], f.get('legacy'))
         if verdict != 'PASS':
             ok = False
         row = f"0x{addr:<10x}{nr_s:<6}{name:<14}{verdict}"
@@ -795,7 +1115,112 @@ self_test() {
     exit 2
   fi
 
+  # --potestates, the openat2 SITE RULES (ADR 0017; W and A1-A6 in the
+  # engine above). tests/unit/audit_openat2.asm is one source assembled once
+  # per case; each case differs from case 0 in exactly the thing its rule
+  # is about, and the check is not only "FAIL" but that the SET of rules the
+  # refusal names is exactly the expected one -- a case that failed for an
+  # unrelated reason would not pass this. Case 0's four sites point at the
+  # prelude's own constants (archivum_rodata.asm), so it also proves the
+  # engine's OPEN_HOW_ADMITTED table and the prelude's bytes agree.
+  local site_src="$REPO_ROOT/tests/unit/audit_openat2.asm"
+  local archivum_src="$REPO_ROOT/tests/unit/prelude_archivum.asm"
+  local legacy_src="$REPO_ROOT/tests/unit/legacy_gate.asm"
+  for f in "$site_src" "$archivum_src" "$legacy_src"; do
+    if [[ ! -f "$f" ]]; then
+      echo "self-test: fixture missing: $f" >&2
+      exit 2
+    fi
+  done
+  local extra_bad=0 spec k want_rc want_tags got_rc got_tags log
+  # case|expected rc (0 pass, 1 fail)|expected rule set ("-" = none named)
+  local -a site_cases=(
+    "0|0|-" "1|1|A4" "2|1|A4" "3|1|A3" "4|1|A1 W" "5|1|A2"
+    "6|1|A5" "7|1|A6" "8|1|W" "9|1|-" "10|1|A3"
+  )
+  for spec in "${site_cases[@]}"; do
+    IFS='|' read -r k want_rc want_tags <<<"$spec"
+    echo "### self-test 6: audit_openat2.asm CASUS=$k --potestates Mundus,archivum -- expect rc=$want_rc, rules {$want_tags} ###"
+    INCLUDE="${INCLUDE:-$REPO_ROOT/vendor/fasmg-x86}" "$FASMG" -n -i "CASUS := $k" "$site_src" "$tmpdir/site$k.out" >/dev/null
+    chmod +x "$tmpdir/site$k.out"
+    log="$tmpdir/site$k.log"
+    got_rc=0
+    audit_binary "$tmpdir/site$k.out" "Mundus,archivum" >"$log" || got_rc=$?
+    cat "$log"
+    got_tags="$(grep 'openat2 site refused' "$log" | grep -oE '\[(W|A[1-6])\]' \
+                | tr -d '[]' | sort -u | paste -sd' ' - || true)"
+    [[ -n "$got_tags" ]] || got_tags="-"
+    if [[ "$want_rc" == 0 && "$got_rc" -ne 0 ]] || [[ "$want_rc" == 1 && "$got_rc" -eq 0 ]] \
+       || [[ "$got_tags" != "$want_tags" ]]; then
+      echo "self-test: audit_openat2 CASUS=$k: rc=$got_rc rules {$got_tags}, wanted rc=$want_rc rules {$want_tags}" >&2
+      extra_bad=1
+    fi
+    if [[ "$k" == 0 ]] && [[ "$(grep -c 'admitted: site proven' "$log")" -ne 4 ]]; then
+      echo "self-test: audit_openat2 CASUS=0: expected all FOUR sites proven" >&2
+      extra_bad=1
+    fi
+    if [[ "$k" == 9 ]] && ! grep -qE '^0x[0-9a-f]+ +257 .*FAIL' "$log"; then
+      echo "self-test: audit_openat2 CASUS=9: openat(257) was not the refused row" >&2
+      extra_bad=1
+    fi
+    echo
+  done
+  echo "### self-test 6: audit_openat2.asm CASUS=0 --potestates Mundus (no archivum) -- expect AUDIT: FAIL ###"
+  got_rc=0
+  audit_binary "$tmpdir/site0.out" "Mundus" || got_rc=$?
+  [[ "$got_rc" -ne 0 ]] || { echo "self-test: openat2 passed without archivum" >&2; extra_bad=1; }
+  echo
+
+  # --potestates, on the PRELUDE's archivum routines as a binary carries
+  # them (tests/unit/prelude_archivum.asm: prelude.asm + archivum.asm, atoms
+  # {Mundus, archivum}). tests/run.sh RUNS that binary; this audits it.
+  echo "### self-test 7: prelude_archivum.asm --potestates Mundus,archivum -- expect AUDIT: PASS (every openat2 site proven) ###"
+  INCLUDE="${INCLUDE:-$REPO_ROOT/vendor/fasmg-x86}" "$FASMG" -n "$archivum_src" "$tmpdir/archivum.out" >/dev/null
+  chmod +x "$tmpdir/archivum.out"
+  got_rc=0
+  audit_binary "$tmpdir/archivum.out" "Mundus,archivum" >"$tmpdir/archivum.log" || got_rc=$?
+  cat "$tmpdir/archivum.log"
+  if [[ "$got_rc" -ne 0 ]] || [[ "$(grep -c 'admitted: site proven' "$tmpdir/archivum.log")" -ne 4 ]]; then
+    echo "self-test: prelude_archivum under Mundus,archivum: rc=$got_rc, wanted 0 with four proven openat2 sites" >&2
+    extra_bad=1
+  fi
+  echo
+  local atoms_deny
+  for atoms_deny in "Mundus" "Mundus,ambitus"; do
+    echo "### self-test 7: prelude_archivum.asm --potestates $atoms_deny -- expect AUDIT: FAIL (openat2/close/fstat need archivum) ###"
+    got_rc=0
+    audit_binary "$tmpdir/archivum.out" "$atoms_deny" || got_rc=$?
+    [[ "$got_rc" -ne 0 ]] || { echo "self-test: prelude_archivum passed under $atoms_deny" >&2; extra_bad=1; }
+    echo
+  done
+
+  # The i386 legacy gates, refused in BOTH modes; case 2 carries their bytes
+  # inside immediates and must pass -- the audit decodes, it does not grep.
+  local mode_atoms
+  for spec in "0|1" "1|1" "2|0"; do
+    IFS='|' read -r k want_rc <<<"$spec"
+    INCLUDE="${INCLUDE:-$REPO_ROOT/vendor/fasmg-x86}" "$FASMG" -n -i "CASUS := $k" "$legacy_src" "$tmpdir/legacy$k.out" >/dev/null
+    chmod +x "$tmpdir/legacy$k.out"
+    for mode_atoms in "" "Mundus"; do
+      echo "### self-test 8: legacy_gate.asm CASUS=$k ${mode_atoms:+--potestates $mode_atoms }-- expect rc=$want_rc ###"
+      got_rc=0
+      audit_binary "$tmpdir/legacy$k.out" "$mode_atoms" >"$tmpdir/legacy.log" || got_rc=$?
+      cat "$tmpdir/legacy.log"
+      if [[ "$want_rc" == 1 ]]; then
+        if [[ "$got_rc" -eq 0 ]] || ! grep -q 'LEGACY SYSCALL GATE' "$tmpdir/legacy.log"; then
+          echo "self-test: legacy_gate CASUS=$k (${mode_atoms:-default}): not refused as a legacy gate" >&2
+          extra_bad=1
+        fi
+      elif [[ "$got_rc" -ne 0 ]]; then
+        echo "self-test: legacy_gate CASUS=2 (${mode_atoms:-default}): a false positive" >&2
+        extra_bad=1
+      fi
+      echo
+    done
+  done
+
   local all_ok=1
+  [[ "$extra_bad" -eq 0 ]] || all_ok=0
   [[ "$clean_rc" -eq 0 ]] || all_ok=0
   [[ "$socket_rc" -ne 0 ]] || all_ok=0
   [[ "$pot_clean_admit_rc" -eq 0 ]] || all_ok=0
@@ -806,13 +1231,14 @@ self_test() {
   [[ "$pot_lector_deny_rc" -ne 0 ]] || all_ok=0
 
   if [[ "$all_ok" -eq 1 ]]; then
-    echo "SELF-TEST: PASS -- default-mode clean/socket fixtures correct; --potestates union (Mundus,ambitus / Mundus,rete) admits what it should, Mundus alone rejects read and socket correctly, and the prelude's own reader passes under ambitus and fails without it"
+    echo "SELF-TEST: PASS -- default-mode clean/socket fixtures correct; --potestates union (Mundus,ambitus / Mundus,rete) admits what it should, Mundus alone rejects read and socket correctly, and the prelude's own reader passes under ambitus and fails without it; the openat2 site rules admit the prelude's four constants and refuse each of ten broken sites for exactly its own rule; the prelude's archivum routines pass under Mundus,archivum and fail without it; int 0x80 and sysenter are refused in both modes and their bytes inside immediates are not"
     exit 0
   else
     echo "SELF-TEST: FAIL -- clean_rc=$clean_rc(want 0) socket_rc=$socket_rc(want !=0)" \
          "pot_clean_admit_rc=$pot_clean_admit_rc(want 0) pot_clean_deny_rc=$pot_clean_deny_rc(want !=0)" \
          "pot_socket_admit_rc=$pot_socket_admit_rc(want 0) pot_socket_deny_rc=$pot_socket_deny_rc(want !=0)" \
-         "pot_lector_admit_rc=$pot_lector_admit_rc(want 0) pot_lector_deny_rc=$pot_lector_deny_rc(want !=0)" >&2
+         "pot_lector_admit_rc=$pot_lector_admit_rc(want 0) pot_lector_deny_rc=$pot_lector_deny_rc(want !=0)" \
+         "extra_bad=$extra_bad(want 0; the openat2/archivum/legacy rows above name which)" >&2
     exit 1
   fi
 }

@@ -60,7 +60,10 @@
 ;	textus octeti scalares grapha        four distinct kinds (spec §5.1)
 ;	unit                                 `unit`
 ;	refero<T> refero_communis<T>         `ref` / `refc` (spec §6.4)
-;	eventus<T>                           `eventus`
+;	eventus<T>                           `eventus` -- UNREACHABLE from
+;	                                     source: the prelude's `typus
+;	                                     eventus<T, E>` is a declaration and
+;	                                     is found first (sum-types.md D5)
 ;	acies<T, N>                          `acies`, lane count in the type (spec §5.4)
 ;
 ; THE SIGNED WIDTHS MIRROR §5.2'S UNSIGNED ONES, and that is a decision, not a
@@ -177,6 +180,18 @@ CHK_TY_PRE_SCRIBE_OCT	= EXS_IFACE_D_SCRIBE_OCTETUM + 1
 CHK_TY_PRE_LECTOR	= EXS_IFACE_D_LECTOR + 1
 CHK_TY_PRE_AB_INTROITU	= EXS_IFACE_D_AB_INTROITU + 1
 CHK_TY_PRE_LEGE_OCT	= EXS_IFACE_D_LEGE_OCTETO + 1
+; ADR 0017 stage 2 -- `archivum` beneath a root
+CHK_TY_PRE_DIRECTORIUM	= EXS_IFACE_D_DIRECTORIUM + 1
+CHK_TY_PRE_ARCHIVUM	= EXS_IFACE_D_MUNDUS_ARCHIVUM + 1
+CHK_TY_PRE_AD_RADICEM	= EXS_IFACE_D_AD_RADICEM + 1
+CHK_TY_PRE_INFRA	= EXS_IFACE_D_INFRA + 1
+CHK_TY_PRE_LEGE_EX	= EXS_IFACE_D_LEGE_EX + 1
+CHK_TY_PRE_CREA		= EXS_IFACE_D_CREA + 1
+CHK_TY_PRE_LECTORIUM	= EXS_IFACE_D_LECTORIUM + 1
+CHK_TY_PRE_EXLEGE_OCT	= EXS_IFACE_D_EXLEGE_OCTETO + 1
+CHK_TY_PRE_SCRIPTORIUM	= EXS_IFACE_D_SCRIPTORIUM + 1
+CHK_TY_PRE_INSCRIBE	= EXS_IFACE_D_INSCRIBE + 1
+CHK_TY_PRE_INSCRIBE_OCT	= EXS_IFACE_D_INSCRIBE_OCTETO + 1
 CHK_TY_PRE_COUNT	= EXS_IFACE_DECL_COUNT
 
 ; ---- the §5.1 TEXT-VIEW rows, which `prelude/interface.inc` DOES NOT HAVE ----
@@ -314,12 +329,14 @@ chk_ty_prim_names:
 CHK_TY_PRIM_NAMES_LEN = $ - chk_ty_prim_names
 
 ; ---- the prelude name pool -------------------------------------------------
-; ROWS 1..11 ARE IN THE SAME ORDER AS `prelude/interface.inc` PART B's rows, so
+; ROWS 1..22 ARE IN THE SAME ORDER AS `prelude/interface.inc` PART B's rows, so
 ; the pool index IS `EXS_IFACE_D_* + 1` and a tagged `d` needs no second table
-; to print. That correspondence is asserted, not assumed: `CHK_TY_PRE_LEGE_OCT`
-; is part B's last row and 11 is its count.
+; to print. That correspondence is asserted, not assumed: `CHK_TY_PRE_INSCRIBE_OCT`
+; is part B's last row and 22 is its count. Rows 12..22 are ADR 0017's,
+; inserted here as this header always said a part-B row must be -- after
+; part B's last, before the four below, which shifted by eleven.
 ;
-; ROWS 12..15 ARE THIS FILE'S ALONE -- spec §5.1's text operations, which part B
+; ROWS 23..26 ARE THIS FILE'S ALONE -- spec §5.1's text operations, which part B
 ; has no record of. The `CHK_TY_PRE_*` block above says in full why they are
 ; here and not there, and which three bounds that leaves intact.
 chk_ty_pre_names:
@@ -334,6 +351,17 @@ chk_ty_pre_names:
 	db 6,'Lector'
 	db 11,'ab_introitu'
 	db 11,'lege_octeto'
+	db 11,'Directorium'
+	db 8,'archivum'
+	db 10,'ad_radicem'
+	db 5,'infra'
+	db 7,'lege_ex'
+	db 4,'crea'
+	db 9,'Lectorium'
+	db 13,'exlege_octeto'
+	db 11,'Scriptorium'
+	db 8,'inscribe'
+	db 15,'inscribe_octeto'
 	db 13,'plica_unicode'
 	db 13,'plica_sermone'
 	db 6,'octeti'
@@ -342,8 +370,9 @@ CHK_TY_PRE_NAMES_LEN = $ - chk_ty_pre_names
 assert CHK_TY_PRE_ALLOC = 7
 assert CHK_TY_PRE_SCRIBE_OCT = 8
 assert CHK_TY_PRE_LEGE_OCT = 11
-assert CHK_TY_PRE_COUNT = 11
-assert CHK_TY_PRE_NUMERUS = 15
+assert CHK_TY_PRE_INSCRIBE_OCT = 22
+assert CHK_TY_PRE_COUNT = 22
+assert CHK_TY_PRE_NUMERUS = 26
 
 ; `arborea` and `ordinata` -- spec §5.4's two reduction shapes, §8.6's
 ; `['forma' IDENT [INT]]`. Not keywords (lexer/keywords.inc does not know
@@ -582,6 +611,12 @@ proc __chk_ty_pre_is_type, chkt_kpt
 	cmp	rax, CHK_TY_PRE_SCRIPTOR
 	je	.yes
 	cmp	rax, CHK_TY_PRE_LECTOR
+	je	.yes
+	cmp	rax, CHK_TY_PRE_DIRECTORIUM
+	je	.yes
+	cmp	rax, CHK_TY_PRE_LECTORIUM
+	je	.yes
+	cmp	rax, CHK_TY_PRE_SCRIPTORIUM
 	je	.yes
 	xor	eax, eax
 	return
@@ -953,6 +988,8 @@ proc chk_ty_prelude_type, chkt_wp, chkt_kp
 	locals
 		slot chkt_ep, dq
 		slot chkt_np, dq
+		slot chkt_rp, dq	; an `eventus` result, built before the list
+		slot chkt_ap, dq	; a parameter type, likewise
 	endl
 	mov	rbx, [chkt_wp]
 	mov	r12, [chkt_kp]
@@ -978,6 +1015,28 @@ proc chk_ty_prelude_type, chkt_wp, chkt_kp
 	je	.fn_abintroitu
 	cmp	r12, CHK_TY_PRE_LEGE_OCT
 	je	.fn_lege_oct
+	cmp	r12, CHK_TY_PRE_DIRECTORIUM
+	je	.struct_pre
+	cmp	r12, CHK_TY_PRE_LECTORIUM
+	je	.struct_pre
+	cmp	r12, CHK_TY_PRE_SCRIPTORIUM
+	je	.struct_pre
+	cmp	r12, CHK_TY_PRE_ARCHIVUM
+	je	.fn_archivum
+	cmp	r12, CHK_TY_PRE_AD_RADICEM
+	je	.fn_adradicem
+	cmp	r12, CHK_TY_PRE_INFRA
+	je	.fn_infra
+	cmp	r12, CHK_TY_PRE_LEGE_EX
+	je	.fn_legeex
+	cmp	r12, CHK_TY_PRE_CREA
+	je	.fn_crea
+	cmp	r12, CHK_TY_PRE_EXLEGE_OCT
+	je	.fn_exlege_oct
+	cmp	r12, CHK_TY_PRE_INSCRIBE
+	je	.fn_inscribe
+	cmp	r12, CHK_TY_PRE_INSCRIBE_OCT
+	je	.fn_inscribe_oct
 	cmp	r12, CHK_TY_PRE_PLICA_UNI
 	je	.fn_plica_uni
 	cmp	r12, CHK_TY_PRE_PLICA_SERM
@@ -1070,17 +1129,16 @@ proc chk_ty_prelude_type, chkt_wp, chkt_kp
 
   .fn_scribe:
 	; functio scribe(s: Scriptor, t: textus) -> mensura
-	; [OPEN] spec §11 as amended says this returns `eventus<mensura>`;
-	; prelude/interface.inc row 5 is marked EXS_IFACE_F_APERTUM for exactly
-	; that reason and returns the COUNT until `eventus` is INHABITED
-	; (docs/design/sum-types.md section 2). NOT "until `eventus` has syntax":
-	; `eventus<mensura>` is a spelling this pass interns today -- sig.inc's
-	; `.eventus:` arm, `AST_TY_EVENTUS`, and since the generic-arity commit it
-	; is the ONLY admitted spelling. What is missing is a variant, a
-	; constructor, destructuring and a layout, so the type has no value; a
-	; result type nothing can produce would be worse than a count. This table
-	; follows the row, not the amendment, so that the two cannot disagree
-	; silently.
+	; [OPEN] spec §11 as amended says this returns `eventus<mensura,
+	; erratum>`; prelude/interface.inc row 5 is marked EXS_IFACE_F_APERTUM
+	; for exactly that reason and returns the COUNT. `eventus` IS INHABITED
+	; now -- the prelude's `typus eventus<T, E>` with `prosperum`/`adversum`,
+	; constructed, matched and lowered (docs/design/sum-types.md D5) -- so
+	; what remains is the MIGRATION: this row, row 5's symbol and the blob's
+	; `exsrt_scriptor_scribe` returning the sum, and every caller in the tree
+	; matching it, in one whole-tree change. Not done here; D5 records it as
+	; the next step. This table follows the row, not the amendment, so that
+	; the two cannot disagree silently.
 	mov	rdi, [rbx + ChkTyWork.wtre]
 	call	ast_list_mark
 	mov	[chkt_np], rax
@@ -1259,6 +1317,204 @@ proc chk_ty_prelude_type, chkt_wp, chkt_kp
 	call	__chk_ty_fn_empty
 	return
 
+  ; ---- ADR 0017: `archivum` beneath a root ------------------------------------
+  ; Every row below has the EMPTY row (`__chk_ty_fn_empty`), and that is the
+  ; design's R2 rather than an economy: no prelude routine draws `archivum`
+  ; implicitly. `ad_radicem` takes the atom as parameter 0, an explicit value
+  ; -- so a function that holds only a `Directorium` has no expression to pass
+  ; there (R1: a `sicut` row item binds no carrier) -- and every other row's
+  ; authority is its receiver's mark, as for `scribe` (spec 4.2's table).
+  ; tests/unit/chk_directorium.asm pins R1-R3.
+
+  .struct_pre:
+	; `structura Directorium`, `Lectorium`, `Scriptorium` -- the tagged
+	; nominal type, exactly as `.lector` builds `Lector`'s: three DIFFERENT
+	; ids, none assignable to another or to `Scriptor`/`Lector`.
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, AST_TY_STRUCT
+	mov	edx, r12d
+	or	edx, CHK_TY_PRELUDE		; a 32-bit `or`: what fits an imm32
+	xor	rcx, rcx
+	call	ast_type_una
+	return
+
+  .fn_archivum:
+	; functio archivum(m: Mundus) -> archivum -- `.fn_ambitus`'s shape
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	call	ast_list_mark
+	mov	[chkt_np], rax
+	mov	rdi, rbx
+	mov	rsi, AST_CAP_MUNDUS
+	call	__chk_ty_atom
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, rbx
+	mov	rsi, AST_CAP_ARCHIVUM
+	call	__chk_ty_atom
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_np]
+	call	ast_list_emit
+	mov	[chkt_ep], rax
+	mov	rdi, rbx
+	mov	rsi, [chkt_ep]
+	mov	rdx, 1
+	call	__chk_ty_fn_empty
+	return
+
+  .fn_adradicem:
+	; functio ad_radicem(a: archivum, via: textus)
+	;	-> eventus<Directorium, erratum>  (associated, no receiver)
+	mov	rdi, rbx
+	mov	rsi, CHK_TY_PRE_DIRECTORIUM
+	call	chk_ty_prelude_type
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	__chk_ty_pre_eventus
+	mov	[chkt_rp], rax
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	call	ast_list_mark
+	mov	[chkt_np], rax
+	mov	rdi, rbx
+	mov	rsi, AST_CAP_ARCHIVUM
+	call	__chk_ty_atom
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	jmp	.via_ret
+
+  .fn_infra:
+	; functio infra(d: Directorium, via: textus) -> eventus<Directorium, erratum>
+	mov	rdi, rbx
+	mov	rsi, CHK_TY_PRE_DIRECTORIUM
+	jmp	.dir_method
+  .fn_legeex:
+	; functio lege_ex(d: Directorium, via: textus) -> eventus<Lectorium, erratum>
+	mov	rdi, rbx
+	mov	rsi, CHK_TY_PRE_LECTORIUM
+	jmp	.dir_method
+  .fn_crea:
+	; functio crea(d: Directorium, via: textus) -> eventus<Scriptorium, erratum>
+	mov	rdi, rbx
+	mov	rsi, CHK_TY_PRE_SCRIPTORIUM
+  .dir_method:
+	call	chk_ty_prelude_type
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	__chk_ty_pre_eventus
+	mov	[chkt_rp], rax
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	call	ast_list_mark
+	mov	[chkt_np], rax
+	mov	rdi, rbx
+	mov	rsi, CHK_TY_PRE_DIRECTORIUM
+	call	chk_ty_prelude_type
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+  .via_ret:
+	; the shared tail: `via: textus`, then the result, two parameters
+	mov	rdi, rbx
+	mov	rsi, AST_TY_TEXTUS
+	call	__chk_ty_simple
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_rp]
+	call	ast_list_push
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_np]
+	call	ast_list_emit
+	mov	[chkt_ep], rax
+	mov	rdi, rbx
+	mov	rsi, [chkt_ep]
+	mov	rdx, 2
+	call	__chk_ty_fn_empty
+	return
+
+  .fn_exlege_oct:
+	; functio exlege_octeto(r: Lectorium) -> eventus<u16, erratum>
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, AST_SIGN_U
+	mov	rdx, 16
+	mov	rcx, AST_ORD_NATIVUS
+	call	ast_type_int
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	__chk_ty_pre_eventus
+	mov	[chkt_rp], rax
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	call	ast_list_mark
+	mov	[chkt_np], rax
+	mov	rdi, rbx
+	mov	rsi, CHK_TY_PRE_LECTORIUM
+	call	chk_ty_prelude_type
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_rp]
+	call	ast_list_push
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_np]
+	call	ast_list_emit
+	mov	[chkt_ep], rax
+	mov	rdi, rbx
+	mov	rsi, [chkt_ep]
+	mov	rdx, 1
+	call	__chk_ty_fn_empty
+	return
+
+  .fn_inscribe:
+	; functio inscribe(w: Scriptorium, t: textus) -> eventus<mensura, erratum>
+	mov	rdi, rbx
+	mov	rsi, AST_TY_TEXTUS
+	call	__chk_ty_simple
+	jmp	.scr_method
+  .fn_inscribe_oct:
+	; functio inscribe_octeto(w: Scriptorium, b: u8) -> eventus<mensura, erratum>
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, AST_SIGN_U
+	mov	rdx, 8
+	mov	rcx, AST_ORD_NATIVUS
+	call	ast_type_int
+  .scr_method:
+	mov	[chkt_ap], rax			; parameter 1's type
+	mov	rdi, rbx
+	call	__chk_ty_mensura
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	__chk_ty_pre_eventus
+	mov	[chkt_rp], rax
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	call	ast_list_mark
+	mov	[chkt_np], rax
+	mov	rdi, rbx
+	mov	rsi, CHK_TY_PRE_SCRIPTORIUM
+	call	chk_ty_prelude_type
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_list_push
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_ap]
+	call	ast_list_push
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_rp]
+	call	ast_list_push
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, [chkt_np]
+	call	ast_list_emit
+	mov	[chkt_ep], rax
+	mov	rdi, rbx
+	mov	rsi, [chkt_ep]
+	mov	rdx, 2
+	call	__chk_ty_fn_empty
+	return
+
   ; ---- spec §5.1's text operations ------------------------------------------
   ; PARAMETER 0 IS THE RECEIVER, spelled as the receiver's own type, exactly as
   ; `scribe(s: Scriptor, …)` is: §8.6 decision 8 spends no keyword on a
@@ -1427,6 +1683,112 @@ proc chk_ty_prelude_type, chkt_wp, chkt_kp
 	mov	rsi, [chkt_ep]
 	mov	rdx, 1
 	call	__chk_ty_fn_empty
+	return
+endp
+
+; __chk_ty_pre_eventus(w, T) -> rax = the type `eventus<T, erratum>`, built
+; over the PRELUDE's `eventus` and `erratum` (compiler/x86_64/prelude/
+; eventus.inc), or the error type when the tree holds neither.
+;
+; THE PRELUDE'S, NOT WHATEVER THE MODULE CALLS `eventus`. A module may shadow
+; the name (spec 12; `examples/onus/onus.exsc` declares `functio eventus`),
+; and an ADR 0017 row must still return the prelude's sum. So the two
+; declarations are found by NAME AND by `ast_decl_synth` -- the zero span
+; that marks a declaration nobody wrote -- never through scope. They are in
+; the tree whenever a module names `Directorium`, `Lectorium` or
+; `Scriptorium` (eventus.inc's trigger list), which every module that can
+; reach one of these rows does. The instance is keyed exactly as
+; `__chk_ty_decl_inst` keys `eventus<T, erratum>` written in source --
+; `ast_type_sum(decl, args(T, args(erratum, 0)))` -- so the two are ONE type
+; id and `discerne` on a prelude result is `discerne` on any `eventus`.
+proc __chk_ty_pre_eventus, chkt_wPE, chkt_tPE
+	uses	rbx, r12, r13, r14
+	locals
+		slot chkt_ePE, dq	; the `eventus` declaration
+		slot chkt_rPE, dq	; the `erratum` declaration
+		slot chkt_nPE, dq	; the declaration count
+	endl
+	mov	rbx, [chkt_wPE]
+	mov	r14, [rbx + ChkTyWork.wtre]
+	mov	qword [chkt_ePE], 0
+	mov	qword [chkt_rPE], 0
+	mov	rdi, r14
+	mov	rsi, AST_PRE_N_EVENTUS
+	xor	edx, edx
+	call	__ast_pre_name
+	mov	r12, rax			; `eventus`'s name id, or 0
+	mov	rdi, r14
+	mov	rsi, AST_PRE_N_ERRATUM
+	xor	edx, edx
+	call	__ast_pre_name
+	mov	r13, rax			; `erratum`'s
+	test	r12, r12
+	jz	.none
+	test	r13, r13
+	jz	.none
+	mov	rdi, r14
+	call	ast_decl_count
+	mov	[chkt_nPE], rax
+	mov	rbx, 1				; the declaration id; `w` is
+						; reloaded after the scan
+  .scan:
+	cmp	rbx, [chkt_nPE]
+	ja	.scanned
+	mov	rdi, r14
+	mov	rsi, rbx
+	call	ast_decl_at
+	movzx	ecx, byte [rax + AstDecl.kind]
+	mov	edx, [rax + AstDecl.name]
+	cmp	ecx, AST_D_TYPUS
+	jne	.not_ev
+	cmp	rdx, r12
+	jne	.next
+	mov	rdi, r14
+	mov	rsi, rbx
+	call	ast_decl_synth
+	test	eax, eax
+	jz	.next
+	mov	[chkt_ePE], rbx
+	jmp	.next
+  .not_ev:
+	cmp	ecx, AST_D_STRUCT
+	jne	.next
+	cmp	rdx, r13
+	jne	.next
+	mov	rdi, r14
+	mov	rsi, rbx
+	call	ast_decl_synth
+	test	eax, eax
+	jz	.next
+	mov	[chkt_rPE], rbx
+  .next:
+	inc	rbx
+	jmp	.scan
+  .scanned:
+	mov	rbx, [chkt_wPE]
+	cmp	qword [chkt_ePE], 0
+	je	.none
+	cmp	qword [chkt_rPE], 0
+	je	.none
+	mov	rdi, rbx
+	mov	rsi, [chkt_rPE]
+	call	__chk_ty_decl_type		; `erratum`'s nominal type
+	mov	rdi, r14
+	mov	rsi, rax
+	xor	edx, edx
+	call	ast_type_args			; (erratum)
+	mov	rdi, r14
+	mov	rsi, [chkt_tPE]
+	mov	rdx, rax
+	call	ast_type_args			; (T, erratum)
+	mov	rdi, r14
+	mov	rsi, [chkt_ePE]
+	mov	rdx, rax
+	call	ast_type_sum
+	return
+  .none:
+	mov	rdi, rbx
+	call	__chk_ty_err
 	return
 endp
 

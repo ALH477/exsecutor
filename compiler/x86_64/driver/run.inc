@@ -178,7 +178,7 @@ assert DRV_HOSPES_X86_64  = BFC_HOSPES_X86_64
 assert DRV_HOSPES_RISCV64 = BFC_HOSPES_RISCV64
 assert DRV_HOSPES_MIPS64  = BFC_HOSPES_MIPS64
 
-drv_m_emitcnoout db 'aedifica: --emitte c requires -o OUT. Unlike tokens, cst and ast, it emits an ARTIFACT rather than a stage dump: spec 12 makes OUT the emitted text exsc never assembles, and the reproducibility gates diff OUT files. A C translation unit on stdout would be the one emitted text with no file to diff.',0
+drv_m_emitcnoout db 'aedifica: --emitte c, h and rs require -o OUT. Unlike tokens, cst and ast, each emits an ARTIFACT rather than a stage dump: spec 12 makes OUT the emitted text exsc never assembles, and the reproducibility gates diff OUT files. A C translation unit on stdout would be the one emitted text with no file to diff.',0
 drv_m_nosrc  db 'aedifica: no SOURCE given',0
 drv_m_trunc  db 'a diagnostic did not fit its buffer and was truncated; the output above is incomplete. That is a limit of this compiler, not of the source.',0
 drv_m_okpfx  db 'aedifica: ',0
@@ -191,7 +191,8 @@ drv_m_okbare db ': the front end accepts this source -- it lexes, parses, and bu
 drv_m_wrote  db 'aedifica: wrote ',0
 drv_m_wrote2 db ' -- fasmg source, not a binary: assemble it with `fasmg OUT BIN` (spec 12, OUT is emitted text and exsc never assembles it). Bytes: ',0
 drv_m_wrote2c db ' -- one C11 translation unit of this module`s functions, not a binary and not fasmg source: compile it with your own C compiler (spec 12, OUT is emitted text and exsc never compiles it; spec 12 also puts execve on no allowlist). It is a LIBRARY: it has no entry point and imports one symbol, `_Noreturn void exsrt_abortus(unsigned kind)`. Bytes: ',0
-drv_m_lwrfail db 'aedifica: the lowering refused this module and no object was written. That is a compiler bug, not a fact about this source (spec 16 Stage 3).',0
+drv_m_wrote2h db ' -- the C FACE of this module`s --emitte c unit: a C11 header with one prototype per `publica` function the unit defines, spelled as the unit spells it, and the one symbol the unit imports (docs/design/c-backend.md D9). Emit the unit itself with --emitte c from the same SOURCE list. Bytes: ',0
+drv_m_wrote2rs db ' -- the Rust FACE of this module`s --emitte c unit: one `extern "C"` declaration per `publica` function the unit defines, in the unit`s own C ABI. The host defines exsrt_abortus (docs/design/c-backend.md D9). Emit the unit itself with --emitte c from the same SOURCE list. Bytes: ',0
 drv_m_okunit db ' and the other SOURCE files given with it: the front end accepts this compilation unit -- it lexes and parses all of it and builds ONE typed AST from it (spec 12: the files named form one module). No object was requested, so none was written. Files in the unit: ',0
 drv_m_emitgate db ': --emitte was given, but this source failed the spec 8.1 source-hygiene gate, so it was never tokenized -- there is no token stream, no CST and no typed AST to dump. Nothing was written to stdout. See the diagnostic below.',0
 
@@ -566,7 +567,33 @@ proc __drv_cap_of_ty, drp_t2, drp_ty, drp_base
 	je	.row
 	cmp	ecx, AST_TY_DYN
 	je	.row
+	cmp	ecx, AST_TY_STRUCT
+	je	.struc
 	xor	eax, eax
+	return
+  .struc:
+	; ADR 0017's three prelude structs carry `archivum` (their mark,
+	; checker/rows/compute.inc's `chk_row_pre_marks`), and a program whose
+	; only mention of the atom is a `Directorium`-typed value still calls
+	; routines the atom gates -- without this arm such a module's OUT names
+	; `bfausr_exsrt_directorium_*` and carries no archivum.asm to define
+	; them. Only these three: `Scriptor` and `Lector` keep contributing
+	; nothing here, so no existing program's mask, and so no existing OUT,
+	; moves. The same over-approximation as the rest of this routine, in
+	; the same safe direction.
+	mov	ecx, [rax + AstType.a]
+	bt	ecx, 31
+	jnc	.none
+	and	ecx, CHK_TY_PRE_MASK
+	cmp	ecx, CHK_TY_PRE_DIRECTORIUM
+	je	.archivum
+	cmp	ecx, CHK_TY_PRE_LECTORIUM
+	je	.archivum
+	cmp	ecx, CHK_TY_PRE_SCRIPTORIUM
+	je	.archivum
+	jmp	.none
+  .archivum:
+	mov	eax, 1 shl (AST_CAP_ARCHIVUM - 1)
 	return
   .cap:
 	; `AstType.a` is the atom's own declaration (ast/kinds.inc, AST_TY_CAP),
@@ -742,6 +769,93 @@ proc __drv_potestates, drp_t
 	return
 endp
 
+; __drv_publica_mask(drvf_tree, drvf_mdl) -> rax = one byte per IR function
+; (`Module.funcs` order, 0-based), carrying `BFC_FACE_PUBLICA` when a
+; `publica` `functio` declaration of the typed tree bears that function's
+; name and `BFC_FACE_PRIVATA` when one without `publica` does. The face
+; emitter (backend_c/face_c.inc, c-backend.md D9) reads it.
+;
+; BY NAME, because that is the one key the two structures share: lowering
+; names each IR function with its declaration's own interned name and
+; registers it in `Module.func_by_name` (lower/lower.inc's
+; `__lwr_declare_fn`), and the IR has no field for `publica` -- adding one is
+; a change to lower/ and backend_fasmg/ir.inc, two trees this one does not
+; own. A name both a `publica` and a non-`publica` declaration carry gets
+; both bits, and the emitter refuses it by name rather than guessing. A
+; generic function cannot reach here (`__lwr_gencount` traps on one), so a
+; name never stands for several instantiations.
+;
+; Walks declaration ids 1..count in order and writes bytes, so nothing about
+; the result depends on a pointer value (CLAUDE.md, determinism).
+proc __drv_publica_mask, drvf_tree, drvf_mdl
+	uses	rbx, r12, r13
+	locals
+		slot drvf_mask, dq
+		slot drvf_nf,   dq
+		slot drvf_nd,   dq
+		slot drvf_kp,   dq
+		slot drvf_kl,   dq
+	endl
+	mov	rdi, [drvf_mdl]
+	mov	rdi, [rdi + BfaModule.funcs]
+	mov	rax, [rdi + Vec.len]
+	mov	[drvf_nf], rax
+	mov	rdi, [r15 + DrvCtx.arena]
+	lea	rsi, [rax + 8]
+	call	arena_alloc
+	mov	[drvf_mask], rax
+	mov	rdi, rax			; the arena is not promised zeroed
+	xor	eax, eax
+	mov	rcx, [drvf_nf]
+	add	rcx, 8
+	cld
+	rep	stosb
+
+	mov	rdi, [drvf_tree]
+	call	ast_decl_count
+	mov	[drvf_nd], rax
+	mov	rbx, 1
+  .loop:
+	cmp	rbx, [drvf_nd]
+	ja	.done
+	mov	rdi, [drvf_tree]
+	mov	rsi, rbx
+	call	ast_decl_at
+	mov	r12, rax
+	cmp	byte [r12 + AstDecl.kind], AST_D_FN
+	jne	.next
+	mov	esi, [r12 + AstDecl.name]
+	test	esi, esi
+	jz	.next
+	mov	rdi, [drvf_tree]
+	mov	rdi, [rdi + Ast.names]
+	call	intern_bytes
+	mov	[drvf_kp], rax
+	mov	[drvf_kl], rdx
+	mov	rdi, [drvf_mdl]
+	mov	rdi, [rdi + BfaModule.func_by_name]
+	mov	rsi, [drvf_kp]
+	mov	rdx, [drvf_kl]
+	call	map_get			; 1-based, 0 = not lowered
+	test	rax, rax
+	jz	.next
+	mov	rcx, [drvf_nf]
+	rassert	rax le rcx		; func_by_name holds 1-based indices
+	mov	r13, [drvf_mask]
+	mov	cl, BFC_FACE_PRIVATA
+	test	byte [r12 + AstDecl.flags], AST_F_PUBLICA
+	jz	.mark
+	mov	cl, BFC_FACE_PUBLICA
+  .mark:
+	or	byte [r13 + rax - 1], cl
+  .next:
+	inc	rbx
+	jmp	.loop
+  .done:
+	mov	rax, [drvf_mask]
+	return
+endp
+
 ; drv_stub(cmd) -> eax = DRV_EXIT_TODO, always. Names the subcommand, says it
 ; is not implemented, and says what is. Never silent: a tool that cannot tell
 ; "did nothing" from "did nothing and did not say so" has to guess.
@@ -899,7 +1013,7 @@ proc drv_aedifica, argc, argv
 	mov	dword [drvhos], DRV_HOSPES_RISCV64
 	; this row names no reference backend, so it needs --emitte c
 	cmp	dword [r15 + DrvCtx.emitte], DRV_EMIT_C
-	jne	.hospes_needs_c
+	jl	.hospes_needs_c		; c, h and rs all take the C path
 	jmp	.hospes_known
   .not_riscv:
 	mov	rdi, [r15 + DrvCtx.hospes]
@@ -913,7 +1027,7 @@ proc drv_aedifica, argc, argv
 	; addresses are 32-bit, and the reference emitter refuses an address
 	; narrower than 64 by name (backend_fasmg/emit.inc's `.addr` arm).
 	cmp	dword [r15 + DrvCtx.emitte], DRV_EMIT_C
-	jne	.hospes_needs_c
+	jl	.hospes_needs_c		; c, h and rs all take the C path
   .hospes_known:
 
 	; ---- --emitte c requires -o OUT --------------------------------------
@@ -923,7 +1037,7 @@ proc drv_aedifica, argc, argv
 	; OUT files. A C unit on stdout would be the one emitted text with no
 	; file to diff (c-backend.md D2).
 	cmp	dword [r15 + DrvCtx.emitte], DRV_EMIT_C
-	jne	.emitte_c_ok
+	jl	.emitte_c_ok		; h and rs are artifacts too (D9)
 	cmp	qword [r15 + DrvCtx.outpath], 0
 	je	.emitte_c_no_out
   .emitte_c_ok:
@@ -1135,7 +1249,7 @@ proc drv_aedifica, argc, argv
 	; [OPEN], which is why the flag is suppressed HERE rather than the
 	; sentence being deleted.
 	cmp	dword [r15 + DrvCtx.emitte], DRV_EMIT_C
-	je	.chk_nomain
+	jge	.chk_nomain		; and so is a face of one (h, rs: D9)
 	mov	r8, CHK_F_PROGRAM		; -o was given: a PROGRAM was asked
 					; for (spec §4.1 rule 2), so a missing
 					; `initium` is `EXS-E0424`. Without -o
@@ -1215,7 +1329,7 @@ proc drv_aedifica, argc, argv
 	cmp	dword [r15 + DrvCtx.emitte], DRV_EMIT_NONE
 	je	.report
 	cmp	dword [r15 + DrvCtx.emitte], DRV_EMIT_C
-	je	.report
+	jge	.report			; c, h, rs: artifacts, not dumps
 	call	drv_emit_dump
 	jmp	.report
 
@@ -1338,7 +1452,7 @@ proc drv_aedifica, argc, argv
 	; `DrvCtx.diags`), which is `lwr_module`'s stated input invariant --
 	; CHK 2.5, "it runs only when Stage 2 emitted no diagnostic" -- and the
 	; reason this pass raises nothing and never gets an `EXS-E` code of its
-	; own. A diagnostic still exits 1 and writes nothing; `--hospes` other
+	; own, save the one it answers through `.lower_refused` below. A diagnostic still exits 1 and writes nothing; `--hospes` other
 	; than `x86_64-linux` was refused with exit 4 long before the source was
 	; opened, let alone OUT.
 	;
@@ -1399,7 +1513,7 @@ proc drv_aedifica, argc, argv
 	; discarded, so a module whose closure the checker cannot answer still
 	; emits a C library.
 	cmp	dword [r15 + DrvCtx.emitte], DRV_EMIT_C
-	je	.emit_c
+	jge	.emit_c
 
 	mov	rdi, [r15 + DrvCtx.ast]
 	call	__drv_potestates
@@ -1415,6 +1529,29 @@ proc drv_aedifica, argc, argv
 	jmp	.wrote_pick
 
   .emit_c:
+	; `h` and `rs` are the unit's FACE (c-backend.md D9): the same module,
+	; lowered the same way, read by the same signature routine, and only
+	; the `publica` functions it defines. `publica` is a fact of the typed
+	; tree the IR does not carry, so the driver, which holds both, maps it
+	; across by name (`__drv_publica_mask`).
+	cmp	dword [r15 + DrvCtx.emitte], DRV_EMIT_C
+	je	.emit_c_unit
+	mov	rdi, [r15 + DrvCtx.ast]
+	mov	rsi, [drvmdl]
+	call	__drv_publica_mask
+	mov	rdx, rax
+	mov	ecx, BFC_FACIES_H
+	cmp	dword [r15 + DrvCtx.emitte], DRV_EMIT_H
+	je	.face_kind
+	mov	ecx, BFC_FACIES_RS
+  .face_kind:
+	mov	rdi, [drvmdl]
+	mov	rsi, [r15 + DrvCtx.arena]
+	call	bfc_emit_face		; rax = the bytes, rdx = how many
+	mov	[drvop], rax
+	mov	[drvol], rdx
+	jmp	.wrote_pick
+  .emit_c_unit:
 	mov	rdi, [drvmdl]
 	mov	rsi, [r15 + DrvCtx.arena]
 	mov	edx, [drvhos]		; a DRV_HOSPES_* row; BFC_HOSPES_* has
@@ -1445,10 +1582,15 @@ proc drv_aedifica, argc, argv
 	mov	rdx, [r15 + DrvCtx.outpathn]
 	lea	rcx, [drv_m_wrote2]
 	cmp	dword [r15 + DrvCtx.emitte], DRV_EMIT_C
-	jne	.wrote_kind
+	jl	.wrote_kind
 	lea	rcx, [drv_m_wrote2c]	; it is not fasmg source and it is not
 					; a binary, and saying "assemble it with
 					; fasmg" of a C file would be wrong
+	je	.wrote_kind		; flags still from the cmp above
+	lea	rcx, [drv_m_wrote2h]
+	cmp	dword [r15 + DrvCtx.emitte], DRV_EMIT_H
+	je	.wrote_kind
+	lea	rcx, [drv_m_wrote2rs]
   .wrote_kind:
 	mov	r8, [drvol]
 	call	drv_msgu
@@ -1457,18 +1599,30 @@ proc drv_aedifica, argc, argv
 	return
 
   .lower_refused:
-	; `lwr_module` answers 0 or nothing at all -- every contract violation
-	; inside it is an `rassert` (SIGILL, exit 132), which is what
-	; docs/asm-conventions.md reserves for a compiler bug. A non-zero return
-	; is therefore a case that document's four channels do not cover, and
-	; the honest report is "no object was written", not an invented code.
-	lea	rdi, [drv_m_lwrfail]
-	xor	rsi, rsi
-	xor	rdx, rdx
-	xor	rcx, rcx
-	call	drv_msg
-	mov	eax, DRV_EXIT_HOST
-	return
+	; `lwr_module` answers 0, or the id of the first node at which a
+	; capability atom had no provider (lower/lower.inc): the tree reached the
+	; lowering with an atom drawn and no carrier for it in scope, which the
+	; checker is supposed to have refused. That is `EXS-E0421`, and it is
+	; raised here, through the checker's own buffer and flush, in the
+	; checker's own code -- not a new code and not a trap. Nothing has been
+	; written to OUT yet (`bfa_emit_program` is below), so a diagnostic exit
+	; leaves no object.
+	;
+	; `[UNTESTED]` END TO END, and said so: no source reaches this today. The
+	; closure shapes that would are refused by the checker now
+	; (`__chk_row_lamof`), and the lowering refuses a lambda before it lowers
+	; the body. The lowering half -- the node comes back and nothing traps --
+	; is tests/unit/lwr_unprovided.asm. The fix text `__chk_fix_e0421` builds
+	; is not attached: it needs the checker's frame stack, which is gone.
+	mov	r12, rax
+	mov	rdi, [r15 + DrvCtx.chk]
+	mov	rsi, CHK_P_ROWS
+	mov	rdx, 421
+	mov	rcx, r12
+	call	chk_raise
+	mov	rdi, [r15 + DrvCtx.chk]
+	call	chk_flush
+	jmp	.report
 
   ; ---- the refusals --------------------------------------------------------
   .usage_hint:

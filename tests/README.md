@@ -11,11 +11,13 @@ calls):
    its verifier, the driver, and the prelude. This item once said the only
    thing testable here was the toolchain itself; that was true for the first
    four fixtures.
-2. **`tests/conformance/`** — spec §14's suite: 28 entries, 26 with a
+2. **`tests/conformance/`** — spec §14's suite: 29 entries, 27 with a
    fixture file here (27 and 28 are carried by `tests/programs/`
-   directories, below). **21 of the 26 fixtures run, and 5 are `DEFERRED`;
+   directories, below). **22 of the 27 fixtures run, and 5 are `DEFERRED`;
    with entries 27 and 28, which have no fixture and are carried by
-   `tests/programs/`, 23 of the spec's 28 entries run.** This said "17 run,
+   `tests/programs/`, 24 of the spec's 29 entries run.** (Entry 29, the
+   first `reference`-shape entry, was added 2026-10-02: 28 → 29, 26 → 27
+   fixtures, 21 → 22 running.) This said "17 run,
    9 `DEFERRED`" until 2026-09-27 — stale from 80b9390 and 8e746f3, which
    moved entries 12 and 24 to run without this paragraph following them, and
    `tests/run.sh`'s `run_floor` sat at 17 with it, so neither document would
@@ -130,10 +132,12 @@ calls):
    both shapes turn on its being a SET comparison, and that is the check this
    suite has already once had in a weaker form.
 
-   Five rule shapes, and a runner assuming one will quietly mishandle four:
+   Six rule shapes, and a runner assuming one will quietly mishandle five:
    reject-with-exact-code (most), byte-identical output (16, 17, 25–28),
    external certificate (23), runtime abort (15), capability absence with
-   no code assigned (1).
+   no code assigned (1), and differential agreement with an external
+   reference program (29: `arca` against GNU tar; DEFERRED when the
+   reference is absent).
 
    `run_conformance_tests` carries its own floor, mirroring
    `UNIT_FIXTURE_FLOOR`. It earned that immediately: with `exsc.asm`
@@ -265,9 +269,9 @@ a shipped artifact, and is checked every time it is built instead.
 
 ## What is deliberately absent
 
-- **`tests/conformance/` entries that run.** See above: 28 entries, 26 with
-  a fixture file, **21 of those running and 5 `DEFERRED`** on a named
-  component, plus entries 27 and 28 carried by `tests/programs/` — 23 of 28.
+- **`tests/conformance/` entries that run.** See above: 29 entries, 27 with
+  a fixture file, **22 of those running and 5 `DEFERRED`** on a named
+  component, plus entries 27 and 28 carried by `tests/programs/` — 24 of 29.
   (This bullet said 17 and 9 earlier on 2026-09-27, and 18 until 2026-09-26;
   corrected with the paragraph above, and for the same reason.) (This item was written
   when `exsc` did not exist and said what each of the 24 rows would need: a
@@ -292,7 +296,7 @@ a shipped artifact, and is checked every time it is built instead.
   from reading `entry23/codex.exsc`, not measured; the example frame in the
   stream's third section is one non-basis spot check of it.
 
-  **28 entries, five rule shapes.** Most are "rejects with exactly code
+  **29 entries, six rule shapes.** Most are "rejects with exactly code
   EXS-Exxxx". Entries 16, 17 and 25–28 instead require byte-identical
   output across conditions and hosts — 17 compares the cross-compiled
   text, 25–28 compare what the compiled artifact does, on both backends
@@ -386,6 +390,8 @@ directive's style):
 | `abort=N` | spec §6.6's one abort shape: killed by `SIGILL`, with a stderr line ending `abortus N`. Not shell status 132, which `redde 132;` also produces — the runner tells a signal from an exit status |
 | `stdout=PATH` | stdout byte-identical to `PATH`, relative to the repo root. Absent: stdout must be empty |
 | `stdin=PATH` | the program's stdin is that file, repo-root-relative exactly as `stdout=` is. Absent: `/dev/null`, which is what every fixture written before a reader existed assumed |
+| `potestates=A,B` | the atoms the binary's syscall audit admits (`tools/syscall-audit.sh --potestates`). Absent: `Mundus,ambitus`. A closed set -- spec §4.6's eleven names -- so a typo fails the fixture |
+| `radix=yes` | (programs only; not with `cross=` or `device=`) a filesystem root for ADR 0017's `Directorium`: under an exclusive lock on `/tmp/exsecutor-radix.lock`, the runner re-creates `/tmp/exsecutor-radix` as a copy of the directory's own `radix/` tree (empty without one), runs the binary -- the reference's and each C build alike -- and removes it. A fixed path, because a program names its root as a literal and a relative root is refused by design |
 
 Exactly one of `expect-exit=` / `abort=` is required for anything that
 runs. **An unknown key fails the fixture** — the unit directive silently

@@ -20,6 +20,35 @@ the spec is stale, amend the spec in the same change and say so.
 - Never present a re-derivation as a restoration.
 - Never report a benchmark you did not run, or a test you did not see pass.
 
+## Security changes get an adversary pass, and a green suite is not enough
+
+A change to the capability system, the checker, the syscall audit, the prelude's
+capability routines, or any security boundary does **not** merge on a passing
+`tests/run.sh`. It merges only after a separate adversarial review whose job is to
+**break the specific guarantee with running exploit programs**, not to read the
+diff. The suite is necessary and not sufficient: two capability escapes in the
+ADR 0017 stage-2 branch — `sub archivum = d` minting the atom from a scoped
+handle, and `&d sicut &archivum` laundering it through an unchecked
+reference-reinterpret cast — each passed the full suite green and were caught
+only by an adversary who wrote programs that read a file outside the root.
+
+- **The checker is the trusted computing base, and that is where the holes are.**
+  Both escapes defeated the *checker* while the *binary audit* held — every
+  exploit still used only its declared syscalls. The audit (`tools/syscall-audit.sh`)
+  proves the shipped bytes; it does not prove the checker refused what it should.
+  Every new capability is a fresh chance for a laundering path the audit cannot see.
+- **The reviewer attacks a named guarantee**, e.g. "can a function holding only
+  `poscit sicut d` obtain the unscoped atom?" — and writes `.exsc` programs that
+  try to escape, compiles them, and runs them. A refusal of the obvious form
+  (`d sicut archivum`) is not a refusal of every form (`&d sicut &archivum`,
+  `sub archivum = d`); enumerate the forms.
+- **The fix gets the same treatment.** Re-review after fixing, because a fix is a
+  new change to the same soft spot and may open a sibling hole — the reference-cast
+  escape was found by the re-review of the `sub` fix.
+- Use a different agent (a `fable` reviewer) from the one that wrote the code, and
+  have it report CONFIRMED / INSUFFICIENT / REGRESSED per finding with the exploit's
+  exit code as evidence. Do not merge on the implementer's self-report.
+
 ## Error codes are permanent
 
 §8.3: codes are permanent, text is not; tools match codes, never English prose.

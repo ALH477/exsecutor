@@ -408,7 +408,9 @@ A type's mark and a function type's row are the same fact about a value — *wha
 
 This changes no existing judgement — a function type's row is its row, as before — and it closes the case where a caller could hand over a capability-bearing value and have the callee's `sicut` mean nothing at all.
 
-**One known defect in the checker, not in the rule, measured on this tree:** a function declared `poscit sicut s` that calls another declared `poscit sicut s` with the same `s` is refused `EXS-E0421`. By the table above both rows are `Scriptor`'s mark, `{ambitus}`, and the draw is covered; `checker/rows/compute.inc`'s `__chk_row_e0421` subtracts the callee's substituted atoms only from the caller's declared *atoms*, never from the mark of the parameter the caller's own `sicut s` names (`docs/design/wire-codec.md`, finding 9, with the four-line repro). The spec is right and the code is wrong; nothing in this section should be read as the checker composing `sicut` today. Until it is fixed, a private helper that calls such a helper writes no `poscit` and takes rule 5's inferred row — which is what `tests/conformance/entry23/probatio.exsc` does.
+**A defect in the checker, not in the rule, measured on this tree and fixed on 2026-10-02:** a function declared `poscit sicut s` that called another declared `poscit sicut s` with the same `s` was refused `EXS-E0421`. By the table above both rows are `Scriptor`'s mark, `{ambitus}`, and the draw is covered; `checker/rows/compute.inc`'s `__chk_row_e0421` subtracted the callee's substituted atoms only from the caller's declared *atoms*, never from the mark of the parameter the caller's own `sicut s` names (`docs/design/wire-codec.md`, finding 9). The spec was right and the code was wrong. The fix (`__chk_row_sicutcov`) lets a caller's `sicut` items cover exactly what travels inside a value: atoms substituted at an argument that is one of the caller's own `sicut` parameters or a capability-bearing `structura`, and a call *through* such a parameter (`f(x)` in `applica`). It never covers an atom in the callee's own declared row — that is a hidden carrier the caller must hold, and a `sicut` item binds none — nor one brought in by a named function passed as a value. `tests/unit/chk_row_sicut_forward.asm` pins both directions, the closure-capture shapes below included, and fails under four mutations of the fix (a fifth, deleting the ineligible-argument exclusion, was found uncovered and is row 19). Fixing it found a second defect in the same family: a row written inside a *parameter's type* (`g: functio(u8) -> u8 poscit {ambitus}`) bound its atom in the function's own frame, so the body could name `ambitus`; a type's row is now resolved and never a provider. `tests/conformance/entry23/probatio.exsc`, which worked around the first defect by leaving its helpers' rows inferred, keeps doing so: an inferred row is legal for a private function.
+
+**Two more defects of the same family, found by review of ADR 0017 and fixed.** (1) *A lambda's row was read out of its type.* A lambda's row is always inferred (§8.6 decision 2), but a call's contribution and an argument's substitution read the row of the callee's or the argument's *type*, which pass 2 interned before any row existed: `{}`. A lambda that drew `archivum` (or `ambitus`) was therefore called, or handed to a `sicut` parameter, contributing nothing, and the draw was accepted under any declared row, `poscit sicut d` included. A call now reads the lambda's live inferred row when its callee is a lambda or an immutable local initialised by one (through aliases), and so does the substitution at such an argument (`__chk_row_lamof`, `__chk_row_argrow`); a lambda argument is never *eligible* for the caller's `sicut` to cover. `[OPEN]`: a lambda reaching a parameter whose type has an empty row, stored in a field, returned, or held in a `mutabilis` local is still read at its type's row. (2) *The ineligible-argument exclusion was not pinned.* Deleting it left both fixtures green; `tests/unit/chk_row_sicut_forward.asm` row 19 now fails without it.
 
 Without this, unioning the callee's row propagates a name with no referent in the caller (the prototype produced `requires [sicut f]` inside a function having no `f`). Substitution is what makes laundering impossible rather than merely annotated:
 
@@ -454,6 +456,8 @@ potestas Hospes = { alloc, archivum, horologium, ambitus }
 
 `sub` binds for a scope; a statement form (`sub alloc = a;` to end-of-scope) exists alongside the block form so programs are not permanently indented.
 
+**The provider of `sub P = e` has the atom's own capability type, or it is `EXS-E0303`.** `sub` is the one statement that *mints* an atom, so it is the one place a provider cannot be left untyped: `sub ambitus = m.ambitus();` is the case this describes, and `sub archivum = d;` with `d: Directorium`, `sub rete = n` with `n: u32`, and `sub rete = someAmbitus` are all `EXS-E0303`. The first of those was accepted until review of ADR 0017: it bound the raw `archivum` atom from a value that held only a scoped root, and a program that did so read a file outside that root (`tests/unit/chk_directorium.asm` row 14). **The one exemption is `alloc`**, because §4.5 names its provider only as "an arena" and no section gives that value a type; `sub alloc = a;` with a non-capability `a` is typed and accepted, `[OPEN]` until the arena's type is decided. A capability-typed *parameter* already binds its atom (a `sub` of the same atom beside it is `EXS-E0422`), so a provider for `sub` is in practice a call such as `m.ambitus()`, never such a parameter.
+
 `sub` resolution is **lexical and non-searching**: one value per capability type per scope, shadowing is an error, no implicit conversion, no inference across module boundaries. If it grows a search algorithm, it has failed.
 
 ## 4.6 The capability set
@@ -464,7 +468,9 @@ potestas Hospes = { alloc, archivum, horologium, ambitus }
 
 **Standard input, output and error belong to `ambitus`.** They are handed to a process by its environment, not found on a filesystem: a program that writes to its terminal has touched nothing under `archivum`, and borrowing that atom for it would over-grant in exactly the way §10.3's audit exists to expose. `examples/README.md` recorded this as `[OPEN]` when the companion program was written; it is closed by placing the streams, not by spending a root on a twelfth atom.
 
-**The streams' two prelude types.** Standard output is written through `Scriptor`, a capability-bearing `structura` with mark `{ambitus}`, obtained by `Scriptor.ad_exitum(a: ambitus) -> Scriptor` — an associated function with no receiver, total — and written one byte at a time by `s.scribe_octeto(b: u8) -> mensura` (`docs/design/wire-codec.md` D7; `tests/unit/prelude_scribe_octeto.asm`, `tests/programs/octeti/`) or as a `textus` by `s.scribe(t)` (§11). Standard input is read through **`Lector`**, the same record with the same mark, obtained by `Lector.ab_introitu(a: ambitus) -> Lector` and read one byte at a time by `l.lege_octeto() -> u16`: the byte, 0–255, or **256** at end of input and on a read error, the two undistinguished — provisional in exactly `scribe`'s way until `eventus` is *inhabited* (§11: the spelling is interned today, the type has no variants, constructor, pattern or layout), when the call becomes `-> eventus<u8>`. `read(0)` is in `ambitus`'s admitted syscall set already; the compiler itself never issues it. `docs/design/receptor.md` D1 is the design; the routine is `compiler/x86_64/prelude/prelude.asm`'s `exsrt_lector_lege_octeto`, pinned by `tests/unit/prelude_lege_octeto.asm` (the four bytes `0x00 0x7f 0x80 0xff` in order, then 256 twice, then 256 on a refused descriptor) and run from source by `tests/programs/lector/` (`cat`, 41 bytes in and the same 41 out), `lector_numerus/` (the count as the exit status) and the receiver's `tests/programs/receptio_*/` (38,060 bytes a WAV). Because the prelude gates by atom and not by call, every binary whose closure holds `ambitus` carries the reader whether it reads or not. The part after the `_` in both constructors is a noun the preposition governs, and neither `ad` nor `ab` decomposes under §3.1 — recorded there as an open question for the lexicon, not resolved here.
+**The streams' two prelude types.** Standard output is written through `Scriptor`, a capability-bearing `structura` with mark `{ambitus}`, obtained by `Scriptor.ad_exitum(a: ambitus) -> Scriptor` — an associated function with no receiver, total — and written one byte at a time by `s.scribe_octeto(b: u8) -> mensura` (`docs/design/wire-codec.md` D7; `tests/unit/prelude_scribe_octeto.asm`, `tests/programs/octeti/`) or as a `textus` by `s.scribe(t)` (§11). Standard input is read through **`Lector`**, the same record with the same mark, obtained by `Lector.ab_introitu(a: ambitus) -> Lector` and read one byte at a time by `l.lege_octeto() -> u16`: the byte, 0–255, or **256** at end of input and on a read error, the two undistinguished — provisional in exactly `scribe`'s way: `eventus` is inhabited now (§11, the prelude's `eventus<T, E>`), and the call becomes `-> eventus<u8, erratum>` with the whole-tree migration of the prelude's I/O that §11 records as not yet made. `read(0)` is in `ambitus`'s admitted syscall set already; the compiler itself never issues it. `docs/design/receptor.md` D1 is the design; the routine is `compiler/x86_64/prelude/prelude.asm`'s `exsrt_lector_lege_octeto`, pinned by `tests/unit/prelude_lege_octeto.asm` (the four bytes `0x00 0x7f 0x80 0xff` in order, then 256 twice, then 256 on a refused descriptor) and run from source by `tests/programs/lector/` (`cat`, 41 bytes in and the same 41 out), `lector_numerus/` (the count as the exit status) and the receiver's `tests/programs/receptio_*/` (38,060 bytes a WAV). Because the prelude gates by atom and not by call, every binary whose closure holds `ambitus` carries the reader whether it reads or not. The part after the `_` in both constructors is a noun the preposition governs, and neither `ad` nor `ab` decomposes under §3.1 — recorded there as an open question for the lexicon, not resolved here.
+
+**`archivum` reaches the filesystem only beneath a root** (ADR 0017, accepted 2026-10-02). Holding the atom does not let a program name a file. It lets the program derive a `Directorium`: `Directorium.ad_radicem(a: archivum, via: textus) -> eventus<Directorium, erratum>`, for an absolute `via`, a capability-bearing `structura` with mark `{archivum}` whose fields have no rows; `d.infra(via)` derives one beneath `d`, and nothing derives one above it. Every operation on a `Directorium` resolves its path beneath it. A function that receives one can reach that tree and nothing else, and what bounds it is the set of *values* it holds, not a row: every prelude row on a `Directorium` is empty (`d.infra`, `d.lege_ex` and `d.crea` draw no atom), so a function that merely uses one needs no `poscit` at all and its own row shows nothing for `archivum`. `poscit sicut d` is needed only to forward the handle to a callee that is itself declared `sicut`; what it says is `d`'s mark, `{archivum}`, substituted at that call (§4.2), and it is not the atom's carrier. What keeps such a function from reaching any *other* tree is that it cannot obtain the raw atom, and what is enforced is: **(R1)** a `sicut` item binds no carrier, so `archivum` in expression position in a function whose row is only `sicut d` is EXS-E0421; and `sub P = e` requires `e` to have the atom's own capability type (EXS-E0303, §4.5), so a `sub` cannot bind the atom from a `Directorium`, or from any value whose *type* is not `archivum`; and **no `sicut` retypes a value into or out of a capability atom, or a reference to one** (EXS-E0305, §5.2): the value cast `d sicut archivum` and the reference cast `&d sicut &archivum` are both refused. The reference form was accepted until review of this very rule: it retyped a reference to a `Directorium` as a reference to the raw atom, `*p` then *had* type `archivum`, and `sub archivum = *p;` passed the provider check above on a type that had been forged one line earlier (`tests/unit/chk_directorium.asm` rows 17-26). What stops it is the cast judgement, not `sub`; "cannot be minted" is true only as the two together. `[OPEN]` `Crudum` (§4.6) is the capability for "unchecked casts", and no cast is gated on it yet: a reference cast that changes the pointee is refused outright, whether or not the function holds `Crudum`. And a lambda's draw is read at its live inferred row when the lambda is called or forwarded (§4.2), so a closure over the atom is EXS-E0421 at the call and is not laundered. `[OPEN]`: that last check follows a lambda written in place or held in an immutable local; it does not follow one that reaches a parameter whose function type has an empty row, one stored in a field, one returned, or a `mutabilis` local reassigned to another lambda. No such shape yields an object today, because the lowering refuses every lambda (`docs/design/lowering.md` section 2.7), and the lowering answers an atom with no carrier as EXS-E0421 rather than a trap. **(R2)** no prelude routine draws `archivum` implicitly. **(R3)** the fields have no rows (`d.a` and `d.descriptor` are EXS-E0305). The three are pinned by `tests/unit/chk_directorium.asm`, `tests/unit/chk_row_sicut_forward.asm` and `tests/unit/lwr_unprovided.asm`. **The surface (ADR 0017 stage 2, 2026-10-02):** `m.archivum()` (total, §4.7); `Directorium.ad_radicem(a: archivum, via: textus) -> eventus<Directorium, erratum>`; `d.infra(via) -> eventus<Directorium, erratum>`; `d.lege_ex(via) -> eventus<Lectorium, erratum>`, an existing regular file to read, and `d.crea(via) -> eventus<Scriptorium, erratum>`, a new file (`O_EXCL`, mode `0600`), to write. `Lectorium` and `Scriptorium` are the reader and writer, capability-bearing with mark `{archivum}` and no field rows, like `Directorium` — two prelude types rather than `Lector` and `Scriptor` made generic over the atom (`docs/design/archivum-beneath.md` section 10 gives the reason). `r.exlege_octeto() -> eventus<u16, erratum>` reads one byte, `256` at end of file and `adversum` on an error, so the two are different answers; `w.inscribe(t)` and `w.inscribe_octeto(b) -> eventus<mensura, erratum>` write a whole `textus` or one raw byte, never reporting a short count as success. `erratum.numerus` is the kernel's errno, or the prelude's own `EINVAL` for a relative root, an interior NUL or a non-regular file, and `ENAMETOOLONG` for a path of 4096 bytes or more. There is no `close` (descriptors live until exit; design D7), and no `mkdirat`, `unlinkat`, `getdents64`, rewrite or append. All of these spellings are provisional under §3.9. `tests/programs/archivum_radix/`, `archivum_refusa/` and `archivum_profundum/` run the surface end to end, on both backends, and audit it under `--potestates Mundus,archivum`. **Beneath the surface are the runtime and the audit.** `compiler/x86_64/prelude/archivum.asm`, gated on the atom, resolves every path beneath a directory descriptor with `openat2(2)` and `RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV`, so `..` past the root, an absolute path, a symlink out of it, a magic link and a mount crossing are refused by the kernel and not by the program; its one unscoped open derives a root from an absolute path, and nothing falls back to `openat` when `openat2` fails. `tests/unit/prelude_archivum.asm` runs those routines and asserts each refusal, with a legal twin for each, on the kernel that runs it (Linux 6.18 when this was written). `tools/syscall-audit.sh --potestates` admits `openat2(437)`, `close(3)`, `fstat(5)`, `lseek(8)`, `read(0)` and `write(1)` for `archivum`, never `openat(257)`, and admits an `openat2` site only when the `open_how` it passes is proven, byte for byte, to be one of the prelude's four constants in a non-writable segment (`tests/unit/audit_openat2.asm`). What `RESOLVE_BENEATH` bounds is *names*: a hard link beneath the root to a file outside it is reachable (measured, `prototypes/beneath/`). `docs/design/archivum-beneath.md` is the design, and its section 2 is the measurement.
 
 ## 4.7 The entry point
 
@@ -474,7 +480,7 @@ publica functio initium(m: Mundus) -> u8 { … }
 
 Rule 2 names `initium` and says `Mundus` is passed to it; this pins the rest. A program has exactly one `initium`; it is `publica`; its one parameter is the root, which is rule 4's second path — received as a parameter — so it carries no `poscit` and there is nothing to declare: the program's whole authority is that one value, and every other capability is derived from it, explicitly (rule 2). Its result is the process exit status. A module with no `initium` is a library; "it runs" is a claim only a program can make. `[OPEN]` no library artifact exists for the reference backend — `fasmg` has no link step — so until one is designed, `-o` on a module without `initium` asks for a program that cannot be built and is `EXS-E0424` (`docs/design/runtime.md`, finding 2). That sentence is about the reference backend. Under `--emitte c` (§9.2, library mode) a module without `initium` **is** a library and `-o` names its C translation unit: the driver does not mark a program as asked for, and `EXS-E0424` does not fire. `[UNTESTED]` — `docs/design/c-backend.md` D1.
 
-Derivation is by method on the root — `m.ambitus()`, `m.archivum()` — and rule 2's *fallibly* is resolved at two different times. `[OPEN]` Only `m.ambitus()` has a prelude row today (`compiler/x86_64/prelude/interface.inc`, `checker/types/prim.inc`'s `.fn_ambitus`); `archivum` and the other atoms are declared (§4.6) and not yet derivable. Where presence is a property of the host (`ambitus`, `archivum`: a `none-eabi` target has neither), it is decided at compile time by `--hospes` (§9.5) and the `hospites` list (§10.1), and the derivation itself is total. Where presence is a property of the run (`rete`), the derivation returns `eventus`. `[OPEN]` which atoms fall on which side beyond these three; the checker (`docs/design/checker.md`) decides per atom. A second `initium`, one with the wrong signature, or none where a program was asked for, is `EXS-E0424`.
+Derivation is by method on the root — `m.ambitus()`, `m.archivum()` — and rule 2's *fallibly* is resolved at two different times. `m.ambitus()` has a prelude row (`compiler/x86_64/prelude/interface.inc`, `checker/types/prim.inc`'s `.fn_ambitus`). `m.archivum()` is total, like `ambitus`, and has one too (`.fn_archivum`, interface.inc row 12). Naming a root is the separate, run-time-fallible `Directorium.ad_radicem` (§4.6). Its failure, including a kernel without `openat2(2)` (Linux < 5.6) or a sandbox that refuses it, leaves the program with no filesystem, never with an unscoped one: the prelude routine beneath it has no `openat` fallback and the audit admits none (`compiler/x86_64/prelude/archivum.asm`, `tools/syscall-audit.sh`); a real pre-5.6 kernel is `[UNTESTED]`. The other atoms are declared (§4.6) and not yet derivable. Where presence is a property of the host (`ambitus`, `archivum`: a `none-eabi` target has neither), it is decided at compile time by `--hospes` (§9.5) and the `hospites` list (§10.1), and the derivation itself is total. Where presence is a property of the run (`rete`), the derivation returns `eventus`. `[OPEN]` which atoms fall on which side beyond these three; the checker (`docs/design/checker.md`) decides per atom. A second `initium`, one with the wrong signature, or none where a program was asked for, is `EXS-E0424`.
 
 ---
 
@@ -738,6 +744,8 @@ No other aggregate `sicut` exists. Any other — between two structs, to an
 `acies` of the wrong length, from a struct that is not `@transitus` — is
 `EXS-E0305`, which is already the answer to "are these two types related"
 for a cast.
+
+**Casts that are not aggregate casts** are admitted in three shapes and refused (`EXS-E0305`) in every other: both types are numeric scalars (an integer, a float or `mensura`; whether two such types are related further is checker.md class E, `[OPEN]`, and unchanged); the two types are the same type; or the target is `dyn`, whose verdict is `EXS-E0510`. So a reference `&T`, `refero<T>`, `refc<T>` or `*T` is never recast to another pointee, to a different mutability, to or from an integer, and a capability atom (`Mundus`, `archivum`, ...) is never cast to or from anything else; nor is a function type recast to another one (that is the one way to take a row off a value), nor a sum to another sum. The check is a whitelist, so a type kind added later is refused until its cast is decided. Before it, every pair that was not a struct or an `acies` was accepted without a relatedness check at all (`&d sicut &archivum`, `x sicut archivum`, `0 sicut archivum`, `g sicut functio(u8) -> u8` with `g` drawing `archivum`). A pending literal is judged by its target only. `Crudum` (§4.6) is the gate an unchecked reinterpret would need; nothing implements it, `[OPEN]`, and until then the refusal does not depend on the function's row. `tests/unit/chk_directorium.asm` rows 17-26.
 
 ## 5.3 FFI
 
@@ -1625,26 +1633,24 @@ document.
 the missing cases* and ships the edit — mechanically derivable, which is exactly
 the class §8.3 says is suited to `exsc emenda`.
 
-`[OPEN]` **— and this sentence has never been true of the implementation.**
-`discerne` compiles, lowers and runs (`tests/programs/discerne/`, thirty checks
-through `-o` on both backends), and it is a comparison chain with a
-fall-through: with no `aliter` and no matching arm, the chain's last false edge
-goes to the join and **nothing runs**. That fixture's header pins the behaviour
-and records the contradiction rather than papering over it, which was the right
-call — exhaustiveness needs an enumeration §8.6 lists as `[OPEN]`, and until
-2026-09-26 §13 had no code to report a missing arm with, so nothing could have
-refused one. `EXS-E0351` now exists for it (§13), and
-`docs/design/sum-types.md` is the design that would make the sentence true: D1
-declares the enumeration, D2 gives constructor patterns, and **D3 is the rule**
-— a sum-typed scrutinee is exhaustive when every variant is covered or
-`aliter` is present, and a scalar scrutinee, whose value space is 2^N,
-**requires** `aliter`. D1's grammar and its layout (D6) landed on 2026-09-27
-(`tests/unit/cst_typus_sum.asm`, `tests/unit/chk_row_layout_sum.asm`), and
-D2's grammar with its bindings scoped to the arm (`tests/unit/cst_pattern_ctor.asm`,
-`tests/unit/chk_pattern_scope.asm`); D2's typing and **D3 itself are still
-design** — no `EXS-E0351` is emitted — and its §6 states what landing D3
-costs, which is four of those thirty checks, since they exist precisely to pin
-the behaviour D3 outlaws.
+**Enforced since 2026-10-02 (`docs/design/sum-types.md` D3), and for most of
+this document's life it was not.** A `discerne` with no `aliter` is
+`EXS-E0351` unless its arms cover the scrutinee: a **sum** scrutinee by naming
+every variant — the diagnostic carries the missing arms, in declaration order,
+as an insertion fix, so the rendered diagnostic lists them — and a **scalar**
+scrutinee (`uN`, `iN`, `mensura`, `u1`), whose value space is 2^N, by
+`aliter` alone, with no fix, since the body is the author's
+(`compiler/x86_64/checker/types/sum.inc`, `tests/unit/chk_ty_exhaustive.asm`:
+twelve rows, each pinning the exact code set). Until then this was a
+comparison chain with a fall-through: with no `aliter` and no matching arm,
+the chain's last false edge went to the join and **nothing ran**, and
+`tests/programs/discerne/`'s header pinned that and recorded the
+contradiction rather than papering over it, which was the right call while
+§13 had no code to refuse with. That fixture now writes `aliter` wherever it
+had none; an empty one runs nothing, so all thirty of its checks kept their
+values (sum-types.md §6 had predicted four would have to go). Duplicate and
+unreachable arms are still not diagnosed — the first matching arm wins — and
+that rule is `[OPEN]` in D3, with no code.
 
 ### Iteration
 
@@ -2249,65 +2255,73 @@ refusing symbolic comparisons — is what makes that last one possible.
   open, and needs its own token (`docs/design/phrase-grammar.md` H12), so
   `fontes` cannot yet be lexed. An earlier version of this bullet listed
   floats as open and said the literal grammar blocked `HASH`; neither held.
-- `[OPEN]` Sum types and constructor patterns; `discerne`'s exhaustiveness
-  presupposes an enumeration the language does not yet declare. The natural
-  home is `typus` — keyword-led, LL(1)-harmless — and **it is now decided as
-  design**: `docs/design/sum-types.md` D1 puts variants under `typus`, led by
-  the already-reserved `casus` (no new keyword, and no new sigil — `,`
-  separates variants, for the reason shifts never became `<<`), and D2 adds
-  `Path '(' IDENT (',' IDENT)* ')'` to `Pattern` on a one-token peek at `(`.
-  This bullet's prediction held: the peek after `typus IDENT [GenericParams]
-  '='` is one token, at `casus`, which no enclosing production can want.
-  **What is implemented is the grammar (declarations and patterns), the
-  representation, the declaration's typing and the layout, and nothing
-  above them.** `TypeDecl` above parses `SumBody` on that one
-  peek (`compiler/x86_64/cst/parse.inc`'s `__cst_sum_body`;
-  `tests/unit/cst_typus_sum.asm`), the tree has the kinds (`AST_SUMBODY`,
-  `AST_VARIANT`, `AST_D_VARIANT`, `AST_TY_SUM`,
-  `compiler/x86_64/ast/kinds.inc`) and pass 4 lays a sum out by that
-  document's D6 — the tag at byte 0, the variant's index in declaration
-  order, one byte up to 256 variants; then the widest payload, packed;
-  alignment 1; `:nativus`, so a sum on the wire is `EXS-E0321` through
-  §5.2's existing rule — measured by `tests/unit/chk_row_layout_sum.asm`
-  over hand-built trees, because that document's §6 required the layout to
-  be pinned before any grammar could produce one; pass 2 types the
-  declaration as its own nominal sum and pass 4 lays it out from source
-  (`tests/unit/chk_ty_typus_sum.asm`, which also pins that a recursive sum
-  is refused as `EXS-E0303` — class C, whichever `typus` form spells the
-  infinite type — and that a generic `typus`'s parameters do not resolve in
-  pass 1, on the alias form too, which `[GenericParams]` above has admitted
-  all along and nothing in the corpus had ever exercised). Constructor
-  patterns parse, build and scope their bindings to the arm (D2's grammar,
-  `tests/unit/cst_pattern_ctor.asm`, `tests/unit/chk_pattern_scope.asm`;
-  a nested pattern is refused as `EXS-E0201`). Still `[OPEN]` as a claim
-  about the language: no constructor call is typed, a pattern is not
-  resolved against the scrutinee's variants (so `casus arborea(n)` is
-  `EXS-E0301` today and a use of `n` is `EXS-E0307`), a variant's
-  declaration has no type, and nothing lowers; §7 there lists the fixtures
-  that would retire it. Recursive sum types (pass 4 breaks the cycle at width 0
-  and does not diagnose it; the types pass must), nested patterns, range
-  patterns, `?`'s error conversion and the unreachable-arm rule are each
-  deferred there by name rather than folded in.
-- `[OPEN]` **`?` is used by this document, checked by the compiler, and
-  defined by neither in the same way.** It is lexed (`PUN_QUESTION`,
-  `compiler/x86_64/lexer/token.inc`), spelled in the CST's punctuation table,
-  admitted by `Suffix` in the grammar above, named in §8.4's sigil table as
-  `E?`, "error propagation", citing §5.1 — and §5.1 uses it twice in its own
-  illustrative block (`abassus.quaere("/")?`, `via.sectio(0..ubi)?`) without a
-  sentence anywhere in this document saying what it does. The checker has a
-  rule: `compiler/x86_64/checker/types/types.inc`'s `.try:` arm requires the
-  operand to be an `eventus` (`EXS-E0305` otherwise) and answers its first type
-  argument — an unconditional unwrap, with no enclosing-function check and no
-  early return. The lowering refuses the node by name
-  (`compiler/x86_64/lower/expr.inc`), so no program containing `?` has run.
-  `docs/design/sum-types.md` D4 settles the meaning as design — the `prosperum`
-  payload, or an early return of the `adversum` from an enclosing function
-  whose error type matches, with error *conversion* deferred — and that is
-  **not** what the checker's arm does today; D4 says the arm should refuse
-  until it can do the right thing. An earlier version of this bullet said `?`
-  "means nothing" and that the checker's behaviour was "unmeasured", inferring
-  the second from the corpus containing no `?`. It was wrong on both counts and
-  on §5.1; recorded here per the evidence note rather than overwritten.
+- Sum types and constructor patterns — **settled, by
+  `docs/design/sum-types.md` D1–D3 and D5, and implemented in the checker**;
+  this bullet was `[OPEN]` until 2026-10-02 and keeps its history below.
+  D1 puts variants under `typus`, led by the already-reserved `casus` (no new
+  keyword, and no new sigil — `,` separates variants, for the reason shifts
+  never became `<<`); the one-token peek after `typus IDENT [GenericParams]
+  '='` is at `casus`, which no enclosing production can want
+  (`compiler/x86_64/cst/parse.inc`'s `__cst_sum_body`,
+  `tests/unit/cst_typus_sum.asm`). D2 adds `Path '(' IDENT (',' IDENT)* ')'`
+  to `Pattern` above on a peek at `(`, and its typing: a **variant is a
+  module-scope name** (so it collides with a constant of the same name,
+  `EXS-E0302`); a **constructor** `prosperum(n)` — or a bare `ordinata` for a
+  payload-less variant — has its sum's type, its payload count is checked
+  (`EXS-E0304`) and each payload is typed against the variant's element type;
+  a **generic** sum's type arguments come from an explicit
+  `prosperum<mensura, erratum>(n)` or from the expected type (an annotation,
+  a parameter, `redde`, an assignment target), and a generic constructor with
+  neither is `EXS-E0304` — nothing is inferred from a payload. A **pattern's
+  path is resolved against the scrutinee's variants first** and only then
+  against the value namespace (`EXS-E0303` if it names something else,
+  `EXS-E0301` if nothing), so a local constant cannot capture a variant
+  pattern; its bindings take the payload's element types and are assigned by
+  the match; their count is the payload's (`EXS-E0304`)
+  (`compiler/x86_64/checker/types/sum.inc`, `tests/unit/chk_ty_sum_typing.asm`).
+  D3 is §8.5's exhaustiveness rule above. The representation is the tree's
+  (`AST_SUMBODY`, `AST_VARIANT`, `AST_D_VARIANT`, `AST_TY_SUM`, and
+  `AST_TY_ARGS` for a generic sum's argument list,
+  `compiler/x86_64/ast/kinds.inc`), and pass 4 lays a sum out by D6 — the tag
+  at byte 0, the variant's index in declaration order, one byte up to 256
+  variants; then the widest payload, packed; alignment 1; `:nativus`, so a
+  sum on the wire is `EXS-E0321` through §5.2's existing rule
+  (`tests/unit/chk_row_layout_sum.asm`, `tests/unit/chk_ty_typus_sum.asm`,
+  which also pins that a recursive sum is refused as `EXS-E0303`, class C,
+  whichever `typus` form spells the infinite type). An instance of a generic
+  sum is sized from its substituted payloads. Both are LOWERED with no new IR
+  instruction (`compiler/x86_64/lower/sum.inc`): a constructor is a `store`
+  of the tag and one store per payload element, a sum-typed `discerne` loads
+  the tag once and compares it with each arm's variant index, the last arm of
+  an exhaustive match taken without a test, and a binding is a load of its
+  element (`tests/unit/lwr_discerne.asm`, `tests/programs/summa/`,
+  `tests/programs/eventus/`, on the reference backend and the C backend's
+  differential builds). Still `[OPEN]`, each deferred
+  there by name rather than folded in: nested patterns (refused as
+  `EXS-E0201` at the parse), range patterns, the unreachable-arm rule, `?`'s
+  meaning (the next bullet) and recursive sums beyond their refusal.
+- `[OPEN]` **`?` is used by this document and refused by the compiler.** It
+  is lexed (`PUN_QUESTION`, `compiler/x86_64/lexer/token.inc`), spelled in the
+  CST's punctuation table, admitted by `Suffix` in the grammar above, named in
+  §8.4's sigil table as `E?`, "error propagation", citing §5.1 — and §5.1 uses
+  it twice in its own illustrative block (`abassus.quaere("/")?`,
+  `via.sectio(0..ubi)?`) without a sentence anywhere in this document saying
+  what it does. `docs/design/sum-types.md` D4 settles the meaning as design —
+  the `prosperum` payload, or an early return of the `adversum` from an
+  enclosing function whose error type matches, with error *conversion*
+  deferred — and it is not built: D5 does not need it, since an `eventus` is
+  matched with `discerne`. Until it is, **every `e?` is `EXS-E0305` at the
+  `?`** (`compiler/x86_64/checker/types/types.inc`'s `.try:` arm;
+  `tests/unit/chk_ty_eventus_arity.asm` row 7), which is D4's own interim
+  rule. That arm used to require the builtin `eventus` kind and answer its
+  first type argument — an unconditional unwrap with no error branch, which
+  the lowering then refused by name, so a program that type-checked trapped
+  the compiler; with `eventus` the prelude's sum no operand had that kind
+  any more, and the refusal is now explicit rather than accidental. An
+  earlier version of this bullet said `?` "means nothing" and that the
+  checker's behaviour was "unmeasured", inferring the second from the corpus
+  containing no `?`. It was wrong on both counts and on §5.1; recorded here
+  per the evidence note rather than overwritten.
 - `[OPEN]` Brand syntax `positio<'t>` (§5.1): `'` is not a §8.4 token.
 - `[OPEN]` Generic implementation heads: `interfacies Legibilis<T> in
   acies<T, N>` leaves `N` unbound.
@@ -2419,6 +2433,17 @@ symbol, `exsrt_abortus(kind)`, which whoever links it supplies; a module
 without `initium` is a library there (§4.7). Whole-program mode — an
 `initium` driven from a C `main`, a C prelude, syscalls, `#if`-gated
 capabilities so §10.3's audit holds of the binary — is a later milestone.
+**A library unit's face is generated, not written.** The same invocation
+with `--emitte h` writes a C11 header, and with `--emitte rs` a Rust
+`extern "C"` block, holding one declaration per `publica` function the unit
+defines — spelled by the routine that spells the unit's own prototypes, in
+the unit's own declaration order, with each function's IR signature beside
+it — plus, in the header, the `exsrt_abortus` import. A function that is not
+`publica`, and an `externus` or prelude import, is in neither. Both are
+artifacts as `c` is (`-o` required, nothing on stdout) and both are
+byte-identical under §9.3's conditions. The first two library consumers each
+carried a hand-written header that only a force-included compile kept honest;
+`docs/design/c-backend.md` D9 has the design and its tests.
 The lowering of each opcode is tabulated row by row in
 `docs/design/c-backend.md` (D4), and the two backends' refusal-by-name sets
 are maintained as ONE set — drift between them is a finding. The float wave
@@ -2732,24 +2757,35 @@ A dependency that gains `rete` in a new version is a one-line diff in a checked-
 - Human formatting requires `sermo`, always.
 - Paths are an abstract type with `hostPlatform`-dependent semantics, not strings.
 - Time is a capability (`horologium`); time zones are data.
-- **`eventus`'s spellings below are one type parameter short.**
-  `docs/design/sum-types.md` D5 declares it `eventus<T, E>` and deliberately
-  refuses a defaulted second parameter, because defaulted type parameters do
-  not exist in §7 and inventing them as a side effect of declaring a sum type
-  is a second feature the first one does not need. So `eventus<mensura>` below,
-  §4.6's `eventus<u8>`, and §5.1's bare `eventus` all become
-  `eventus<…, erratum>` when the type is inhabited. They are `[OPEN]` already,
-  which is why this is a respelling and not a broken promise — recorded here so
-  that no fixture is written against the short form. The spelling is not what
-  is missing: the checker interns `eventus<T>` today
-  (`compiler/x86_64/checker/types/sig.inc`) and, since 2026-09-27, counts
-  generic arguments at both ends (`__chk_ty_genarity`,
-  `tests/unit/chk_ty_genarity.asm`), so the two-parameter spelling and the
-  bare one are `EXS-E0304` until D5 lands — this paragraph said the opposite
-  for a day, while the count was one-sided. What is missing is a variant, a
-  constructor, a pattern and a layout; the type is uninhabited, not
-  unspellable.
-- **I/O reports failure as `eventus`; a count is never silently short.** A closed descriptor is discovered at the write, which a bare `mensura` cannot report, so `Scriptor.scribe` returns `eventus<mensura>` (`docs/design/runtime.md`, finding 10); `examples/imprime.exsc` and §14 entry 12 write `-> mensura` and are `[OPEN]` until `eventus` is inhabited (the bullet above). `Lector.lege_octeto` (§4.6) is provisional the same way: its `-> u16` carries 256 for end of input and for an error alike (`tests/unit/prelude_lege_octeto.asm` pins both), and becomes `-> eventus<u8>` when it is.
+- **`eventus<T, E>` is the prelude's sum, and `erratum` its error.**
+  `docs/design/sum-types.md` D5: `typus eventus<T, E> = casus prosperum(T),
+  casus adversum(E);` and `structura erratum { numerus: u16 }`, the error
+  number being the syscall's own return and nothing ambient (§9.3). Both are
+  ordinary declarations every module can name without declaring
+  (`compiler/x86_64/prelude/eventus.inc`, which builds them as the tree of
+  that source); a module's own declaration of any of the four names shadows
+  the prelude's rather than colliding with it (§12). D5 deliberately refuses
+  a defaulted second parameter — defaulted type parameters do not exist in §7,
+  and inventing them as a side effect of declaring a sum type is a second
+  feature the first one does not need — so `eventus` is always written with
+  two arguments: `eventus<mensura>` and a bare `eventus` are `EXS-E0304`
+  (`tests/unit/chk_ty_eventus_arity.asm`). This bullet said until 2026-10-02
+  that the spellings below were one parameter short and the type uninhabited;
+  it is inhabited — constructed, matched exhaustively, laid out and lowered
+  on both backends (§8.6; `tests/programs/eventus/`).
+- **I/O reports failure as `eventus`; a count is never silently short.** A
+  closed descriptor is discovered at the write, which a bare `mensura` cannot
+  report, so `Scriptor.scribe` returns `eventus<mensura, erratum>`
+  (`docs/design/runtime.md`, finding 10). `[OPEN]` **as built**: the prelude's
+  I/O still returns the count, and `examples/imprime.exsc` and §14 entry 12
+  write `-> mensura`; `Lector.lege_octeto` (§4.6) still returns `-> u16`, 256
+  for end of input and for an error alike (`tests/unit/prelude_lege_octeto.asm`
+  pins both), and becomes `-> eventus<u8, erratum>`. The type is no longer
+  what is missing: moving the prelude rows, the blob's routines and every
+  caller in the tree to it is one whole-tree migration, D5's next step, not
+  yet made. The `archivum` surface (§4.6, ADR 0017 stage 2) is the first
+  prelude I/O built on the rule from the start: every one of its calls
+  returns `eventus<_, erratum>` and none returns a short count.
 - Grapheme segmentation ships in the core, not a third-party package. This was Rust's mistake.
 - **The Unicode data version is a content-addressed dependency** of every `ego` transitively using text. `plica_unicode` is stable only against a pinned table.
 
@@ -2921,12 +2957,13 @@ written.
 This amendment lands **before** the checker work, not after it, because
 CLAUDE.md forbids inventing a code and §13 is the only source — the same
 ordering ADR 0010's profile codes needed and did not get for some time. The
-design it serves is `docs/design/sum-types.md`, of which D1, D2's grammar and
-D6 have since landed and D3 has not: the code exists here so that D3 can be
-implemented, and until it is implemented nothing emits it. Registered codes
-with no raise site anywhere in the compiler, counted on 2026-09-27:
-`EXS-E0105`, `EXS-E0332`, `EXS-E0351`, `EXS-E0701` and the `08xx` profile
-codes. This sentence used to put `EXS-E0601`–`EXS-E0603` in that state; they
+design it serves is `docs/design/sum-types.md`, whose D3 landed on
+2026-10-02: `EXS-E0351` is raised by `compiler/x86_64/checker/types/sum.inc`
+and pinned by `tests/unit/chk_ty_exhaustive.asm`, with no new code beside it
+(D2's typing reused the five above, as this paragraph said it would).
+Registered codes with no raise site anywhere in the compiler, counted on
+2026-09-27 and re-counted for `EXS-E0351` only: `EXS-E0105`, `EXS-E0332`,
+`EXS-E0701` and the `08xx` profile codes. This sentence used to put `EXS-E0601`–`EXS-E0603` in that state; they
 are not — the lexicon pass emits all three and `EXS-E0610`
 (`compiler/x86_64/checker/lexicon/lexicon.inc`, six fixtures) behind a call
 the checker does not make while its morpheme table is §3.3's illustrative
@@ -2991,19 +3028,21 @@ recoverable and over-committing is not. `0204`-`0209`, `0211`-`0219` and
 
 # 14. Conformance suite
 
-Ships with v1. Twenty of the twenty-eight entries must **fail to compile**.
-The other eight must compile and are judged by what they
-produce: 15 by a runtime abort, 16, 17, 25, 26, 27 and 28 by byte-identical output, and 23 by
-byte-identical agreement with an external certificate. `tests/run.sh`'s five
-fixture shapes — `code`, `nocap`, `abort`, `bytes`, `cert` — are exactly this
-partition. (This sentence previously excepted only 16 and 17, which was false
+Ships with v1. Twenty of the twenty-nine entries must **fail to compile**.
+The other nine must compile and are judged by what they
+produce: 15 by a runtime abort, 16, 17, 25, 26, 27 and 28 by byte-identical output, 23 by
+byte-identical agreement with an external certificate, and 29 by differential
+agreement with a reference implementation (the sixth shape, below).
+`tests/run.sh`'s six fixture shapes — `code`, `nocap`, `abort`, `bytes`,
+`cert`, `reference` — are exactly this partition. (This sentence previously excepted only 16 and 17, which was false
 for 15 since it was written and for 23 since it was added;
 `docs/design/wire-codec.md`, finding 1. The "twenty-five" count was stale
 from the moment entry 25 appended; entry 26 appended with the float wave's
 RGB triangle, entry 27 with Stage 5's lane rasterizers, and both counts are
 settled at twenty-seven with seven of the run-and-judge shape, and entry 28
 appended on 2026-09-25 with the reduction wave — twenty-eight, eight of that
-shape. "Running" here has only ever meant that partition; how many entries
+shape; entry 29 appended on 2026-10-02 with the sixth shape — twenty-nine, nine
+of that shape. "Running" here has only ever meant that partition; how many entries
 the suite actually executes is `tests/run.sh`'s own RAN/DEFERRED line and
 `README.md`'s gated bullet, and this section does not carry a third copy of
 a number that moves with every fixture.)
@@ -3037,6 +3076,8 @@ a number that moves with every fixture.)
 27. Lane-parallel rasterization over `acies<f32, 8>` — whole-acy arithmetic on two acies of one float element type is the elementwise operation, one IEEE rounding per lane and nothing combined across lanes (§5.4's admission law; every refusal pinned by `tests/unit/chk_ty_aciesops.asm`, the lowering by `tests/unit/lwr_aciesops.asm`), so a pixel loop's edge accumulators step **one packed op per edge per 8-pixel group** — to a binary P6 image on stdout → byte-identical between the reference and C backends, byte-identical to an independently computed oracle that mirrors the written operation order in numpy `float32` elementwise (`prototypes/pictura_octonaria_oracle.py`), and byte-identical cross-run big-endian on `mips64-none-o64` under emulation — the C backend's soft `vector_size` lowering reproducing every lane's bits on a target with no SSE. The census is measured over the emitted fasmg text and recorded in the program's TEST header: exactly four divisions, all in setup (three per-vertex reciprocals and one reciprocal of the determinant), zero in any pixel loop; twelve `addps` and six `mulps` (each packed op emitting its two SSE2 halves), no `subps`, no `divps`. Carried by `tests/programs/pictura_octonaria/` — the entry-26 triangle rebuilt at 960×540 with 2×2 supersampled coverage, eight f32 lanes at a time — through the run, differential and cross phases; its f64-lane companion is `tests/programs/signaculum/`, the logo at 512×512 over `acies<f64, 8>`, whose `addpd`/`mulpd`/`zero-divpd` census its own TEST header records.
 28. A reduction whose shape is declared — `contrahe s: + … forma arborea 8` over the same twenty `f32` values as `forma ordinata` and `forma arborea 4` — produces three **different** bit patterns (the shape is observable, which is the claim), each of them exactly the bits §5.4's group-and-fold definition gives, and byte-identical to an oracle that implements the definition independently (`prototypes/contractio_oracle.py`, which mirrors §5.4's paragraph and nothing of the compiler). Measured 2026-09-26 over `tests/data/contractio_viginti.bin`: `ordinata` 121209096, `arborea 8` 121209080, `arborea 4` 121209088 in units of 2⁻²³ — f32 `0x41673021`, `0x4167301F`, `0x41673020`, three adjacent representables, two ulps end to end. Carried by `tests/programs/contractio/` through the **run phase**, the **differential phase** — eligible, four builds (gcc and clang at `-O0` and `-O2`, each under `-fsanitize=undefined -fno-sanitize-recover=all`), every one producing the reference's 24 bytes — and the **cross phase** (`cross=yes`: emitted for `--hospes mips64-none-o64`, cross-compiled to big-endian MIPS-III with 32-bit `mensura` and run under `qemu-mipsn32`, the same 24 bytes). Measured 2026-09-27. The cross row is the leg worth having: `mensura`'s width differs, so the emitted unit's index arithmetic is a different call from the same source line, and clang soft-lowers every `f32` operation because MIPS-III has no SSE2 — so identical bytes there say the group-and-fold order of §5.4 is a property of the **lowering** and not of one instruction set. The chronology is kept because it is the point: this entry was written on 2026-09-25 asserting backend parity and the big-endian run when the C backend had no lowering for `redinit`/`contrib`/`redfin` — `--emitte c` refused the module at the `red.F` handle type, one step before `docs/design/c-backend.md` D4 rows 36–38's by-name refusal — so both clauses were false from the moment they were written; they were narrowed to `[UNTESTED]` on 2026-09-26, with the directory carrying `c-exsc-exit=4` and the differential phase checking parity of the refusal alone; and the C backend gained the three opcodes on 2026-09-27, which is when the two clauses became measurable and were measured. An assertion that later becomes true is not the same event as an assertion that was right, and this entry has now been each in turn. The IR-level fixtures under `tests/ir/red_*.ir` pin each shape's value at the opcode layer, where the reference lowering is the definition (ADR 0012); the seven that carried `c-emit-exit=4` carry it no longer and are built four ways each.
 
+29. A tar-header judge, `examples/arca/arca.exsc`, held to GNU tar by the sixth shape: of 3000 seeded mutants of a real archive's headers, every one the judge **admits** is read by GNU tar as exactly the members the judge listed, each a regular file or a directory, with exit status 0 — zero disagreements, with the judge admitting at least 300 and refusing at least 300 (measured 807 and 2193 at seed 1), and each of three wrong judges (types unchecked, numeric fields unchecked, checksum unchecked) producing disagreements in the same run. Carried by `tests/conformance/entry29_arca_differential_tar.exsc`, `examples/arca/proba.py` and `tests/conformance/entry29/mutantes.tsv`; measured 2026-10-02, GNU tar 1.35, gcc and clang at `-O0` and `-O2`, four builds reporting identical counts.
+
 Entries 18-20 close a gap: §8.1 defines six source-policy codes and only three
 of them (`E0102`, `E0103`, `E0105`) had an entry, while `E0101`, `E0104` and
 `E0106` are exactly what a Stage 1 lexer implements first.
@@ -3067,6 +3108,86 @@ makes `+` trap at 2^32 there (§9.5, ADR 0015). The reader it certifies is the
 one entry 23's method produced, so 25 leans on `vendor/streamdb-v3/` the way
 23 leans on `vendor/hydramesh-wire/`, and the two together are what a second
 backend and a second target are worth.
+
+### The sixth shape: differential agreement with a reference implementation
+
+Entry 29 is appended under the same rule as 25, and it is the third entry whose
+oracle is not this project's own: 23's is a certificate somebody else wrote, 26
+and 27's is an oracle that mirrors the program's operation order, and 29's is a
+**program** somebody else wrote. It exists because a gate that parses a format
+differently from the program that acts on it can be shown one input while the
+program does another — the failure `examples/arca/` was built to close for
+`tar`, run as root. The method was used to build that example before it was
+written down; this subsection is the written-down form, and the example's own
+two findings are the evidence the method finds things. The shape, and what a
+fixture of it must carry:
+
+1. **The reference is external and off the build closure.** It is a program the
+   subject's consumer also acts through (`tar`), run as a verification tool the
+   way `gcc` and `clang` are in the differential phase (§18): never linked into
+   the compiler, never in the closure that §9.3's determinism claim covers, and
+   named in the fixture so a different reference is a different entry. Its
+   version is recorded in every result line. The *subject* is an Exsecutor
+   program compiled by the unmodified compiler; the fixture references it where
+   it lives rather than copying it, since a differential over a copy proves
+   nothing about the original.
+2. **The generator is seeded and deterministic.** A fixed integer seed, printed
+   in every result line, drives a pseudo-random mutation of inputs the
+   *reference itself* produced (a valid archive made with the consumer's own
+   flags), so the inputs sit near the boundary and not in the space of noise. The
+   seed is part of the fixture. The generated *inputs* are a function of the
+   seed **and of the reference's version**, because the base input is made by
+   it; the contract is therefore the floors in 4, not exact counts.
+3. **The property is one-directional where the subject is a gate.** *Everything
+   the subject ADMITS, the reference reads identically.* For a subject that
+   admits or refuses, **refusing more than the reference would is allowed** — a
+   conservative gate is a correct one — and the entry says so by counting the
+   refusals and never by calling them agreement. A **disagreement** is an
+   admitted case the reference reads differently (other members, other types) or
+   reads with a failing exit status. A subject that must compute the same value
+   as the reference rather than admit or refuse (a codec, a formatter) is
+   held instead to equality, and its fixture says that is what it checks.
+4. **Non-vacuity is mandatory, and the runner enforces it itself.** The fixture
+   declares three floors: a minimum number of cases, a minimum **admitted**,
+   and a minimum **refused**, each at least 1. A run in which the subject
+   admitted nothing compared nothing against the reference; a run in which it
+   refused nothing never tested the gate's refusals. The runner reads the counts
+   from the driver's summary line and applies the floors **itself**; the driver's
+   own exit status is necessary and never sufficient. The four builds of the
+   subject (`gcc` and `clang`, each at `-O0` and `-O2`, UBSan on) must report
+   identical counts: the generator is seeded and the subject deterministic, so a
+   count that differs across toolchains is a build that behaves differently.
+5. **The shape must be shown able to fail.** The fixture carries at least one
+   **mutant** — a deliberately wrong variant of the subject, made mechanically
+   from the subject's own text — and each must produce disagreements greater
+   than zero **from the differential itself**. A mutant that only fails some
+   other check the driver carries (a hand-written corpus verdict, say) shows the
+   driver can fail, not that the comparison with the reference can, and does not
+   count. Entry 29's other three mutants, which only the corpus catches, are
+   kept in `examples/arca/proba_c.sh` for that reason and are not this entry's.
+6. **Disagreements are reported with enough to replay them:** the seed, the
+   build, the counts, and the first cases the driver printed for the
+   disagreement. The shape needs no new error code: a disagreement is a test
+   failure, not a diagnostic of the compiler, and §13 is not touched.
+7. **An absent reference is DEFERRED, never a pass.** If the reference program
+   or `python3` is not on `PATH`, the runner reports the entry `DEFERRED`,
+   naming which, counts it toward neither pass nor fail, and does **not** lower
+   its run floor for it — so a machine that could not run the entry cannot make
+   the suite green by omission.
+
+**What passing proves and what it does not.** It proves that on this many
+seeded inputs, near a valid input of one shape, the subject admitted none that
+the reference reads differently, that the harness can see a disagreement when
+one exists (5), and that the subject's four builds agree. It is a **sample, not
+a proof**: the mutator flips one to three bytes of a few favoured header
+offsets and never builds an input from nothing; agreement with GNU tar 1.35 is
+not agreement with bsdtar, busybox, or another GNU tar; and zero disagreements
+is "none found". Nothing here establishes that the subject and the reference
+agree on the whole input space, and a fixture of this shape must say so in its
+own header, as entry 29's does. `[UNTESTED]`: any reference other than GNU tar
+1.35, and any seed other than the recorded one in the runner (the example's own
+README records seeds 1 to 6, 18,000 mutants, 0 disagreements, run by hand with
+`examples/arca/proba_c.sh`).
 
 ---
 

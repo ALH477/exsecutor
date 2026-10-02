@@ -188,3 +188,8 @@
 ; -----------------------------------------------------------------------------
 
 include 'from_cst.inc'
+; The prelude's `eventus`/`erratum` declarations, which `ast_from_cst` appends
+; to a module that names them (docs/design/sum-types.md D5). The file lives
+; with the runtime prelude it is part of; it builds nodes and nothing else, so
+; it is included here, once, after the builder it calls.
+include '../prelude/eventus.inc'
