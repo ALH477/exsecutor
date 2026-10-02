@@ -1430,13 +1430,11 @@ proc __chk_row_contrib, chkw_wk, chkw_ui
 	mov	rsi, [chkw_nx]
 	add	rsi, r12
 	call	ast_extra_at
-	mov	rdi, r14
-	mov	rsi, rax
-	call	ast_node_at
-	mov	esi, [rax + AstNode.ty]
 	mov	rdi, rbx
-	call	__chk_row_tyrow			; spec §4.2 as amended: EVERY
+	mov	rsi, rax
+	call	__chk_row_argrow		; spec §4.2 as amended: EVERY
 						; type's row, not just `fn`/`dyn`
+						; -- and a lambda's LIVE row
 	lea	rcx, [chkw_ab]
 	mov	[rcx + r12*4], eax
 	inc	r12
@@ -1467,6 +1465,131 @@ proc __chk_row_contrib, chkw_wk, chkw_ui
 	return
 endp
 
+; ---- a lambda's LIVE row ------------------------------------------------------
+; `__chk_row_lamof(wk, node)` -> rax = the declaration of the `Lambda` that
+; expression `node` denotes, or 0: the lambda itself, or a path to a local
+; whose initializer is one (followed through aliases, `firma j = k;`, to a
+; fixed depth). A lambda's row is ALWAYS inferred (spec §8.6 decision 2), so
+; its current row is `wdra`/`wdro` of that declaration -- what the fixpoint has
+; drawn into it so far.
+;
+; WHY THIS EXISTS (ADR 0017, blocker 2). A call's contribution read the row
+; out of the callee's TYPE, and an argument's substitution read the row of the
+; argument's TYPE. For a lambda both are pass 2's, interned before any row
+; existed, so both said `{}`: a lambda that drew `archivum` (or `ambitus`) was
+; called, or handed to a `sicut` parameter, and contributed NOTHING. Inside
+; `salva(d) poscit sicut d` that was accepted, though nothing in `salva`
+; provides `archivum`. (The lowering then trapped -- on the lambda itself,
+; which it refuses outright -- so no object was produced; the checker was
+; still passing what its own rule refuses.) Spec §4.2 says a row travels with
+; a function-typed value; for a lambda the live row is the value's row.
+;
+; `[OPEN]`, NOT CLOSED BY THIS: a lambda whose row reaches a parameter whose
+; TYPE has an empty row (`apply(f: functio() -> u8)`), a lambda stored in a
+; struct field or returned, and a `mutabilis` local reassigned to another
+; lambda are not followed -- each still contributes the type's row. What
+; stops those from yielding an object is the lowering, which refuses every
+; lambda (`lwr_expr`), and, behind it, `lwr_unprovided` (lower/expr.inc), which
+; answers an atom with no carrier as EXS-E0421 instead of trapping.
+proc __chk_row_lamof, chkw_wk, chkw_lo
+	uses	rbx, r12, r13, r14
+	locals
+		slot chkw_ld, dq
+	endl
+	mov	rbx, [chkw_wk]
+	mov	r14, [rbx + ChkRowWork.wtree]
+	mov	r12, [chkw_lo]
+	mov	qword [chkw_ld], 0
+  .again:
+	test	r12, r12
+	jz	.none
+	mov	rdi, r14
+	mov	rsi, r12
+	call	ast_node_at
+	movzx	ecx, word [rax + AstNode.kind]
+	cmp	ecx, AST_LAMBDA
+	je	.lam
+	cmp	ecx, AST_PATH
+	jne	.none
+	mov	r13d, [rax + AstNode.d]
+	test	r13, r13
+	jz	.none
+	bt	r13, 31
+	jc	.none				; a prelude row, never a local
+	mov	rax, [r14 + Ast.decls.len]
+	cmp	r13, rax
+	ja	.none
+	mov	rdi, r14
+	mov	rsi, r13
+	call	ast_decl_at
+	cmp	byte [rax + AstDecl.kind], AST_D_BINDING
+	jne	.none
+	mov	ecx, [rax + AstDecl.node]
+	test	ecx, ecx
+	jz	.none
+	mov	rdi, r14
+	mov	rsi, rcx
+	call	ast_node_at
+	movzx	ecx, word [rax + AstNode.kind]
+	cmp	ecx, AST_BINDING
+	jne	.none
+	test	word [rax + AstNode.aux], AST_BIND_MUT
+	jnz	.none				; reassignable: `[OPEN]` above
+	mov	r12d, [rax + AstNode.b]		; the initializer
+	inc	qword [chkw_ld]
+	cmp	qword [chkw_ld], 8
+	jbe	.again
+  .none:
+	xor	eax, eax
+	return
+  .lam:
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_row_fdecl
+	return
+endp
+
+; `__chk_row_argrow(wk, argn)` -> rax = the row argument node `argn`
+; substitutes at a `sicut` position: a lambda's LIVE row (above), else the row
+; its TYPE carries (`__chk_row_tyrow`, spec §4.2 as amended). 0 only when the
+; argument has no type at all, which `__chk_row_tyrow` already means.
+proc __chk_row_argrow, chkw_wk, chkw_an
+	uses	rbx, r12, r13
+	locals
+		slot chkw_aa, dq
+	endl
+	mov	rbx, [chkw_wk]
+	mov	r13, [rbx + ChkRowWork.wtree]
+	mov	rdi, rbx
+	mov	rsi, [chkw_an]
+	call	__chk_row_lamof
+	test	rax, rax
+	jz	.typed
+	mov	r12, rax
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wdra
+	mov	rsi, r12
+	call	__chk_row_g4
+	mov	[chkw_aa], rax
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wdro
+	mov	rsi, r12
+	call	__chk_row_g8
+	mov	rdx, rax
+	mov	rdi, r13
+	mov	rsi, [chkw_aa]
+	call	chk_row_of_masks
+	return
+  .typed:
+	mov	rdi, r13
+	mov	rsi, [chkw_an]
+	call	ast_node_at
+	mov	esi, [rax + AstNode.ty]
+	mov	rdi, rbx
+	call	__chk_row_tyrow
+	return
+endp
+
 ; ---- the callee's row, before substitution ---------------------------------
 ; rax = atoms, rdx = ordinals of the row the callee expression `chkw_cx1`
 ; carries: a DIRECT call reads the callee DECLARATION's current row (declared
@@ -1487,6 +1610,29 @@ proc __chk_row_callee, chkw_wk, chkw_cx1
 	mov	qword [chkw_cca], 0
 	mov	qword [chkw_cco], 0
 
+	; A LAMBDA, written here or held in a local, is read at its LIVE inferred
+	; row, never at its type's -- the type was interned by pass 2 before any
+	; row existed, so it says `{}` for a lambda that draws `archivum`. Reading
+	; it made `k("/")` contribute nothing and laundered the draw past every
+	; declared row (`__chk_row_lamof`'s header).
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_row_lamof
+	test	rax, rax
+	jz	.nolam
+	mov	r13, rax
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wdra
+	mov	rsi, r13
+	call	__chk_row_g4
+	mov	[chkw_cca], rax
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wdro
+	mov	rsi, r13
+	call	__chk_row_g8
+	mov	[chkw_cco], rax
+	jmp	.cdone
+  .nolam:
 	mov	rdi, r14
 	mov	rsi, r12
 	call	ast_node_at
@@ -2053,12 +2199,10 @@ proc __chk_row_sicutcov, chkw_wk, chkw_cvu, chkw_cvf
 	add	rsi, r12
 	call	ast_extra_at
 	mov	[chkw_cvg], rax
-	mov	rdi, r14
-	mov	rsi, rax
-	call	ast_node_at
-	mov	esi, [rax + AstNode.ty]
 	mov	rdi, rbx
-	call	__chk_row_tyrow
+	mov	rsi, rax
+	call	__chk_row_argrow		; the same row the contribution
+						; substituted (`__chk_row_contrib`)
 	test	rax, rax
 	jz	.anext
 	mov	rdi, r14

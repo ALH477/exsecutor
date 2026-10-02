@@ -223,6 +223,10 @@ struct LwrState
 	field fidx,  dq		; -> Vec<dd>, declaration id -> 1-based
 				;    Module.funcs index, 0 for anything that is
 				;    not a function of this module
+	field badn,  dd		; the FIRST node at which a capability atom had no
+				;    provider (`lwr_unprovided`), 0 if none. The
+				;    module's answer: `lwr_module` returns it
+	field badp,  dd
 end struct
 
 ; ============================================================================

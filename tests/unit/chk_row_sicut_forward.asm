@@ -42,6 +42,14 @@
 ;	8  the callee declares the atom AND `sicut`, forwarded {EXS-E0421}
 ;	9  a struct whose mark the caller's `sicut` lacks      {EXS-E0421}
 ;	10 a row in a parameter's TYPE is not a provider       {EXS-E0421}
+;	11 a lambda over `archivum`, called via a local        {EXS-E0421}
+;	12 the same lambda, called where it is written         {EXS-E0421}
+;	13 forwarded inline to a `sicut f` callee              {EXS-E0421}
+;	14 forwarded through a local to a `sicut f` callee     {EXS-E0421}
+;	15 called through an alias of the local                {EXS-E0421}
+;	16 the same over `ambitus`, from a `poscit alloc` fn   {EXS-E0421}
+;	17 a lambda over a REAL provider (`sub archivum`)      clean
+;	18 a lambda that draws nothing, called and forwarded   clean
 ;
 ; Row 10 is resolve.inc's `__chk_rowitem` defect, found while building this:
 ; every row item bound its atom in the function's root frame, including one
@@ -61,6 +69,20 @@
 ;     is substituted and the exclusion is never reached);
 ;   - `__chk_rowitem` binding type-position items again: exit 14 (row 4,
 ;     EXS-E0422) -- and row 10 accepted.
+;
+;
+; Rows 11-18 (ADR 0017, blocker 2) are about a LAMBDA's row, which is inferred
+; and which a call or a `sicut` argument used to read out of its TYPE (`{}`).
+; They failed on the compiler before `__chk_row_lamof` -- row 11 first, exit
+; 21 -- and each half is held by its own mutant, run when the rows were
+; written:
+;   - `__chk_row_callee` not consulting `__chk_row_lamof` (a lambda called
+;     through a local, or where it is written, reads its type again): exit 21
+;     (row 11 accepted);
+;   - `__chk_row_argrow` not consulting it (a lambda forwarded as an
+;     ARGUMENT reads its type again): exit 23 (row 13 accepted).
+; Rows 17 and 18 are the twins that keep the fix from being "refuse every
+; lambda": a lambda over a real provider, and one that draws nothing.
 ;
 ; Exit 0 = every row passed; 10+N = row N of the table above did not match,
 ; with the diagnostics it did produce printed to stdout first.
@@ -442,6 +464,114 @@ segment readable
 		db '}', 10
   fx_s10_LEN = $ - fx_s10
 
+  ; ---- ADR 0017, blocker 2: a lambda's draw is not laundered by being called
+  ; or forwarded. A lambda's row is inferred (spec §8.6 decision 2), and the
+  ; contribution of a call, or the substitution at a `sicut` argument, used to
+  ; read the row out of the callee's / argument's TYPE -- `{}`, interned before
+  ; any row existed. `__chk_row_lamof` reads the live row instead.
+  ;
+  ; s11: a lambda over `archivum`, held in a local and called, inside `sicut d`.
+  ; The draw reaches `salva` through the callee's OWN row, which no `sicut`
+  ; item covers. EXS-E0421. (the reviewer's `p21`)
+  fx_s11:	db 'publica functio salva(d: Directorium) -> u8 poscit sicut d {', 10
+		db 9, 'firma k = functio(v: textus) -> u8 {', 10
+		db 9, 9, 'discerne Directorium.ad_radicem(archivum, v) {', 10
+		db 9, 9, 9, 'casus prosperum(w) { redde 0; }', 10
+		db 9, 9, 9, 'casus adversum(e) { redde 1; }', 10
+		db 9, 9, '}', 10
+		db 9, '};', 10
+		db 9, 'redde k("/");', 10
+		db '}', 10
+  fx_s11_LEN = $ - fx_s11
+  ; s12: the same lambda called where it is written. (`q21e`'s shape.)
+  fx_s12:	db 'publica functio salva(d: Directorium) -> u8 poscit sicut d {', 10
+		db 9, 'redde (functio() -> u8 {', 10
+		db 9, 9, 'discerne Directorium.ad_radicem(archivum, "/") {', 10
+		db 9, 9, 9, 'casus prosperum(w) { redde 0; }', 10
+		db 9, 9, 9, 'casus adversum(e) { redde 1; }', 10
+		db 9, 9, '}', 10
+		db 9, '})();', 10
+		db '}', 10
+  fx_s12_LEN = $ - fx_s12
+  ; s13: forwarded, as an inline lambda, to a `sicut f` callee. The argument is
+  ; a lambda, so it is INELIGIBLE and `salva`'s `sicut d` cannot cover what it
+  ; brings in. (`q07c`'s shape.)
+  fx_s13:	db 'publica functio consumidor(x: u8, f: functio(u8) -> u8 poscit {archivum}) -> u8 poscit sicut f {', 10
+		db 9, 'redde f(x);', 10
+		db '}', 10
+		db 'publica functio salva(d: Directorium) -> u8 poscit sicut d {', 10
+		db 9, 'redde consumidor(0, functio(y: u8) -> u8 {', 10
+		db 9, 9, 'discerne Directorium.ad_radicem(archivum, "/") {', 10
+		db 9, 9, 9, 'casus prosperum(w) { redde 0; }', 10
+		db 9, 9, 9, 'casus adversum(e) { redde 1; }', 10
+		db 9, 9, '}', 10
+		db 9, '});', 10
+		db '}', 10
+  fx_s13_LEN = $ - fx_s13
+  ; s14: forwarded to the same `sicut f` callee THROUGH A LOCAL. (`q07d`.)
+  fx_s14:	db 'publica functio consumidor(x: u8, f: functio(u8) -> u8 poscit {archivum}) -> u8 poscit sicut f {', 10
+		db 9, 'redde f(x);', 10
+		db '}', 10
+		db 'publica functio salva(d: Directorium) -> u8 poscit sicut d {', 10
+		db 9, 'firma k = functio(y: u8) -> u8 {', 10
+		db 9, 9, 'discerne Directorium.ad_radicem(archivum, "/") {', 10
+		db 9, 9, 9, 'casus prosperum(w) { redde 0; }', 10
+		db 9, 9, 9, 'casus adversum(e) { redde 1; }', 10
+		db 9, 9, '}', 10
+		db 9, '};', 10
+		db 9, 'redde consumidor(0, k);', 10
+		db '}', 10
+  fx_s14_LEN = $ - fx_s14
+  ; s15: through an alias of the local.
+  fx_s15:	db 'publica functio salva(d: Directorium) -> u8 poscit sicut d {', 10
+		db 9, 'firma k = functio() -> u8 {', 10
+		db 9, 9, 'discerne Directorium.ad_radicem(archivum, "/") {', 10
+		db 9, 9, 9, 'casus prosperum(w) { redde 0; }', 10
+		db 9, 9, 9, 'casus adversum(e) { redde 1; }', 10
+		db 9, 9, '}', 10
+		db 9, '};', 10
+		db 9, 'firma j = k;', 10
+		db 9, 'redde j();', 10
+		db '}', 10
+  fx_s15_LEN = $ - fx_s15
+  ; s16: the same shape over `ambitus`, from a function declaring only `alloc`.
+  ; This one never reached lowering as a closure trap -- it was ACCEPTED, which
+  ; is the checker half of the same hole. EXS-E0421 at the forwarding call.
+  fx_s16:	db 'publica functio consumidor(x: u8, f: functio(u8) -> u8 poscit {ambitus}) -> u8 poscit sicut f {', 10
+		db 9, 'redde f(x);', 10
+		db '}', 10
+		db 'publica functio exterior(v: u8) -> u8 poscit alloc {', 10
+		db 9, 'firma k = functio(y: u8) -> u8 { firma l = Lector.ab_introitu(ambitus); redde y; };', 10
+		db 9, 'redde consumidor(v, k);', 10
+		db '}', 10
+  fx_s16_LEN = $ - fx_s16
+  ; s17: the legal twin of s11: a lambda over `archivum` whose provider is
+  ; REAL -- `initium` holds the atom (`m.archivum()`) and the lambda captures
+  ; it. Clean: the lambda row is read, and a `sub` satisfies it.
+  fx_s17:	db 'publica functio initium(m: Mundus) -> u8 {', 10
+		db 9, 'firma a = m.archivum();', 10
+		db 9, 'sub archivum = a;', 10
+		db 9, 'firma k = functio(v: textus) -> u8 {', 10
+		db 9, 9, 'discerne Directorium.ad_radicem(archivum, v) {', 10
+		db 9, 9, 9, 'casus prosperum(w) { redde 0; }', 10
+		db 9, 9, 9, 'casus adversum(e) { redde 1; }', 10
+		db 9, 9, '}', 10
+		db 9, '};', 10
+		db 9, 'redde k("/");', 10
+		db '}', 10
+  fx_s17_LEN = $ - fx_s17
+  ; s18: the legal twin of s13/s14: a lambda that draws NOTHING, called and
+  ; forwarded inside `sicut d`. Clean: an empty live row contributes nothing.
+  fx_s18:	db 'publica functio consumidor(x: u8, f: functio(u8) -> u8) -> u8 poscit sicut f {', 10
+		db 9, 'redde f(x);', 10
+		db '}', 10
+		db 'publica functio salva(d: Directorium) -> u8 poscit sicut d {', 10
+		db 9, 'firma k = functio(y: u8) -> u8 { redde y; };', 10
+		db 9, 'si k(1) ne 1 { redde 1; }', 10
+		db 9, 'redde consumidor(0, k);', 10
+		db '}', 10
+  fx_s18_LEN = $ - fx_s18
+
   fx_tab:
 	dq fx_s01, fx_s01_LEN
 	dd 0, 0, 0, 0
@@ -463,6 +593,22 @@ segment readable
 	dd 1, 421, 0, 0
 	dq fx_s10, fx_s10_LEN
 	dd 1, 421, 0, 0
+	dq fx_s11, fx_s11_LEN
+	dd 1, 421, 0, 0
+	dq fx_s12, fx_s12_LEN
+	dd 1, 421, 0, 0
+	dq fx_s13, fx_s13_LEN
+	dd 1, 421, 0, 0
+	dq fx_s14, fx_s14_LEN
+	dd 1, 421, 0, 0
+	dq fx_s15, fx_s15_LEN
+	dd 1, 421, 0, 0
+	dq fx_s16, fx_s16_LEN
+	dd 1, 421, 0, 0
+	dq fx_s17, fx_s17_LEN
+	dd 0, 0, 0, 0
+	dq fx_s18, fx_s18_LEN
+	dd 0, 0, 0, 0
   FX_NROWS = ($ - fx_tab) / FX_ROW
   assert ($ - fx_tab) mod FX_ROW = 0
 

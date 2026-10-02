@@ -193,7 +193,6 @@ drv_m_wrote2 db ' -- fasmg source, not a binary: assemble it with `fasmg OUT BIN
 drv_m_wrote2c db ' -- one C11 translation unit of this module`s functions, not a binary and not fasmg source: compile it with your own C compiler (spec 12, OUT is emitted text and exsc never compiles it; spec 12 also puts execve on no allowlist). It is a LIBRARY: it has no entry point and imports one symbol, `_Noreturn void exsrt_abortus(unsigned kind)`. Bytes: ',0
 drv_m_wrote2h db ' -- the C FACE of this module`s --emitte c unit: a C11 header with one prototype per `publica` function the unit defines, spelled as the unit spells it, and the one symbol the unit imports (docs/design/c-backend.md D9). Emit the unit itself with --emitte c from the same SOURCE list. Bytes: ',0
 drv_m_wrote2rs db ' -- the Rust FACE of this module`s --emitte c unit: one `extern "C"` declaration per `publica` function the unit defines, in the unit`s own C ABI. The host defines exsrt_abortus (docs/design/c-backend.md D9). Emit the unit itself with --emitte c from the same SOURCE list. Bytes: ',0
-drv_m_lwrfail db 'aedifica: the lowering refused this module and no object was written. That is a compiler bug, not a fact about this source (spec 16 Stage 3).',0
 drv_m_okunit db ' and the other SOURCE files given with it: the front end accepts this compilation unit -- it lexes and parses all of it and builds ONE typed AST from it (spec 12: the files named form one module). No object was requested, so none was written. Files in the unit: ',0
 drv_m_emitgate db ': --emitte was given, but this source failed the spec 8.1 source-hygiene gate, so it was never tokenized -- there is no token stream, no CST and no typed AST to dump. Nothing was written to stdout. See the diagnostic below.',0
 
@@ -1453,7 +1452,7 @@ proc drv_aedifica, argc, argv
 	; `DrvCtx.diags`), which is `lwr_module`'s stated input invariant --
 	; CHK 2.5, "it runs only when Stage 2 emitted no diagnostic" -- and the
 	; reason this pass raises nothing and never gets an `EXS-E` code of its
-	; own. A diagnostic still exits 1 and writes nothing; `--hospes` other
+	; own, save the one it answers through `.lower_refused` below. A diagnostic still exits 1 and writes nothing; `--hospes` other
 	; than `x86_64-linux` was refused with exit 4 long before the source was
 	; opened, let alone OUT.
 	;
@@ -1600,18 +1599,30 @@ proc drv_aedifica, argc, argv
 	return
 
   .lower_refused:
-	; `lwr_module` answers 0 or nothing at all -- every contract violation
-	; inside it is an `rassert` (SIGILL, exit 132), which is what
-	; docs/asm-conventions.md reserves for a compiler bug. A non-zero return
-	; is therefore a case that document's four channels do not cover, and
-	; the honest report is "no object was written", not an invented code.
-	lea	rdi, [drv_m_lwrfail]
-	xor	rsi, rsi
-	xor	rdx, rdx
-	xor	rcx, rcx
-	call	drv_msg
-	mov	eax, DRV_EXIT_HOST
-	return
+	; `lwr_module` answers 0, or the id of the first node at which a
+	; capability atom had no provider (lower/lower.inc): the tree reached the
+	; lowering with an atom drawn and no carrier for it in scope, which the
+	; checker is supposed to have refused. That is `EXS-E0421`, and it is
+	; raised here, through the checker's own buffer and flush, in the
+	; checker's own code -- not a new code and not a trap. Nothing has been
+	; written to OUT yet (`bfa_emit_program` is below), so a diagnostic exit
+	; leaves no object.
+	;
+	; `[UNTESTED]` END TO END, and said so: no source reaches this today. The
+	; closure shapes that would are refused by the checker now
+	; (`__chk_row_lamof`), and the lowering refuses a lambda before it lowers
+	; the body. The lowering half -- the node comes back and nothing traps --
+	; is tests/unit/lwr_unprovided.asm. The fix text `__chk_fix_e0421` builds
+	; is not attached: it needs the checker's frame stack, which is gone.
+	mov	r12, rax
+	mov	rdi, [r15 + DrvCtx.chk]
+	mov	rsi, CHK_P_ROWS
+	mov	rdx, 421
+	mov	rcx, r12
+	call	chk_raise
+	mov	rdi, [r15 + DrvCtx.chk]
+	call	chk_flush
+	jmp	.report
 
   ; ---- the refusals --------------------------------------------------------
   .usage_hint:
