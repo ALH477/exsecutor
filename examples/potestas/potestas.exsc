@@ -1,0 +1,306 @@
+// examples/potestas/potestas.exsc -- the install-time policy facts of
+// Oligarchy's plugin host (plugind) that are pure functions of bytes. Pure:
+// no `poscit`, no capability parameter (spec §4.1 rule 6), no allocation, no
+// I/O. Fixed buffers: an id is read from acies<u8, 64>, a path from
+// acies<u8, 4096>, and a length past the buffer is answered before any byte
+// is read.
+//
+// Its consumer is plugind (modules/oligarchy-plugins/host in Oligarchy). Root
+// acts on everything decided here: an id becomes a systemd instance name and
+// a path component under /run and /var/lib, a capability path becomes a
+// Landlock subtree grant, and the W^X answer becomes
+// `MemoryDenyWriteExecute=` in a drop-in root writes. Each function below is
+// the exact rule of one Rust function, named at its definition, and the
+// consumer certifies the C this file becomes against those functions
+// differentially. What is NOT here, by design: symlink resolution
+// (`std::fs::canonicalize`) and every other question that needs the
+// filesystem. That stays in Rust.
+//
+// Verdict tables:
+//
+//   titulus_iudica (a plugin id)      tangit (a capability against one
+//     0  admitted                       forbidden prefix, lexically)
+//     1  empty                            0  disjoint
+//     2  longer than 64 bytes             1  the path is under the prefix
+//     3  a byte outside [A-Za-z0-9_-]     2  the path contains the prefix
+//                                         3  a spelling longer than 4096
+//                                            bytes: refuse
+//
+//   wx_cogitur, wx_conceditur, involucrum: 1 yes, 0 no, 2 an unknown code.
+//   tier codes: 0 wasm, 1 native, 2 lua, 3 microvm.
+//   jit codes:  0 none, 1 host, 2 self.
+
+// ---------------------------------------------------------------- the id
+
+// manifest::check_id: 1..=64 bytes, each of [A-Za-z0-9_-]. The Rust takes a
+// &str and tests chars; every byte of a non-ASCII char is >= 0x80, so the
+// byte rule here is the char rule there. The length is judged first, as
+// there, and before any byte is read.
+publica functio titulus_iudica(b: acies<u8, 64>, n: mensura) -> u8 {
+    si n eq 0 { redde 1; }
+    si n gt 64 { redde 2; }
+    per i in 0..n {
+        firma c = b[i];
+        mutabilis bonus: u8 = 0;
+        si c ge 0x30 { si c le 0x39 { bonus = 1; } }
+        si c ge 0x41 { si c le 0x5a { bonus = 1; } }
+        si c ge 0x61 { si c le 0x7a { bonus = 1; } }
+        si c eq 0x2d { bonus = 1; }
+        si c eq 0x5f { bonus = 1; }
+        si bonus eq 0 { redde 3; }
+    }
+    redde 0;
+}
+
+// ------------------------------------------------------------- the paths
+
+// 1 if any '/'-separated piece of b[0..n) is exactly "..". The Rust is
+// `path.split('/').any(|c| c == "..")`: raw pieces, before any
+// normalisation, so "/a/../b", "..", "x/.." and "/.." all count.
+publica functio habet_regressum(b: acies<u8, 4096>, n: mensura) -> u8 {
+    si n gt 4096 { redde 1; }
+    mutabilis a: mensura = 0;
+    per k in 0..(n + 1) {
+        mutabilis sep: u8 = 0;
+        si k eq n { sep = 1; } aliter { si b[k] eq 0x2f { sep = 1; } }
+        si sep eq 1 {
+            si (k - a) eq 2 {
+                si b[a] eq 0x2e {
+                    si b[a + 1] eq 0x2e { redde 1; }
+                }
+            }
+            a = k + 1;
+        }
+    }
+    redde 0;
+}
+
+// The start of the next component of b[0..n) at or after i, or n when there
+// is none. Rust's `Path::components` drops empty pieces (repeated '/') and
+// "." pieces everywhere except a relative path's leading ".", which the
+// callers handle before they get here.
+functio proxima(b: acies<u8, 4096>, n: mensura, i: mensura) -> mensura {
+    mutabilis s: mensura = n;
+    mutabilis invenit: u8 = 0;
+    mutabilis a: mensura = i;
+    per k in i..(n + 1) {
+        si invenit eq 0 {
+            mutabilis sep: u8 = 0;
+            si k eq n { sep = 1; } aliter { si b[k] eq 0x2f { sep = 1; } }
+            si sep eq 1 {
+                mutabilis nota: u8 = 0;
+                si (k - a) eq 0 { nota = 1; }
+                si (k - a) eq 1 { si b[a] eq 0x2e { nota = 1; } }
+                si nota eq 0 {
+                    s = a;
+                    invenit = 1;
+                }
+                a = k + 1;
+            }
+        }
+    }
+    redde s;
+}
+
+// The end of the component that starts at s: the next '/', or n.
+functio finis(b: acies<u8, 4096>, n: mensura, s: mensura) -> mensura {
+    mutabilis e: mensura = n;
+    mutabilis invenit: u8 = 0;
+    per k in s..n {
+        si invenit eq 0 {
+            si b[k] eq 0x2f {
+                e = k;
+                invenit = 1;
+            }
+        }
+    }
+    redde e;
+}
+
+// 1 if p[sp..ep) and f[sf..ef) are the same bytes. OsStr equality.
+functio par(p: acies<u8, 4096>, sp: mensura, ep: mensura,
+            f: acies<u8, 4096>, sf: mensura, ef: mensura) -> u8 {
+    si (ep - sp) ne (ef - sf) { redde 0; }
+    per t in 0..(ep - sp) {
+        si p[sp + t] ne f[sf + t] { redde 0; }
+    }
+    redde 1;
+}
+
+// policy::is_under: is p at or under f, comparing path components? 1 or 0.
+//
+// - Any ".." piece in p: 1. It cannot be reasoned about without the
+//   filesystem, so it matches every prefix and is always refused.
+// - p relative and not '$'-anchored (an empty p included): 1. Every
+//   enforcement layer would resolve it against the unit's cwd, "/".
+// - Otherwise f's components must be a prefix of p's. Root matches root and
+//   a normal component matches the same bytes; a "." that leads a relative
+//   f, and a ".." anywhere in f, match nothing. An empty f has no
+//   components, so everything is under it.
+//
+// A length past the buffer answers 1: both callers refuse on 1.
+publica functio subest(p: acies<u8, 4096>, np: mensura, f: acies<u8, 4096>, nf: mensura) -> u8 {
+    si np gt 4096 { redde 1; }
+    si nf gt 4096 { redde 1; }
+    si habet_regressum(p, np) eq 1 { redde 1; }
+    si np eq 0 { redde 1; }
+    si p[0] ne 0x2f {
+        si p[0] ne 0x24 { redde 1; }
+    }
+    si nf eq 0 { redde 1; }
+
+    // The first component. A rooted f needs a rooted p. An unrooted f
+    // starts with CurDir (".", "./..."), which matches nothing, or with a
+    // piece that a rooted p's RootDir does not match.
+    si f[0] eq 0x2f {
+        si p[0] ne 0x2f { redde 0; }
+    } aliter {
+        si f[0] eq 0x2e {
+            si nf eq 1 { redde 0; }
+            si f[1] eq 0x2f { redde 0; }
+        }
+        si p[0] eq 0x2f { redde 0; }
+    }
+
+    // Both rooted, or both unrooted with p '$'-anchored. Walk f's
+    // components; each round takes at least one byte of f, so nf + 1
+    // rounds always reach the end.
+    mutabilis j: mensura = 0;
+    mutabilis k: mensura = 0;
+    mutabilis fac: u8 = 1;
+    per t in 0..(nf + 1) {
+        si fac eq 1 {
+            firma sf = proxima(f, nf, j);
+            si sf eq nf {
+                fac = 0;
+            } aliter {
+                firma ef = finis(f, nf, sf);
+                // ParentDir matches nothing. Redundant by now -- p has no
+                // ".." piece, so `par` would refuse it too -- and kept so
+                // the walk reads as Rust's match arms do. No anchor can
+                // tell it apart, so proba_c.sh has no mutant for it.
+                si (ef - sf) eq 2 {
+                    si f[sf] eq 0x2e {
+                        si f[sf + 1] eq 0x2e { redde 0; }
+                    }
+                }
+                firma sp = proxima(p, np, k);
+                si sp eq np { redde 0; }
+                firma ep = finis(p, np, sp);
+                si par(p, sp, ep, f, sf, ef) eq 0 { redde 0; }
+                j = ef;
+                k = ep;
+            }
+        }
+    }
+    redde 1;
+}
+
+// The lexical half of policy::overlaps: does a capability for p reach
+// anything under the forbidden prefix f, before either is resolved through
+// symlinks? Landlock grants a subtree, so there are two directions:
+//
+//   1  under:    p is at or beneath f (subest(p, f));
+//   2  contains: f is beneath p. Only an absolute p is an ancestor of
+//                anything; subest's "refuse what it cannot reason about"
+//                answers belong to the path side only, so a '$'-anchored or
+//                relative p never contains.
+//
+// Rust then retries both directions with each side canonicalised. That
+// half needs the filesystem and stays there; it can only add refusals.
+publica functio tangit(p: acies<u8, 4096>, np: mensura, f: acies<u8, 4096>, nf: mensura) -> u8 {
+    si np gt 4096 { redde 3; }
+    si nf gt 4096 { redde 3; }
+    si subest(p, np, f, nf) eq 1 { redde 1; }
+    si np gt 0 {
+        si p[0] eq 0x2f {
+            si subest(f, nf, p, np) eq 1 { redde 2; }
+        }
+    }
+    redde 0;
+}
+
+// Manifest::validate's anchor rule for an fs capability: non-empty, and
+// absolute or starting with "$STATE", "$CONFIG" or "$STORE" (a byte prefix,
+// as `starts_with` is). 1 anchored, 0 refused.
+publica functio ancora(p: acies<u8, 4096>, n: mensura) -> u8 {
+    si n eq 0 { redde 0; }
+    si n gt 4096 { redde 0; }
+    si p[0] eq 0x2f { redde 1; }
+    si p[0] ne 0x24 { redde 0; }
+    // "$STATE" = 24 53 54 41 54 45
+    si n ge 6 {
+        si p[1] eq 0x53 {
+            si p[2] eq 0x54 {
+                si p[3] eq 0x41 {
+                    si p[4] eq 0x54 {
+                        si p[5] eq 0x45 { redde 1; }
+                    }
+                }
+            }
+        }
+    }
+    // "$CONFIG" = 24 43 4f 4e 46 49 47
+    si n ge 7 {
+        si p[1] eq 0x43 {
+            si p[2] eq 0x4f {
+                si p[3] eq 0x4e {
+                    si p[4] eq 0x46 {
+                        si p[5] eq 0x49 {
+                            si p[6] eq 0x47 { redde 1; }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // "$STORE" = 24 53 54 4f 52 45
+    si n ge 6 {
+        si p[1] eq 0x53 {
+            si p[2] eq 0x54 {
+                si p[3] eq 0x4f {
+                    si p[4] eq 0x52 {
+                        si p[5] eq 0x45 { redde 1; }
+                    }
+                }
+            }
+        }
+    }
+    redde 0;
+}
+
+// ------------------------------------------------------------------ W^X
+
+// Manifest::uses_bwrap: the tiers that run the plugin under bubblewrap.
+// Nix mirrors it as `usesBwrap` (bwrapTiers = native, lua).
+publica functio involucrum(ordo: u8) -> u8 {
+    si ordo gt 3 { redde 2; }
+    si ordo eq 1 { redde 1; }
+    si ordo eq 2 { redde 1; }
+    redde 0;
+}
+
+// Manifest::wx_enforced, mirrored in Nix as `wxEnforced`: does the unit get
+// MemoryDenyWriteExecute and the W^X seccomp filter?
+//
+//   wasm    -> 0: the unit hosts Cranelift, which must publish code.
+//   microvm -> 1: the host side is a vsock proxy that never JITs.
+//   native, lua -> 1 unless the manifest declares jit = self.
+publica functio wx_cogitur(ordo: u8, jit: u8) -> u8 {
+    si ordo gt 3 { redde 2; }
+    si jit gt 2 { redde 2; }
+    si ordo eq 0 { redde 0; }
+    si ordo eq 3 { redde 1; }
+    si jit eq 2 { redde 0; }
+    redde 1;
+}
+
+// Manifest::grants_wx_to_plugin, mirrored in Nix as `grantsWx`: W^X is off
+// because the plugin asked for it -- the one concession an auditor needs to
+// see. jit = self on a bubblewrap tier.
+publica functio wx_conceditur(ordo: u8, jit: u8) -> u8 {
+    si ordo gt 3 { redde 2; }
+    si jit gt 2 { redde 2; }
+    si jit ne 2 { redde 0; }
+    redde involucrum(ordo);
+}

@@ -92,6 +92,17 @@ Exsecutor source, ten programs, all compiled and run by `tests/run.sh`:
   is judged by the certified `lege` itself. `proba_c.sh` checks reproducible
   emission, 19 anchors under gcc and clang with UBSan, and five mutants; the
   vector certification is the consumer's, in Punctim.
+- **`potestas/`, a plugin host's install-time policy** — for Oligarchy's
+  plugind, whose root acts on every answer. `potestas.exsc` is pure and
+  states, as one rule each, plugind's id grammar, the lexical half of its
+  forbidden-path check in both directions (`/` contains `/proc`), its
+  capability anchor rule, and the W^X rule that plugind's Rust and its Nix
+  module each state separately. `proba_c.sh` checks reproducible emission,
+  122 anchors from plugind's own tests under gcc and clang with UBSan, 16
+  mutants and the rule-6 capability checks. Like `arca/` and `custos/`, it
+  is run by its own `proba_c.sh`, not by `tests/run.sh`. The differential
+  certification against plugind and the Nix mirror is the consumer's, in
+  Oligarchy.
 - **`tempus/`, the time register** — one DeModFrame carrying a node's held
   time onto the Punctim wire, and the read of one that arrives. Built as one
   unit with §14 entry 23's fixture and codex, so the frame declaration is
