@@ -2737,7 +2737,12 @@ run_cross_tests() {
   # up, and the program segfaults before reaching exs_initium. Found by
   # running it. `-fno-builtin` keeps the shim's own memcpy/memset honest.
   local cflags="--target=mips64-unknown-linux-musl -mabi=n32 -march=mips3"
-  cflags="$cflags -ffreestanding -fno-builtin -nostdlib -static -O2 -std=c11"
+  # -nostdlibinc: the unit and the shim are freestanding, so only the
+  # compiler's own headers belong on the path. A distribution clang (Ubuntu's
+  # 18.1, measured) adds the HOST's /usr/include even for a mips64 --target,
+  # and glibc's stdint.h then wants x86-64 bits/ headers: every unit failed
+  # to build. nixpkgs' clang has no such directory, so this is a no-op there.
+  cflags="$cflags -ffreestanding -fno-builtin -nostdlib -nostdlibinc -static -O2 -std=c11"
   cflags="$cflags -G0 -mno-abicalls -fno-pic -Wall -Wno-unused-function"
   local ldflags="-fuse-ld=lld -Wl,-e,_start -Wl,--build-id=none"
 
