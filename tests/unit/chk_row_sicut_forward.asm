@@ -50,6 +50,7 @@
 ;	16 the same over `ambitus`, from a `poscit alloc` fn   {EXS-E0421}
 ;	17 a lambda over a REAL provider (`sub archivum`)      clean
 ;	18 a lambda that draws nothing, called and forwarded   clean
+;	19 an ineligible argument's atom is not covered        {EXS-E0421}
 ;
 ; Row 10 is resolve.inc's `__chk_rowitem` defect, found while building this:
 ; every row item bound its atom in the function's root frame, including one
@@ -571,6 +572,24 @@ segment readable
 		db 9, 'redde consumidor(0, k);', 10
 		db '}', 10
   fx_s18_LEN = $ - fx_s18
+  ; s19: THE EXCLUSION THAT WAS NOT PINNED (review finding, "M7"): an atom an
+  ; INELIGIBLE argument also brings in is not covered by the caller's `sicut`.
+  ; `g` takes two `sicut` ordinals; `s` (a parameter of `f`'s own, ELIGIBLE)
+  ; substitutes `{ambitus}` at one and `nocens` (a named function drawing
+  ; `ambitus`, INELIGIBLE) substitutes `{ambitus}` at the other. The atom is
+  ; the same, so `f`'s `sicut s` covers the first and must not cover the
+  ; second: without the `cvi` subtraction in `__chk_row_sicutcov` the two
+  ; collapse and `f` is accepted having laundered `nocens`'s authority behind
+  ; `s`'s. EXS-E0421. Rows 6 and 9 alone did not catch deleting it (mutant
+  ; run when this row was written: both fixtures stayed green).
+  fx_s19:	db 'publica functio nocens(x: u8) -> u8 poscit ambitus { redde x; }', 10
+		db 'publica functio g(t: Scriptor, h: functio(u8) -> u8 poscit {ambitus}, b: u8) -> u8 poscit sicut t, sicut h {', 10
+		db 9, 'redde h(b);', 10
+		db '}', 10
+		db 'publica functio f(s: Scriptor, b: u8) -> u8 poscit sicut s {', 10
+		db 9, 'redde g(s, nocens, b);', 10
+		db '}', 10
+  fx_s19_LEN = $ - fx_s19
 
   fx_tab:
 	dq fx_s01, fx_s01_LEN
@@ -609,6 +628,8 @@ segment readable
 	dd 0, 0, 0, 0
 	dq fx_s18, fx_s18_LEN
 	dd 0, 0, 0, 0
+	dq fx_s19, fx_s19_LEN
+	dd 1, 421, 0, 0
   FX_NROWS = ($ - fx_tab) / FX_ROW
   assert ($ - fx_tab) mod FX_ROW = 0
 
