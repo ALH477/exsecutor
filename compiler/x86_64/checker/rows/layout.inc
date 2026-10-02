@@ -194,7 +194,8 @@ proc __chk_lay_ty, chkl_wk, chkl_ty, chkl_dp
 	xor	edx, edx
 	return
   .prestruc:
-	; A PRELUDE STRUCT -- `Scriptor` or `Lector`. Neither has an `AstDecl`
+	; A PRELUDE STRUCT -- `Scriptor`, `Lector`, or ADR 0017's `Directorium`,
+	; `Lectorium`, `Scriptorium`. None has an `AstDecl`
 	; (checker/types/prim.inc's `chk_ty_prelude_type` interns it as an
 	; `AST_TY_STRUCT` whose `a` is `CHK_TY_PRELUDE or k`), so the `.struc`
 	; arm above cannot lay it out: it used to hand the TAGGED value to
@@ -218,12 +219,32 @@ proc __chk_lay_ty, chkl_wk, chkl_ty, chkl_dp
 	and	r12d, CHK_TY_PRE_MASK
 	cmp	r12d, CHK_TY_PRE_LECTOR
 	je	.prelector
+	cmp	r12d, CHK_TY_PRE_DIRECTORIUM
+	je	.predir
+	cmp	r12d, CHK_TY_PRE_LECTORIUM
+	je	.prelectorium
+	cmp	r12d, CHK_TY_PRE_SCRIPTORIUM
+	je	.prescriptorium
 	rassert	r12 eq CHK_TY_PRE_SCRIPTOR
 	mov	eax, EXS_IFACE_SCRIPTOR_SIZE * 8
 	xor	edx, edx
 	return
   .prelector:
 	mov	eax, EXS_IFACE_LECTOR_SIZE * 8
+	xor	edx, edx
+	return
+  ; ADR 0017's three, the same record: an `eventus<Directorium, erratum>`
+  ; lays its payload out through here (`__chk_lay_suminst` substitutes `T`)
+  .predir:
+	mov	eax, EXS_IFACE_DIRECTORIUM_SIZE * 8
+	xor	edx, edx
+	return
+  .prelectorium:
+	mov	eax, EXS_IFACE_LECTORIUM_SIZE * 8
+	xor	edx, edx
+	return
+  .prescriptorium:
+	mov	eax, EXS_IFACE_SCRIPTORIUM_SIZE * 8
 	xor	edx, edx
 	return
   .acies:

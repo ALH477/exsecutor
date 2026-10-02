@@ -26,13 +26,11 @@
 ; -----------------------------------------------------------------------------
 ; `archivum` beneath a root: the prelude routines ADR 0017 decides and
 ; docs/design/archivum-beneath.md specifies (D2-D5, D8-D10; section 3 is the
-; audit this code is shaped for). STAGE 1 of that ADR: the routines and the
-; audit exist and are tested; the surface that calls them -- `Directorium`,
-; `ad_radicem`, `infra`, `lege_ex`, `crea`, all returning
-; `eventus<_, erratum>` -- waits on `eventus` being inhabited
-; (docs/design/sum-types.md D5) and is NOT here. Nothing in interface.inc
-; declares these routines, so by prelude.asm's naming rule they carry the
-; PRIVATE prefix `exsrt_`, not `bfausr_exsrt_`: no IR can call them yet.
+; audit this code is shaped for). STAGE 1 of that ADR is the private
+; routines (`exsrt_archivum_*`, no IR names them); STAGE 2 is the surface at
+; the end of this file -- `m.archivum()`, `Directorium.ad_radicem`, `infra`,
+; `lege_ex`, `crea`, `exlege_octeto`, `inscribe`, `inscribe_octeto` --
+; whose `bfausr_exsrt_` entry points interface.inc rows 12-21 declare.
 ;
 ; A SECOND EXECUTABLE BLOB, NOT AN `include` IN prelude.asm. runtime.md H1
 ; forbids `include` in prelude.asm (OUT is self-contained, and nothing but
@@ -41,12 +39,10 @@
 ; `segment`, no `include`, no data. A wrapper includes it into
 ; `segment readable executable` AFTER prelude.asm (exsrt_start must stay the
 ; first routine), and includes archivum_rodata.asm -- the four `open_how`
-; constants -- into `segment readable`. Today the only wrappers are
-; tests/unit fixtures. Carrying both blobs into OUT is
-; backend_fasmg/program.inc's change and belongs to stage 2: until a surface
-; call exists no compiled program's closure can hold `archivum` (spec 4.7:
-; it is not derivable), so carrying them now would add text to every OUT
-; and a gated-off block to every binary for nothing.
+; constants -- into `segment readable`. The wrappers are tests/unit fixtures
+; and, since stage 2, backend_fasmg/program.inc -- which copies both blobs
+; into OUT only when the program's capability mask holds `archivum`, so
+; every other OUT is byte for byte what it was.
 ;
 ; THE GATE. Everything below sits in `if EXS_POTESTAS_ARCHIVUM`, as the
 ; `ambitus` routines sit in theirs (runtime.md 2.6): with the atom at 0 this
@@ -78,8 +74,9 @@
 ; and is never an immediate (A6). The EAGAIN retry jumps back to the `lea`,
 ; the window's first instruction, never into it.
 ;
-; RETURN CONVENTION, provisional until stage 2: `rax` is the result or a
-; NEGATED errno, the raw kernel convention. The kernel's own refusals pass
+; RETURN CONVENTION of the stage-1 routines: `rax` is the result or a
+; NEGATED errno, the raw kernel convention; the stage-2 entry points turn it
+; into `eventus<_, erratum>`. The kernel's own refusals pass
 ; through unchanged (EXDEV, ELOOP, ENOENT, ENOTDIR, EEXIST, ...). The prelude
 ; adds four of its own, each BEFORE any syscall, each spelled with the errno
 ; nearest its meaning because `erratum` has no variants to spell it with:
@@ -92,7 +89,8 @@
 ;                       walk beneath the CWD, which is ambient (F10). The
 ;                       audit refuses it as an immediate (A6); this refuses
 ;                       it as a value. Defence in depth, not in the design.
-; Stage 2 maps these onto `erratum` when `eventus` has variants.
+; Stage 2 carries these into `erratum { numerus }` unchanged: `numerus` is
+; the errno, the prelude's four refusals included.
 ;
 ; THE PATH BUFFER LIVES IN THE CALLER'S STACK FRAME, not in prelude-owned
 ; state as design D10 has it. The design's buffer is "not reentrant,
@@ -364,10 +362,13 @@ exsrt_archivum_lege:
 
 ; exsrt_archivum_scribe(fd: i32, buf: ptr, n: u64) -> i64
 ;   Writes all `n` bytes, looping over partial writes and retrying EINTR,
-;   `scribe`'s loop. Returns `n` on success. On any other -errno: the count
-;   already written if it is not 0 (short means failed, as for `scribe`),
-;   else the -errno itself, so a write that moved nothing still says why.
-;   The partial-write and EINTR paths are [UNTESTED], as `scribe`'s are.
+;   `scribe`'s loop. Returns `n` on success, and on any other failure the
+;   -errno that stopped it -- whether or not some bytes had already gone.
+;   NEVER A SHORT COUNT: stage 1 returned the count written when it was not
+;   0, which left the surface (`inscribe`, stage 2) a short number and no
+;   errno to put in its `adversum`; spec 11 says I/O never reports failure
+;   as a silently short count. The partial-write and EINTR paths are
+;   [UNTESTED], as `scribe`'s are.
 exsrt_archivum_scribe:
 	push	rbp
 	mov	rbp, rsp
@@ -390,13 +391,237 @@ exsrt_archivum_scribe:
   .error:
 	cmp	rax, -EXS_ARCHIVUM_EINTR
 	je	.ansa
-	mov	rcx, [rbp - 8]
-	cmp	rcx, r9
-	je	.exi				; nothing written: -errno in rax
+	jmp	.exi				; -errno in rax, written or not
   .facta:
 	mov	rax, [rbp - 8]
 	sub	rax, r9
   .exi:
+	mov	rsp, rbp
+	pop	rbp
+	ret
+
+; =============================================================================
+; STAGE 2 -- the surface (ADR 0017 stage 2; docs/design/archivum-beneath.md
+; section 10). The `bfausr_exsrt_` entry points prelude/interface.inc rows
+; 12-21 declare, so by prelude.asm's naming rule they carry the IR-callable
+; prefix. Each is a thin wrapper over a stage-1 routine above: it unpacks
+; the receiver, calls, and writes the `eventus<T, erratum>` through the
+; hidden return pointer -- the TAG at byte 0 (`prosperum` 0, `adversum` 1),
+; the payload at byte 1 (interface.inc part A states the layout and asserts
+; these constants against it). A negated errno becomes
+; `adversum(erratum { numerus: errno })`; anything else, `prosperum(...)`.
+; NO NEW SYSCALL AND NO NEW openat2 SITE: every syscall is the stage-1
+; routines', so the audit's A1-A6 judge exactly the four sites they always
+; did. No surface `close` (design D7).
+; =============================================================================
+
+; The record all three handle types share -- `Scriptor`'s layout -- and the
+; `eventus` layout. Restated in interface.inc part A and asserted there.
+EXS_DIRECTORIUM_A		= 0	; the archivum carrier (never read)
+EXS_DIRECTORIUM_DESCRIPTOR	= 8	; i32: an O_PATH directory descriptor
+EXS_DIRECTORIUM_SIZE		= 16
+EXS_LECTORIUM_A			= 0
+EXS_LECTORIUM_DESCRIPTOR	= 8	; i32: a regular file, read-only
+EXS_LECTORIUM_SIZE		= 16
+EXS_SCRIPTORIUM_A		= 0
+EXS_SCRIPTORIUM_DESCRIPTOR	= 8	; i32: a file this program created
+EXS_SCRIPTORIUM_SIZE		= 16
+EXS_EVENTUS_TAG			= 0
+EXS_EVENTUS_PAYLOAD		= 1
+EXS_EVENTUS_PROSPERUM		= 0
+EXS_EVENTUS_ADVERSUM		= 1
+
+; bfausr_exsrt_mundus_archivum(m: ptr) -> ptr
+;   `m.archivum()`. Total (spec 4.7). The carrier is opaque: nothing in the
+;   prelude dereferences an `archivum`, because holding the atom lets a
+;   program DERIVE a root and nothing else (ADR 0017 decision 1) -- the root
+;   itself is a descriptor in the `Directorium`. So the carrier is the
+;   Mundus record's own address, a non-null token that needs no storage of
+;   its own: prelude_data.asm, which travels into every OUT, is unchanged.
+bfausr_exsrt_mundus_archivum:
+	mov	rax, rdi
+	ret
+
+; exsrt_archivum_eventus_manubrium(ret: rdi, a: rsi, r: rdx) -> void
+;   The tail of the three calls that answer a handle: `r` is a descriptor
+;   or -errno. prosperum({ a, r }) -- the four bytes after the descriptor
+;   zeroed, so a copied handle carries no stale bytes -- or adversum.
+exsrt_archivum_eventus_manubrium:
+	test	rdx, rdx
+	js	exsrt_archivum_eventus_adversum
+	mov	byte [rdi + EXS_EVENTUS_TAG], EXS_EVENTUS_PROSPERUM
+	mov	[rdi + EXS_EVENTUS_PAYLOAD + EXS_DIRECTORIUM_A], rsi
+	mov	[rdi + EXS_EVENTUS_PAYLOAD + EXS_DIRECTORIUM_DESCRIPTOR], edx
+	mov	dword [rdi + EXS_EVENTUS_PAYLOAD + EXS_DIRECTORIUM_DESCRIPTOR + 4], 0
+	ret
+
+; exsrt_archivum_eventus_adversum(ret: rdi, r: rdx = -errno) -> void
+;   adversum(erratum { numerus: errno }): the u16 at byte 1. Every errno
+;   Linux returns fits (the raw range is below 4096).
+exsrt_archivum_eventus_adversum:
+	neg	rdx
+	mov	byte [rdi + EXS_EVENTUS_TAG], EXS_EVENTUS_ADVERSUM
+	mov	[rdi + EXS_EVENTUS_PAYLOAD], dx
+	ret
+
+; exsrt_archivum_eventus_mensura(ret: rdi, r: rdx) -> void
+;   For a write: prosperum(r) as a u64 `mensura`, or adversum.
+exsrt_archivum_eventus_mensura:
+	test	rdx, rdx
+	js	exsrt_archivum_eventus_adversum
+	mov	byte [rdi + EXS_EVENTUS_TAG], EXS_EVENTUS_PROSPERUM
+	mov	[rdi + EXS_EVENTUS_PAYLOAD], rdx
+	ret
+
+; bfausr_exsrt_directorium_ad_radicem(ret: ptr, a: ptr, via: ptr) -> void
+;   `Directorium.ad_radicem(a, via)`. The ONE unscoped open (how_radix,
+;   AT_FDCWD, absolute `via` only -- the relative refusal is
+;   exsrt_archivum_radix's, before any syscall).
+bfausr_exsrt_directorium_ad_radicem:
+	push	rbp
+	mov	rbp, rsp
+	sub	rsp, 16
+	mov	[rbp - 8], rdi			; ret
+	mov	[rbp - 16], rsi			; the carrier
+	mov	rdi, rdx
+	call	exsrt_archivum_radix
+	mov	rdx, rax
+	mov	rdi, [rbp - 8]
+	mov	rsi, [rbp - 16]
+	call	exsrt_archivum_eventus_manubrium
+	mov	rsp, rbp
+	pop	rbp
+	ret
+
+; bfausr_exsrt_directorium_infra(ret: ptr, d: ptr, via: ptr) -> void
+; bfausr_exsrt_directorium_lege_ex(ret: ptr, d: ptr, via: ptr) -> void
+; bfausr_exsrt_directorium_crea(ret: ptr, d: ptr, via: ptr) -> void
+;   `d.infra(via)`, `d.lege_ex(via)`, `d.crea(via)`: beneath `d`'s
+;   descriptor, through how_infra / how_lege (+ the fstat refusal) /
+;   how_crea. The new handle carries `d`'s carrier, so attenuation never
+;   mints one. Three entry points and three DIRECT calls -- no indirect
+;   branch anywhere near an openat2 window (design section 3).
+bfausr_exsrt_directorium_infra:
+	push	rbp
+	mov	rbp, rsp
+	sub	rsp, 16
+	mov	[rbp - 8], rdi
+	mov	rax, [rsi + EXS_DIRECTORIUM_A]
+	mov	[rbp - 16], rax
+	mov	edi, [rsi + EXS_DIRECTORIUM_DESCRIPTOR]
+	mov	rsi, rdx
+	call	exsrt_archivum_infra
+	jmp	exsrt_archivum_manubrium_finis
+
+bfausr_exsrt_directorium_lege_ex:
+	push	rbp
+	mov	rbp, rsp
+	sub	rsp, 16
+	mov	[rbp - 8], rdi
+	mov	rax, [rsi + EXS_DIRECTORIUM_A]
+	mov	[rbp - 16], rax
+	mov	edi, [rsi + EXS_DIRECTORIUM_DESCRIPTOR]
+	mov	rsi, rdx
+	call	exsrt_archivum_lege_ex
+	jmp	exsrt_archivum_manubrium_finis
+
+bfausr_exsrt_directorium_crea:
+	push	rbp
+	mov	rbp, rsp
+	sub	rsp, 16
+	mov	[rbp - 8], rdi
+	mov	rax, [rsi + EXS_DIRECTORIUM_A]
+	mov	[rbp - 16], rax
+	mov	edi, [rsi + EXS_DIRECTORIUM_DESCRIPTOR]
+	mov	rsi, rdx
+	call	exsrt_archivum_crea
+	; falls through
+
+; The shared epilogue of the three above: their frames are identical.
+exsrt_archivum_manubrium_finis:
+	mov	rdx, rax
+	mov	rdi, [rbp - 8]
+	mov	rsi, [rbp - 16]
+	call	exsrt_archivum_eventus_manubrium
+	mov	rsp, rbp
+	pop	rbp
+	ret
+
+; bfausr_exsrt_lectorium_exlege_octeto(ret: ptr, r: ptr) -> void
+;   `r.exlege_octeto()` -> eventus<u16, erratum>: ONE `read(fd, &b, 1)`
+;   (exsrt_archivum_lege, EINTR retried). 1 byte -> prosperum(b); 0 (end of
+;   file) -> prosperum(256), which no byte is; -errno -> adversum. So end of
+;   file and a failure are different answers, which `lege_octeto`'s 256 is
+;   not. Unbuffered: one syscall a byte, `[OPEN]` -- a reader buffer needs
+;   state shared between copies of a 16-byte value, which D7's no-close
+;   rule already says this design does not have yet.
+bfausr_exsrt_lectorium_exlege_octeto:
+	push	rbp
+	mov	rbp, rsp
+	sub	rsp, 16
+	mov	[rbp - 8], rdi
+	mov	edi, [rsi + EXS_LECTORIUM_DESCRIPTOR]
+	lea	rsi, [rbp - 16]
+	mov	edx, 1
+	call	exsrt_archivum_lege
+	mov	rdi, [rbp - 8]
+	mov	rdx, rax
+	test	rax, rax
+	js	.adversum
+	jz	.finis
+	movzx	eax, byte [rbp - 16]
+	jmp	.prosperum
+  .finis:
+	mov	eax, 256
+  .prosperum:
+	mov	byte [rdi + EXS_EVENTUS_TAG], EXS_EVENTUS_PROSPERUM
+	mov	[rdi + EXS_EVENTUS_PAYLOAD], ax
+	mov	rsp, rbp
+	pop	rbp
+	ret
+  .adversum:
+	call	exsrt_archivum_eventus_adversum
+	mov	rsp, rbp
+	pop	rbp
+	ret
+
+; bfausr_exsrt_scriptorium_inscribe(ret: ptr, w: ptr, t: ptr) -> void
+;   `w.inscribe(t)` -> eventus<mensura, erratum>: every byte of the
+;   `textus` (runtime.md 2.3: { ptr @0, len @8 }), unbuffered, through
+;   exsrt_archivum_scribe -- prosperum(len), or adversum(errno). Never a
+;   short count (that routine's header).
+bfausr_exsrt_scriptorium_inscribe:
+	push	rbp
+	mov	rbp, rsp
+	sub	rsp, 16
+	mov	[rbp - 8], rdi
+	mov	edi, [rsi + EXS_SCRIPTORIUM_DESCRIPTOR]
+	mov	rsi, [rdx + EXS_TEXTUS_PTR]
+	mov	rdx, [rdx + EXS_TEXTUS_LEN]
+	call	exsrt_archivum_scribe
+	mov	rdx, rax
+	mov	rdi, [rbp - 8]
+	call	exsrt_archivum_eventus_mensura
+	mov	rsp, rbp
+	pop	rbp
+	ret
+
+; bfausr_exsrt_scriptorium_inscribe_octeto(ret: ptr, w: ptr, b: u8) -> void
+;   `w.inscribe_octeto(b)`: the low 8 bits of `b` (in `dl`; bits 8-63 are
+;   not read), one byte -- prosperum(1) or adversum(errno).
+bfausr_exsrt_scriptorium_inscribe_octeto:
+	push	rbp
+	mov	rbp, rsp
+	sub	rsp, 16
+	mov	[rbp - 8], rdi
+	mov	[rbp - 16], dl
+	mov	edi, [rsi + EXS_SCRIPTORIUM_DESCRIPTOR]
+	lea	rsi, [rbp - 16]
+	mov	edx, 1
+	call	exsrt_archivum_scribe
+	mov	rdx, rax
+	mov	rdi, [rbp - 8]
+	call	exsrt_archivum_eventus_mensura
 	mov	rsp, rbp
 	pop	rbp
 	ret

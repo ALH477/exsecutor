@@ -74,6 +74,7 @@ EXS_IFACE_K_FIELD	= 5		; AST_D_FIELD
 ; Spec 4.6 order; mirrors ast/kinds.inc's AST_CAP_*, 1-based.
 EXS_IFACE_CAP_MUNDUS	= 1
 EXS_IFACE_CAP_ALLOC	= 2
+EXS_IFACE_CAP_ARCHIVUM	= 5
 EXS_IFACE_CAP_AMBITUS	= 8
 EXS_IFACE_CAP_NONE	= 0
 
@@ -133,6 +134,59 @@ EXS_IFACE_LECTOR_A		= 0	; mirrors prelude.asm EXS_LECTOR_A
 EXS_IFACE_LECTOR_DESCRIPTOR	= 8	; mirrors prelude.asm EXS_LECTOR_DESCRIPTOR
 EXS_IFACE_LECTOR_SIZE		= 16	; mirrors prelude.asm EXS_LECTOR_SIZE
 EXS_IFACE_LECTOR_ALIGN		= 8
+
+; ---- Directorium, Lectorium, Scriptorium -- ADR 0017 -----------------------
+; `structura Directorium { a: archivum, descriptor: i32 }`, capability-bearing
+; with mark {archivum} (spec 4.3, ADR 0017 decision 2): a ROOT. `descriptor`
+; is an O_PATH|O_DIRECTORY descriptor and every open beneath it is an
+; `openat2` relative to it (docs/design/archivum-beneath.md D1). `Scriptor`'s
+; representation, byte for byte.
+;
+; `Lectorium` and `Scriptorium` are the reader and writer `lege_ex` and
+; `crea` return (design D4, whose spelling it left [OPEN]): the same record
+; again, mark {archivum}, `descriptor` a regular file opened beneath a root.
+; TWO NEW TYPES, NOT `Lector`/`Scriptor` made generic over the atom: the
+; smaller change, and the one that leaves those two -- their rows, their
+; mark, their blob routines and every fixture pinning them -- byte for byte
+; as they were. A generic prelude struct would need a type parameter on a
+; row that has no `AstDecl` to hang one on, a mark that depends on the
+; argument, and a lowering that sizes and names an instance; none of that
+; exists. `-orium` is spec 3.4's instrument (`lectorium` is spec 3.7's own
+; derivation of `leg-`), so the pair reads as the instruments of a
+; `Directorium` rather than as the agents of a stream. Provisional under spec
+; 3.9, as `Directorium` is.
+;
+; ALL THREE HAVE NO FIELD ROWS, `Lector`'s precedent (above), and here it is
+; a soundness requirement, not a convenience (design D1, R3): `d.a` would
+; hand out the unscoped atom, and `d.descriptor` an integer that could be
+; compared, or forged into a second root. So `d.a` and `d.descriptor` do not
+; resolve -- EXS-E0305, "operation not defined on the type", the code the
+; checker gives every member a type lacks (measured on `Lector` before this
+; type existed; the design's "EXS-E0301" was a misreading, corrected there).
+EXS_IFACE_DIRECTORIUM_A			= 0	; mirrors archivum.asm EXS_DIRECTORIUM_A
+EXS_IFACE_DIRECTORIUM_DESCRIPTOR	= 8	; mirrors archivum.asm EXS_DIRECTORIUM_DESCRIPTOR
+EXS_IFACE_DIRECTORIUM_SIZE		= 16	; mirrors archivum.asm EXS_DIRECTORIUM_SIZE
+EXS_IFACE_DIRECTORIUM_ALIGN		= 8
+EXS_IFACE_LECTORIUM_SIZE		= 16	; mirrors archivum.asm EXS_LECTORIUM_SIZE
+EXS_IFACE_LECTORIUM_ALIGN		= 8
+EXS_IFACE_SCRIPTORIUM_SIZE		= 16	; mirrors archivum.asm EXS_SCRIPTORIUM_SIZE
+EXS_IFACE_SCRIPTORIUM_ALIGN		= 8
+
+; ---- an `eventus<T, erratum>` written by the prelude ------------------------
+; docs/design/sum-types.md D6's layout, which checker/rows/layout.inc's
+; `__chk_lay_suminst` computes and lower/sum.inc writes: the TAG at byte 0,
+; one byte for two variants (`ast_sum_tagw`), the variant's index in
+; declaration order (`prosperum` 0, `adversum` 1), and the payload packed
+; straight after it at byte 1 -- no padding, spec 5.2's alignment 1. So
+; `eventus<Directorium, erratum>` is 17 bytes with the Directorium at +1,
+; and `adversum`'s `erratum { numerus: u16 }` is the two bytes at +1. The
+; routines that return one write exactly these bytes through the hidden
+; return pointer; tests/programs/archivum_*/ read them back through
+; `discerne`, which is what holds the two halves to one layout.
+EXS_IFACE_EVENTUS_TAG		= 0
+EXS_IFACE_EVENTUS_PAYLOAD	= 1
+EXS_IFACE_EVENTUS_PROSPERUM	= 0
+EXS_IFACE_EVENTUS_ADVERSUM	= 1
 
 ; ---- ambitus -- the ExsAmbitus record, runtime.md 2.2 -----------------------
 ; NOT a surface type: `ambitus` is a capability atom and its carrier is one
@@ -217,6 +271,20 @@ if defined EXS_SCRIPTOR_A
 	assert EXS_IFACE_ABORTUS_TERMINUS = EXS_ABORTUS_TERMINUS
 end if
 
+; The same check against archivum.asm, whenever it has been assembled with
+; the atom on (its constants exist only then).
+if defined EXS_DIRECTORIUM_A
+	assert EXS_IFACE_DIRECTORIUM_A = EXS_DIRECTORIUM_A
+	assert EXS_IFACE_DIRECTORIUM_DESCRIPTOR = EXS_DIRECTORIUM_DESCRIPTOR
+	assert EXS_IFACE_DIRECTORIUM_SIZE = EXS_DIRECTORIUM_SIZE
+	assert EXS_IFACE_LECTORIUM_SIZE = EXS_LECTORIUM_SIZE
+	assert EXS_IFACE_SCRIPTORIUM_SIZE = EXS_SCRIPTORIUM_SIZE
+	assert EXS_IFACE_EVENTUS_TAG = EXS_EVENTUS_TAG
+	assert EXS_IFACE_EVENTUS_PAYLOAD = EXS_EVENTUS_PAYLOAD
+	assert EXS_IFACE_EVENTUS_PROSPERUM = EXS_EVENTUS_PROSPERUM
+	assert EXS_IFACE_EVENTUS_ADVERSUM = EXS_EVENTUS_ADVERSUM
+end if
+
 ; The same guard against ast/kinds.inc, whenever the checker has included it.
 if defined AST_D_FN
 	assert EXS_IFACE_K_FN = AST_D_FN
@@ -226,6 +294,7 @@ if defined AST_D_FN
 	assert EXS_IFACE_CAP_MUNDUS = AST_CAP_MUNDUS
 	assert EXS_IFACE_CAP_ALLOC = AST_CAP_ALLOC
 	assert EXS_IFACE_CAP_AMBITUS = AST_CAP_AMBITUS
+	assert EXS_IFACE_CAP_ARCHIVUM = AST_CAP_ARCHIVUM
 end if
 
 ; =============================================================================
@@ -274,7 +343,19 @@ EXS_IFACE_D_LECTOR		= 8	; APPENDED for the same reason: a decl id
 EXS_IFACE_D_AB_INTROITU		= 9	; is an INDEX into the table below, so a
 EXS_IFACE_D_LEGE_OCTETO		= 10	; row next to `Scriptor`'s would renumber
 					; every reference to rows 1-7
-EXS_IFACE_DECL_COUNT		= 11
+; ADR 0017 stage 2, APPENDED in one block for the same reason.
+EXS_IFACE_D_DIRECTORIUM		= 11
+EXS_IFACE_D_MUNDUS_ARCHIVUM	= 12
+EXS_IFACE_D_AD_RADICEM		= 13
+EXS_IFACE_D_INFRA		= 14
+EXS_IFACE_D_LEGE_EX		= 15
+EXS_IFACE_D_CREA		= 16
+EXS_IFACE_D_LECTORIUM		= 17
+EXS_IFACE_D_EXLEGE_OCTETO	= 18
+EXS_IFACE_D_SCRIPTORIUM		= 19
+EXS_IFACE_D_INSCRIBE		= 20
+EXS_IFACE_D_INSCRIBE_OCTETO	= 21
+EXS_IFACE_DECL_COUNT		= 22
 
 if defined EXS_IFACE_EMIT_DECLS
 
@@ -315,6 +396,39 @@ exsrt_iface_nomina:
   .lege_octeto		= $ - exsrt_iface_nomina
 	db 'lege_octeto'
   .lege_octeto_len	= $ - exsrt_iface_nomina - .lege_octeto
+  .Directorium		= $ - exsrt_iface_nomina
+	db 'Directorium'
+  .Directorium_len	= $ - exsrt_iface_nomina - .Directorium
+  .archivum		= $ - exsrt_iface_nomina
+	db 'archivum'
+  .archivum_len		= $ - exsrt_iface_nomina - .archivum
+  .ad_radicem		= $ - exsrt_iface_nomina
+	db 'ad_radicem'
+  .ad_radicem_len	= $ - exsrt_iface_nomina - .ad_radicem
+  .infra		= $ - exsrt_iface_nomina
+	db 'infra'
+  .infra_len		= $ - exsrt_iface_nomina - .infra
+  .lege_ex		= $ - exsrt_iface_nomina
+	db 'lege_ex'
+  .lege_ex_len		= $ - exsrt_iface_nomina - .lege_ex
+  .crea			= $ - exsrt_iface_nomina
+	db 'crea'
+  .crea_len		= $ - exsrt_iface_nomina - .crea
+  .Lectorium		= $ - exsrt_iface_nomina
+	db 'Lectorium'
+  .Lectorium_len	= $ - exsrt_iface_nomina - .Lectorium
+  .exlege_octeto	= $ - exsrt_iface_nomina
+	db 'exlege_octeto'
+  .exlege_octeto_len	= $ - exsrt_iface_nomina - .exlege_octeto
+  .Scriptorium		= $ - exsrt_iface_nomina
+	db 'Scriptorium'
+  .Scriptorium_len	= $ - exsrt_iface_nomina - .Scriptorium
+  .inscribe		= $ - exsrt_iface_nomina
+	db 'inscribe'
+  .inscribe_len		= $ - exsrt_iface_nomina - .inscribe
+  .inscribe_octeto	= $ - exsrt_iface_nomina
+	db 'inscribe_octeto'
+  .inscribe_octeto_len	= $ - exsrt_iface_nomina - .inscribe_octeto
   ; ---- prelude symbols. The label in the blob carries emit.inc's `bfausr_`
   ; prefix (runtime.md 2.2); the IR names the short form, and the emitter
   ; prints the prefix. These are the SHORT forms.
@@ -339,6 +453,30 @@ exsrt_iface_nomina:
   .sym_lege_octeto	= $ - exsrt_iface_nomina
 	db 'exsrt_lector_lege_octeto'
   .sym_lege_octeto_len	= $ - exsrt_iface_nomina - .sym_lege_octeto
+  .sym_mundus_archivum	= $ - exsrt_iface_nomina
+	db 'exsrt_mundus_archivum'
+  .sym_mundus_archivum_len = $ - exsrt_iface_nomina - .sym_mundus_archivum
+  .sym_ad_radicem	= $ - exsrt_iface_nomina
+	db 'exsrt_directorium_ad_radicem'
+  .sym_ad_radicem_len	= $ - exsrt_iface_nomina - .sym_ad_radicem
+  .sym_infra		= $ - exsrt_iface_nomina
+	db 'exsrt_directorium_infra'
+  .sym_infra_len	= $ - exsrt_iface_nomina - .sym_infra
+  .sym_lege_ex		= $ - exsrt_iface_nomina
+	db 'exsrt_directorium_lege_ex'
+  .sym_lege_ex_len	= $ - exsrt_iface_nomina - .sym_lege_ex
+  .sym_crea		= $ - exsrt_iface_nomina
+	db 'exsrt_directorium_crea'
+  .sym_crea_len		= $ - exsrt_iface_nomina - .sym_crea
+  .sym_exlege_octeto	= $ - exsrt_iface_nomina
+	db 'exsrt_lectorium_exlege_octeto'
+  .sym_exlege_octeto_len = $ - exsrt_iface_nomina - .sym_exlege_octeto
+  .sym_inscribe		= $ - exsrt_iface_nomina
+	db 'exsrt_scriptorium_inscribe'
+  .sym_inscribe_len	= $ - exsrt_iface_nomina - .sym_inscribe
+  .sym_inscribe_octeto	= $ - exsrt_iface_nomina
+	db 'exsrt_scriptorium_inscribe_octeto'
+  .sym_inscribe_octeto_len = $ - exsrt_iface_nomina - .sym_inscribe_octeto
 EXS_IFACE_NOMINA_LEN = $ - exsrt_iface_nomina
 
 ; ---- signature pool ---------------------------------------------------------
@@ -373,6 +511,27 @@ exsrt_iface_signa:
   .lege_octeto		= $ - exsrt_iface_signa
 	db 1, EXS_IFACE_T_U16, EXS_IFACE_T_PTR	; (ptr) -> u16: the Lector by
 						; ptr, the byte-or-256 by value
+  ; ---- ADR 0017. Every one but `archivum` returns an `eventus<_, erratum>`,
+  ; an aggregate, so each is spelled with the hidden return `ptr` FIRST, then
+  ; the receiver (or, for the associated `ad_radicem`, the atom), then the
+  ; declared arguments -- `__lwr_call_member`'s staging order.
+  .mundus_archivum	= $ - exsrt_iface_signa
+	db 1, EXS_IFACE_T_PTR, EXS_IFACE_T_PTR			; (ptr) -> ptr
+  .ad_radicem		= $ - exsrt_iface_signa
+	db 3, EXS_IFACE_T_VOID, EXS_IFACE_T_PTR, EXS_IFACE_T_PTR, EXS_IFACE_T_PTR
+								; (ret a via) -> void
+  .directorium_via	= $ - exsrt_iface_signa			; infra, lege_ex, crea
+	db 3, EXS_IFACE_T_VOID, EXS_IFACE_T_PTR, EXS_IFACE_T_PTR, EXS_IFACE_T_PTR
+								; (ret d via) -> void
+  .exlege_octeto	= $ - exsrt_iface_signa
+	db 2, EXS_IFACE_T_VOID, EXS_IFACE_T_PTR, EXS_IFACE_T_PTR
+								; (ret r) -> void
+  .inscribe		= $ - exsrt_iface_signa
+	db 3, EXS_IFACE_T_VOID, EXS_IFACE_T_PTR, EXS_IFACE_T_PTR, EXS_IFACE_T_PTR
+								; (ret w t) -> void
+  .inscribe_octeto	= $ - exsrt_iface_signa
+	db 3, EXS_IFACE_T_VOID, EXS_IFACE_T_PTR, EXS_IFACE_T_PTR, EXS_IFACE_T_U8
+								; (ret w b) -> void
 EXS_IFACE_SIGNA_LEN = $ - exsrt_iface_signa
 
 ; ---- the declarations -------------------------------------------------------
@@ -524,6 +683,134 @@ exsrt_iface_decls:
 	dd exsrt_iface_nomina.sym_lege_octeto, exsrt_iface_nomina.sym_lege_octeto_len
 	dd EXS_IFACE_D_LECTOR
 	dd exsrt_iface_signa.lege_octeto
+	dd 0, 0
+
+; 11: structura Directorium { a: archivum, descriptor: i32 }
+;    ADR 0017 decision 2. Capability-bearing, mark {archivum}, and -- like
+;    `Lector`, row 8 -- NO FIELD ROWS after it (part A says why, and why here
+;    it is soundness rather than economy).
+	db EXS_IFACE_K_STRUCT, EXS_IFACE_F_PUBLICA or EXS_IFACE_F_CAPBEARING or EXS_IFACE_F_APERTUM
+	db EXS_IFACE_CAP_NONE, 0
+	dd exsrt_iface_nomina.Directorium, exsrt_iface_nomina.Directorium_len
+	dd 0, 0
+	dd EXS_IFACE_NULLUS
+	dd EXS_IFACE_NULLUS
+	dd EXS_IFACE_DIRECTORIUM_SIZE, EXS_IFACE_DIRECTORIUM_ALIGN
+
+; 12: functio archivum(m: Mundus) -> archivum
+;    `m.archivum()`, row 3's shape. TOTAL (spec 4.7): whether a filesystem
+;    exists is decided by `--hospes`; NAMING a root is the separate,
+;    run-time-fallible `ad_radicem` (ADR 0017 decision 2).
+	db EXS_IFACE_K_FN, EXS_IFACE_F_PUBLICA
+	db EXS_IFACE_CAP_ARCHIVUM, 0
+	dd exsrt_iface_nomina.archivum, exsrt_iface_nomina.archivum_len
+	dd exsrt_iface_nomina.sym_mundus_archivum, exsrt_iface_nomina.sym_mundus_archivum_len
+	dd EXS_IFACE_NULLUS
+	dd exsrt_iface_signa.mundus_archivum
+	dd 0, 0
+
+; 13: functio ad_radicem(a: archivum, via: textus) -> eventus<Directorium, erratum>
+;    Associated, on Directorium, taking the atom as an EXPLICIT VALUE --
+;    `Scriptor.ad_exitum(a)`'s shape, and design D6's R2: no prelude routine
+;    draws `archivum` implicitly, so a function holding only a Directorium
+;    has no way to name a second root. Fails at run time for a relative
+;    `via` (the prelude, before any syscall), a missing or non-directory one,
+;    and a kernel or sandbox without openat2 (D9: never a fallback).
+	db EXS_IFACE_K_FN, EXS_IFACE_F_PUBLICA or EXS_IFACE_F_ASSOCIATA or EXS_IFACE_F_APERTUM
+	db EXS_IFACE_CAP_NONE, 0
+	dd exsrt_iface_nomina.ad_radicem, exsrt_iface_nomina.ad_radicem_len
+	dd exsrt_iface_nomina.sym_ad_radicem, exsrt_iface_nomina.sym_ad_radicem_len
+	dd EXS_IFACE_D_DIRECTORIUM
+	dd exsrt_iface_signa.ad_radicem
+	dd 0, 0
+
+; 14: functio infra(d: Directorium, via: textus) -> eventus<Directorium, erratum>
+;    Attenuation (D3): a root beneath `d`, never above it.
+	db EXS_IFACE_K_FN, EXS_IFACE_F_PUBLICA or EXS_IFACE_F_APERTUM
+	db EXS_IFACE_CAP_NONE, 0
+	dd exsrt_iface_nomina.infra, exsrt_iface_nomina.infra_len
+	dd exsrt_iface_nomina.sym_infra, exsrt_iface_nomina.sym_infra_len
+	dd EXS_IFACE_D_DIRECTORIUM
+	dd exsrt_iface_signa.directorium_via
+	dd 0, 0
+
+; 15: functio lege_ex(d: Directorium, via: textus) -> eventus<Lectorium, erratum>
+;    An EXISTING REGULAR file beneath `d`, to read (D4).
+	db EXS_IFACE_K_FN, EXS_IFACE_F_PUBLICA or EXS_IFACE_F_APERTUM
+	db EXS_IFACE_CAP_NONE, 0
+	dd exsrt_iface_nomina.lege_ex, exsrt_iface_nomina.lege_ex_len
+	dd exsrt_iface_nomina.sym_lege_ex, exsrt_iface_nomina.sym_lege_ex_len
+	dd EXS_IFACE_D_DIRECTORIUM
+	dd exsrt_iface_signa.directorium_via
+	dd 0, 0
+
+; 16: functio crea(d: Directorium, via: textus) -> eventus<Scriptorium, erratum>
+;    A NEW file beneath `d` (D4: O_EXCL, mode 0600).
+	db EXS_IFACE_K_FN, EXS_IFACE_F_PUBLICA or EXS_IFACE_F_APERTUM
+	db EXS_IFACE_CAP_NONE, 0
+	dd exsrt_iface_nomina.crea, exsrt_iface_nomina.crea_len
+	dd exsrt_iface_nomina.sym_crea, exsrt_iface_nomina.sym_crea_len
+	dd EXS_IFACE_D_DIRECTORIUM
+	dd exsrt_iface_signa.directorium_via
+	dd 0, 0
+
+; 17: structura Lectorium { a: archivum, descriptor: i32 } -- no field rows.
+	db EXS_IFACE_K_STRUCT, EXS_IFACE_F_PUBLICA or EXS_IFACE_F_CAPBEARING or EXS_IFACE_F_APERTUM
+	db EXS_IFACE_CAP_NONE, 0
+	dd exsrt_iface_nomina.Lectorium, exsrt_iface_nomina.Lectorium_len
+	dd 0, 0
+	dd EXS_IFACE_NULLUS
+	dd EXS_IFACE_NULLUS
+	dd EXS_IFACE_LECTORIUM_SIZE, EXS_IFACE_LECTORIUM_ALIGN
+
+; 18: functio exlege_octeto(r: Lectorium) -> eventus<u16, erratum>
+;    One byte: `prosperum(0..255)`, or `prosperum(256)` at end of file, or
+;    `adversum(erratum { numerus: errno })` -- so, unlike `lege_octeto`
+;    (row 10), end of file and a failure are NOT the same answer. The 256
+;    for "no byte" is still a sentinel and provisional for row 10's reason.
+;    `ex-` + `leg-` (spec 3.5: the first parameter is the source); a
+;    distinct name from row 10 because a prelude member is found by NAME in
+;    one pool (`checker/types/prim.inc`), so a second `lege_octeto` would be
+;    unreachable behind the first.
+	db EXS_IFACE_K_FN, EXS_IFACE_F_PUBLICA or EXS_IFACE_F_APERTUM
+	db EXS_IFACE_CAP_NONE, 0
+	dd exsrt_iface_nomina.exlege_octeto, exsrt_iface_nomina.exlege_octeto_len
+	dd exsrt_iface_nomina.sym_exlege_octeto, exsrt_iface_nomina.sym_exlege_octeto_len
+	dd EXS_IFACE_D_LECTORIUM
+	dd exsrt_iface_signa.exlege_octeto
+	dd 0, 0
+
+; 19: structura Scriptorium { a: archivum, descriptor: i32 } -- no field rows.
+	db EXS_IFACE_K_STRUCT, EXS_IFACE_F_PUBLICA or EXS_IFACE_F_CAPBEARING or EXS_IFACE_F_APERTUM
+	db EXS_IFACE_CAP_NONE, 0
+	dd exsrt_iface_nomina.Scriptorium, exsrt_iface_nomina.Scriptorium_len
+	dd 0, 0
+	dd EXS_IFACE_NULLUS
+	dd EXS_IFACE_NULLUS
+	dd EXS_IFACE_SCRIPTORIUM_SIZE, EXS_IFACE_SCRIPTORIUM_ALIGN
+
+; 20: functio inscribe(w: Scriptorium, t: textus) -> eventus<mensura, erratum>
+;    The whole `textus`, unbuffered: `prosperum(len)` when every byte was
+;    written, else `adversum` with the errno that stopped it -- never a
+;    silently short count (spec 11). `in-` + `scrib-` (spec 3.5: the first
+;    parameter is the destination); distinct from row 5 for row 18's reason.
+	db EXS_IFACE_K_FN, EXS_IFACE_F_PUBLICA or EXS_IFACE_F_APERTUM
+	db EXS_IFACE_CAP_NONE, 0
+	dd exsrt_iface_nomina.inscribe, exsrt_iface_nomina.inscribe_len
+	dd exsrt_iface_nomina.sym_inscribe, exsrt_iface_nomina.sym_inscribe_len
+	dd EXS_IFACE_D_SCRIPTORIUM
+	dd exsrt_iface_signa.inscribe
+	dd 0, 0
+
+; 21: functio inscribe_octeto(w: Scriptorium, b: u8) -> eventus<mensura, erratum>
+;    One raw byte, the low 8 bits of `b` -- what a `textus` cannot carry
+;    (spec 5.1: UTF-8). `prosperum(1)` or `adversum`.
+	db EXS_IFACE_K_FN, EXS_IFACE_F_PUBLICA or EXS_IFACE_F_APERTUM
+	db EXS_IFACE_CAP_NONE, 0
+	dd exsrt_iface_nomina.inscribe_octeto, exsrt_iface_nomina.inscribe_octeto_len
+	dd exsrt_iface_nomina.sym_inscribe_octeto, exsrt_iface_nomina.sym_inscribe_octeto_len
+	dd EXS_IFACE_D_SCRIPTORIUM
+	dd exsrt_iface_signa.inscribe_octeto
 	dd 0, 0
 
 assert $ - exsrt_iface_decls = EXS_IFACE_DECL_COUNT * EXS_IFACE_DECL_SIZE

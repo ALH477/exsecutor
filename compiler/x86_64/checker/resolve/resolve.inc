@@ -2576,7 +2576,7 @@ proc __chk_member, chk_c, chk_n
 	return
 endp
 
-; __chk_rowitem(chk_c, chk_n) -- one item of a declared `poscit` row.
+; __chk_rowitem(chk_c, chk_n, chk_rpos) -- one item of a `poscit` row.
 ;
 ; `sicut IDENT` (aux has AST_ROW_SICUT): `a` is an interner id naming a
 ; PARAMETER and `d` becomes an ordinal, positionally, under spec §4.2's
@@ -2589,7 +2589,22 @@ endp
 ; caller's carrier". A non-atom is a `potestas` name, resolved through the
 ; module table; spec §4.1 flattens it to its atoms at interning, which is pass
 ; 3's, so nothing is bound for it here. A name that is neither is `EXS-E0301`.
-proc __chk_rowitem, chk_c, chk_n
+;
+; ONLY A DECLARED ROW BINDS. `chk_rpos` is the walk's position: 0 for the row
+; of a function's own `Sig` (the declaration's `poscit`), 1 for a row written
+; inside a TYPE -- `functio(A) -> B poscit {P}` as a parameter's or a result's
+; type, `dyn I poscit {P}` in a cast. A type's row says what a VALUE of that
+; type carries (spec §4.2: "rows travel with values"); it provides no carrier
+; to the function whose signature happens to mention the type. Until
+; 2026-10-02 every item bound, so `f(s: Scriptor, g: functio(u8) -> u8
+; poscit {ambitus}) -> u8 poscit sicut s` could name `ambitus` in its body
+; and was accepted -- measured with `exsc aedifica`, and the hole
+; docs/design/archivum-beneath.md D6's R1 (the raw `archivum` atom cannot be
+; obtained from a `Directorium`) depends on being shut.
+; A type-position item is still RESOLVED (`d` set), because pass 3 interns
+; that row; it is just not a provider. `tests/unit/chk_directorium.asm`
+; pins it.
+proc __chk_rowitem, chk_c, chk_n, chk_rpos
 	uses	rbx, r12, r13, r14
 	locals
 		slot	chk_p, dq
@@ -2666,6 +2681,8 @@ proc __chk_rowitem, chk_c, chk_n
 	call	__chk_setd
 	cmp	qword [chk_o], 0
 	je	.out
+	cmp	qword [chk_rpos], 0
+	jne	.out			; a type's row: resolved, never a provider
 	mov	rdi, rbx
 	mov	rsi, [chk_o]
 	mov	rdx, r14
@@ -2880,6 +2897,7 @@ proc __chk_walk, chk_c, chk_n, chk_pos
   .rowitem:
 	mov	rdi, rbx
 	mov	rsi, r12
+	mov	rdx, [chk_pos]
 	call	__chk_rowitem
 	jmp	.out
 

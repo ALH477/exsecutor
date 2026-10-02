@@ -1456,6 +1456,26 @@ cert_entry23() {
 #                   reader existed assumed. A `cat` program is
 #                   `stdin=F stdout=F` and proves identity against the one
 #                   file rather than against a copy of it.
+#   potestates=A,B  the atoms the binary's syscall audit admits (spec 10.3,
+#                   tools/syscall-audit.sh --potestates). Absent:
+#                   Mundus,ambitus, the publish gate's own invocation. A
+#                   closed set -- spec 4.6's eleven names -- so a typo fails
+#                   the fixture instead of auditing against nothing.
+#   radix=yes       a FILESYSTEM ROOT the program may derive (ADR 0017; a
+#                   tests/programs/ directory only). Under an exclusive lock
+#                   on /tmp/exsecutor-radix.lock, run_binary removes
+#                   /tmp/exsecutor-radix, re-creates it as a copy of the
+#                   directory's own `radix/` tree (empty when there is none),
+#                   runs the program, and removes it again. So every run --
+#                   the reference's and each C build's -- starts from the
+#                   same tree whatever ran before, and two suites running
+#                   at once take turns rather than share it. The path is
+#                   fixed because the program must NAME its root as a
+#                   literal: `Directorium.ad_radicem` takes an absolute path,
+#                   a relative one and /proc/self/cwd are refused by design
+#                   (archivum-beneath.md D2), and nothing in the language
+#                   carries a path in from outside yet. Not with cross= or
+#                   device=.
 #
 # Exactly one of expect-exit= / abort= is required for anything that runs.
 # An UNKNOWN KEY FAILS THE FIXTURE: the unit directive ignores one, and a
@@ -1474,26 +1494,50 @@ cert_entry23() {
 # run_binary BIN OUT ERR [STDIN] -- prints "exit N", "signal N" or "timeout".
 # STDIN is a path (absolute, or already resolved by the caller); absent or
 # empty means /dev/null.
-# run_binary BIN OUT ERR [STDIN] [RUNNER] [TIMEOUT]
+# run_binary BIN OUT ERR [STDIN] [RUNNER] [TIMEOUT] [RADIX]
 # RUNNER, when given, is prepended to the command -- `qemu-mipsn32` for the
 # cross phase, which cannot execute a big-endian MIPS binary directly. The
 # empty environment is kept: qemu-user needs nothing from it.
+# RADIX, when given, is `radix=yes`'s tree (above): a directory to copy into
+# /tmp/exsecutor-radix, or `@vacuum` for an empty root. The lock is held from
+# before the tree is made until after it is removed.
 run_binary() {
-  python3 - "$1" "$2" "$3" "${4:-}" "${5:-}" "${6:-20}" <<'PY'
-import subprocess, sys
-exe, out, err, inp, runner, tmo = sys.argv[1:7]
+  python3 - "$1" "$2" "$3" "${4:-}" "${5:-}" "${6:-20}" "${7:-}" <<'PY'
+import os, shutil, subprocess, sys
+exe, out, err, inp, runner, tmo, radix = sys.argv[1:8]
 cmd = ([runner] if runner else []) + [exe]
-with open(out, 'wb') as o, open(err, 'wb') as e:
-    i = open(inp, 'rb') if inp else None
-    try:
-        r = subprocess.run(cmd, stdin=(i or subprocess.DEVNULL), stdout=o,
-                           stderr=e, env={}, timeout=float(tmo))
-    except subprocess.TimeoutExpired:
-        print('timeout')
-        sys.exit(0)
-    finally:
-        if i is not None:
-            i.close()
+ROOT = '/tmp/exsecutor-radix'
+lock = None
+def tollere():
+    if os.path.islink(ROOT) or os.path.isfile(ROOT):
+        os.unlink(ROOT)
+    elif os.path.isdir(ROOT):
+        shutil.rmtree(ROOT)
+if radix:
+    import fcntl
+    lock = open(ROOT + '.lock', 'w')
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    tollere()
+    if radix == '@vacuum':
+        os.mkdir(ROOT)
+    else:
+        shutil.copytree(radix, ROOT, symlinks=True)
+try:
+    with open(out, 'wb') as o, open(err, 'wb') as e:
+        i = open(inp, 'rb') if inp else None
+        try:
+            r = subprocess.run(cmd, stdin=(i or subprocess.DEVNULL), stdout=o,
+                               stderr=e, env={}, timeout=float(tmo))
+        except subprocess.TimeoutExpired:
+            print('timeout')
+            sys.exit(0)
+        finally:
+            if i is not None:
+                i.close()
+finally:
+    if lock is not None:
+        tollere()
+        lock.close()
 if r.returncode < 0:
     print('signal %d' % -r.returncode)
 else:
@@ -1522,7 +1566,11 @@ check_run() {
   local out="$work.stdout" err="$work.stderr" status rcode=0
   local inp=""
   [[ -n "$sref" ]] && inp="$REPO_ROOT/$sref"
-  status="$(run_binary "$bin" "$out" "$err" "$inp" "$runner" "$tmo")"
+  # CHECK_RADIX and CHECK_POTESTATES: radix= and potestates=, which
+  # parse_run_keys resets for every fixture and a program loop resolves
+  # (radix_of) -- globals rather than two more positions on a call that
+  # already has ten.
+  status="$(run_binary "$bin" "$out" "$err" "$inp" "$runner" "$tmo" "${CHECK_RADIX:-}")"
 
   if [[ -n "$want_abort" ]]; then
     if [[ "$status" == "signal 4" ]] &&
@@ -1559,14 +1607,23 @@ check_run() {
   fi
 
   if [[ "$doaudit" == "audit" ]]; then
-    if "$AUDIT" --potestates Mundus,ambitus "$bin" >"$work.auditlog" 2>&1; then
-      ok "$label: syscall surface within {Mundus, ambitus}"
+    local pot="${CHECK_POTESTATES:-Mundus,ambitus}"
+    if "$AUDIT" --potestates "$pot" "$bin" >"$work.auditlog" 2>&1; then
+      ok "$label: syscall surface within {${pot//,/, }}"
     else
-      bad "$label: syscall surface exceeds {Mundus, ambitus}"
+      bad "$label: syscall surface exceeds {${pot//,/, }}"
       sed 's/^/         /' "$work.auditlog"; rcode=1
     fi
   fi
   return "$rcode"
+}
+
+# radix_of DIR -- after parse_run_keys, resolve radix=yes for program directory
+# DIR into CHECK_RADIX: DIR/radix when that tree exists, else `@vacuum`.
+radix_of() {
+  if [[ "$k_radix" == "yes" ]]; then
+    if [[ -d "$1/radix" ]]; then CHECK_RADIX="$1/radix"; else CHECK_RADIX="@vacuum"; fi
+  fi
 }
 
 # parse_run_keys LABEL KV... -- sets k_expect_exit k_abort k_stdout k_emit_exit
@@ -1581,6 +1638,7 @@ parse_run_keys() {
   # the reference's own key applies". A default of "0" would silently claim
   # parity with success even where emit-exit= says the reference refuses.
   k_c_emit_exit=""; k_c_exsc_exit=""; k_c_differentia=""; k_cross=""; k_device=""
+  k_radix=""; CHECK_RADIX=""; CHECK_POTESTATES="Mundus,ambitus"
   local kv
   for kv in "$@"; do
     case "$kv" in
@@ -1624,6 +1682,8 @@ parse_run_keys() {
       # typo is a failed fixture. See run_device_tests.
       device=*)      k_device="${kv#device=}" ;;
       sources=*)     k_sources="${kv#sources=}" ;;
+      potestates=*)  CHECK_POTESTATES="${kv#potestates=}" ;;
+      radix=*)       k_radix="${kv#radix=}" ;;
       status=*)      k_status="${kv#status=}" ;;
       needs=*)       k_needs="${kv#needs=}" ;;
       *) bad "$label: unknown directive key '$kv'"; return 1 ;;
@@ -1635,6 +1695,19 @@ parse_run_keys() {
   if [[ -n "$k_device" && "$k_device" != "amdgcn" ]]; then
     bad "$label: device='$k_device' -- the only value is 'amdgcn'"; return 1
   fi
+  if [[ -n "$k_radix" && "$k_radix" != "yes" ]]; then
+    bad "$label: radix='$k_radix' -- the only value is 'yes'"; return 1
+  fi
+  if [[ -n "$k_radix" && -n "$k_cross$k_device" ]]; then
+    bad "$label: radix= needs the host's filesystem -- not with cross= or device="; return 1
+  fi
+  local atom
+  for atom in ${CHECK_POTESTATES//,/ }; do
+    case "$atom" in
+      Mundus|alloc|sermo|horologium|archivum|rete|fortuna|ambitus|Filum|machina|Crudum) ;;
+      *) bad "$label: potestates= names '$atom', which is not a spec 4.6 atom"; return 1 ;;
+    esac
+  done
   if [[ "$k_status" != "run" && "$k_status" != "deferred" ]]; then
     bad "$label: unknown status='$k_status' (expected run|deferred)"; return 1
   fi
@@ -2386,6 +2459,7 @@ run_differential_tests() {
 
     local srcs=()
     program_sources "$name" "$dir" || continue
+    radix_of "$dir"
     srcs=("${p_srcs[@]}")
 
     local ref="$k_stdout"
@@ -2597,6 +2671,7 @@ run_program_tests() {
 
     local srcs=()
     program_sources "$name" "$dir" || continue
+    radix_of "$dir"
     srcs=("${p_srcs[@]}")
 
     local ref="$k_stdout"

@@ -872,6 +872,16 @@ one that was wrong, the amendment is in the same commit as this file.
    departure from section 8's drawing; `initium` still binds `sub ambitus`
    and the binary's audit is unchanged.
 
+   **Fixed 2026-10-02** (ADR 0017 stage 2, which needs a `Directorium` to be
+   forwardable). `__chk_row_sicutcov` in `checker/rows/compute.inc` expands
+   the caller's `sicut` items to the atoms their parameters' types carry
+   and lets them cover substituted atoms that travel inside a value -- an
+   argument that is the caller's own `sicut` parameter, or one of
+   `structura` type -- and a call through such a parameter; never the
+   callee's declared atoms. Spec §4.2's defect paragraph states the rule;
+   `tests/unit/chk_row_sicut_forward.asm` pins this repro and both
+   closure-capture shapes. `probatio.exsc` is unchanged.
+
 ## 10. What retired each marker
 
 Every row's tests are merged on `wire-codec` and were seen passing in

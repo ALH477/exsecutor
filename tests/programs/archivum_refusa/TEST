@@ -1,0 +1,12 @@
+# ADR 0017 stage 2 on the reference backend, and -- through
+# tests/c/exsrt_shim.c's archivum routines -- on the C backend under the
+# differential phase. The program's own header lists its checks; the exit
+# status is the number of the first that failed, 0 when all held.
+#
+# potestates=Mundus,archivum: the binary's audit admits exactly that set --
+# no `ambitus` (nothing here touches a standard stream), and archivum's own
+# row: openat2 at four proven sites, close, fstat, read, write, never openat.
+# radix=yes: tests/run.sh makes /tmp/exsecutor-radix from this directory's
+# radix/ tree for each run, under a lock, and removes it afterwards
+# (run_binary's header).
+TEST: expect-exit=0 potestates=Mundus,archivum radix=yes

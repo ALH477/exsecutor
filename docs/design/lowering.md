@@ -39,12 +39,25 @@ recommendation per question, with its reason. Nothing here is written into
    complete — the tree already answers: AST 2.4's contiguous decl ranges,
    `Decl.flags` (CHK 2.5), and the nesting of spec §8.5's constructs, each
    of which knows its own join (section 2.5).
-4. **The input invariant is CHK 2.5, and the lowering raises nothing.** It
+4. **The input invariant is CHK 2.5, and the lowering raises nothing** —
+   with one exception, added by ADR 0017. It
    runs only when Stage 2 emitted no diagnostic, so every `Node.ty` ≠ 0,
    every `Seg.d`/`Member.d` ≠ 0, `konst` on every `Lit`, `own` on every
    reference expression, `Decl.flags` complete. `EXS-E0341`, `E0342`,
    `E0306`, `E0307` are the checker's; a tree that reaches this pass and
    still needs one is a checker bug and an `rassert` here, never a code.
+   **The exception is a capability atom with no carrier in scope**
+   (`lwr_cap_find` answers 0, at an atom named as a value or at a call's
+   staged carriers): it is `EXS-E0421`, not a trap. The node is recorded
+   (`lwr_unprovided`), lowering carries on with a null `ptr`, and
+   `lwr_module` returns the node, so `driver/run.inc` raises the
+   checker's own code there and writes no object. The checker is meant
+   never to let it through; the reason it is not an `rassert` is that
+   what it guards is a capability, and a trap is a worse answer than a
+   code to a tool that matches codes. `tests/unit/lwr_unprovided.asm`
+   pins the lowering half; the driver's `.lower_refused` is `[UNTESTED]`
+   end to end, because no source reaches it (a lambda is refused by the
+   lowering before its body is read, section 2.7).
 5. **The output invariant is IR section 3 and RT section 5.** The verifier
    runs on every function this pass emits (section 2.11), and the three
    functions of RT 5 are the first fixture: the text `bfa_print` writes for

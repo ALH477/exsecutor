@@ -225,7 +225,7 @@ audit a property of the artifact.
 | core (always) | `exit_group(231)`; `write(1)` to fd 2 | `exsrt_start`, `exsrt_abort` |
 | `ambitus` | `write(1)`, `read(0)` | `write` at one site, `exsrt_scriptor_directe`, which every writer and every drain reaches; `read` at one site, `exsrt_lector_lege` — the row's other half, tabulated since the blob was written and `[UNIMPLEMENTED]` until `lege_octeto` landed |
 | `alloc` | `mmap(9)`, `munmap(11)` | `exsrt_alloc_novum`, `exsrt_alloc_dimitte` |
-| `archivum` | `openat2(437)`, `close(3)`, `fstat(5)`, `read(0)`, `write(1)`; `lseek(8)` admitted, issued by none `[OPEN]`; **not** `openat(257)` | `archivum.asm` (separate blob, ADR 0017 stage 1): `exsrt_archivum_radix` (the one unscoped open: an absolute root from `AT_FDCWD`, `how_radix`), `exsrt_archivum_infra`, `exsrt_archivum_lege_ex` (+ `fstat`, `close` on a non-regular file), `exsrt_archivum_crea`, `exsrt_archivum_lege`, `exsrt_archivum_scribe`. Not yet carried into `OUT` and not IR-callable (stage 2, after `eventus`) |
+| `archivum` | `openat2(437)`, `close(3)`, `fstat(5)`, `read(0)`, `write(1)`; `lseek(8)` admitted, issued by none `[OPEN]`; **not** `openat(257)` | `archivum.asm` (separate blob, ADR 0017 stage 1): `exsrt_archivum_radix` (the one unscoped open: an absolute root from `AT_FDCWD`, `how_radix`), `exsrt_archivum_infra`, `exsrt_archivum_lege_ex` (+ `fstat`, `close` on a non-regular file), `exsrt_archivum_crea`, `exsrt_archivum_lege`, `exsrt_archivum_scribe`; and the stage-2 surface over them, IR-callable through `interface.inc` rows 12-21 and adding no syscall of its own: `bfausr_exsrt_mundus_archivum`, `bfausr_exsrt_directorium_ad_radicem`/`_infra`/`_lege_ex`/`_crea`, `bfausr_exsrt_lectorium_exlege_octeto`, `bfausr_exsrt_scriptorium_inscribe`/`_inscribe_octeto`, each writing an `eventus<_, erratum>` through the hidden return pointer. Carried into `OUT` by `backend_fasmg/program.inc` only when the program's mask holds `archivum` (with `archivum_rodata.asm` in `segment readable`) |
 | `horologium` `fortuna` `rete` `Filum` `machina` `sermo` `Crudum` | `[OPEN]` | none |
 
 Measured, not asserted — `tools/syscall-audit.sh` on each fixture binary:
@@ -294,6 +294,13 @@ hand-written `bfausr_initium` in place of an emitted one — the way
 | `prelude_mxcsr_inferius.asm` | Mundus | `exit=0` | the same for `0x3F80`, `ad_inferius` |
 | `prelude_mxcsr_superius.asm` | Mundus | `exit=0` | the same for `0x5F80`, `ad_superius` |
 | `prelude_archivum.asm` | Mundus, archivum | `exit=0`, `audit=fail` (against the compiler's nine, which has no `openat2`; the per-atom audit is the self-test's) | `archivum.asm`'s routines on the running kernel, through the prelude's own four `open_how` constants: in-root opens succeed; `..` out, an escaping symlink, an absolute path, an absolute symlink, a magic link and a mount crossing are refused, each with a legal twin reaching the same target; a relative root, an interior NUL, a 4096-byte path and a negative directory descriptor are refused before any syscall; `lege_ex` refuses a directory and releases its descriptor; `crea` refuses every existing name and creates, writes and reads back a new one in the harness's scratch directory. Each constant's resolve flags were mutated in a scratch copy and every mutation made this fixture fail |
+
+The stage-2 entry points at the end of `archivum.asm` have no fixture of
+their own here: they are run from SOURCE, on both backends, by
+`tests/programs/archivum_radix/`, `archivum_refusa/` and
+`archivum_profundum/` (each `potestates=Mundus,archivum radix=yes`; the
+differential phase links `tests/c/exsrt_shim.c`'s hosted mirror of them),
+and `tests/unit/lwr_directorium.asm` pins the IR that calls them.
 
 Three MXCSR fixtures rather than one because `EXS_MXCSR` is a single constant
 and the stub runs once: one binary can prove one image, and re-executing the

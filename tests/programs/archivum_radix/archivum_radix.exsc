@@ -1,0 +1,110 @@
+// ADR 0017 stage 2, end to end on the reference backend: derive a root,
+// attenuate it, create a file beneath it, write it, and read it back.
+//
+// THE ROOT IS THE HARNESS'S. tests/run.sh's `radix=yes` (run_binary) holds
+// an exclusive lock, re-creates /tmp/exsecutor-radix empty, copies this
+// directory's `radix/` tree into it, runs the program, and removes it -- so
+// every run starts from exactly `sub/lectio.txt` ("lectio\n"), whatever ran
+// before. The path is a literal because a root is named by the program that
+// holds `archivum`, and nothing else in the language supplies a path yet.
+//
+// `initium` returns 0 when every check holds, else the number of the first
+// that did not:
+//
+//    1  `Directorium.ad_radicem` derives the root
+//    2  `infra("sub")` derives a root beneath it
+//    3  `lege_ex` opens the harness's file, and it reads "lectio\n" then
+//       end of file -- prosperum(256), not an error
+//    4  `crea("nova.txt")` creates a file beneath `sub`
+//    5  `inscribe` writes a whole `textus`: prosperum(its length)
+//    6  `inscribe_octeto` writes one raw byte: prosperum(1)
+//    7  `crea` of the same name again is the kernel's EEXIST (17): O_EXCL
+//    8  `lege_ex("nova.txt")` reads back exactly the bytes written, then 256
+//    9  `lege_ex("sub/nova.txt")` beneath the TOP root reaches the same file
+
+functio sequitur(r: Lectorium, b: u16) -> u1 poscit sicut r {
+    discerne r.exlege_octeto() {
+        casus prosperum(c) { si c eq b { redde 1; } redde 0; }
+        casus adversum(e) { redde 0; }
+    }
+}
+
+// "lectio\n" and then end of file.
+functio lectio(r: Lectorium) -> u1 poscit sicut r {
+    si sequitur(r, 108) eq 0 { redde 0; }
+    si sequitur(r, 101) eq 0 { redde 0; }
+    si sequitur(r, 99) eq 0 { redde 0; }
+    si sequitur(r, 116) eq 0 { redde 0; }
+    si sequitur(r, 105) eq 0 { redde 0; }
+    si sequitur(r, 111) eq 0 { redde 0; }
+    si sequitur(r, 10) eq 0 { redde 0; }
+    redde sequitur(r, 256);
+}
+
+// "salve" then 0xFF -- a byte no `textus` can hold -- then end of file.
+functio nova(r: Lectorium) -> u1 poscit sicut r {
+    si sequitur(r, 115) eq 0 { redde 0; }
+    si sequitur(r, 97) eq 0 { redde 0; }
+    si sequitur(r, 108) eq 0 { redde 0; }
+    si sequitur(r, 118) eq 0 { redde 0; }
+    si sequitur(r, 101) eq 0 { redde 0; }
+    si sequitur(r, 255) eq 0 { redde 0; }
+    redde sequitur(r, 256);
+}
+
+functio scribe(w: Scriptorium) -> u8 poscit sicut w {
+    discerne w.inscribe("salve") {
+        casus prosperum(n) { si n ne 5 { redde 5; } }
+        casus adversum(e) { redde 5; }
+    }
+    discerne w.inscribe_octeto(255) {
+        casus prosperum(n) { si n ne 1 { redde 6; } }
+        casus adversum(e) { redde 6; }
+    }
+    redde 0;
+}
+
+functio sub_radice(s: Directorium) -> u8 poscit sicut s {
+    discerne s.lege_ex("lectio.txt") {
+        casus prosperum(r) { si lectio(r) eq 0 { redde 3; } }
+        casus adversum(e) { redde 3; }
+    }
+    discerne s.crea("nova.txt") {
+        casus prosperum(w) {
+            firma k = scribe(w);
+            si k ne 0 { redde k; }
+        }
+        casus adversum(e) { redde 4; }
+    }
+    discerne s.crea("nova.txt") {
+        casus prosperum(w) { redde 7; }
+        casus adversum(e) { si e.numerus ne 17 { redde 7; } }
+    }
+    discerne s.lege_ex("nova.txt") {
+        casus prosperum(r) { si nova(r) eq 0 { redde 8; } }
+        casus adversum(e) { redde 8; }
+    }
+    redde 0;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.archivum();
+    sub archivum = a;
+    discerne Directorium.ad_radicem(a, "/tmp/exsecutor-radix") {
+        casus prosperum(d) {
+            discerne d.infra("sub") {
+                casus prosperum(s) {
+                    firma k = sub_radice(s);
+                    si k ne 0 { redde k; }
+                }
+                casus adversum(e) { redde 2; }
+            }
+            discerne d.lege_ex("sub/nova.txt") {
+                casus prosperum(r) { si nova(r) eq 0 { redde 9; } }
+                casus adversum(e) { redde 9; }
+            }
+            redde 0;
+        }
+        casus adversum(e) { redde 1; }
+    }
+}

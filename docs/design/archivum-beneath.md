@@ -1,20 +1,22 @@
 # `archivum` beneath one root — `Directorium`, `openat2` and the audit
 
-**Status:** stage 1 implemented; stage 2 waits on eventus.
+**Status:** stages 1 and 2 implemented; D11 (`EXS-E0425`) not.
 [ADR 0017](../decisions/0017-archivum-beneath.md) was accepted by the
 repository owner on 2026-10-02. **Built (stage 1):** the prelude routines
 (`compiler/x86_64/prelude/archivum.asm`, `archivum_rodata.asm`), the
 audit's openat2 site rules W and A1–A6 (`tools/syscall-audit.sh`), and the
 fixtures that run and audit them (`tests/unit/prelude_archivum.asm`,
 `tests/unit/audit_openat2.asm`); section 9 records what building them
-found. **Not built (stage 2):** every surface name in section 4 —
-`Directorium`, `ad_radicem`, `infra`, `lege_ex`, `crea`, the
-`interface.inc` rows, the checker and lowering, carrying the blobs into
-`OUT` — because each returns `eventus<_, erratum>` and `eventus` is not
-inhabited (`docs/design/sum-types.md` D5). Section 2 is measured, on one
-machine, by `prototypes/beneath/`; the routines re-measure its refusals
-through the prelude's own constants. Everything about the surface in
-section 4 remains a hypothesis with its refutation conditions written down.
+found. **Built (stage 2, 2026-10-02):** the surface of section 4 —
+`m.archivum()`, `Directorium`, `ad_radicem`, `infra`, `lege_ex`, `crea`,
+and D4's reader and writer, `Lectorium` and `Scriptorium` — through the
+checker, the lowering, both backends, R1–R3 as tests, and §4.2's
+`sicut`-to-`sicut` defect fixed; section 10 records it, with what it found.
+**Not built:** D11's compile-time path check and its code `EXS-E0425`,
+which wait on an explicit decision. Section 2 is measured, on one machine,
+by `prototypes/beneath/`; the routines re-measure its refusals through the
+prelude's own constants, and `tests/programs/archivum_*/` through the
+surface.
 **Relates to:** spec §4.1, §4.2, §4.3, §4.6, §4.7, §9.5, §10.3, §11, §13;
 `docs/design/runtime.md` section 2.6; `docs/design/checker.md` sections 2.1
 and 2.8; `compiler/x86_64/prelude/README.md` ("The syscall table, per
@@ -463,13 +465,18 @@ the value is an `openat2` relative to it.
 (`compiler/x86_64/prelude/interface.inc`, "ITS FIELDS HAVE NO ROWS").
 Here it is a soundness requirement, not a convenience. If `d.a` resolved,
 a holder of one `Directorium` could take out the unscoped atom and derive
-any root. With no row, `d.a` is `EXS-E0301` (name does not resolve). `d.descriptor`
+any root. With no row, `d.a` is `EXS-E0305` ("operation not defined on the
+type": this read `EXS-E0301` until stage 2 measured it -- the checker gives
+every member a type lacks E0305, `Lector`'s `l.a` included). `d.descriptor`
 is refused for the same reason: an integer descriptor could be handed to an
 `openat` the program does not have, or compared, or forged into a second
 `Directorium` by a layout cast. §5.2's one aggregate cast is over
-`@transitus` types, and a capability-bearing type must never be one. `[OPEN]`
-whether the checker already refuses `@transitus` on a capability-bearing
-`structura`. If it does not, that needs a code.
+`@transitus` types, and a capability-bearing type must never be one.
+*(Measured in stage 2: a `@transitus` struct holding a `Directorium` is
+refused, `EXS-E0321`, because the prelude record is `:nativus` -- not
+because it is capability-bearing, which no code says. And
+`d sicut acies<u8, 16>` and its inverse are `EXS-E0305`.
+`tests/unit/chk_directorium.asm` rows 11-13.)*
 
 The name follows §3.4: `-orium` on a supine stem (`direct-`, from `dirig-`)
 gives an instrument, declared `structura`. `dirig-` is not in §3.3's
@@ -542,7 +549,8 @@ a `Directorium` back to `archivum`. A function holding a `Directorium` for
 
   Rewriting or appending an existing file is not in v1. Truncating through
   a planted hard link is the hazard, and it is `[OPEN]` (section 8).
-- **The result types are `[OPEN]`.** They are a reader and a writer with
+- **The result types** *(decided in stage 2: `Lectorium` and `Scriptorium`,
+  section 10)*. They are a reader and a writer with
   mark `{archivum}`. `Lector` and `Scriptor` are fixed to `{ambitus}` by
   their `a: ambitus` field. So it is either those two made generic over the
   atom they carry, or two new prelude types, which §3.9 governs. Until
@@ -581,21 +589,65 @@ A library function takes one the way `imprime_gutenbergio` takes a
 publica functio salva(d: Directorium, nomen: textus, t: textus) -> … poscit sicut d { … }
 ```
 
-By §4.2's table, `sicut d` is `Directorium`'s mark, `{archivum}`, and the
-audit (§10.3) sees `archivum` in the function's row, as it should. **What
-makes attenuation sound is not the row**, because a row says *which atom*,
-never *which tree*. It is three properties of the checker as designed
-(`docs/design/checker.md` sections 2.1 and 2.8), which this design depends
-on and which must be pinned by tests before it is built:
+**What bounds such a function is the set of VALUES it holds, not its row,
+and not the `sicut`.** Every prelude row on a `Directorium` is empty
+(section 10: `infra`, `lege_ex` and `crea` draw no atom), so a function
+that merely USES one needs no `poscit` at all and its own row shows nothing
+for `archivum`. `poscit sicut d` is needed only to FORWARD the handle to a
+callee that is itself declared `sicut`: by §4.2's table `sicut d`
+substitutes `Directorium`'s mark, `{archivum}`, at that call, and the
+caller's `sicut` covers it. (An earlier version of this section said the
+function's row "reads `{archivum}`" and that it "can reach that tree and
+nothing else" because of it. Both were wrong: the row is empty or `sicut d`,
+and it bounds nothing.) A row says *which atom*, never *which tree*. What
+keeps the function from reaching any other tree is that it cannot obtain the
+raw atom, and that rests on three properties of the checker
+(`docs/design/checker.md` sections 2.1 and 2.8), pinned by tests:
 
-- **R1. A `sicut` row item never binds the atom's carrier.** Only a
-  `poscit P` *atom* item sets `cap[P]` in the function's root frame
-  (checker.md 2.1, "Bind"). So inside `salva`, `archivum` in expression
-  position is `EXS-E0421`, and the body cannot call
-  `Directorium.ad_radicem(archivum, "/")`.
+- **R1. The raw atom cannot be obtained from a `Directorium`.** Four
+  rules, each of which was needed, and the second and the fourth of
+  which were found missing by review:
+  1. A `sicut` row item never binds the atom's carrier. Only a `poscit P`
+     *atom* item sets `cap[P]` in the function's root frame (checker.md
+     2.1, "Bind"). So inside `salva`, `archivum` in expression position is
+     `EXS-E0421`, and the body cannot call
+     `Directorium.ad_radicem(archivum, "/")`.
+  2. **`sub P = e` requires `e` to have the atom's own capability type**
+     (`EXS-E0303`; spec §4.5). `sub` is the one statement that mints an
+     atom, and it used to accept a provider of any type that was not
+     another atom's: `sub archivum = d;` with `d: Directorium` bound the raw
+     atom, and the program that did so (built and run) read a file outside
+     its root and exited 42. Rule 1 does not reach it, because the `sub` IS
+     the provider. `alloc` is the one exemption (spec §4.5 types its
+     provider only as "an arena", `[OPEN]`).
+  3. **A lambda's draw is read at its live row** when the lambda is called
+     or forwarded (`__chk_row_lamof`). A lambda's row is inferred, and the
+     call used to read the row of its TYPE, `{}`, so a closure over
+     `archivum` called inside `salva` contributed nothing and was accepted.
+     It is `EXS-E0421` at the call now. `[OPEN]`, not claimed: a lambda that
+     reaches a parameter whose function type has an empty row, is stored in
+     a field, is returned, or sits in a `mutabilis` local is still read at
+     its type's row. No such shape produces an object (the lowering refuses
+     every lambda), and an atom with no carrier is `EXS-E0421` in the
+     lowering rather than a trap.
+  4. **No `sicut` retypes a value into or out of a capability atom, or
+     a reference to one.** Rule 2 types the provider, so it is only as
+     strong as the type the provider carries, and `sicut` writes a type.
+     The cast judgement had a rule for aggregates (a struct or an `acies`
+     on either side) and none for anything else, so `d sicut archivum` was
+     refused (`EXS-E0305`) while `&d sicut &archivum` was not: `*p` then
+     had type `archivum` and rule 2 passed it. Found by review of the fix
+     that added rule 2, built and run (it read a file outside the root).
+     `__chk_ty_castrel` (checker/types/member.inc) now admits a
+     non-aggregate cast only between numeric scalars, between identical
+     types, or to `dyn` (`EXS-E0510`), and refuses the rest as
+     `EXS-E0305`: spec §5.2. `[OPEN]` `Crudum` (§4.6, "unchecked casts") is
+     the gate a reinterpret would need; nothing implements it, so the
+     refusal does not look at the function's row.
 - **R2. `ad_radicem` takes the atom as an explicit value.** No prelude
   routine draws `archivum` implicitly. With R1, a function that holds only a
-  `Directorium` has no expression of type `archivum`.
+  `Directorium` has no expression of type `archivum` -- *as a consequence
+  of R1's three rules*, not by itself.
 - **R3. The fields have no rows** (D1).
 
 A library that writes `poscit archivum` is asking for the whole atom, and
@@ -612,9 +664,10 @@ the same `s` is refused `EXS-E0421` (`docs/design/wire-codec.md`, finding
 The defect has to be fixed before this design is usable past one call
 level.
 
-`[OPEN]` (lowering): checker.md 2.8 makes a row's atom items hidden
+*(Lowering -- answered in stage 2, section 10: no hidden carrier is passed
+beside a `Directorium`.)* checker.md 2.8 makes a row's atom items hidden
 arguments and says a `sicut` parameter's carriers "travel inside that
-argument's closure". For a `structura` argument, it must be confirmed that
+argument's closure". For a `structura` argument, it had to be confirmed that
 no hidden `archivum` carrier, the caller's full atom, is passed alongside a
 `Directorium`. R1 means the callee could not name one. Not passing it at all
 is defence in depth.
@@ -772,11 +825,16 @@ recorded in section 2.4.
   Refusing `st_nlink > 1` would break Nix-optimised trees. Undecided.
 - **Rewrite and append of existing files** (D4): would need a truncate or
   append open, which F4's hard link turns into a write outside.
-- **The result types' spelling** (D4) and **`eventus`'s inhabitation**
-  (`sum-types.md` D5), which every derivation here waits on.
-- **R1–R3 as tests** (D6), the **`sicut`-to-`sicut` checker defect** (§4.2),
-  and **whether a hidden full-atom carrier is passed** (D6, lowering).
-- **`@transitus` on a capability-bearing type** (D1): whether it is refused.
+- ~~**The result types' spelling** (D4) and **`eventus`'s inhabitation**~~
+  -- closed by stage 2 (section 10); the spellings stay provisional
+  under §3.9.
+- ~~**R1–R3 as tests** (D6), the **`sicut`-to-`sicut` checker defect**
+  (§4.2), and **whether a hidden full-atom carrier is passed** (D6,
+  lowering)~~ -- closed by stage 2 (section 10).
+- ~~**`@transitus` on a capability-bearing type** (D1)~~ -- refused, by
+  `EXS-E0321` and for the byte-order reason (D1's note).
+- **A reader buffer**: `exlege_octeto` is one `read(2)` per byte (section
+  10).
 - **Indirect branches into an `openat2` window** (section 3).
 - **`archivum[path]` in the ego** (D2) and **telling `poscit archivum` from
   `poscit sicut d` in §10.3's view** (D6).
@@ -857,8 +915,8 @@ found missing by another agent's measurement while this was built).
 
 **Still `[OPEN]` after stage 1**, beyond section 8: the routines are not
 carried into `OUT` (`backend_fasmg/program.inc` copies two blobs; it must
-copy these two as well, which is a backend change for stage 2); `lseek(8)`
-is in the row and issued by no routine.
+copy these two as well, which is a backend change for stage 2 -- *done,
+section 10*); `lseek(8)` is in the row and issued by no routine.
 
 **Stage 2 needs from `eventus`:** a two-variant `eventus<T, E>` with a
 layout the lowering can return from an IR call, a constructor for each
@@ -870,3 +928,207 @@ four refusals. With those, stage 2 is: `interface.inc` rows (and
 the reader and writer types (D4), the checker's R1–R3 as tests, D11's
 compile-time check with `EXS-E0425` registered in §13 first, and
 `program.inc` carrying both blobs.
+
+---
+
+## 10. Stage 2, as built (2026-10-02)
+
+Stage 2 is the surface: everything in section 4 except D11. It was built
+on `eventus` as `docs/design/sum-types.md` D5 left it, in four commits:
+the §4.2 checker defect, the checker surface, the lowering and backends,
+and the programs and documents. Nothing below refutes a decision. Three
+findings correct this document or the spec, and are marked.
+
+**The surface, as declared** (`compiler/x86_64/prelude/interface.inc`
+rows 11-21, appended; `checker/types/prim.inc` types them, all with the
+EMPTY row):
+
+| call | result | entry point |
+|---|---|---|
+| `m.archivum()` | `archivum` (total) | `bfausr_exsrt_mundus_archivum` |
+| `Directorium.ad_radicem(a: archivum, via: textus)` | `eventus<Directorium, erratum>` | `..._directorium_ad_radicem` |
+| `d.infra(via)` | `eventus<Directorium, erratum>` | `..._directorium_infra` |
+| `d.lege_ex(via)` | `eventus<Lectorium, erratum>` | `..._directorium_lege_ex` |
+| `d.crea(via)` | `eventus<Scriptorium, erratum>` | `..._directorium_crea` |
+| `r.exlege_octeto()` | `eventus<u16, erratum>`: the byte, 256 at end of file | `..._lectorium_exlege_octeto` |
+| `w.inscribe(t: textus)` | `eventus<mensura, erratum>`: the length, never short | `..._scriptorium_inscribe` |
+| `w.inscribe_octeto(b: u8)` | `eventus<mensura, erratum>`: 1 | `..._scriptorium_inscribe_octeto` |
+
+`erratum.numerus` is the errno: the kernel's, or the prelude's own refusals
+(section 9). The `eventus` the prelude writes is the layout the lowering
+reads -- tag at byte 0 (`prosperum` 0, `adversum` 1), payload from byte 1,
+so `eventus<Directorium, erratum>` is 17 bytes -- stated in interface.inc
+part A and asserted against `archivum.asm`'s constants; a program that
+took one apart at a different offset would fail every check in
+`tests/programs/archivum_radix/`. The prelude's `eventus` and `erratum`
+are found by name and by their zero span (`ast_decl_synth`), never by
+scope, so a module that shadows `eventus` still gets the prelude's; the
+three new type names join `prelude/eventus.inc`'s triggers.
+
+**D4, the reader and writer: two new prelude types**, `Lectorium` and
+`Scriptorium`, each `Scriptor`'s record with mark `{archivum}` and no field
+rows -- not `Lector`/`Scriptor` made generic over the atom. That was the
+smaller change by a wide margin: a prelude struct has no `AstDecl` to hang a
+type parameter on, its mark would have to depend on the argument, and
+nothing sizes or names an instance of a generic prelude type; and it left
+`Lector`, `Scriptor`, their rows, their routines and every fixture that pins
+them byte for byte as they were. `-orium` is spec 3.4's instrument, the
+suffix `Directorium` already uses (`lectorium` is spec 3.7's own
+derivation). The METHODS needed new names because a prelude member is found
+by NAME in one pool (`chk_ty_pre_names`, and the lowering's
+`__lwr_pre_row`), so a second `lege_octeto` or `scribe` would be unreachable
+behind the first: `exlege_octeto` and `inscribe`/`inscribe_octeto`, whose
+`ex-` and `in-` follow spec 3.5's laws (the first parameter is the source,
+the destination). All spellings provisional under §3.9.
+
+**R1-R3, as tests** (`tests/unit/chk_directorium.asm`, 16 rows, exact
+codes): `archivum` in a function whose row is only `sicut d` is EXS-E0421
+(R1 rule 1); `sub archivum = d;` over a `Directorium` and `sub rete = <u32>`
+are EXS-E0303 (R1 rule 2, rows 14-15, with the `alloc` exemption pinned by
+row 16); every value row is empty and `ad_radicem` without its atom is
+{EXS-E0303, EXS-E0304} (R2); `d.a`, `d.descriptor`, `r.a`, `w.descriptor`
+are EXS-E0305 (R3). The closure shapes of R1 rule 3 are rows 11-18 of
+`tests/unit/chk_row_sicut_forward.asm`. Each property was broken on purpose
+in a scratch copy and the fixture failed at the row predicted (the commits
+have the exits).
+
+**Finding 1 -- R1 was false, through a parameter's TYPE.** A row written
+inside a parameter's function type (`g: functio(u8) -> u8 poscit
+{archivum}`) bound its atom's carrier in the function's own frame
+(`checker/resolve/resolve.inc`, `__chk_rowitem`), so a function declaring
+only `sicut d` could name `archivum` and derive any root. Measured, then
+fixed: a type's row is resolved and never a provider.
+`tests/unit/chk_row_sicut_forward.asm` row 10 and `chk_directorium.asm`
+row 5 pin it. It predates this design; it would have broken it.
+
+**Finding 2 -- §4.2's `sicut`-to-`sicut` defect, fixed.** D6's dependency.
+`checker/rows/compute.inc`'s `__chk_row_sicutcov`: a caller's `sicut`
+items cover atoms that travel INSIDE a value -- substituted at an argument
+that is one of the caller's `sicut` parameters or is of `structura` type,
+or the row of a call through such a parameter -- and never a callee's
+declared atom, which is a carrier the caller must hold. So a `Directorium`
+forwards through any number of helpers, a child derived with `infra` can be
+handed on, and §4.2's closure-capture violation is still refused
+(`tests/unit/chk_row_sicut_forward.asm`, 19 rows now; spec §4.2 states the
+rule).
+
+**Finding 3 -- D1 said `d.a` is EXS-E0301; it is EXS-E0305** (corrected in
+D1 and in interface.inc). No code was added: `codes.inc` and §13 are
+untouched.
+
+**Finding 4 -- R1 was false twice more, and the "reach that tree and nothing
+else" sentence was wrong.** Review of stage 2 found one runnable escape, one
+checker hole the lowering happened to mask, and two defects in the tests and
+this document.
+
+- *`sub` did not type its provider.* `sub archivum = d;` over a
+  `Directorium` minted the raw atom (above, R1 rule 2). Built and run
+  before the fix: `ad_radicem(archivum, "/tmp/exs-xp")` from a function
+  holding only a child of `/tmp/exs-xp/root` opened a file outside it and
+  the program exited 42. After: EXS-E0303 at the `sub`.
+- *A lambda's draw was invisible to a call.* Checker-clean, then a SIGILL in
+  the lowering. The SIGILL turned out to be the lowering's blanket refusal
+  of every lambda (`lwr_expr`), not the atom arm -- a lambda with no
+  capability in it traps there too -- so no escape was reachable at run
+  time; but the checker was accepting a program its own rule says to
+  refuse. Fixed in the checker (R1 rule 3); the lowering's atom arm and its
+  staged-carrier site now answer EXS-E0421 instead of trapping, pinned by
+  `tests/unit/lwr_unprovided.asm`, with the driver half `[UNTESTED]`
+  because nothing reaches it.
+- *The ineligible-argument exclusion in `__chk_row_sicutcov` was not
+  pinned:* deleting it left both fixtures green. Row 19 of
+  `chk_row_sicut_forward.asm` fails without it.
+- *This document and the spec said the function's row "reads
+  `{archivum}`" and that `sicut d` bounds it.* Neither is so; corrected in
+  D6 above and in spec §4.6.
+
+**Finding 5 -- R1 was false a third time, through a reference cast.**
+Review of the finding-4 fixes found one more runnable escape in the same
+family. `&d sicut &archivum` was accepted: the cast dispatch sent a cast to
+the aggregate judge (`__chk_ty_castagg`) only when a side was a struct or an
+`acies`, and `&T` is neither, so every other pair fell through with its target
+as the answer and no relatedness check. `*p` had type `archivum`, `sub
+archivum = *p;` passed rule 2, and `ad_radicem` read a file outside the child
+root (built and run: exit status = the file's first byte; the value cast
+`d sicut archivum` was refused all along). This was broader than
+`Directorium`: any pointee could be reinterpreted. The sweep that followed
+found the same unchecked path for: `x sicut archivum` (a number made into the
+atom; the lowering's emitter refused it by accident), `0 sicut archivum` (a
+pending literal skipped every judgement and then SIGILLed the lowering),
+`a sicut u64` (the atom turned into a number), `n sicut &archivum` and `&x sicut
+u64`, `&x sicut &mutabilis u8` (mutability gained), a sum carrying a
+`Directorium` recast to one that does not, and `g sicut functio(u8) -> u8`
+with `g` drawing `archivum` (the one way to take a row off a value). All are
+`EXS-E0305` now (rule 4; `tests/unit/chk_directorium.asm` rows 17-26, spec
+§5.2). The earlier sentence "the atom cannot be minted out of a `Directorium`,
+or out of any value that is not an `archivum`" claimed more than rule 2
+enforces; it is true only of rules 2 and 4 together, and the spec says so.
+`[OPEN]`, found on the way and not touched: `refero<T>` as a parameter type
+crashes `exsc` (SIGILL) in a later pass, and a pending-literal cast to a
+numeric type still SIGILLs the lowering (spec §5.4's recorded defect).
+
+**D6's lowering question: no hidden carrier.** A function declared `poscit
+sicut d` over a `Directorium` lowers to a signature with the `Directorium`
+and nothing else -- `__lwr_sig_carriers` emits one `ptr` per ATOM item of a
+row and none for a `sicut` ordinal -- and every prelude call is staged with
+no carrier (the rows are empty). `tests/unit/lwr_directorium.asm` pins the
+IR byte for byte: `salva(d: Directorium) poscit sicut d` is `(ptr) -> u8`;
+its contrast, `radix(v: textus) poscit archivum`, is `(ptr ptr) -> u8`, the
+carrier first. Making `__lwr_sig_carriers` emit a `ptr` for an ordinal fails
+it (exit 20). Building that contrast found a lowering gap: an atom named as
+a VALUE in a function whose row declares it (`ad_radicem(archivum, v)`)
+fell to `__lwr_module_const` and trapped -- for `ambitus` as much as for
+`archivum` -- and now reads the provider's carrier as a call does
+(`lower/expr.inc`, `__lwr_path`).
+
+**The carrier.** `m.archivum()` returns the Mundus record's own address:
+an opaque, non-null token no routine reads. The atom's authority is to
+derive a root and nothing else, and a root is the descriptor in the
+`Directorium`; a token needs no storage, so `prelude_data.asm`, which every
+`OUT` carries, is unchanged.
+
+**Backends.** `backend_fasmg/program.inc` copies `archivum.asm` into the
+executable segment after `prelude.asm`, and `archivum_rodata.asm` into
+`segment readable`, ONLY when the program's mask holds `archivum` -- not
+unconditionally behind the blobs' own gate, which would assemble to the
+same binary but change every `OUT`'s text. The driver's mask
+(`driver/run.inc`, `__drv_cap_of_ty`) counts the three new types as
+`archivum`, so a module that mentions only a `Directorium` still carries the
+routines its calls name. The stage-2 entry points add NO syscall and no
+`openat2` site: the audit judges exactly stage 1's four. One stage-1 routine
+changed: `exsrt_archivum_scribe` returns the -errno that stopped it even
+after a partial write, never a short count, which `inscribe` needs to say
+why. The C backend needed nothing -- it emits the `exsrt_` imports from the
+IR -- and `tests/c/exsrt_shim.c` mirrors the eight entry points, hosted, with
+the same `open_how` values (from `<fcntl.h>`), the same refusals and the
+same `eventus` bytes, so the differential phase holds the C build to the
+reference on them.
+
+**End to end** (`tests/programs/`, each `potestates=Mundus,archivum
+radix=yes`, each passing on the reference backend and on gcc and clang at
+-O0 and -O2, each audited under exactly `{Mundus, archivum}`):
+`archivum_radix/` derives a root, attenuates it, creates, writes and reads
+back a file, and is refused EEXIST by a second `crea`; `archivum_refusa/`
+is refused EINVAL for a relative root, ENOENT for a missing one, EXDEV for
+`..`, `sub/../..`, an absolute path and `crea("../x")`, EINVAL for
+`lege_ex` of a directory, and EXDEV for a child root climbing to its
+parent, each beside a legal twin; `archivum_profundum/` forwards a root
+through two helpers declaring only `sicut d`, writes beneath a derived
+child, and reads the result back beneath the top root.
+
+**How the root is made, and why it is a fixed path.** `tests/run.sh`'s
+`radix=yes`: under an exclusive lock on `/tmp/exsecutor-radix.lock`,
+`run_binary` removes `/tmp/exsecutor-radix`, re-creates it as a copy of the
+program directory's own `radix/` tree, runs the binary, and removes it. The
+program must name its root as a LITERAL -- `ad_radicem` refuses a relative
+path, and `/proc/self/cwd` is a magic link `how_radix` refuses (section
+9) -- and nothing in the language carries a path in from outside yet. So
+the path is fixed and the tree is made fresh for every run, which is what
+makes the runs deterministic and lets two suites share a machine. Whether
+`/tmp` is writable inside `nix flake check`'s sandbox is `[UNTESTED]`.
+
+**Still `[OPEN]` after stage 2:** D11 and `EXS-E0425` (waits on the
+owner); `exlege_octeto` reads one byte per `read(2)` (a buffer needs state
+shared between copies of a 16-byte value, which D7 already defers); §10.3's
+`archivum (Directorium)` rendering (not implemented); `lseek(8)`, admitted
+and issued by nothing; everything in section 8 not struck through.

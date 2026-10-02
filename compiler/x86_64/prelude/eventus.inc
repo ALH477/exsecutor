@@ -56,7 +56,9 @@
 ; needs.
 ;
 ; MATERIALIZED ON MENTION. The items are pushed only when some `Path` segment
-; in the module already names `eventus`, `erratum`, `prosperum` or `adversum`.
+; in the module already names `eventus`, `erratum`, `prosperum` or `adversum`
+; -- or `Directorium`, `Lectorium` or `Scriptorium` (ADR 0017), whose prelude
+; rows return `eventus<_, erratum>`.
 ; A module that names none of them cannot observe the declarations -- nothing
 ; else can reach them -- so this changes no output but the `--emitte ast` dump,
 ; and the dump of every module that does not mention them stays byte-identical
@@ -78,6 +80,9 @@ ast_pre_names:
 	db 8,'adversum'
 	db 7,'erratum'
 	db 7,'numerus'
+	db 11,'Directorium'
+	db 9,'Lectorium'
+	db 11,'Scriptorium'
 AST_PRE_NAMES_LEN = $ - ast_pre_names
 AST_PRE_N_EVENTUS	= 1
 AST_PRE_N_T		= 2
@@ -86,7 +91,15 @@ AST_PRE_N_PROSPERUM	= 4
 AST_PRE_N_ADVERSUM	= 5
 AST_PRE_N_ERRATUM	= 6
 AST_PRE_N_NUMERUS	= 7
-; the four that trigger materialization are names 1, 4, 5 and 6
+AST_PRE_N_DIRECTORIUM	= 8	; ADR 0017's three prelude types: never
+AST_PRE_N_LECTORIUM	= 9	; interned by `ast_prelude_push`, only LOOKED
+AST_PRE_N_SCRIPTORIUM	= 10	; for, as triggers
+; the seven that trigger materialization are names 1, 4, 5, 6 -- and 8, 9 and
+; 10: a module that names `Directorium`, `Lectorium` or `Scriptorium` reaches
+; prelude rows whose results are `eventus<_, erratum>`
+; (checker/types/prim.inc's `__chk_ty_pre_eventus`), so it needs the two
+; declarations even if it never spells `eventus` itself.
+AST_PRE_TRIGGERS	= 7
 
 ; `__ast_pre_name(tree, k, intern)` -> rax = name `k`'s interner id. With
 ; `intern` 0 it only LOOKS -- `map_get` on the interner's own map, no insert --
@@ -118,7 +131,7 @@ endp
 proc ast_prelude_wanted, tree
 	uses	rbx, r12, r13, r14
 	locals
-		slot apw_ids, 16
+		slot apw_ids, 4 * AST_PRE_TRIGGERS
 	endl
 	mov	rbx, [tree]
 	mov	rdi, rbx
@@ -141,6 +154,21 @@ proc ast_prelude_wanted, tree
 	xor	edx, edx
 	call	__ast_pre_name
 	mov	[apw_ids + 12], eax
+	mov	rdi, rbx
+	mov	rsi, AST_PRE_N_DIRECTORIUM
+	xor	edx, edx
+	call	__ast_pre_name
+	mov	[apw_ids + 16], eax
+	mov	rdi, rbx
+	mov	rsi, AST_PRE_N_LECTORIUM
+	xor	edx, edx
+	call	__ast_pre_name
+	mov	[apw_ids + 20], eax
+	mov	rdi, rbx
+	mov	rsi, AST_PRE_N_SCRIPTORIUM
+	xor	edx, edx
+	call	__ast_pre_name
+	mov	[apw_ids + 24], eax
 	mov	r13, [rbx + Ast.nodes.len]
 	mov	r12, 1
   .scan:
@@ -156,7 +184,7 @@ proc ast_prelude_wanted, tree
 	jz	.next
 	xor	r14d, r14d
   .id:
-	cmp	r14d, 4
+	cmp	r14d, AST_PRE_TRIGGERS
 	jae	.next
 	cmp	ecx, [apw_ids + r14 * 4]
 	je	.yes
