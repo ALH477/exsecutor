@@ -574,7 +574,7 @@ no `copy`, which is the IR RT 5 writes down.
 | `Member` field read | `load T %p off order` / `loadbits T %p byte bit` from `Ast.layout[field decl]` — `loadbits` when the width is not a whole number of bytes at a byte boundary (IR 2.7) |
 | `Assign` | lhs `Path` → `writeVariable` or `store`; `Member` → `store`/`storebits`; `Index` → `chk`, `index`, `store`; `*p` → `store`; an `ACCUM` lhs → `contrib` (section 2.5); an aggregate rhs → `copy n %dst %src` plus one `retain` per reference field `[UNTESTED]` |
 | `Call` | section 2.7 |
-| `Try` `?` | refused by the checker (`EXS-E0305`, sum-types.md D4's interim rule), so it never reaches this pass; the `rassert` stays |
+| `Try` `?` | sum-types.md D4, `lower/sum.inc`'s `__lwr_try`: the operand once through `lwr_expr_agg`, `load` of the tag, `cmp.eq` with `adversum`'s index, `br`; the early-return block stores the RESULT's tag and the `E` element through the hidden-return `ptr` at the result's own places, releases every frame and `ret`s; the success block (where evaluation continues) is the `prosperum` payload — `load`/`loadbits`, or the element's address for an aggregate. No new instruction. Until 2026-10-02 the checker refused it (`EXS-E0305`, D4's interim rule) and this row's `rassert` stood |
 | constructor `prosperum(n)`, bare `ordinata` | into `%dst`: every payload evaluated, then `store uT %dst 0 nativus %tag`, then one `store`/`storebits`/`addr`+`copy` per element at the tag width plus the preceding elements' layout bits (`lower/sum.inc`, sum-types.md D6) |
 | `discerne` on a sum | the tag loaded once; each arm's constant is its variant's index; an exhaustive match's last arm is entered untested; bindings loaded from their elements (`lower/stmt.inc`'s `__lwr_discerne`, `lower/sum.inc`'s `__lwr_sum_bind`) |
 | `Lambda` | section 2.7 |
@@ -841,7 +841,7 @@ module `firma` constants and non-integer scrutinees; module `firma` with a
 non-literal initializer; `et`/`vel` evaluation order in the spec; lambdas
 altogether (capture of `mutabilis`, captured references, escape,
 functions as values, `faddr`); dictionaries' contents (spec §15 item 5)
-and dispatch on `param` receivers; `Try`/`eventus`; `dyn` values; element
+and dispatch on `param` receivers; `dyn` values; element
 stride of sub-byte scalars in `acies`; `externus` in the textual IR;
 `numeri` words; definite assignment; name mangling; the `fontes` order;
 release of aggregates with reference fields; H5's aliasing; every figure

@@ -1456,7 +1456,7 @@ All already in evidence in this document, recorded here rather than introduced.
 | `*T` | raw pointer — requires `Crudum` | §5.3 |
 | `T:maior` | explicit byte order | §5.2 |
 | `A..B` | range | §5.1 |
-| `E?` | error propagation | §5.1 |
+| `E?` | error propagation, defined in §8.6 (`docs/design/sum-types.md` D4) | §5.1 |
 | `<…>` | generic arguments | §5.5 |
 | `@nomen` | annotation — `@transitus`, `@nucleus` | §5.2, §5.5 |
 | `->` | result type | §4.2 |
@@ -2293,29 +2293,39 @@ refusing symbolic comparisons — is what makes that last one possible.
   differential builds). Still `[OPEN]`, each deferred
   there by name rather than folded in: nested patterns (refused as
   `EXS-E0201` at the parse), range patterns, the unreachable-arm rule, `?`'s
-  meaning (the next bullet) and recursive sums beyond their refusal.
-- `[OPEN]` **`?` is used by this document and refused by the compiler.** It
-  is lexed (`PUN_QUESTION`, `compiler/x86_64/lexer/token.inc`), spelled in the
-  CST's punctuation table, admitted by `Suffix` in the grammar above, named in
-  §8.4's sigil table as `E?`, "error propagation", citing §5.1 — and §5.1 uses
-  it twice in its own illustrative block (`abassus.quaere("/")?`,
-  `via.sectio(0..ubi)?`) without a sentence anywhere in this document saying
-  what it does. `docs/design/sum-types.md` D4 settles the meaning as design —
-  the `prosperum` payload, or an early return of the `adversum` from an
-  enclosing function whose error type matches, with error *conversion*
-  deferred — and it is not built: D5 does not need it, since an `eventus` is
-  matched with `discerne`. Until it is, **every `e?` is `EXS-E0305` at the
-  `?`** (`compiler/x86_64/checker/types/types.inc`'s `.try:` arm;
-  `tests/unit/chk_ty_eventus_arity.asm` row 7), which is D4's own interim
-  rule. That arm used to require the builtin `eventus` kind and answer its
-  first type argument — an unconditional unwrap with no error branch, which
-  the lowering then refused by name, so a program that type-checked trapped
-  the compiler; with `eventus` the prelude's sum no operand had that kind
-  any more, and the refusal is now explicit rather than accidental. An
-  earlier version of this bullet said `?` "means nothing" and that the
-  checker's behaviour was "unmeasured", inferring the second from the corpus
-  containing no `?`. It was wrong on both counts and on §5.1; recorded here
-  per the evidence note rather than overwritten.
+  error *conversion* (the next bullet) and recursive sums beyond their
+  refusal.
+- **`?` propagates an `adversum`** (`docs/design/sum-types.md` D4, built
+  2026-10-02). `e?` with `e : eventus<T, E>`, inside a function whose
+  declared result is `eventus<U, E>` with the **same** `E` — interned type
+  identity, no conversion — has type `T`. It evaluates `e` once and is its
+  `prosperum` payload; on `adversum` the enclosing function returns at once
+  an `adversum` carrying the same error value, written in the RESULT's own
+  layout (`T` and `U` may differ, and D6 sizes each instance from its
+  payloads), with every open frame released as `redde` releases them. It is
+  D2's `discerne` written as one token and lowered as exactly that, with no
+  new IR instruction, so both backends run it
+  (`compiler/x86_64/lower/sum.inc`'s `__lwr_try`;
+  `tests/programs/interrogatio/`). Three refusals, each a registered code:
+  an operand that is not an `eventus` is `EXS-E0305`; a `?` whose enclosing
+  function does not return an `eventus` — module level, and a lambda whose
+  inferred result no `redde` has fixed yet, included — is `EXS-E0307`
+  (control flow misuse: the transfer has nowhere to go, as for `rumpe`
+  outside a loop); and a different `E` is `EXS-E0303`, the mismatch
+  `redde adversum(e)` with that `e` would raise
+  (`compiler/x86_64/checker/types/sum.inc`'s `__chk_ty_try`,
+  `tests/unit/chk_ty_interrogatio.asm`). The `eventus` meant is the
+  prelude's: a module's own `typus eventus` shadows it (§11) and is an
+  ordinary sum to `?`. `[OPEN]`: converting one `E` into another, which
+  needs a trait and §7's dictionary passing. Until 2026-10-02 this bullet
+  was `[OPEN]` and read "`?` is used by this document and refused by the
+  compiler": §5.1's block used it with no sentence saying what it did, and
+  every `e?` was `EXS-E0305`, D4's interim rule — after an earlier checker
+  arm that unwrapped `?` with no error branch while the lowering trapped on
+  it. A version before that said `?` "means nothing" and that the checker's
+  behaviour was "unmeasured", inferring the second from the corpus
+  containing no `?`; wrong on both counts, recorded per the evidence note
+  rather than overwritten.
 - `[OPEN]` Brand syntax `positio<'t>` (§5.1): `'` is not a §8.4 token.
 - `[OPEN]` Generic implementation heads: `interfacies Legibilis<T> in
   acies<T, N>` leaves `N` unbound.
@@ -2766,7 +2776,8 @@ A dependency that gains `rete` in a new version is a one-line diff in a checked-
   (`tests/unit/chk_ty_eventus_arity.asm`). This bullet said until 2026-10-02
   that the spellings below were one parameter short and the type uninhabited;
   it is inhabited — constructed, matched exhaustively, laid out and lowered
-  on both backends (§8.6; `tests/programs/eventus/`).
+  on both backends (§8.6; `tests/programs/eventus/`), and propagated with `?`
+  (§8.6; `tests/programs/interrogatio/`).
 - **I/O reports failure as `eventus`; a count is never silently short.** A
   closed descriptor is discovered at the write, which a bare `mensura` cannot
   report, so `Scriptor.scribe` returns `eventus<mensura, erratum>`

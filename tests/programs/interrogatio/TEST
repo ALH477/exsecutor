@@ -1,0 +1,16 @@
+# `?` end to end (docs/design/sum-types.md D4): the prosperum payload on
+# success, and on adversum an early return of the enclosing function's own
+# `eventus` built in ITS layout from the same error value -- one level, two
+# levels, a result smaller and a result larger than the operand, inside a
+# larger expression, as call arguments (each operand evaluated once and in
+# order, counted through a mutable borrow), chained, with an aggregate payload,
+# with a scalar error type and a sub-byte payload, inside a loop, on a
+# nested instance as a `discerne` scrutinee, written into a struct field
+# between two guards (the result's own layout), on a parameter whose caller
+# passes the same storage as the hidden result, and inside `si`/`dum`
+# conditions, an assignment, struct and array literals and `et`'s right
+# operand. The header of interrogatio.exsc
+# numbers the checks; the exit status is the first wrong one, 0 when all hold.
+# Reference backend and all four differential C builds; `cross=yes` for the
+# big-endian row.
+TEST: expect-exit=0 cross=yes

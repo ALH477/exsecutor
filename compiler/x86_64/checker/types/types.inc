@@ -479,35 +479,12 @@ proc __chk_ty_expr, chkt_wp2, chkt_np2
 	jmp	.out
 
   .try:
-	; `e?` -- REFUSED, on every operand, as `EXS-E0305` at the `?`.
-	; docs/design/sum-types.md D4: "Until D4 is implemented, the checker's
-	; present arm should refuse `?` rather than unwrap it." This arm used to
-	; require the builtin `eventus` kind and answer its first argument --
-	; an unconditional unwrap with no error branch, which the lowering then
-	; refused by name (`rassert`), so a program that type-checked trapped
-	; the compiler. `eventus` is now the prelude's sum (D5), so no operand
-	; has that kind any more; and D4's meaning -- the `prosperum` payload,
-	; or an early `redde` of the `adversum` from a function returning the
-	; same `E` -- is not built. `EXS-E0305` is the code this arm already
-	; raised for a non-`eventus` operand (D4: "that half is settled by the
-	; tree"); no code is spent on a temporary state. The operand is still
-	; typed, so nothing under it goes untyped.
+	; `e?` -- docs/design/sum-types.md D4, sum.inc's `__chk_ty_try`. (Until
+	; 2026-10-02 this arm refused every `?` as `EXS-E0305`, D4's interim
+	; state; sum-types.md section 8 keeps the record.)
 	mov	rdi, rbx
-	mov	rsi, [chkt_ap]
-	call	__chk_ty_expr
-	mov	rdi, rbx
-	mov	rsi, rax
-	mov	rdx, r12
-	call	__chk_ty_settled
-	cmp	rax, 1
-	je	.try_err			; the error type: already said
-	mov	rdi, rbx
-	mov	rsi, 305
-	mov	rdx, r12
-	call	__chk_ty_raise
-  .try_err:
-	mov	rdi, rbx
-	call	__chk_ty_err
+	mov	rsi, r12
+	call	__chk_ty_try
 	jmp	.out
 
   .lambda:

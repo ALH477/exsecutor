@@ -556,3 +556,74 @@ proc ast_prelude_push, tree
 	mov	rdx, r12
 	return
 endp
+
+; ---- what `?` needs to know about the declaration above (sum-types.md D4) ---
+; The variant ORDER `ast_prelude_push` builds -- `prosperum` first, `adversum`
+; second -- is each variant's tag (D6: "the variant's index in declaration
+; order"). The lowering of `e?` reads the variants by these indices.
+AST_PRE_V_PROSPERUM	= 0
+AST_PRE_V_ADVERSUM	= 1
+
+; `ast_eventus_args(tree, ty)` -> rax = `T`, rdx = `E` when type `ty` is an
+; INSTANCE of the prelude's `eventus<T, E>`; rax = rdx = 0 for anything else --
+; a non-sum, the generic declaration's own type (no arguments), a module's own
+; sum that happens to be called `eventus` (it is not synthesized: a written
+; declaration has a span), and an instance missing an argument (the checker's
+; `EXS-E0304`). One rule, read by the checker's `?` arm and by the lowering,
+; which cannot share a checker routine (lower/ssa.inc's header, D1).
+proc ast_eventus_args, tree, aea_ty
+	uses	rbx, r12, r13
+	locals
+	endl
+	mov	rbx, [tree]
+	mov	rax, [aea_ty]
+	test	rax, rax
+	jz	.no
+	mov	rdi, rbx
+	mov	rsi, rax
+	call	ast_type_at
+	cmp	byte [rax + AstType.kind], AST_TY_SUM
+	jne	.no
+	mov	r12d, [rax + AstType.a]		; the declaration
+	mov	r13d, [rax + AstType.b]		; the argument list
+	test	r13d, r13d
+	jz	.no
+	test	r12d, r12d
+	jz	.no
+	mov	rdi, rbx
+	mov	esi, r12d
+	call	ast_decl_synth
+	test	eax, eax
+	jz	.no
+	mov	rdi, rbx
+	mov	esi, r12d
+	call	ast_decl_at
+	cmp	byte [rax + AstDecl.kind], AST_D_TYPUS
+	jne	.no
+	mov	r12d, [rax + AstDecl.name]
+	mov	rdi, rbx
+	mov	rsi, AST_PRE_N_EVENTUS
+	xor	edx, edx
+	call	__ast_pre_name
+	test	eax, eax
+	jz	.no
+	cmp	eax, r12d
+	jne	.no
+	mov	rdi, rbx
+	mov	esi, r13d
+	call	ast_type_at
+	mov	r12d, [rax + AstType.a]		; T
+	mov	r13d, [rax + AstType.b]		; the rest of the list
+	test	r13d, r13d
+	jz	.no
+	mov	rdi, rbx
+	mov	esi, r13d
+	call	ast_type_at
+	mov	edx, [rax + AstType.a]		; E
+	mov	eax, r12d
+	return
+  .no:
+	xor	eax, eax
+	xor	edx, edx
+	return
+endp

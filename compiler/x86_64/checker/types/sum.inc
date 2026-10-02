@@ -20,8 +20,9 @@
 ; Code produced by this compiler is not covered by the GPL --
 ; see Exception A in LICENSE.EXCEPTION.
 ; -----------------------------------------------------------------------------
-; PASS 2, PART 5 -- SUM TYPES: constructors, constructor patterns, and
-; `discerne`'s exhaustiveness. docs/design/sum-types.md D2's typing and D3.
+; PASS 2, PART 5 -- SUM TYPES: constructors, constructor patterns,
+; `discerne`'s exhaustiveness, and `?`. docs/design/sum-types.md D2's typing,
+; D3 and D4 (the last at the end of this file).
 ; Included by types.inc; a section of that file, split for length, as
 ; member.inc and stmt.inc are.
 ;
@@ -74,7 +75,7 @@
 ; unreachable arms are NOT diagnosed (D3: `[OPEN]`, no code).
 ;
 ; Spec: docs/spec/exsecutor-spec-v0.4.md §8.5, §8.6, §13;
-; docs/design/sum-types.md D2, D3, D5.
+; docs/design/sum-types.md D2, D3, D4, D5.
 ; -----------------------------------------------------------------------------
 
 ; __chk_ty_isctor(w, n) -> rax = the `AST_D_VARIANT` declaration expression `n`
@@ -937,5 +938,110 @@ proc __chk_ty_exhaust, chkt_wEX, chkt_nEX, chkt_tEX, chkt_cEX
 	mov	[r12 + ChkDiag.fx.start], ecx
 	mov	dword [r12 + ChkDiag.fx.len], 0
   .out:
+	return
+endp
+
+; =============================================================================
+; `?` -- docs/design/sum-types.md D4
+; =============================================================================
+; `e?` with `e : eventus<T, E>`, inside a function whose declared result is
+; `eventus<U, E>` with the SAME `E`, has type `T`: it is the `prosperum`
+; payload, and otherwise the function returns `e`'s `adversum` (the lowering's
+; half, lower/sum.inc's `__lwr_try`). "The same `E`" is interned type
+; identity -- the id comparison every other type rule here makes; there is no
+; conversion (D4: `[OPEN]`, it needs a trait and §7's dictionary passing).
+;
+; THREE REFUSALS, three registered codes, none new (§13 untouched):
+;
+;   - the operand is not an `eventus` instance           `EXS-E0305`
+;     (D4: the code this arm always raised for that half; "operation not
+;     defined on the type" is exactly what it is)
+;   - the enclosing function's result is not an `eventus` `EXS-E0307`
+;     (D4's proposal, taken: control flow misuse, the code `rumpe` outside a
+;     loop gets -- a construct that transfers control used where the
+;     transfer has nowhere to go). That includes module level (no function)
+;     and a lambda whose result is still being INFERRED with no `redde`
+;     before the `?` (`winfer` and no `winf`: there is no result type yet for
+;     the `adversum` to be returned as, so `wres` is 0).
+;   - both are `eventus`, with different `E`             `EXS-E0303`
+;     ("type mismatch", §13's general typing code): the `adversum` value of
+;     type `E` would be returned where the function's result carries a
+;     different error type. It is the mismatch a `redde adversum(e)` with
+;     that `e` would raise, met one token earlier, so it keeps that code --
+;     D2's reuse argument, and §13's record for `EXS-E0510`.
+;
+; Every refusal is AT THE `Try` NODE, and after E0307 or E0303 the answer is
+; still `T`: the operand's own payload type is not in doubt, so nothing above
+; the `?` cascades. Only E0305 answers the error type -- there is no `T`.
+; The ERROR TYPE anywhere (operand, result, either `E`) is silent: already
+; said.
+;
+; `?` does NOT count as a `redde` for "a non-`unit` function that can fall
+; off its end" (`EXS-E0307`, `__chk_ty_body`): it returns on one path only,
+; and the success path still needs one.
+
+; __chk_ty_try(w, n) -> rax = the type of `Try` node `n`.
+proc __chk_ty_try, chkt_wTR, chkt_nTR
+	uses	rbx, r12, r13, r14
+	locals
+		slot chkt_tTR, dq	; T
+	endl
+	mov	rbx, [chkt_wTR]
+	mov	r12, [chkt_nTR]
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_node
+	mov	esi, [rax + AstNode.a]		; the operand
+	mov	rdi, rbx
+	call	__chk_ty_expr
+	mov	rdi, rbx
+	mov	rsi, rax
+	mov	rdx, r12
+	call	__chk_ty_settled
+	cmp	rax, 1
+	je	.err				; the error type: already said
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, rax
+	call	ast_eventus_args
+	test	eax, eax
+	jz	.notev
+	mov	[chkt_tTR], rax
+	mov	r13d, edx			; E
+	; ---- the enclosing function's result ----
+	mov	r14d, [rbx + ChkTyWork.wres]
+	cmp	r14, 1
+	je	.ok
+	mov	rdi, [rbx + ChkTyWork.wtre]
+	mov	rsi, r14
+	call	ast_eventus_args
+	test	eax, eax
+	jz	.nowhere
+	cmp	edx, r13d
+	je	.ok
+	cmp	edx, 1
+	je	.ok
+	cmp	r13d, 1
+	je	.ok
+	mov	rdi, rbx
+	mov	rsi, 303
+	mov	rdx, r12
+	call	__chk_ty_raise
+	jmp	.ok
+  .nowhere:
+	mov	rdi, rbx
+	mov	rsi, 307
+	mov	rdx, r12
+	call	__chk_ty_raise
+  .ok:
+	mov	rax, [chkt_tTR]
+	return
+  .notev:
+	mov	rdi, rbx
+	mov	rsi, 305
+	mov	rdx, r12
+	call	__chk_ty_raise
+  .err:
+	mov	rdi, rbx
+	call	__chk_ty_err
 	return
 endp

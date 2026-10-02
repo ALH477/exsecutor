@@ -402,10 +402,17 @@ proc lwr_expr, lwrsp, lwrn
 	je	.member
 	cmp	eax, AST_INDEX
 	je	.index
-	; `Try` (spec section 11's `eventus` has no representation, IR 6) and
+	cmp	eax, AST_TRY
+	je	.try
 	; `Lambda` (lowering.md 2.7: closures are [OPEN] in five separate ways)
-	; are the two the first slice refuses rather than guesses at
+	; is refused rather than guessed at. `Try` was refused here too until
+	; docs/design/sum-types.md D4 (lower/sum.inc's `__lwr_try`).
 	rassert	eax eq 0
+  .try:
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_try
+	return
   .lit:
 	mov	rdi, rbx
 	mov	esi, [lwrn]
@@ -2017,7 +2024,7 @@ proc __lwr_call_member, lwrsp, lwrn, lwrdst
 
   .prelude:
 	; `plica_unicode` `plica_sermone` `octeti` `numerus` ARE REFUSED HERE BY
-	; NAME, the way `lwr_expr` refuses `Try` and `Lambda`: the checker resolves
+	; NAME, the way `lwr_expr` refuses `Lambda`: the checker resolves
 	; them (checker/types/prim.inc rows 12..15, spec §5.1's text operations)
 	; and this pass cannot emit them. `__lwr_pre_row` looks a member up in
 	; `exsrt_iface_nomina`, and those four have no `prelude/interface.inc`
@@ -2269,7 +2276,17 @@ proc lwr_expr_agg, lwrsp, lwrn
 	je	.unary
 	cmp	eax, AST_BINARY
 	je	.binary
+	cmp	eax, AST_TRY
+	je	.try
 	jmp	.fresh
+  .try:
+	; `e?` of aggregate `T`: the `prosperum` payload's address inside the
+	; operand's storage (lower/sum.inc's `__lwr_try`) -- bytes that exist,
+	; like a field's, so no slot and no copy here
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_try
+	return
   .binary:
 	; only `+ - * /` on two `acies<f32/f64, N>` ever reach here as a
 	; Binary of aggregate type (the checker's stage-5.2a gate); the vector

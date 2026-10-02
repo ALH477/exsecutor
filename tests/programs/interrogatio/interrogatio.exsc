@@ -1,0 +1,274 @@
+// `?` -- docs/design/sum-types.md D4 -- through `-o` on the reference backend
+// and through the C backend under the differential phase. `e?` with
+// `e : eventus<T, E>`, inside a function returning `eventus<U, E>`, is `e`'s
+// `prosperum` payload, or else the function returns `e`'s `adversum` at
+// once. `initium` returns the number of the first check that is wrong, or 0
+// when all are right.
+//
+//    1  the happy path: a `?` in a binding initializer yields the payload
+//    2  early return, ONE level, and the result is SMALLER than the operand:
+//       `eventus<mensura, erratum>` (9 bytes) propagated as
+//       `eventus<u8, erratum>` (3 bytes); the error number is exact
+//    3  TWO levels, and the result is LARGER than the operand
+//       (`eventus<u8, …>` -> `eventus<mensura, …>`): the number that
+//       `divide` put in survives both returns; the success path too
+//    4  `?` NESTED in a larger expression: both operands of a `+`
+//    5  `?` as CALL ARGUMENTS, counted: each operand is evaluated EXACTLY
+//       ONCE and in source order (the counter reads 12); when the first
+//       fails the second is never evaluated (it reads 1) and the first's
+//       error is what comes back
+//    6  CHAINED: `divide(divide(a, b)?, c)?`, each link able to fail
+//    7  an AGGREGATE payload: `eventus<Par, erratum>`, `?` into a binding
+//       and straight into an argument
+//    8  a SCALAR error type and a SUB-BYTE payload: `eventus<u4, u8>`
+//       propagated as `eventus<u16, u8>`
+//    9  `?` inside a loop: the early return leaves mid-iteration
+//   10  `?` on a NESTED instance, its `T` itself a sum, as a `discerne`
+//       scrutinee; and as an expression statement
+//   11  the early return writes EXACTLY the result's bytes: `octavus`'s
+//       3-byte result lands in a struct field packed between two guards, and
+//       neither guard moves. Copying the operand's 9 bytes whole -- assuming
+//       `eventus<mensura, erratum>` and `eventus<u8, erratum>` share a layout
+//       -- would overwrite `post`
+//   12  `?` on a PARAMETER whose caller passes the same storage as the hidden
+//       result (`s = transmitte(s)` hands `s`'s slot in twice, measured in
+//       the emitted C): the error is read before the result is written
+//   13  `?` where control flow is built around it: a `si` condition, a `dum`
+//       condition (re-evaluated, failing on a later iteration), an
+//       assignment's right side, a struct literal's field, an array
+//       literal's element, and the right operand of `et`, which must not
+//       be evaluated -- and so must not return -- when the left is false
+//
+// Mutations of lower/sum.inc's `__lwr_try`, run before committing, each on
+// the reference backend and the four C builds (sum-types.md section 8a, F12):
+//   test the tag against `prosperum`        -> exit 1 everywhere (predicted 1)
+//   early return stores the `prosperum` tag -> exit 2 everywhere (predicted 2)
+//   operand lowered twice                   -> exit 5 everywhere (predicted 5)
+//   no early return (bE jumps into bK)      -> exit 2 everywhere (predicted 2)
+//   operand copied whole into the result    -> exit 11 on the reference and
+//     clang -O0, 3 on clang -O2, gcc's stack protector aborts (134) at -O0
+//     and -O2; before check 11 existed this one PASSED the reference build
+
+publica structura Numerator { n: u32 }
+
+publica structura Vigil {
+    ante: u32
+    r: eventus<u8, erratum>
+    post: u32
+}
+
+publica structura Par {
+    a: u16
+    b: u32
+}
+
+functio divide(a: mensura, b: mensura) -> eventus<mensura, erratum> {
+    si b eq 0 { redde adversum(erratum { numerus: a sicut u16 }); }
+    redde prosperum(a / b);
+}
+
+functio valor(r: eventus<mensura, erratum>) -> mensura {
+    discerne r {
+        casus prosperum(n) { redde n; }
+        casus adversum(e) { redde 1000000 + (e.numerus sicut mensura); }
+    }
+}
+
+functio valor8(r: eventus<u8, erratum>) -> mensura {
+    discerne r {
+        casus prosperum(n) { redde n sicut mensura; }
+        casus adversum(e) { redde 1000000 + (e.numerus sicut mensura); }
+    }
+}
+
+// 1, 2: T = mensura, U = u8
+functio octavus(a: mensura, b: mensura) -> eventus<u8, erratum> {
+    firma q = divide(a, b)?;
+    redde prosperum(q sicut u8);
+}
+
+// 3: T = u8, U = mensura, propagating `octavus`'s propagation
+functio secundus(a: mensura, b: mensura) -> eventus<mensura, erratum> {
+    firma v = (octavus(a, b)? sicut mensura) + 1000;
+    redde prosperum(v);
+}
+
+// 4
+functio summa(a: mensura, b: mensura, c: mensura, d: mensura) -> eventus<mensura, erratum> {
+    redde prosperum(divide(a, b)? + divide(c, d)?);
+}
+
+// 5
+functio numerata(c: &mutabilis Numerator, k: u32, a: mensura, b: mensura) -> eventus<mensura, erratum> {
+    (*c).n = (*c).n * 10 + k;
+    redde divide(a, b);
+}
+
+functio par(x: mensura, y: mensura) -> mensura { redde x * 100 + y; }
+
+functio ordo(c: &mutabilis Numerator, b1: mensura, b2: mensura) -> eventus<mensura, erratum> {
+    redde prosperum(par(numerata(c, 1, 12, b1)?, numerata(c, 2, 10, b2)?));
+}
+
+// 6
+functio catena(a: mensura, b: mensura, c: mensura) -> eventus<mensura, erratum> {
+    redde prosperum(divide(divide(a, b)?, c)? + 1);
+}
+
+// 7
+functio fac(x: u16) -> eventus<Par, erratum> {
+    si x eq 0 { redde adversum(erratum { numerus: 707 }); }
+    redde prosperum(Par { a: x, b: 70000 });
+}
+
+functio lege(p: Par) -> mensura {
+    redde (p.a sicut mensura) + (p.b sicut mensura);
+}
+
+functio aggregatum(x: u16) -> eventus<mensura, erratum> {
+    firma p = fac(x)?;
+    firma s = lege(fac(x + 1)?);
+    redde prosperum(s + (p.a sicut mensura));
+}
+
+// 8: a scalar `E`, a sub-byte `T`
+functio nibba(x: u8) -> eventus<u4, u8> {
+    si x gt 15 { redde adversum(x); }
+    redde prosperum(x sicut u4);
+}
+
+functio lata(x: u8) -> eventus<u16, u8> {
+    firma n = nibba(x)?;
+    redde prosperum((n sicut u16) * 1000);
+}
+
+functio valor16(r: eventus<u16, u8>) -> mensura {
+    discerne r {
+        casus prosperum(n) { redde n sicut mensura; }
+        casus adversum(e) { redde 1000000 + (e sicut mensura); }
+    }
+}
+
+// 9: sum 100/(b - i) over i in 0..n
+functio circuitus(n: mensura, b: mensura) -> eventus<mensura, erratum> {
+    mutabilis s: mensura = 0;
+    per i in 0..n {
+        s = s + divide(100, b - i)?;
+    }
+    redde prosperum(s);
+}
+
+// 10
+functio interior(a: mensura) -> eventus<eventus<u8, erratum>, erratum> {
+    si a eq 0 { redde adversum(erratum { numerus: 9 }); }
+    si a eq 1 { redde prosperum(adversum(erratum { numerus: 8 })); }
+    redde prosperum(prosperum(a sicut u8));
+}
+
+functio exterior(a: mensura) -> eventus<mensura, erratum> {
+    divide(a, 1)?;
+    discerne interior(a)? {
+        casus prosperum(v) { redde prosperum(v sicut mensura); }
+        casus adversum(e) { redde prosperum(500 + (e.numerus sicut mensura)); }
+    }
+}
+
+// 12
+functio transmitte(r: eventus<mensura, erratum>) -> eventus<mensura, erratum> {
+    redde prosperum(r? + 1);
+}
+
+// 13
+functio condicio(a: mensura, b: mensura) -> eventus<mensura, erratum> {
+    si divide(a, b)? gt 3 { redde prosperum(1); }
+    redde prosperum(2);
+}
+
+functio dum_q(a: mensura, n: mensura) -> eventus<mensura, erratum> {
+    mutabilis k: mensura = 0;
+    dum divide(a, n - k)? lt 5 terminus 100 { k = k + 1; }
+    redde prosperum(k);
+}
+
+functio assigna(a: mensura, b: mensura) -> eventus<mensura, erratum> {
+    mutabilis x: mensura = 7;
+    x = divide(a, b)?;
+    redde prosperum(x);
+}
+
+functio litterae(a: mensura, b: mensura) -> eventus<mensura, erratum> {
+    firma p = Par { a: divide(a, b)? sicut u16, b: 9 };
+    firma v: acies<mensura, 2> = [divide(a, b)?, 3];
+    redde prosperum((p.a sicut mensura) + v[0] + v[1]);
+}
+
+functio et_q(c: u1, a: mensura, b: mensura) -> eventus<mensura, erratum> {
+    si c eq 1 et divide(a, b)? eq 4 { redde prosperum(44); }
+    redde prosperum(55);
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    si valor8(octavus(84, 2)) ne 42 { redde 1; }
+    si valor8(octavus(77, 0)) ne 1000077 { redde 2; }
+    si valor(secundus(84, 2)) ne 1042 { redde 3; }
+    si valor(secundus(4321, 0)) ne 1004321 { redde 3; }
+    si valor(summa(84, 2, 9, 3)) ne 45 { redde 4; }
+    si valor(summa(84, 0, 9, 3)) ne 1000084 { redde 4; }
+    si valor(summa(84, 2, 9, 0)) ne 1000009 { redde 4; }
+
+    mutabilis k = Numerator { n: 0 };
+    si valor(ordo(k, 3, 5)) ne 402 { redde 5; }
+    si k.n ne 12 { redde 5; }
+    k.n = 0;
+    si valor(ordo(k, 0, 5)) ne 1000012 { redde 5; }
+    si k.n ne 1 { redde 5; }
+    k.n = 0;
+    si valor(ordo(k, 3, 0)) ne 1000010 { redde 5; }
+    si k.n ne 12 { redde 5; }
+
+    si valor(catena(100, 5, 4)) ne 6 { redde 6; }
+    si valor(catena(100, 0, 4)) ne 1000100 { redde 6; }
+    si valor(catena(100, 5, 0)) ne 1000020 { redde 6; }
+
+    si valor(aggregatum(3)) ne 70007 { redde 7; }
+    si valor(aggregatum(0)) ne 1000707 { redde 7; }
+
+    si valor16(lata(9)) ne 9000 { redde 8; }
+    si valor16(lata(15)) ne 15000 { redde 8; }
+    si valor16(lata(200)) ne 1000200 { redde 8; }
+
+    si valor(circuitus(3, 5)) ne 78 { redde 9; }
+    si valor(circuitus(9, 5)) ne 1000100 { redde 9; }
+
+    si valor(exterior(7)) ne 7 { redde 10; }
+    si valor(exterior(1)) ne 508 { redde 10; }
+    si valor(exterior(0)) ne 1000009 { redde 10; }
+
+    mutabilis v = Vigil { ante: 1234567, r: prosperum(0), post: 7654321 };
+    v.r = octavus(77, 0);
+    si v.post ne 7654321 { redde 11; }
+    si v.ante ne 1234567 { redde 11; }
+    si valor8(v.r) ne 1000077 { redde 11; }
+
+    mutabilis s = divide(5, 0);
+    s = transmitte(s);
+    si valor(s) ne 1000005 { redde 12; }
+    s = divide(10, 2);
+    s = transmitte(s);
+    si valor(s) ne 6 { redde 12; }
+
+    si valor(condicio(20, 2)) ne 1 { redde 13; }
+    si valor(condicio(4, 2)) ne 2 { redde 13; }
+    si valor(condicio(6, 0)) ne 1000006 { redde 13; }
+    si valor(dum_q(10, 3)) ne 1 { redde 13; }
+    si valor(dum_q(10, 10)) ne 8 { redde 13; }
+    si valor(dum_q(1, 4)) ne 1000001 { redde 13; }
+    si valor(assigna(8, 2)) ne 4 { redde 13; }
+    si valor(assigna(8, 0)) ne 1000008 { redde 13; }
+    si valor(litterae(8, 2)) ne 11 { redde 13; }
+    si valor(litterae(8, 0)) ne 1000008 { redde 13; }
+    si valor(et_q(1, 8, 2)) ne 44 { redde 13; }
+    si valor(et_q(0, 8, 0)) ne 55 { redde 13; }
+    si valor(et_q(1, 8, 0)) ne 1000008 { redde 13; }
+    redde 0;
+}

@@ -1,6 +1,6 @@
 # Sum types, constructor patterns, and `eventus`
 
-**Status: D1, D2 (grammar, scoping and typing), D3, D5 and D6 are implemented and lowered on both backends as of 2026-10-02, with D4's interim refusal of `?`; D4 itself is design.** §8 records what implementing them measured, including two places this document was wrong. Until 2026-10-02 this line read "D1 (grammar), D2 (grammar and pass-1 scoping), D6 (layout) and the declaration's typing are implemented as of 2026-09-27; D2's typing, D3, D4 and D5 are design. When this document was written nothing here was implemented. Every decision below is `D`-numbered
+**Status: D1–D6 are implemented and lowered on both backends as of 2026-10-02 — D4, `?`, last (§8a, F10–F14).** §8 records what implementing them measured, including two places this document was wrong. Earlier on 2026-10-02 this line read "D1, D2 (grammar, scoping and typing), D3, D5 and D6 are implemented and lowered on both backends as of 2026-10-02, with D4's interim refusal of `?`; D4 itself is design." Until then it read "D1 (grammar), D2 (grammar and pass-1 scoping), D6 (layout) and the declaration's typing are implemented as of 2026-09-27; D2's typing, D3, D4 and D5 are design. When this document was written nothing here was implemented. Every decision below is `D`-numbered
 so the spec and the fixtures can cite one rather than quote the argument, and every
 claim about what the tree does today was measured on 2026-09-26 at `747fa30` plus the
 working tree. Prose designs are hypotheses until code runs; this document is a
@@ -115,7 +115,9 @@ with a reserved sigil, a name in a table, two uses in the normative text, no
 definition — and an implementation whose meaning is not the one D4 gives it.
 That is the contradiction to record: the spec relies on `?` and does not define
 it, and the checker defines it differently from this document. D4 settles the
-meaning; the checker's arm is what changes to match it.
+meaning; the checker's arm is what changes to match it. (Resolved 2026-10-02:
+the arm refused every `?` first, F6, and now implements D4, F10; the lowering
+refuses nothing by name. This paragraph describes the tree at `747fa30`.)
 
 **`eventus` exists too, as an uninhabited builtin.** It is pool row
 `CHK_TY_P_EVENTUS` in `compiler/x86_64/checker/types/prim.inc`, interned by
@@ -296,6 +298,13 @@ operator is not a pattern. Admitting it would make coverage an interval-arithmet
 problem, and D2's flatness argument applies again.
 
 ### D4 — `?` gets its meaning, and until it does it should be refused
+
+**Implemented 2026-10-02** (§8a, F10–F14): `compiler/x86_64/checker/types/sum.inc`'s
+`__chk_ty_try` and `compiler/x86_64/lower/sum.inc`'s `__lwr_try`, pinned by
+`tests/unit/chk_ty_interrogatio.asm` and run by `tests/programs/interrogatio/`
+on both backends. The interim refusal below was the state from `1273e06`
+until then. The `E` mismatch this section left without a code is
+`EXS-E0303` (F10).
 
 `e?` where `e : eventus<T, E>`, inside a function whose return type is
 `eventus<U, E>` with the **same** `E`, evaluates to `e`'s `prosperum` payload of
@@ -584,18 +593,20 @@ check starts holding this document to them. Item 0 has crossed over.
 4. **`tests/unit/chk_ty_eventus_arity.asm`** — **exists and runs**: D5,
    `eventus<mensura>` with one argument is `EXS-E0304`, and so are a bare
    `eventus` and three arguments; two pass; a module's own `eventus` shadows
-   the prelude's; `?` is `EXS-E0305`. The blocker this item recorded (the
+   the prelude's; `?` in a function returning `u8` (row 7) was `EXS-E0305`,
+   D4's interim refusal, and is `EXS-E0307` now that D4 is built. The blocker this item recorded (the
    one-sided count) was fixed independently, as it said it should be. D2's
    typing has its own fixture, which this plan did not name:
    `tests/unit/chk_ty_sum_typing.asm` (sixteen rows).
 5. **`tests/programs/eventus/`** — **exists and runs on both backends, for
-   D5 and not D4**: `eventus<mensura, erratum>` round trips through results,
+   D5**; D4's own program is `tests/programs/interrogatio/` (F13): `eventus<mensura, erratum>` round trips through results,
    parameters and assignments, a second and a nested instance, the
    expectation supplying a constructor's arguments; `tests/programs/summa/`
    beside it runs D2's and D6's shapes (sub-byte payloads included). What
    this item asked for is still owed: a program that
    reads with `lege_octeto`, propagates with `?`, and distinguishes end-of-input
-   from a read error, which no program in this tree can currently do. This is the
+   from a read error. `?` exists now; `lege_octeto` still returns `-> u16`
+   (the prelude I/O migration), so no program in this tree can do it yet. This is the
    one that makes §11's claim true rather than promised, and it is the deliverable
    the other four support.
 6. **A §14 entry** for the distinction in 5, appended and never inserted (§14's own
@@ -665,7 +676,7 @@ commit of this design", and it is still owed.
 **F6 — D4's interim state is now real.** `?` is `EXS-E0305` on every operand
 (the `.try:` arm's existing code; no code spent on a temporary state). D4 is
 not required for D5 to be usable — an `eventus` is matched with `discerne` —
-so it stays design.
+so it stays design. *(Superseded the same day by F10: D4 is built.)*
 
 **F7 — §6's cost was wrong twice.** It said `tests/programs/discerne/` would
 lose four of its thirty checks (6, 13, 15, 25). Adding an EMPTY `aliter` to
@@ -695,7 +706,95 @@ exhaustive match with no `aliter` is entered without a test: D3 proved the
 remaining value can only be its variant. The C backend needed nothing — it
 lowers the IR, not the tree.
 
+## 8a. What implementing D4 measured
+
+Written 2026-10-02, with the code, on top of `af81bc5`.
+
+**F10 — the rules as built, and the code for an `E` mismatch.** `e?` with
+`e : eventus<T, E>` has type `T` when the enclosing function's declared result
+is `eventus<U, E>` with the same `E` — the same interned id, which is how
+every other type in the checker compares. Three refusals, all at the `Try`
+node (its span is the operand and the `?` together), all registered codes,
+§13 untouched:
+
+| case | code | why that code |
+|---|---|---|
+| the operand is not an `eventus` | `EXS-E0305` | D4: settled by the tree; "operation not defined on the type" |
+| the enclosing function's result is not an `eventus` | `EXS-E0307` | D4's proposal, taken: control flow misuse, `rumpe`'s code — the transfer has nowhere to go |
+| both are, with different `E` | `EXS-E0303` | "type mismatch", §13's general-typing code: the `adversum` value of type `E` would be returned where the result carries another error type, which is exactly the mismatch `redde adversum(e)` with that `e` raises one token later. D2's reuse argument; a new code for a narrower spelling of 0303 would be the invention CLAUDE.md forbids |
+
+After `EXS-E0307` or `EXS-E0303` the `?` still answers `T` — the payload type
+is not in doubt — so nothing above it cascades (`tests/unit/chk_ty_interrogatio.asm`
+row 9 is one diagnostic, not two). An operand that is already the error type
+is silent. "Enclosing function" is the innermost one: a `?` in a lambda
+returning `u8` is `EXS-E0307` even inside a function returning an `eventus`
+(row 11), and in a lambda whose result is still being inferred with no
+`redde` before the `?`, there is no result type yet, so it is `EXS-E0307`
+too. `?` does not count as the `redde` that keeps a non-`unit` function from
+"falling off its end": it returns on one path only. §13's note on
+`EXS-E0351` lists the codes D2 and D4 reuse and does not name `EXS-E0303`
+for this case; it was left as it is, since this change does not touch §13.
+
+**F11 — "an `eventus`" means the prelude's declaration.** D4 never said
+whether a module's own `typus eventus<T, E> = casus prosperum(T), casus
+adversum(E);` — legal, it shadows the prelude's (F4) — gets `?`. It does not:
+`?` is a rule about one declaration, and the test is the declaration, not its
+shape (`ast_eventus_args`, `compiler/x86_64/prelude/eventus.inc`: a
+synthesized `typus` named `eventus`, applied to two arguments). A lookalike is
+an ordinary sum and its `?` is `EXS-E0305` (row 8). The same routine is read by
+the checker and by the lowering, which cannot share a checker routine.
+
+**F12 — the two layouts differ in size, and agree on where `E` is; only a
+guard made the difference observable.** D6 puts the tag at byte 0 and every
+payload at the tag width; both instances are two-variant sums of one
+declaration, so the tag width is the same and `E` — `adversum`'s only element
+— sits at the same offset in `eventus<T, E>` and `eventus<U, E>`. What differs
+is the SIZE: `eventus<mensura, erratum>` is 9 bytes, `eventus<u8, erratum>`
+3. `__lwr_try` therefore places `E` through `__lwr_sum_place` on each type
+separately and writes only the tag and `E` into the result — never the
+operand's bytes whole. Measured, the mutation that copies the operand whole
+(9 bytes into a 3-byte result) PASSED the reference build of the program as
+first written: the overrun landed on dead stack. Check 11 puts the result in
+a struct field between two `u32` guards (alignment 1, so they are adjacent),
+after which the same mutation exits 11 on the reference and clang -O0, 3 on
+clang -O2, and gcc's stack protector aborts at -O0 and -O2. A second fact,
+from the emitted C: `s = transmitte(s)` passes `s`'s slot as both the hidden
+result and the operand, so the early return reads `E` before storing the
+tag (`__lwr_ctor`'s order) — check 12. For an aggregate `E` that copy is a
+`memcpy` of a region onto itself, which C11 7.24.2.1 leaves undefined for
+overlapping objects; `redde r` in the same position already emits the same
+call, no build objects, and it is `[OPEN]` for both rather than for `?` alone.
+
+**F13 — what the lowering is, and what pins it.** No new IR instruction:
+`lwr_expr_agg` of the operand (once), a `load` of the tag, `cmp.eq` with
+`adversum`'s index, `br`; the early-return block stores the result's tag and
+`E` through the hidden-return pointer, releases every open frame and `ret`s;
+the success block reads the `prosperum` payload — a scalar's `load`/`loadbits`,
+an aggregate's address, which `lwr_expr_into` then copies as it copies a
+field. Evaluation continues in the success block, so `?` works anywhere an
+expression does — check 13 puts it in a `si` and a `dum` condition, an
+assignment, a struct and an array literal, and the right operand of `et`,
+which short-circuits past it. The C backend needed nothing.
+`tests/programs/interrogatio/` (`cross=yes`) runs thirteen checks on the
+reference backend, gcc/clang -O0/-O2 under UBSan, and the cross phase's
+big-endian mips64 o64 row (32-bit `mensura`). Mutations of `__lwr_try`, each predicted and run on all
+five builds: testing the tag against `prosperum` → exit 1; storing
+`prosperum`'s tag on the early return → 2; lowering the operand twice → 5
+(the call counter check); no early return, the error block
+jumping into the success block → 2; the whole-operand copy → F12. Checker
+mutations, run on the unit fixture: no `E` comparison → exit 22; no result
+check → 19 (and `chk_ty_eventus_arity.asm` → 17); no synthesized-declaration
+test → 18.
+
+**F14 — still `[OPEN]` after D4.** Error conversion (D4's first bullet);
+`?` in a lambda reaches no lowering, since lambdas are refused there
+(lowering.md 2.7); `5?` on a pending literal is `EXS-E0308` from the
+settlement before `EXS-E0305` can be judged — the order the arm always had,
+kept, not designed; and §7 item 5's program, which needs the prelude I/O
+migration, not `?`.
+
 **What remains, in order:** the prelude I/O migration D5 calls for — `lege_octeto` and
 `scribe` returning `eventus<…, erratum>` with the blob, the rows and every
-caller moved together — which this change deliberately did not make; then D4;
-then retiring the builtin (F5).
+caller moved together — which this change deliberately did not make; then
+retiring the builtin (F5). D4, which this list used to name between them, is
+built (F10–F14).

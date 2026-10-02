@@ -50,8 +50,11 @@
 ; tag or any element is STORED -- `__lwr_structlit`'s two walks, for the same
 ; reason: `r = prosperum(f(r))` must read `r` before it overwrites it.
 ;
+; `?` (D4) is the last section of this file: the same tag test and payload
+; read, with an early return between them.
+;
 ; Spec: docs/spec/exsecutor-spec-v0.4.md §5.2, §8.5, §8.6;
-; docs/design/sum-types.md D2, D3, D6; docs/design/lowering.md section 2.8.
+; docs/design/sum-types.md D2, D3, D4, D6; docs/design/lowering.md section 2.8.
 ; -----------------------------------------------------------------------------
 
 ; __lwr_isctor(st, lwrn) -> eax = the variant declaration expression `lwrn`
@@ -737,5 +740,265 @@ proc __lwr_sum_bind, lwrsp, lwrcs, lwrp, lwrt
 	inc	r12d
 	jmp	.bind
   .out:
+	return
+endp
+
+; =============================================================================
+; `?` -- docs/design/sum-types.md D4
+; =============================================================================
+; `e?` is the `discerne` D2 already admits, written as one token, and it is
+; lowered as exactly that -- NO NEW IR INSTRUCTION, so the C backend, which
+; lowers the IR, needs nothing:
+;
+;   %p  = <e>                          evaluated ONCE (`lwr_expr_agg`)
+;   %t  = load uT %p 0                 the tag
+;   %c  = cmp.eq uT %t <adversum>
+;         br %c bE bK
+;   bE: <the function's result> = adversum(<e's E payload>), released, `ret`
+;   bK: the `prosperum` payload, read from %p
+;
+; THE EARLY RETURN BUILDS THE RESULT IN THE RESULT'S OWN LAYOUT. `e` is an
+; `eventus<T, E>` and the function returns an `eventus<U, E>`; D6 sizes an
+; instance from its payloads, so the two are different sizes whenever `T` and
+; `U` are, and copying `e`'s bytes would overrun (or underfill) the hidden
+; result. So the tag is stored at the result's tag width and the `E` element
+; is placed through `__lwr_sum_place` on EACH type separately -- loaded from
+; `e` at its place there, stored into the result at its place there -- the
+; constructor's own two halves (`__lwr_ctor`), with the payload read instead of
+; evaluated. The load comes before the tag store, `__lwr_ctor`'s order,
+; because a caller may hand the operand's own storage in as the hidden result
+; (`s = f(s)`, where `f` takes `s?`; measured in the emitted C): a scalar `E`
+; is then read before anything is written. An aggregate `E`'s "load" is its
+; address and its `copy` comes after the tag store -- still sound, since the
+; tag is bytes [0, tag width) and `E` starts at the tag width in both
+; layouts (D6: one declaration, two variants, one tag width), so the store
+; never touches what the copy reads. With the storage shared the copy is of
+; a region onto itself, which `redde s` already emits there; sum-types.md
+; F12 records it as `[OPEN]` for both.
+; Then every open frame is released to the function root and `ret` -- what
+; `redde` emits (stmt.inc's `__lwr_redde`), since that is what this is.
+;
+; The VALUE is read in `bK`, whose one predecessor is the test: a scalar `T`
+; is a `load`/`loadbits`; an aggregate `T` answers the payload's ADDRESS,
+; `addr %p off`, which is `lwr_expr_agg`'s contract ("a `ptr` to the value"),
+; so a binding initializer or an argument copies from -- or passes -- the
+; operand's own bytes, as it would a field's. Evaluation continues in `bK`:
+; everything after the `?` in the enclosing expression is lowered there, and
+; every value computed before it (an earlier argument, the left operand) is
+; defined in a block that dominates `bK`.
+
+; __lwr_fn_result(st) -> eax = the result type of the function being lowered:
+; the last entry of its `fn` type's list, as `lwr_fn` reads it.
+proc __lwr_fn_result, lwrsp
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [lwrsp]
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, [rbx + LwrState.fnd]
+	rassert	esi ne 0
+	call	ast_decl_at
+	mov	esi, [rax + AstDecl.ty]
+	mov	rdi, [rbx + LwrState.tree]
+	call	ast_type_at
+	mov	esi, [rax + AstType.a]
+	mov	edx, [rax + AstType.width]
+	mov	rdi, rbx
+	call	__lwr_listat
+	return
+endp
+
+; __lwr_try_var(st, lwrt, lwri) -> eax = variant `lwri` (AST_PRE_V_*) of
+; `eventus` instance `lwrt`: its declaration.
+proc __lwr_try_var, lwrsp, lwrt, lwri
+	uses	rbx
+	locals
+	endl
+	mov	rbx, [lwrsp]
+	mov	rdi, rbx
+	mov	esi, [lwrt]
+	call	__lwr_sum_info
+	rassert	edx eq 2			; prelude/eventus.inc's two
+	mov	rdi, rbx
+	mov	esi, eax
+	call	__lwr_node
+	mov	esi, [rax + AstNode.a]
+	mov	rdi, rbx
+	mov	edx, [lwri]
+	call	__lwr_listat
+	mov	rdi, rbx
+	mov	esi, eax
+	call	__lwr_node
+	mov	eax, [rax + AstNode.d]
+	return
+endp
+
+; __lwr_try(st, lwrn) -> eax = the value of `Try` node `lwrn`: a scalar `T`'s
+; value, an aggregate `T`'s address, 0 for a `unit` one. `cur` is left in the
+; success block. This section's header gives the shape.
+proc __lwr_try, lwrsp, lwrn
+	uses	rbx, r12, r13
+	locals
+		slot lwrot, dd		; the operand's type, eventus<T, E>
+		slot lwrop, dd		; ... its address
+		slot lwrtg, dd		; ... its tag's IR type
+		slot lwrbe, dd		; the early-return block
+		slot lwrbk, dd		; the success block
+		slot lwrrt, dd		; the function's result, eventus<U, E>
+		slot lwrvd, dd		; a variant declaration
+		slot lwret, dd		; an element type
+		slot lwrbo, dd		; ... and its bit offset
+		slot lwrv, dd		; the `E` payload
+	endl
+	mov	rbx, [lwrsp]
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_node
+	mov	r12d, [rax + AstNode.a]		; the operand
+	mov	rdi, rbx
+	mov	esi, r12d
+	call	__lwr_nty
+	mov	[lwrot], eax
+	; ---- evaluate once, test the tag ----
+	mov	rdi, rbx
+	mov	esi, r12d
+	call	lwr_expr_agg
+	mov	[lwrop], eax
+	mov	rdi, rbx
+	mov	esi, [lwrot]
+	call	__lwr_sum_tag
+	mov	[lwrtg], eax
+	mov	rdi, rbx
+	mov	esi, eax
+	mov	edx, [lwrop]
+	xor	ecx, ecx
+	xor	r8, r8			; BFA_ORDER_NATIVUS (D6)
+	call	lwr_load
+	mov	r12d, eax
+	mov	rdi, rbx
+	mov	esi, [lwrtg]
+	mov	edx, AST_PRE_V_ADVERSUM
+	xor	ecx, ecx
+	call	lwr_iconst
+	mov	rdi, rbx
+	mov	esi, BFA_OP_CMP
+	mov	edx, BFA_PRED_EQ
+	mov	ecx, [lwrtg]
+	mov	r8d, r12d
+	mov	r9d, eax
+	call	lwr_emit
+	mov	r12d, eax
+	mov	rdi, rbx
+	call	lwr_blk_new
+	mov	[lwrbe], eax
+	mov	rdi, rbx
+	call	lwr_blk_new
+	mov	[lwrbk], eax
+	mov	rdi, rbx
+	mov	esi, r12d
+	mov	edx, [lwrbe]
+	mov	ecx, [lwrbk]
+	call	lwr_br
+	mov	rdi, rbx
+	mov	esi, [lwrbe]
+	call	lwr_seal
+	mov	rdi, rbx
+	mov	esi, [lwrbk]
+	call	lwr_seal
+
+	; ---- bE: return adversum(E) in the result's own layout ----
+	mov	eax, [lwrbe]
+	mov	[rbx + LwrState.cur], eax
+	mov	rdi, rbx
+	call	__lwr_fn_result
+	mov	[lwrrt], eax
+	mov	r13d, [rbx + LwrState.hidret]
+	rassert	r13d ne 0		; an `eventus` result is an aggregate
+	mov	rdi, rbx
+	mov	esi, [lwrot]
+	mov	edx, AST_PRE_V_ADVERSUM
+	call	__lwr_try_var
+	mov	[lwrvd], eax
+	mov	rdi, rbx
+	mov	esi, [lwrot]
+	mov	edx, [lwrvd]
+	xor	ecx, ecx
+	call	__lwr_sum_place		; E's type, its bit offset in the OPERAND
+	mov	[lwret], eax
+	mov	[lwrbo], edx
+	mov	rdi, rbx
+	mov	esi, [lwret]
+	mov	edx, [lwrop]
+	mov	ecx, [lwrbo]
+	call	__lwr_sum_load
+	mov	[lwrv], eax
+	; the tag, at the RESULT's width
+	mov	rdi, rbx
+	mov	esi, [lwrrt]
+	call	__lwr_sum_tag
+	mov	r12d, eax
+	mov	rdi, rbx
+	mov	esi, [lwrrt]
+	mov	edx, [lwrvd]
+	call	__lwr_sum_vidx
+	mov	rdi, rbx
+	mov	esi, r12d
+	mov	edx, eax
+	xor	ecx, ecx
+	call	lwr_iconst
+	mov	rdi, rbx
+	mov	esi, r12d
+	mov	edx, r13d
+	xor	ecx, ecx
+	mov	r8d, eax
+	xor	r9, r9			; BFA_ORDER_NATIVUS (D6)
+	call	lwr_store
+	; the element, at the RESULT's place for it
+	mov	rdi, rbx
+	mov	esi, [lwrrt]
+	mov	edx, [lwrvd]
+	xor	ecx, ecx
+	call	__lwr_sum_place
+	mov	rdi, rbx
+	mov	esi, eax
+	mov	ecx, edx
+	mov	edx, r13d
+	mov	r8d, [lwrv]
+	call	__lwr_sum_store
+	mov	rdi, rbx
+	xor	rsi, rsi
+	call	__lwr_release_to
+	mov	rdi, rbx
+	xor	esi, esi
+	call	lwr_ret
+
+	; ---- bK: the prosperum payload ----
+	mov	eax, [lwrbk]
+	mov	[rbx + LwrState.cur], eax
+	mov	rdi, rbx
+	mov	esi, [lwrn]
+	call	__lwr_nty
+	mov	rdi, rbx
+	mov	esi, eax
+	call	lwr_ty_void
+	test	eax, eax
+	jnz	.unit
+	mov	rdi, rbx
+	mov	esi, [lwrot]
+	mov	edx, AST_PRE_V_PROSPERUM
+	call	__lwr_try_var
+	mov	rdi, rbx
+	mov	esi, [lwrot]
+	mov	edx, eax
+	xor	ecx, ecx
+	call	__lwr_sum_place
+	mov	rdi, rbx
+	mov	esi, eax
+	mov	ecx, edx
+	mov	edx, [lwrop]
+	call	__lwr_sum_load
+	return
+  .unit:
+	xor	eax, eax
 	return
 endp

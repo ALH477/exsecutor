@@ -535,11 +535,11 @@ any receiver.** §5.1 writes `numerus` on all three views; one prelude row is
 one `fn` type, and a concrete receiver is compared by identity at the call
 site, so a single `numerus` row cannot serve three receiver types. Three rows
 per operation, or a receiver-polymorphic prelude form, is the fix and neither
-shipped; `[OPEN]`. `quaere` and `sectio` stay `[OPEN]` for three reasons that
-are each independently sufficient — the brand syntax `positio<'t>` does not
-parse (below), `?` has no defined meaning in the language (spec §8.6), and
-`eventus` is uninhabited (`docs/design/sum-types.md` section 2) so
-`eventus<positio<'t>>` is a type nothing can produce a value of. That is why
+shipped; `[OPEN]`. `quaere` and `sectio` stay `[OPEN]` because the brand
+syntax `positio<'t>` does not parse (below), which is sufficient on its own.
+This sentence gave two more reasons, each also sufficient then, and both
+were retired on 2026-10-02: `?` had no defined meaning (it has, spec §8.6,
+`docs/design/sum-types.md` D4) and `eventus` was uninhabited (it is, D5). That is why
 §14 entry 2 remains deferred while entries 1 and 12 no longer are.
 
 **Nothing below the checker can emit any of them.** `lower/expr.inc` refuses

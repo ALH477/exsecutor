@@ -1,4 +1,4 @@
-; tests/unit/chk_ty_eventus_arity.asm
+; tests/unit/chk_ty_interrogatio.asm
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ; Copyright (C) 2026 The Exsecutor authors.
 ;
@@ -20,34 +20,44 @@
 ; Code produced by this compiler is not covered by the GPL --
 ; see Exception A in LICENSE.EXCEPTION.
 ; -----------------------------------------------------------------------------
-; checker fixture: the prelude's `eventus<T, E>` and `erratum` --
-; docs/design/sum-types.md D5 (compiler/x86_64/prelude/eventus.inc), from
-; source through the whole front end. sum-types.md §7 item 4 owed exactly
-; this file: "`eventus<mensura>` with one argument is `EXS-E0304`". Every row
-; pins the diagnostics EXACTLY (count, codes, offsets, measured with
-; `exsc --diagnostica json` on the row's own source).
+; checker fixture: `?` -- docs/design/sum-types.md D4, the checker's half
+; (compiler/x86_64/checker/types/sum.inc `__chk_ty_try`). `e?` with
+; `e : eventus<T, E>` inside a function returning `eventus<U, E>` with the
+; SAME `E` has type `T`. Every row pins the diagnostics EXACTLY (count, codes,
+; offsets, measured with `exsc --diagnostica json` on the row's own source).
+; Every refusal points at the `Try` node, whose span is the operand and the
+; `?` together.
 ;
-;   row 1  `eventus<mensura>` -- one argument short of D5's two  E0304 at `<`
-;   row 2  bare `eventus` (spec §5.1's old spelling)            E0304 at the
-;          name: no clause, so no `<` to point at
-;   row 3  `eventus<mensura, erratum>`                           clean
-;   row 4  three arguments                                       E0304
-;   row 5  a module's OWN `eventus` shadows the prelude's -- a function, as
-;          examples/onus/onus.exsc declares -- with no `EXS-E0302`  clean
-;   row 6  ... and a module's own `typus eventus = u8;`          clean
-;   row 7  `?` on an `eventus` in a function returning `u8`: `EXS-E0307`
-;          at the `Try` (D4: the transfer has nowhere to go). Until D4 was
-;          built this row was `EXS-E0305`, D4's interim refusal of every `?`;
-;          tests/unit/chk_ty_interrogatio.asm holds the operator itself.
-;   row 8  `erratum`: a literal, a field read of `numerus: u16`   clean
-;   row 9  `prosperum(5)` with no expectation: `E` cannot come from the
-;          payload                                              E0304
-;   row 10 a whole round trip: constructed by `redde`, from a parameter, and
-;          matched with both arms                               clean
-;   row 11 a payload of the wrong type: `prosperum(e)` with `e: erratum`
-;          where `T` is `mensura`                               E0303
+;   row 1  accepted: a binding initializer whose annotation is T (`u8`), in a
+;          function returning a different U -- clean
+;   row 2  accepted: a call argument, inside a `+`, inside a constructor --
+;          clean
+;   row 3  accepted: chained `h(g()?)?`, and `g()?;` as a statement -- clean
+;   row 4  accepted: an aggregate T (a struct), and a scalar E elsewhere --
+;          clean
+;   row 5  accepted: inside a lambda whose DECLARED result is an eventus --
+;          clean
+;   row 6  the answer IS T: `firma x: u16 = g()?` with T = u8 -- E0303 at 118
+;   row 7  a non-eventus operand -- E0305 at 83
+;   row 8  a module's OWN `typus eventus<T, E>`, shaped exactly like the
+;          prelude's, is not the prelude's -- E0305 at 163
+;   row 9  in a function returning `u8`; the `redde x` after it does not
+;          cascade -- E0307 at 94
+;   row 10 at module level: no enclosing function -- E0307 at 74
+;   row 11 inside a lambda returning `u8`, in a function returning an eventus:
+;          the INNERMOST function decides -- E0307 at 140
+;   row 12 E mismatch: `eventus<u8, u16>` inside a function returning
+;          `eventus<u8, erratum>` -- E0303 at 108
+;   row 13 an operand that is already an error: the name's E0301 and nothing at
+;          the `?` -- E0301 at 52
 ;
 ; Exit 0 = every row held; 10+N = row N's diagnostics were wrong; 99 = setup.
+;
+; Mutations, run, each predicted (sum-types.md section 8a): `__chk_ty_try`
+; with the E comparison removed -> exit 22 (row 12); with the result check
+; removed -> exit 19 (row 9; tests/unit/chk_ty_eventus_arity.asm row 7 ->
+; exit 17); `ast_eventus_args` without its `ast_decl_synth` test -> exit 18
+; (row 8).
 ;
 ; TEST: run=yes expect-exit=0 audit=pass
 
@@ -398,106 +408,137 @@ include '../../compiler/x86_64/checker/checker.inc'
 segment readable
   include '../../compiler/shared/unicode/tables/tables.inc'
 
-  fx_path:	db 'eventus.exsc'
+  fx_path:	db 'interrogatio.exsc'
   FX_PATH_LEN = $ - fx_path
 
-  fx_c1:	db 'functio f(r: eventus<mensura>) -> u8 {', 10
-		db '    redde 0;', 10
+  fx_c1:	db 'functio g() -> eventus<u8, erratum> { redde prosperum(1); }', 10
+		db 'functio f() -> eventus<mensura, erratum> {', 10
+		db '    firma x: u8 = g()?;', 10
+		db '    redde prosperum(x sicut mensura);', 10
 		db '}', 10
   fx_c1_LEN = $ - fx_c1
-  fx_c2:	db 'functio f(r: eventus) -> u8 {', 10
-		db '    redde 0;', 10
+  fx_c2:	db 'functio g() -> eventus<u8, erratum> { redde prosperum(1); }', 10
+		db 'functio h(v: u8) -> u8 { redde v; }', 10
+		db 'functio f() -> eventus<u8, erratum> {', 10
+		db '    redde prosperum(h(g()?) + 1);', 10
 		db '}', 10
   fx_c2_LEN = $ - fx_c2
-  fx_c3:	db 'functio f(r: eventus<mensura, erratum>) -> u8 {', 10
-		db '    redde 0;', 10
+  fx_c3:	db 'functio g() -> eventus<u8, erratum> { redde prosperum(1); }', 10
+		db 'functio h(v: u8) -> eventus<u8, erratum> { redde prosperum(v); }', 10
+		db 'functio f() -> eventus<u16, erratum> {', 10
+		db '    firma y = h(g()?)?;', 10
+		db '    g()?;', 10
+		db '    redde prosperum(y sicut u16);', 10
 		db '}', 10
   fx_c3_LEN = $ - fx_c3
-  fx_c4:	db 'functio f(r: eventus<mensura, erratum, u8>) -> u8 {', 10
-		db '    redde 0;', 10
+  fx_c4:	db 'structura P { a: u8 }', 10
+		db 'functio g() -> eventus<P, erratum> { redde prosperum(P { a: 1 }); }', 10
+		db 'functio f() -> eventus<u8, u8> {', 10
+		db '    redde prosperum(1);', 10
+		db '}', 10
+		db 'functio k() -> eventus<u8, erratum> {', 10
+		db '    firma p = g()?;', 10
+		db '    redde prosperum(p.a);', 10
 		db '}', 10
   fx_c4_LEN = $ - fx_c4
-  fx_c5:	db 'functio eventus(x: u8) -> u8 { redde x; }', 10
+  fx_c5:	db 'functio g() -> eventus<u8, erratum> { redde prosperum(1); }', 10
 		db 'functio f() -> u8 {', 10
-		db '    redde eventus(3);', 10
+		db '    firma h = functio() -> eventus<u8, erratum> { firma x = g()?; redde prosperum(x); };', 10
+		db '    redde 0;', 10
 		db '}', 10
   fx_c5_LEN = $ - fx_c5
-  fx_c6:	db 'typus eventus = u8;', 10
-		db 'functio f(x: eventus) -> u8 {', 10
-		db '    redde x;', 10
+  fx_c6:	db 'functio g() -> eventus<u8, erratum> { redde prosperum(1); }', 10
+		db 'functio f() -> eventus<u16, erratum> {', 10
+		db '    firma x: u16 = g()?;', 10
+		db '    redde prosperum(x);', 10
 		db '}', 10
   fx_c6_LEN = $ - fx_c6
-  fx_c7:	db 'functio g() -> eventus<u8, erratum> { redde prosperum(1); }', 10
-		db 'functio f() -> u8 {', 10
+  fx_c7:	db 'functio g() -> u8 { redde 1; }', 10
+		db 'functio f() -> eventus<u8, erratum> {', 10
 		db '    firma x = g()?;', 10
-		db '    redde 0;', 10
+		db '    redde prosperum(x);', 10
 		db '}', 10
   fx_c7_LEN = $ - fx_c7
-  fx_c8:	db 'functio f() -> u16 {', 10
-		db '    firma e = erratum { numerus: 22 };', 10
-		db '    redde e.numerus;', 10
+  fx_c8:	db 'typus eventus<T, E> = casus prosperum(T), casus adversum(E);', 10
+		db 'functio g() -> eventus<u8, u8> { redde prosperum(1); }', 10
+		db 'functio f() -> eventus<u8, u8> {', 10
+		db '    firma x = g()?;', 10
+		db '    redde prosperum(x);', 10
 		db '}', 10
   fx_c8_LEN = $ - fx_c8
-  fx_c9:	db 'functio f() -> u8 {', 10
-		db '    firma r = prosperum(5);', 10
-		db '    redde 0;', 10
+  fx_c9:	db 'functio g() -> eventus<u8, erratum> { redde prosperum(1); }', 10
+		db 'functio f() -> u8 {', 10
+		db '    firma x = g()?;', 10
+		db '    redde x;', 10
 		db '}', 10
   fx_c9_LEN = $ - fx_c9
-  fx_c10:	db 'functio g(a: mensura) -> eventus<mensura, erratum> {', 10
-		db '    si a eq 0 { redde adversum(erratum { numerus: 9 }); }', 10
-		db '    redde prosperum(a);', 10
-		db '}', 10
-		db 'functio f(a: mensura) -> mensura {', 10
-		db '    discerne g(a) {', 10
-		db '        casus prosperum(n) { redde n; }', 10
-		db '        casus adversum(e) { redde e.numerus sicut mensura; }', 10
-		db '    }', 10
-		db '    redde 0;', 10
-		db '}', 10
+  fx_c10:	db 'functio g() -> eventus<u8, erratum> { redde prosperum(1); }', 10
+		db 'firma X: u8 = g()?;', 10
   fx_c10_LEN = $ - fx_c10
-  fx_c11:	db 'functio f(e: erratum) -> eventus<mensura, erratum> {', 10
-		db '    redde prosperum(e);', 10
+  fx_c11:	db 'functio g() -> eventus<u8, erratum> { redde prosperum(1); }', 10
+		db 'functio f() -> eventus<u8, erratum> {', 10
+		db '    firma h = functio() -> u8 { firma x = g()?; redde x; };', 10
+		db '    redde prosperum(1);', 10
 		db '}', 10
   fx_c11_LEN = $ - fx_c11
+  fx_c12:	db 'functio g() -> eventus<u8, u16> { redde prosperum(1); }', 10
+		db 'functio f() -> eventus<u8, erratum> {', 10
+		db '    firma x = g()?;', 10
+		db '    redde prosperum(x);', 10
+		db '}', 10
+  fx_c12_LEN = $ - fx_c12
+  fx_c13:	db 'functio f() -> eventus<u8, erratum> {', 10
+		db '    firma x = nusquam()?;', 10
+		db '    redde prosperum(1);', 10
+		db '}', 10
+  fx_c13_LEN = $ - fx_c13
 
   fx_tab:
-	; row 1: one argument
+	; row 1: a1
 	dq fx_c1, fx_c1_LEN
-	dd 1, 304, 20, 0, 0, 0
-	; row 2: no argument
+	dd 0, 0, 0, 0, 0, 0
+	; row 2: a2
 	dq fx_c2, fx_c2_LEN
-	dd 1, 304, 13, 0, 0, 0
-	; row 3: two
+	dd 0, 0, 0, 0, 0, 0
+	; row 3: a3
 	dq fx_c3, fx_c3_LEN
 	dd 0, 0, 0, 0, 0, 0
-	; row 4: three
+	; row 4: a4
 	dq fx_c4, fx_c4_LEN
-	dd 1, 304, 20, 0, 0, 0
-	; row 5: a module function named eventus
+	dd 0, 0, 0, 0, 0, 0
+	; row 5: a5
 	dq fx_c5, fx_c5_LEN
 	dd 0, 0, 0, 0, 0, 0
-	; row 6: a module alias named eventus
+	; row 6: t6
 	dq fx_c6, fx_c6_LEN
-	dd 0, 0, 0, 0, 0, 0
-	; row 7: ? where the function does not return an eventus
+	dd 1, 303, 118, 0, 0, 0
+	; row 7: e7
 	dq fx_c7, fx_c7_LEN
-	dd 1, 307, 94, 0, 0, 0
-	; row 8: erratum
+	dd 1, 305, 83, 0, 0, 0
+	; row 8: e8
 	dq fx_c8, fx_c8_LEN
-	dd 0, 0, 0, 0, 0, 0
-	; row 9: prosperum without expectation
+	dd 1, 305, 163, 0, 0, 0
+	; row 9: e9
 	dq fx_c9, fx_c9_LEN
-	dd 1, 304, 34, 0, 0, 0
-	; row 10: a round trip
+	dd 1, 307, 94, 0, 0, 0
+	; row 10: e10
 	dq fx_c10, fx_c10_LEN
-	dd 0, 0, 0, 0, 0, 0
-	; row 11: a payload of the wrong type
+	dd 1, 307, 74, 0, 0, 0
+	; row 11: e11
 	dq fx_c11, fx_c11_LEN
-	dd 1, 303, 73, 0, 0, 0
+	dd 1, 307, 140, 0, 0, 0
+	; row 12: e12
+	dq fx_c12, fx_c12_LEN
+	dd 1, 303, 108, 0, 0, 0
+	; row 13: e13
+	dq fx_c13, fx_c13_LEN
+	dd 1, 301, 52, 0, 0, 0
   FX_NROWS = ($ - fx_tab) / FX_ROW
   assert ($ - fx_tab) mod FX_ROW = 0
 
   fx_fixes:
+	dq 0, 0
+	dq 0, 0
 	dq 0, 0
 	dq 0, 0
 	dq 0, 0
