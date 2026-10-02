@@ -149,7 +149,7 @@ the attribute sits three lines above the prose where a reviewer will see it --
 which is worth having, but it is not the guarantee the strong form gives. Where
 a number is stated by some other document, bind it *there* instead and get
 entailment back: `README.md`'s conformance count is a `file_contains` against
-the spec's own "twenty-eight", not a re-derivation, which is both non-circular
+the spec's own "twenty-nine", not a re-derivation, which is both non-circular
 and drift-proof. Prefer that shape whenever an external source of truth exists.
 
 **What the gate cannot reach, and therefore what still needs a human.** The

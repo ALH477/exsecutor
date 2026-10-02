@@ -204,11 +204,13 @@ What the two proofs prove:
   one thing a hermetic sandbox does not do, so `reproduce` runs from the
   devShell and in CI.
 
-`nix flake check` runs nine sandboxed derivations -- `smoke`, `test`, `audit`,
-`buildExsecutorPackage-smoke` and the five vendor-integrity checks
-(`vendor-integrity`, `wire-vendor-integrity`, `modem-vendor-integrity`,
-`rx-vendor-integrity`, `streamdb-vendor-integrity`, one per tree under
-`vendor/`) -- over the git-tracked tree only. `tests/run.sh`, which the `test` check runs,
+`nix flake check` runs thirteen sandboxed derivations -- `smoke`, `test`,
+`audit`, `readme`, `buildExsecutorPackage-smoke` and the eight
+vendor-integrity checks (`vendor-integrity`, `wire-vendor-integrity`,
+`modem-vendor-integrity`, `rx-vendor-integrity`, `melos-vendor-integrity`,
+`bicinium-vendor-integrity`, `auditus-vendor-integrity`,
+`streamdb-vendor-integrity`, one per tree under `vendor/`) -- over the
+git-tracked tree only. `tests/run.sh`, which the `test` check runs,
 carries a floor on the number of fixtures it must discover, because this
 project has produced green checks that saw nothing four times, and the floor is
 what stopped a fifth.
@@ -258,7 +260,7 @@ updated).
 ```text truth:ignore
 compiler/           the compiler: x86_64/ is the machine-specific body, shared/ is not
 docs/spec/          the specification -- source of truth
-docs/decisions/     ADRs 0001-0016, immutable once written; superseded, never edited (a status line and an Open list may be updated)
+docs/decisions/     ADRs 0001-0017, immutable once written; superseded, never edited (a status line and an Open list may be updated)
 docs/design/        design documents: hypotheses with a status line, built against, and amended by what building found
 docs/asm-conventions.md   the binding rules for every line of assembly here
 examples/           the hello world, its golden output, HydraModem's transmitter and receiver, and their READMEs
