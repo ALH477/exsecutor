@@ -150,6 +150,19 @@ until the first `tests/run.sh` that reaches it; `docs/design/somnium.md` is
 its design and says exactly what did and did not run. Oligarchy's
 `custom.screensaver` is its consumer, through this repo's flake.
 
+And one that is **not a program** and is not in the count either:
+**`abortus/`, a trap that returns.** A library-mode unit's traps call a
+`_Noreturn` hook, so in a long-running host (`custos` in Punctim's bridge,
+`arca` in reliquary, which runs as root) a trap that an input can reach
+kills the process. `tutela.c` is a hosted C guard: `setjmp` in one place,
+and `exsrt_abortus` jumps back to it. The host gets the trap's kind and
+keeps running. With no guard open it still aborts. There is no compiler
+change. `proba_c.sh` drives custos's, arca's and a test-only module's traps
+under gcc and clang with UBSan (and gcc with ASan), from C and from Rust,
+with three mutants. It also shows why none of this works in a kernel: there
+is no `<setjmp.h>`. `docs/design/returning-trap.md` is the kernel's half,
+design only.
+
 This file said "nothing here compiles — there is no compiler" until
 2026-09-10, and then, until the hydramodem commit, that nothing here was
 type-checked or compiled to code, which the hello world's test had already

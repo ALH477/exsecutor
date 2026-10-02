@@ -55,6 +55,13 @@ verdicts:
 The host never interprets a header itself, so there is no second parser to
 disagree with this one.
 
+The host must obey the order of those steps. `saltus(magnitudo(h))` on a
+header the gate has not admitted overflows on `magnitudo`'s sentinel, and
+that is a trap. A trap calls a `_Noreturn` hook, which in reliquary would
+end a root process. `examples/abortus/` shows a guard that turns the trap
+into a returned error instead, and it uses exactly this call as one of its
+test cases.
+
 ## Why in-process, not a process
 
 `examples/custos/filtrum.exsc` shows the gate pattern as a freestanding
