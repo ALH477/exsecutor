@@ -88,7 +88,7 @@ is_clang() { "$1" --version 2>/dev/null | head -1 | grep -qi clang; }
 
 build() {  # build CC OUTDIR TUTELA.C FLAGS...
   local cc=$1 out=$2 tut=$3; shift 3
-  local f=(-std=c11 -Wall -Wextra -Werror -Wno-unused-function "$@")
+  local f=(-std=c11 -Wall -Wextra -Werror -Wno-unused-function -Wno-cpp -Wno-#warnings "$@")
   mkdir -p "$out"
   for u in "${units[@]}"; do "$cc" "${f[@]}" -c "$work/$u.gen.c" -o "$out/$u.o" || return 1; done
   "$cc" "${f[@]}" -I "$here" -c "$tut" -o "$out/tutela.o" || return 1

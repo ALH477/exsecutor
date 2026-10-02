@@ -1054,7 +1054,12 @@ __ref_build() {
   if "$cc" --version 2>/dev/null | head -1 | grep -qi clang; then
     san=(-fsanitize=undefined -fsanitize-trap=undefined)
   fi
-  "$cc" -std=c11 "$opt" -Wall -Wextra -Werror -Wno-unused-function "${san[@]}" \
+  # -Wno-cpp / -Wno-#warnings: nixpkgs' cc-wrapper appends
+  # -D_FORTIFY_SOURCE=2, and glibc's <features.h> #warnings at -O0; under
+  # -Werror that failed every -O0 build of entry 29 inside `nix flake
+  # check` (CI run 95 onwards). Same suppression, same reason, as the
+  # differential phase's cflags below.
+  "$cc" -std=c11 "$opt" -Wall -Wextra -Werror -Wno-unused-function -Wno-cpp -Wno-#warnings "${san[@]}" \
     -include "$header" -I "$(dirname "$header")" "$unit" "$host" -o "$out"
 }
 
@@ -2121,7 +2126,10 @@ run_differential_tests() {
     # face_cc CC HEADER UNIT -- 0 iff the header compiles against the unit
     face_cc() {
       local fcc="$1" nowarn="-Wno-cpp"
-      [[ "$fcc" == clang ]] && nowarn="-Wno-#warnings"
+      # clang under nixpkgs' cc-wrapper also gets the wrapper's -Wl,...
+      # linker flags, which -fsyntax-only leaves unused; -Werror turned
+      # that into a failure of both clang face checks in `nix flake check`.
+      [[ "$fcc" == clang ]] && nowarn="-Wno-#warnings -Wno-unused-command-line-argument"
       # shellcheck disable=SC2086
       "$fcc" -std=c11 -Wall -Wextra -Werror -Wno-unused-function $nowarn \
         -fsyntax-only -include "$2" "$3" >"$workdir/face.cclog" 2>&1

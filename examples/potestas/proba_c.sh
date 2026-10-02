@@ -44,7 +44,7 @@ build() {   # build CC OPT UNIT OUT
   if "$cc" --version 2>/dev/null | head -1 | grep -qi clang; then
     san=(-fsanitize=undefined -fsanitize-trap=undefined)
   fi
-  "$cc" -std=c11 "$opt" -Wall -Wextra -Werror -Wno-unused-function "${san[@]}" \
+  "$cc" -std=c11 "$opt" -Wall -Wextra -Werror -Wno-unused-function -Wno-cpp -Wno-#warnings "${san[@]}" \
     -include "$here/potestas.h" -I "$here" "$gen" "$here/proba.c" -o "$out"
 }
 
