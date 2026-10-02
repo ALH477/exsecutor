@@ -1,11 +1,13 @@
 # 0019 — creation beneath a root is a kernel guarantee: a Landlock seal, then `mkdirat`
 
-**Status:** Proposed, 2026-10-02. It supersedes ADR 0018, whose Decision 4
-a review measured to be false. The repository owner approved the plan step
-(`docs/design/explicator.md` section 5: directories through the
-single-component pattern). The decisions below, and the five syscalls they
-add to `archivum`'s row, await the owner's acceptance. Nothing here is
-implemented.
+**Status:** Accepted, 2026-10-02, by the repository owner. The owner chose
+"accept 0019 now", having been shown the five syscalls it adds to
+`archivum`'s row and that it fails closed without Landlock. It supersedes
+ADR 0018, whose Decision 4 a review measured to be false. Not yet
+implemented: it lands after ADR 0017's stage 2. Each later syscall ADR in
+the filesystem programme (`docs/design/archivum-plenum.md`) is reviewed by
+Fable and accepted by the owner separately; this acceptance does not cover
+them.
 **Relates to:** ADR 0017 (D7, F13); ADR 0018 (superseded);
 `docs/design/explicator.md`; spec §4.6; `tools/syscall-audit.sh`;
 CLAUDE.md, "The compiler is freestanding".
