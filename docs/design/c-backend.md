@@ -1029,6 +1029,127 @@ generics and dictionaries; `callind`;
 whole-program mode (D1). Each is a refusal by name in D4's table, never a
 silent omission.
 
+### D9 The unit's face: `--emitte h` and `--emitte rs`
+
+Added 2026-10-02. A library unit is only useful to a host that declares its
+functions, and the first two hosts each declared them by hand:
+`examples/custos/custos.h` plus a Rust `extern "C"` block in Punctim's
+`web/bridge/src/gate.rs`, and `examples/arca/arca.h` plus one in
+Oligarchy's `modules/reliquary/src/arca.rs`. Nothing tied either to the unit
+but a force-included compile in each example's `proba_c.sh`, and the Rust
+blocks were tied to nothing at all. So the driver now emits the FACE from the
+compilation that emits the unit:
+
+```sh
+exsc aedifica --hospes x86_64-linux SOURCE... --emitte c  -o unit.c
+exsc aedifica --hospes x86_64-linux SOURCE... --emitte h  -o unit.h
+exsc aedifica --hospes x86_64-linux SOURCE... --emitte rs -o unit.rs
+```
+
+**Spelling.** Two more values of `--emitte`, not a new flag: D2's reason —
+`--emitte` already means "this artifact instead of a program" — holds, and
+`h`/`rs` are artifacts in every respect `c` is: `-o` required, nothing on
+stdout, a C-only `--hospes` row accepted, no `EXS-E0424` for a missing
+`initium`. `driver/cli.inc` numbers them after `DRV_EMIT_C`, so every "is
+this the C path" test in `driver/run.inc` is `>= DRV_EMIT_C`. One
+invocation per artifact rather than one that writes three files: `-o` names
+one file (spec 12), and a second output path would be a second spelling to
+specify. Spec §9.2 records the two values (amended in the same commit).
+
+**What is in it.** One declaration per function the unit DEFINES (not
+`externus`, not a prelude routine: those are imports) whose declaration is
+`publica`, in `Module.funcs` order — the unit's own prototype order (D5).
+The C face's prototypes are `__bfc_emit_sig`'s output, the routine that
+writes the unit's own prototype and definition line, so a header and its
+unit cannot disagree about a parameter's type, the order or the mangled
+name. The Rust face re-spells the same `BfaSig` through a four-row table —
+`uint64_t` is `u64`, `unsigned char *` is `*mut u8`, `float` is `f32`,
+`double` is `f64`, a void result is no arrow — inside `unsafe extern "C"`,
+which rustc accepts in edition 2021 (since 1.82) and requires in 2024. The
+header also declares `_Noreturn void exsrt_abortus(unsigned kind);`; the
+Rust face names that import in a comment instead, because a Rust host
+DEFINES it (`#[no_mangle] pub extern "C" fn exsrt_abortus(kind: u32) -> !`),
+as `tests/c/facies/crate/src/main.rs` does.
+
+**The IR signature rides along.** Above each declaration, a comment such as
+`/* (u64, u32) -> u64 */` — `print.inc`'s own type names. The carrier (D4)
+makes every integer `uint64_t`, so without it a host cannot learn that a
+parameter is a `u8`, and the unit assumes canonical form:
+`__bfc_emit_param` copies `pI` without normalising it. A value outside the
+named width is outside the contract and its effect is unspecified (one
+measurement: `x sicut u64` of a `u8` given 300 read back 44 — the extension
+masked it — which no other operation promises).
+
+**`publica` crosses by name.** The IR does not carry `publica`, and adding a
+field is a change to `lower/` and `backend_fasmg/ir.inc`, which this
+backend does not own. The driver holds both structures, so
+`__drv_publica_mask` (driver/run.inc) walks the typed tree's declarations in
+id order and, for each `functio`, looks its name up in
+`Module.func_by_name` — the map lowering registered every function in under
+its declaration's own name — and marks one byte per IR function:
+`BFC_FACE_PUBLICA` or `BFC_FACE_PRIVATA`. A name carrying both is refused
+by name (`bfc: emitter: face: two functions ... share one name`, exit 4),
+not guessed. A generic function cannot reach the face: lowering traps on
+one (`__lwr_gencount`), so a name never stands for several instantiations.
+
+**The include guard** is `EXSECUTOR_FACIES_` + FNV-1a 64 (`rt/map.inc`'s
+`map_hash`) of the declaration block, sixteen uppercase hex digits, `_H`.
+Derived from the declarations, not from `-o`'s path (D5: no path in emitted
+text) and not from a module name (there is none; spec 12's unit is a list of
+files). Two units exporting the same prototypes get the same guard, which is
+right: the declarations are the same text. `tests/unit/bfc_face.asm`'s
+guard was checked against an independent FNV-1a in Python.
+
+**Refusals, by name, exit 4** (`__bfc_die`, the emitter-refusal class):
+a parameter or result with no face spelling — a vector float, which has a
+prologue typedef inside a unit but none a host shares, or a class-2 type —
+and the ambiguous name above. Neither is reachable from today's corpus;
+`tests/unit/bfc_face_{vector,ambigua}.asm` pin both.
+
+**Tests.**
+- `tests/unit/bfc_face.asm` — both faces byte for byte over a hand-built IR
+  module and mask (an `externus` marked publica, a private function, a
+  function nothing claimed, floats, `(void)`, a mangled name), twice each;
+  three mutations of `face_c.inc` were run and each fails it.
+  `bfc_face_ambigua.asm` and `bfc_face_vector.asm` pin the refusals, and the
+  check each pins was deleted once to watch it pass a face through.
+- `tests/unit/driver_emitte.asm` — `h` and `rs` parse as rows five and six;
+  `r`, a prefix of `rs`, is refused.
+- `tests/run.sh`'s differential phase — the driver rows (`-o` required,
+  stdout empty); `tests/c/facies/facies.exsc`'s faces pinned byte for byte
+  (`facies.{h,rs}.expected`) and reproduced; its two non-publica functions,
+  one of them called, absent; the header force-included into the unit under
+  gcc and clang at `-Werror`; the STALE CONSUMER — `quiesce` gains a
+  parameter, the mutant's own header still compiles against the mutant's
+  unit, the original header does not (`conflicting types`); and, where cargo
+  is on PATH, `tests/c/facies/crate` linking the unit through the Rust face
+  and calling every function, then failing (`E0061`) on the mutant's face.
+  Per distinct eligible program unit, the generated header force-included
+  into the unit under both compilers (`DIFFERENTIAL_FACE_FLOOR`).
+- `examples/custos/proba_c.sh` and `examples/arca/proba_c.sh` build
+  `proba.c` against the GENERATED header (force-included; `proba.c`'s own
+  `#include` of the hand-written one then holds the two to each other),
+  compare the hand-written header with it prototype by prototype
+  (`tests/c/facies/protos.py`), run the stale-consumer check on their
+  `Scriptor` mutant, and link the unit through the Rust face.
+- `tools/reproduce.sh` emits custos's two faces under both condition sets.
+
+**What it found.** Neither hand-written header declares the unit's whole
+`publica` set: `custos.h` declares 3 of 7 (the other four are entry 23's
+codec, `publica` in `codex.exsc`), `arca.h` 4 of 5 (`octalis`). Both keep
+their hand-written headers, now as checked documentation: they carry what a
+generator cannot (buffer extents, verdict meanings, which functions are the
+API) and `protos.py` fails the moment one drifts.
+
+**`[OPEN]`.** The face does not declare a unit's OTHER imports — an
+`externus` function or a prelude routine the unit calls (`Scriptor`'s
+`exsrt_scriptor_scribe`, if a library ever takes one); the host must supply
+those and today learns of them from the unit's own prototypes. No C++
+guard (`extern "C"` under `__cplusplus`): `_Noreturn` is not C++, and no
+C++ host exists. The consumers' Rust blocks (Punctim's `gate.rs`,
+Oligarchy's `arca.rs`) are still hand-written; switching them to an
+`include!` of the generated face is those trees' change, not this one.
+
 ## 3. Shape of the emitted unit
 
 For IR 2.11's `@dot` example the unit would be (illustrative, `[UNTESTED]` —
@@ -1758,6 +1879,7 @@ Numbered; each names the document and the sentence.
 | D6's closure assertion | C1 | **done, run once by hand**: `pkgs.gcc` added to `buildExsecutorPackage`'s `nativeBuildInputs` makes `nix build .#exsc` fail at EVALUATION -- `error: an integer with value '2' is not equal to an integer with value '1'`, pointing at `assertBuildClosure`, before any derivation is instantiated. Reverted immediately; the assertion is `flake.nix:175`. |
 | D7, section 6 | C3 (host), C4 (target) | **host half done**: the reader's certificate, identical under both backends on four containers × four toolchains (section 6.7). The N64 gates are C4's |
 | D1's whole-program mode | — | `[OPEN]`, not scheduled |
+| D9 the face | 2026-10-02 | **done**: `tests/unit/bfc_face.asm`, `bfc_face_ambigua.asm`, `bfc_face_vector.asm`; `tests/run.sh`'s face rows over `tests/c/facies/`; the two examples' `proba_c.sh` |
 
 ## 10. Open questions the implementer must answer first
 

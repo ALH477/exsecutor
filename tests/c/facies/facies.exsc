@@ -1,0 +1,42 @@
+// tests/c/facies/facies.exsc -- the fixture for a unit's FACE, `exsc
+// --emitte h` and `--emitte rs` (docs/design/c-backend.md D9). One function
+// per row of the face's type table, and two that must NOT be in it:
+//
+//   summa        u64, u32 -> u64          integers: every width is uint64_t
+//   prima        acies<u8, 4> -> u8       an address: unsigned char *
+//   dimidium     f64 -> f64               double
+//   dimidium_f   f32 -> f32               float
+//   quiesce      () -> ()                 `(void)` and a void result
+//   arcana       (not publica)            absent from both faces
+//   gradus       (not publica, called)    absent, though summa calls it
+//
+// tests/run.sh's differential phase pins both faces byte for byte
+// (facies.h.expected, facies.rs.expected), compiles the header against the
+// unit, links the Rust face against it, and runs a call through each.
+
+functio gradus(x: u64) -> u64 {
+    redde x + 1;
+}
+
+publica functio summa(a: u64, b: u32) -> u64 {
+    redde gradus(a) + (b sicut u64);
+}
+
+functio arcana(x: u64) -> u64 {
+    redde x + 7;
+}
+
+publica functio prima(b: acies<u8, 4>) -> u8 {
+    redde b[0];
+}
+
+publica functio dimidium(x: f64) -> f64 {
+    redde x / 2.0;
+}
+
+publica functio dimidium_f(x: f32) -> f32 {
+    redde x / 2.0;
+}
+
+publica functio quiesce() {
+}
