@@ -54,6 +54,7 @@ SHARED_FIRST = ['contractus.exsc']
 SHARED_LAST = ['probatio.exsc']
 DATA = os.path.join(REPO, 'tests', 'data')
 HOSTIS = 'x86_64-linux'
+TIMEOUT = 900   # seconds per run; --timeout overrides. A timeout is a FAILURE, never a pass.
 
 
 # ------------------------------------------------------------------ plumbing
@@ -211,7 +212,8 @@ def parse_frame(stdin):
     return recs
 
 
-def execute(binp, c, timeout=300):
+def execute(binp, c, timeout=None):
+    timeout = timeout or TIMEOUT
     r = subprocess.run([binp], input=c.stdin, capture_output=True, timeout=timeout)
     return r.returncode, r.stdout
 
@@ -281,6 +283,7 @@ def mutants_of(text, limit):
 # --------------------------------------------------------------------- main
 
 def main():
+    global TIMEOUT
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--libs', help='comma-separated library names (default: all)')
     ap.add_argument('--deep', action='store_true', help='also run the deep corpora')
@@ -288,9 +291,11 @@ def main():
     ap.add_argument('--audit', action='store_true', help='also run tools/syscall-audit.sh on each binary')
     ap.add_argument('--mutants', type=int, default=0, metavar='N', help='mutation-test the fixture with N mutants per library')
     ap.add_argument('--jobs', type=int, default=os.cpu_count() or 2)
+    ap.add_argument('--timeout', type=int, default=TIMEOUT, help='seconds allowed per run of one binary on one corpus')
     ap.add_argument('--keep', action='store_true', help='keep the work directory')
     ap.add_argument('--exsc', help='use this exsc instead of assembling one')
     a = ap.parse_args()
+    TIMEOUT = a.timeout
 
     fasmg = os.environ.get('FASMG') or shutil.which('fasmg')
     if not fasmg:
