@@ -374,6 +374,8 @@ chk_lit_initium	db 'initium'
 CHK_LIT_INITIUM_LEN = $ - chk_lit_initium
 chk_lit_poscit	db ' poscit '
 CHK_LIT_POSCIT_LEN = $ - chk_lit_poscit
+chk_lit_poscit_bare	db 'poscit '
+CHK_LIT_POSCIT_BARE_LEN = $ - chk_lit_poscit_bare
 chk_lit_comma	db ', '
 CHK_LIT_COMMA_LEN = $ - chk_lit_comma
 ; `mutabilis` is 9 bytes and a module-level `Binding` node's span starts at it
@@ -2235,12 +2237,15 @@ endp
 
 ; __chk_fix_e0421(chk_c, chk_dg, chk_ord) -- §8.3 promises `E0421` a fix and
 ; `diag/fix.inc`'s header names it: "the insertion of the missing atom into the
-; enclosing declaration's row". Two shapes, both one insertion:
+; enclosing declaration's row". Three shapes, each ONE edit:
 ;
 ;   - the enclosing `Sig` already has a `DeclRow`  ->  `, atom` at its end;
 ;   - it has none                                  ->  ` poscit atom` at the end
 ;     of the signature, which spec §8.6 puts exactly there ("bare row after
-;     `-> Type` or `)`").
+;     `-> Type` or `)`");
+;   - its row is the explicit empty one, `poscit {}` -> the whole row replaced
+;     by `poscit atom` (a REPLACE, not an insertion: `, atom` after `}` would
+;     not parse).
 ;
 ; With no enclosing signature at all -- a draw at module level -- there is
 ; nothing to insert into and the diagnostic carries no fix. That is the one case
@@ -2281,12 +2286,37 @@ proc __chk_fix_e0421, chk_c, chk_dg, chk_ord
 	mov	rsi, [chk_row]
 	call	ast_node_at
 	mov	r14, rax
+	cmp	dword [r14 + AstNode.b], 0	; the row's item count
+	je	.emptyrow
 	mov	rdi, rbx
 	lea	rsi, [chk_lit_comma]
 	mov	rdx, CHK_LIT_COMMA_LEN
 	mov	rcx, r13
 	call	__chk_fix_text
 	jmp	.place
+  .emptyrow:
+	; THE EXPLICIT EMPTY ROW, `poscit {}` (spec §4.1 rule 6, §8.6). It is a
+	; `Row` node with no items, so ", atom" at its end would write
+	; `poscit {}, atom` -- source that does not parse, offered as a
+	; machine-applicable fix. The one edit that is right is to replace the
+	; whole row, braces included, with `poscit atom`; replacing the row's span
+	; rather than inserting between the braces is what makes it independent
+	; of whatever sits inside them (`{ }`, a comment).
+	mov	rdi, rbx
+	lea	rsi, [chk_lit_poscit_bare]
+	mov	rdx, CHK_LIT_POSCIT_BARE_LEN
+	mov	rcx, r13
+	call	__chk_fix_text
+	mov	[r12 + ChkDiag.ftxt], rax
+	mov	[r12 + ChkDiag.ftxtn], rdx
+	mov	dword [r12 + ChkDiag.fkind], DIAG_FIX_REPLACE
+	mov	ecx, [r14 + AstNode.span.file_id]
+	mov	[r12 + ChkDiag.fx.file_id], ecx
+	mov	ecx, [r14 + AstNode.span.start]
+	mov	[r12 + ChkDiag.fx.start], ecx
+	mov	ecx, [r14 + AstNode.span.len]
+	mov	[r12 + ChkDiag.fx.len], ecx
+	jmp	.out
   .norow:
 	mov	rdi, rbx
 	lea	rsi, [chk_lit_poscit]

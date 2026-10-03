@@ -375,7 +375,7 @@ path was absent, which stopped being true when the rebuild landed.
 3. Capability sets are part of **`functio` types**, not only declarations.
 4. **A capability becomes available in a scope in exactly four ways — bound by `sub`, received as a parameter, held in a field of the receiver, or **captured by a closure from an enclosing scope** — and all four are visible in the interface.** `poscit` means *drawn from the enclosing scope*, nothing else. Capture was absent from this list in v0.4 and earlier, which is precisely where the closure-capture hole lived: it is visible because a captured row appears in the closure's **type** (§4.2), not because it is bound or passed.
 5. `publica` functions declare `poscit` explicitly. Private functions infer it from their bodies, transitively.
-6. A function whose **declared** row is empty — `publica` with no `poscit`, or any function written `poscit {}` — and which takes no capability parameter is **pure with respect to ambient state**. It may allocate and diverge; it may not observe the host. A private function with no `poscit` has no declared row and is governed by rule 5, not this one; the two rules read together had said opposite things about it (`docs/design/checker.md`, finding 10).
+6. A function whose **declared** row is empty — `publica` with no `poscit`, or any function written `poscit {}` — and which takes no capability parameter is **pure with respect to ambient state**. It may allocate and diverge; it may not observe the host. A private function with no `poscit` has no declared row and is governed by rule 5, not this one; the two rules read together had said opposite things about it (`docs/design/checker.md`, finding 10). **`poscit {}` is how a private function declares the empty row** — it is then held to it, and a draw in its body, direct or through a call, is `EXS-E0421`, where the same body with no `poscit` would infer — and it is a second, explicit spelling of what a `publica` function states by writing nothing: the two are one row, the same type. Rule 6 cited the form for as long as it has existed, but §8.6's `DeclRow` had no braced alternative, so `poscit {}` on a declaration was `EXS-E0201` until 2026-10-03: the prose and the grammar disagreed, the parser followed the grammar, and the grammar was the defect (`docs/design/audit-2026-10-03-followups.md`, item 6). `tests/unit/chk_decl_row_empty.asm` pins the form, its meaning on private and `publica` functions, and the one edit `EXS-E0421`'s fix makes to such a row.
 7. **No module-level mutable state.** (`EXS-E0500`; with a capability, `EXS-E0501`.)
 
 ## 4.2 Rows and substitution
@@ -2068,18 +2068,31 @@ always parsed as `Path [GenericArgs]`.
 
 | position | form | ends at |
 |---|---|---|
-| function declaration, interface member, `externus` member | bare row after `-> Type` or `)` | first token that is not `,` |
-| implementation head (`interfacies … in T poscit …`) | bare row | `{` |
+| function declaration, interface member, `externus` member | bare row after `-> Type` or `)`; or the empty row braced, `poscit {}` | first token that is not `,`; the `}` of `poscit {}` |
+| implementation head (`interfacies … in T poscit …`) | bare row, or `poscit {}` | `{` |
 | function type, `dyn` type | braced `poscit { … }` | `}` |
 | lambda | none — `EXS-E0201` if present | — |
 
 `RowItem ::= Path | 'sicut' IDENT` in both forms. `poscit {}` is an explicit
-empty row; a bare `poscit` with no item is `EXS-E0201`. A type consumes
+empty row, **in a declaration as in a type**. `DeclRow` admits exactly one
+braced alternative, `'poscit' '{' '}'`, and no other: `poscit {rete}` on a
+declaration is `EXS-E0201` at the `{`, as is a bare `poscit` with no item. What
+decides it is the two tokens after `poscit`, `{ }`, both of them — a lone `{`
+after a bare `poscit` is a function body, and reading it as the opening of a
+braced row would swallow the body and move the error from the `{` to somewhere
+inside it. A comment or whitespace between the braces is not a token, so
+`poscit { }` is the same row. A written empty row is a *declared* row (§4.1
+rule 6): a private function that writes it is held to it and does not infer.
+A lambda still takes no `poscit`, `poscit {}` included (decision 2). A type consumes
 `poscit` **only when the next token is `{`** — so a declaration whose result
 type is a function type still takes a bare row without parentheses, and a
 body is never mistaken for a row. The one odd corner is deterministic:
 `-> functio(A) -> B poscit {rete} poscit alloc {` is a braced row on the
-result type followed by the declaration's own bare row, then the body.
+result type followed by the declaration's own bare row, then the body. It is
+also where the declaration's own empty row is spelled when the result is a
+function type: `-> functio(A) -> B poscit {} poscit {} {` — the first `poscit {`
+is the type's, by the peek above, and the second is the declaration's. With
+only one, the declaration has no row of its own.
 
 ### Grammar
 
@@ -2097,7 +2110,7 @@ Terminals are §8.4's tokens; `IDENT` `INT` `STRING` are the lexer's classes.
     Param         ::= IDENT ':' Type
     GenericParams ::= '<' GenericParam (',' GenericParam)* '>'
     GenericParam  ::= IDENT [':' Type]
-    DeclRow       ::= 'poscit' RowItem (',' RowItem)*
+    DeclRow       ::= 'poscit' ( RowItem (',' RowItem)* | '{' '}' )
     TypeRow       ::= 'poscit' '{' [Path (',' Path)*] '}'
     RowItem       ::= Path | 'sicut' IDENT
     StructDecl    ::= 'structura' IDENT [GenericParams] '{' Field* '}'
@@ -2205,6 +2218,7 @@ Every place the parser looks past the current token, and how it resolves.
 |---|---|---|
 | statement start `functio` | `functio IDENT` | a nested named function: `EXS-E0201`, **no fix payload**; otherwise a lambda expression statement |
 | after a function or `dyn` type | `poscit {` | braced `TypeRow` belongs to the type; bare `poscit` belongs to the enclosing declaration |
+| after a declaration's `poscit` | `{ }` | the explicit empty row; anything else is a `RowItem` list, and a `{` not followed by `}` is the missing item's error, at the `{`, with the body still parsed as a body |
 | struct / `interfacies` / `externus` body recovery | `IDENT :` or `}` | next member, or end of body |
 | `TypeArg` | `INT` | value argument (`acies<f32, 1024>`); anything else is a `Type`; a named constant parses as `Path` and is resolved semantically |
 

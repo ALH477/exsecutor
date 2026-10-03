@@ -2040,7 +2040,21 @@ proc __cst_row_item, p
 endp
 
 ; __cst_decl_row(p) -- the BARE row: `'poscit' RowItem (',' RowItem)*`, which
-; §8.6's table says "ends at first token that is not `,`".
+; §8.6's table says "ends at first token that is not `,`" -- or the ONE braced
+; form a declaration admits, the explicit empty row `'poscit' '{' '}'`.
+;
+; THE EXPLICIT EMPTY ROW (§4.1 rule 6, §8.6 "Where `poscit` attaches"). Rule 6
+; names "any function written `poscit {}`", and until this form parsed that
+; was a citation of text the grammar rejected (EXS-E0201): a PRIVATE function
+; had no way to declare a row -- rule 5 always inferred it -- so it could not
+; assert purity, only have it measured. The peek after `poscit` is the two
+; tokens `{ }`, both of them: a lone `{` after a bare `poscit` is a function
+; body, and `poscit { <anything but }> ...` must keep failing where it always
+; did (at the `{`, the missing row item) rather than somewhere inside the body.
+; The row it builds has no items and is a real `Row` node, which is what the
+; checker's seeding reads as "declared" (checker/rows/compute.inc,
+; `__chk_row_seed`); a bare `poscit` with no item is still EXS-E0201. The peek
+; is over tokens, so whitespace or a comment between the braces is the same row.
 proc __cst_decl_row, p
 	uses	rbx, r12
 	locals
@@ -2052,6 +2066,29 @@ proc __cst_decl_row, p
 	mov	rdi, rbx
 	mov	esi, KW_POSCIT
 	call	__cst_xkw
+	; `{ }` -- the explicit empty row
+	mov	rdi, rbx
+	xor	esi, esi
+	mov	edx, TOK_PUNCT
+	mov	ecx, PUN_LBRACE
+	call	__cst_is
+	test	eax, eax
+	jz	.items
+	mov	rdi, rbx
+	mov	esi, 1
+	mov	edx, TOK_PUNCT
+	mov	ecx, PUN_RBRACE
+	call	__cst_is
+	test	eax, eax
+	jz	.items
+	mov	rdi, rbx
+	mov	esi, PUN_LBRACE
+	call	__cst_xpun
+	mov	rdi, rbx
+	mov	esi, PUN_RBRACE
+	call	__cst_xpun
+	jmp	.done
+  .items:
 	mov	rdi, rbx
 	call	__cst_row_item
   .more:
