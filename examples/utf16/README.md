@@ -6,6 +6,13 @@ of them is held byte for byte to the same Python-codec output, on valid and
 ill-formed input alike. What differs is *how*: how a sequence is recognised, how
 a pass is structured, how stages are connected, how a fault would be caught.
 
+![A weary, tearful man with a nasal cannula looks at the camera. Caption: "How the decompiler looks at you when it finds its 27th utf-8 to utf-16 conversion lib"](decompiler.jpg)
+
+*The mood of this directory.* `tools/identify.py` is as close to a decompiler as
+the repository has: it recognises all 27 of these, and recovers no source. The
+image was supplied by the repository owner. Its origin and licence are not
+recorded here, so treat it as not covered by this repository's licence.
+
 ## The contract
 
 `contractus.exsc` is the interface, and the only file all 27 share besides the
