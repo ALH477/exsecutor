@@ -1,0 +1,138 @@
+// automaton.exsc -- UTF-8 to UTF-16 by Bjoern Hoehrmann's "Flexible and
+// Economical UTF-8 Decoder" deterministic finite automaton.
+//
+// METHOD. Two tables, built once in `converte` and handed down read-only. The
+// first maps each byte to one of twelve character classes (00..7F 0; 80..8F 1;
+// 90..9F 9; A0..BF 7; C0 C1 F5..FF 8; C2..DF 2; E0 10; E1..EC EE EF 3; ED 4;
+// F0 11; F1..F3 6; F4 5). The second is the state-transition table: nine states
+// by twelve classes, row-major. States are numbered here ACCEPT 0, REJECT 1,
+// then seven intermediate states 2..8; Hoehrmann's published table stores them
+// pre-multiplied by 12 (0, 12, 24 ... 96) so that the lookup is one addition,
+// and this one stores the plain index and multiplies by 12 in `passo`. The
+// scalar is accumulated exactly as published: the first byte of a sequence is
+// masked with (0xFF deorsum class) and every later byte contributes its low six
+// bits shifted in. `passo` is the per-byte step over a `Automaton` record
+// (state, codepoint) held through a `&mutabilis`. Table 3-7's four irregular
+// second-byte ranges are not tested anywhere: they are the states reached from
+// the E0, ED, F0 and F4 classes, which each admit only some of the classes 1,
+// 7 and 9 that split 80..BF.
+//
+// WHERE THE MAXIMAL SUBPART COMES FROM. The automaton says only "REJECT"; the
+// driver loop supplies the subpart. `inicium` is the offset of the first byte of
+// the sequence in progress (set whenever a byte is fed from the ACCEPT state).
+// On REJECT, the bytes inicium .. i-1 were accepted as a prefix and byte i broke
+// it, so they are ONE maximal subpart: one U+FFFD, and byte i is presented
+// again from the start state. If i equals inicium the offending byte was itself
+// a lead the start state refuses (a stray continuation, C0, C1, F5..FF): that
+// byte alone is the one-byte subpart and is consumed. Reaching the end of the
+// input in a state other than ACCEPT is one more maximal subpart, covering
+// inicium .. n-1. Strict mode returns inicium in both places.
+//
+// WHAT IT DOES NOT SHARE WITH ramus. ramus has no state machine and decides the
+// second byte's range from the lead with a branch chain. Here the whole of the
+// well-formedness rule is the 108-entry transition table, and the decode path
+// has no comparison of any byte against a range. The surrogate-pair emitter
+// `scribe_unitates` is ramus's arithmetic.
+
+structura Automaton {
+    status: mensura
+    cp: u32
+}
+
+functio scribe_unitates(scopus: &mutabilis acies<u16, 4096>, j: mensura, cp: u32) -> mensura {
+    si cp lt 0x10000 {
+        (*scopus)[j] = cp sicut u16;
+        redde j + 1;
+    }
+    firma v: u32 = cp - 0x10000;
+    (*scopus)[j] = (0xD800 + (v deorsum 10)) sicut u16;
+    (*scopus)[j + 1] = (0xDC00 + (v atque 0x3FF)) sicut u16;
+    redde j + 2;
+}
+
+// Feed one byte. Returns the new state (also left in st.status).
+functio passo(genus: acies<u8, 256>, transitus: acies<u8, 108>, b: u8,
+              st: &mutabilis Automaton) -> mensura {
+    firma t: u32 = genus[b sicut mensura] sicut u32;
+    firma b32: u32 = b sicut u32;
+    si (*st).status ne 0 {
+        (*st).cp = ((*st).cp sursum 6) sive (b32 atque 0x3F);
+    } aliter {
+        (*st).cp = (0xFF deorsum t) atque b32;
+    }
+    (*st).status = transitus[((*st).status * 12) + (t sicut mensura)] sicut mensura;
+    redde (*st).status;
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    firma genus: acies<u8, 256> = [
+         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+         1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
+         9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,  9,
+         7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
+         7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
+         8,  8,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
+         2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
+        10,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  4,  3,  3,
+        11,  6,  6,  6,  5,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8
+    ];
+    // rows: ACCEPT, REJECT, 2 (one more, any), 3 (two more, any), 4 (after E0),
+    // 5 (after ED), 6 (after F0), 7 (after F1..F3), 8 (after F4);
+    // columns: the twelve classes.
+    firma transitus: acies<u8, 108> = [
+        0, 1, 2, 3, 5, 8, 7, 1, 1, 1, 4, 6,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1,
+        1, 2, 1, 1, 1, 1, 1, 2, 1, 2, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1,
+        1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 3, 1, 3, 1, 1,
+        1, 3, 1, 1, 1, 1, 1, 3, 1, 3, 1, 1,
+        1, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+    ];
+
+    mutabilis st: Automaton = Automaton { status: 0, cp: 0 };
+    mutabilis i: mensura = 0;
+    mutabilis j: mensura = 0;
+    mutabilis inicium: mensura = 0;
+    dum i lt n {
+        si st.status eq 0 {
+            inicium = i;
+        }
+        firma s: mensura = passo(genus, transitus, fons[i], st);
+        si s eq 0 {
+            j = scribe_unitates(scopus, j, st.cp);
+            i = i + 1;
+        } sin s eq 1 {
+            si modus eq modus_stricte {
+                redde Exitus { unitates: j, status: status_malformatum, positio: inicium };
+            }
+            (*scopus)[j] = 0xFFFD;
+            j = j + 1;
+            // i == inicium: the offending byte is its own subpart, consume it.
+            // otherwise inicium..i-1 was the subpart and byte i is read again.
+            si i eq inicium {
+                i = i + 1;
+            }
+            st.status = 0;
+        } aliter {
+            i = i + 1;
+        }
+    }
+    si st.status ne 0 {
+        si modus eq modus_stricte {
+            redde Exitus { unitates: j, status: status_malformatum, positio: inicium };
+        }
+        (*scopus)[j] = 0xFFFD;
+        j = j + 1;
+    }
+    redde Exitus { unitates: j, status: status_bene, positio: 0 };
+}

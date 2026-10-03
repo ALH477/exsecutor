@@ -1,0 +1,155 @@
+// retrovalida.exsc -- UTF-8 to UTF-16 by "assemble first, judge after".
+//
+// METHOD. For a lead byte b0 >= 0x80, count its leading one bits (`unos`): 1 is a
+// stray continuation byte, 2, 3 and 4 are the claimed length L of the sequence,
+// 5 or more (F8..FF) is not a lead at all. Then take up to L-1 of the following
+// bytes for as long as each one is a continuation byte (10xxxxxx -- a test of
+// its top two bits and nothing else) and assemble the scalar `v` from the lead's
+// payload bits and those bytes' low six bits. The second byte is NOT range
+// checked. Only then is the VALUE judged: a whole sequence is well-formed when v
+// is at least the smallest scalar that needs L bytes (0x80, 0x800, 0x10000: the
+// overlong test), is not in D800..DFFF, and is at most 10FFFF. A sequence that
+// ran out of continuation bytes first is ill-formed.
+//
+// WHERE THE MAXIMAL SUBPART COMES FROM. Table 3-7's ranges are never consulted;
+// the prefix is judged by its NUMERIC VALUE. Let p2 be the payload of the lead
+// and the first continuation, ((b0 atque mask) sursum 6) sive (b1 atque 0x3F).
+// The two-byte prefix of a three-byte sequence can begin a well-formed one
+// exactly when p2 >= 0x20 (else the scalar would be below 0x800) and p2 is not
+// in 0x360..0x37F (else D800..DFFF); the two-byte prefix of a four-byte
+// sequence exactly when 0x10 <= p2 <= 0x10F (below, the scalar is under
+// 0x10000; above, over 10FFFF). A prefix of three bytes is acceptable when its
+// two-byte prefix is, because any third continuation keeps the scalar in range.
+// So, when a sequence is ill-formed: if only the lead was consumed, or p2 is not
+// an acceptable prefix, the subpart is the lead alone (one byte); otherwise it
+// is every byte consumed. A two-byte (L = 2) sequence has no proper prefix with
+// a second byte, so it is the lead alone as well (that is C0 and C1, whose
+// complete value fails the overlong test). Strict mode returns the offset of
+// the lead of the first ill-formed sequence. The continuation bytes that were
+// consumed but are not part of the subpart are not skipped: decoding resumes
+// right after the subpart, and they are met again as stray continuations.
+//
+// WHAT IT DOES NOT SHARE WITH ramus. ramus never forms a scalar it has not
+// already proved well-formed, and gets the subpart from the byte that fails to
+// extend it. This file forms the scalar first, judges the value, and derives
+// the subpart from arithmetic on the prefix. The surrogate-pair emitter
+// `scribe_unitates` is ramus's arithmetic.
+
+functio scribe_unitates(scopus: &mutabilis acies<u16, 4096>, j: mensura, cp: u32) -> mensura {
+    si cp lt 0x10000 {
+        (*scopus)[j] = cp sicut u16;
+        redde j + 1;
+    }
+    firma v: u32 = cp - 0x10000;
+    (*scopus)[j] = (0xD800 + (v deorsum 10)) sicut u16;
+    (*scopus)[j + 1] = (0xDC00 + (v atque 0x3FF)) sicut u16;
+    redde j + 2;
+}
+
+// The number of leading one bits of b (0..8).
+functio unos(b: u8) -> u8 {
+    mutabilis k: u8 = 0;
+    dum k lt 8 et ((b sursum k) atque 0x80) ne 0 {
+        k = k + 1;
+    }
+    redde k;
+}
+
+// Can the first two bytes of an L-byte sequence (L is 3 or 4) begin a well-formed
+// one, given p2, the payload bits of those two bytes read as one number? L = 2
+// is never asked about a prefix: its one continuation completes it.
+functio prefixum_bonum(longitudo: mensura, p2: u32) -> u8 {
+    si longitudo eq 3 {
+        si p2 ge 0x20 et (p2 lt 0x360 vel p2 gt 0x37F) {
+            redde 1;
+        }
+        redde 0;
+    }
+    si longitudo eq 4 {
+        si p2 ge 0x10 et p2 le 0x10F {
+            redde 1;
+        }
+        redde 0;
+    }
+    redde 0;
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    mutabilis i: mensura = 0;
+    mutabilis j: mensura = 0;
+    dum i lt n {
+        firma b0: u8 = fons[i];
+        firma uni: u8 = unos(b0);
+        si uni eq 0 {
+            (*scopus)[j] = b0 sicut u16;
+            j = j + 1;
+            i = i + 1;
+            perge;
+        }
+
+        // L = 0: a stray continuation byte (one leading one) or F8..FF (five or
+        // more): not the start of anything, one byte.
+        mutabilis longitudo: mensura = 0;
+        mutabilis v: u32 = 0;
+        si uni eq 2 {
+            longitudo = 2;
+            v = (b0 atque 0x1F) sicut u32;
+        } sin uni eq 3 {
+            longitudo = 3;
+            v = (b0 atque 0x0F) sicut u32;
+        } sin uni eq 4 {
+            longitudo = 4;
+            v = (b0 atque 0x07) sicut u32;
+        }
+
+        // assemble: the lead and as many continuation bytes (up to L-1) as are
+        // 10xxxxxx. p2 is the value after the first continuation.
+        mutabilis ate: mensura = 1;
+        mutabilis p2: u32 = 0;
+        dum ate lt longitudo et i + ate lt n {
+            firma b: u8 = fons[i + ate];
+            si (b atque 0xC0) ne 0x80 {
+                rumpe;
+            }
+            v = (v sursum 6) sive ((b atque 0x3F) sicut u32);
+            si ate eq 1 {
+                p2 = v;
+            }
+            ate = ate + 1;
+        }
+
+        // judge. Only a whole sequence has a value to judge.
+        mutabilis bonum: u8 = 0;
+        si longitudo gt 0 et ate eq longitudo {
+            mutabilis minimum: u32 = 0x80;
+            si longitudo eq 3 {
+                minimum = 0x800;
+            } sin longitudo eq 4 {
+                minimum = 0x10000;
+            }
+            si v ge minimum et (v lt 0xD800 vel v gt 0xDFFF) et v le 0x10FFFF {
+                bonum = 1;
+            }
+        }
+
+        si bonum eq 1 {
+            j = scribe_unitates(scopus, j, v);
+            i = i + ate;
+        } aliter {
+            si modus eq modus_stricte {
+                redde Exitus { unitates: j, status: status_malformatum, positio: i };
+            }
+            // the maximal subpart: every consumed byte if the two-byte prefix
+            // could begin a well-formed sequence, else the lead alone.
+            mutabilis parte: mensura = 1;
+            si ate ge 2 et prefixum_bonum(longitudo, p2) eq 1 {
+                parte = ate;
+            }
+            (*scopus)[j] = 0xFFFD;
+            j = j + 1;
+            i = i + parte;
+        }
+    }
+    redde Exitus { unitates: j, status: status_bene, positio: 0 };
+}

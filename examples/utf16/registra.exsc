@@ -1,0 +1,149 @@
+// registra.exsc -- UTF-8 to UTF-16 by the WHATWG Encoding Standard's UTF-8
+// decoder, run as a byte-at-a-time machine over explicit registers.
+//
+// METHOD. A `Registra` record holds the decoder's registers: the code point
+// accumulated so far (`cp`), the continuation bytes still needed (`necesse`),
+// the continuation bytes seen (`visa`), and the lower and upper boundary
+// (`inf`, `sup`) the NEXT continuation byte must lie in. The boundaries default
+// to 0x80 and 0xBF; the lead byte alone moves them -- E0 raises the lower one to
+// A0, ED lowers the upper one to 9F, F0 raises the lower to 90, F4 lowers the
+// upper to 8F -- and they are put back to the defaults as soon as one
+// continuation byte has been accepted. `passo` feeds one byte to the registers
+// and says what happened:
+//
+//     0  consumed, nothing to emit yet
+//     1  consumed, a scalar is complete in cp
+//     2  an error; the byte was a lead the decoder refuses, and is consumed
+//     3  an error; the byte was not an acceptable continuation. The registers
+//        are reset and the byte is NOT consumed: the caller feeds the same byte
+//        again, as the Encoding Standard's "prepend byte to stream" does.
+//
+// Reaching the end of the input with `necesse` not zero is one more error.
+//
+// WHERE THE MAXIMAL SUBPART COMES FROM. An error is one U+FFFD. The error on a
+// refused lead covers that one byte (a one-byte subpart). The error on a bad
+// continuation covers the lead and the continuations accepted so far, which
+// were a well-formed prefix; the offending byte is then re-processed from the
+// reset registers, so it begins whatever comes next. The end-of-input error
+// covers the same bytes. `inicium` is the offset of the first byte of the
+// sequence in progress (set whenever a byte is fed with necesse 0) and is what
+// strict mode reports as positio.
+//
+// WHAT IT DOES NOT SHARE WITH ramus. ramus is a loop that classifies the lead
+// and then pulls its continuations in an inner loop, and gets the maximal
+// subpart from how many bytes it consumed. This file never looks ahead: it is
+// one function of (registers, byte), the offending byte is fed again by the
+// outer loop, and the second-byte ranges are two registers rather than a range
+// chain. The surrogate-pair emitter `scribe_unitates` is ramus's arithmetic.
+
+structura Registra {
+    cp: u32
+    necesse: u8
+    visa: u8
+    inf: u8
+    sup: u8
+}
+
+functio scribe_unitates(scopus: &mutabilis acies<u16, 4096>, j: mensura, cp: u32) -> mensura {
+    si cp lt 0x10000 {
+        (*scopus)[j] = cp sicut u16;
+        redde j + 1;
+    }
+    firma v: u32 = cp - 0x10000;
+    (*scopus)[j] = (0xD800 + (v deorsum 10)) sicut u16;
+    (*scopus)[j + 1] = (0xDC00 + (v atque 0x3FF)) sicut u16;
+    redde j + 2;
+}
+
+functio passo(r: &mutabilis Registra, b: u8) -> u8 {
+    si (*r).necesse eq 0 {
+        si b le 0x7F {
+            (*r).cp = b sicut u32;
+            redde 1;
+        }
+        si b ge 0xC2 et b le 0xDF {
+            (*r).necesse = 1;
+            (*r).cp = (b atque 0x1F) sicut u32;
+            redde 0;
+        }
+        si b ge 0xE0 et b le 0xEF {
+            si b eq 0xE0 {
+                (*r).inf = 0xA0;
+            }
+            si b eq 0xED {
+                (*r).sup = 0x9F;
+            }
+            (*r).necesse = 2;
+            (*r).cp = (b atque 0x0F) sicut u32;
+            redde 0;
+        }
+        si b ge 0xF0 et b le 0xF4 {
+            si b eq 0xF0 {
+                (*r).inf = 0x90;
+            }
+            si b eq 0xF4 {
+                (*r).sup = 0x8F;
+            }
+            (*r).necesse = 3;
+            (*r).cp = (b atque 0x07) sicut u32;
+            redde 0;
+        }
+        redde 2;
+    }
+    si b lt (*r).inf vel b gt (*r).sup {
+        (*r).cp = 0;
+        (*r).necesse = 0;
+        (*r).visa = 0;
+        (*r).inf = 0x80;
+        (*r).sup = 0xBF;
+        redde 3;
+    }
+    (*r).inf = 0x80;
+    (*r).sup = 0xBF;
+    (*r).cp = ((*r).cp sursum 6) sive ((b atque 0x3F) sicut u32);
+    (*r).visa = (*r).visa + 1;
+    si (*r).visa ne (*r).necesse {
+        redde 0;
+    }
+    (*r).necesse = 0;
+    (*r).visa = 0;
+    redde 1;
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    mutabilis r: Registra = Registra { cp: 0, necesse: 0, visa: 0, inf: 0x80, sup: 0xBF };
+    mutabilis i: mensura = 0;
+    mutabilis j: mensura = 0;
+    mutabilis inicium: mensura = 0;
+    dum i lt n {
+        si r.necesse eq 0 {
+            inicium = i;
+        }
+        firma res: u8 = passo(r, fons[i]);
+        si res eq 0 {
+            i = i + 1;
+        } sin res eq 1 {
+            j = scribe_unitates(scopus, j, r.cp);
+            i = i + 1;
+        } aliter {
+            si modus eq modus_stricte {
+                redde Exitus { unitates: j, status: status_malformatum, positio: inicium };
+            }
+            (*scopus)[j] = 0xFFFD;
+            j = j + 1;
+            // 2: the refused lead is consumed. 3: it is fed again.
+            si res eq 2 {
+                i = i + 1;
+            }
+        }
+    }
+    si r.necesse ne 0 {
+        si modus eq modus_stricte {
+            redde Exitus { unitates: j, status: status_malformatum, positio: inicium };
+        }
+        (*scopus)[j] = 0xFFFD;
+        j = j + 1;
+    }
+    redde Exitus { unitates: j, status: status_bene, positio: 0 };
+}

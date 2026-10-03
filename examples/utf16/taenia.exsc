@@ -1,0 +1,158 @@
+// taenia.exsc -- UTF-8 to UTF-16 in two passes over a TAPE of byte classes.
+//
+// METHOD.
+//   Pass 1  `quisque i in 0..n` writes a class tape, one u8 per input byte. The
+//           class of a byte is a function of that byte alone and iteration i
+//           writes only tabula[i], so no iteration observes another: that is
+//           the declaration `quisque` makes (spec 8.5), and it is true here.
+//           Per spec 8.5 `quisque` is today a trusted assertion -- the checker
+//           does no dependency analysis -- so "true here" is by reading the
+//           loop, not by a compiler proof.
+//             0 ASCII 00..7F          3 lead  E0..EF
+//             1 continuation 80..BF   4 lead  F0..F4
+//             2 lead C2..DF           5 invalid anywhere: C0 C1 F5..FF
+//   Pass 2  walks the tape. At a lead (class 2, 3 or 4) it needs 1, 2 or 3
+//           further entries of class 1; the first of them must also pass Table
+//           3-7's second-byte restriction, which the tape cannot express (it
+//           would need the lead's value) and which is therefore checked against
+//           the BYTES: E0 A0..BF, ED 80..9F, F0 90..BF, F4 80..8F. Class 0, 1 and
+//           5 at a lead position are an ill-formed subpart of one byte. The
+//           scalar is built only after the walk has succeeded.
+//
+// WHERE THE MAXIMAL SUBPART COMES FROM. The walk counts k, the bytes it has
+// accepted, lead included. It stops at the first entry that is not class 1, or
+// fails the second-byte restriction, or lies at or past n. At that moment the k
+// bytes behind it are a well-formed prefix that the next byte may not extend,
+// which is the definition of the maximal subpart: k is its length. The walk's
+// k is read out of the same variable whether it ended by success or by failure.
+//
+// WHAT IS DELIBERATELY NOT SHARED WITH ramus. Ramus classifies the lead inline,
+// per sequence, and tests each continuation's range as it goes. Here every byte
+// is classified up front, with no look at its neighbours, and sequence structure
+// is read from the tape rather than from the bytes; the bytes are consulted again
+// only for the four Table 3-7 restrictions and for the payload bits. The tape is
+// 4096 more bytes of stack. This library has not been timed.
+
+// Class of one byte; depends on nothing else.
+functio classis(b: u8) -> u8 {
+    si b lt 0x80 {
+        redde 0;
+    }
+    si b lt 0xC0 {
+        redde 1;
+    }
+    si b lt 0xC2 {
+        redde 5;
+    }
+    si b lt 0xE0 {
+        redde 2;
+    }
+    si b lt 0xF0 {
+        redde 3;
+    }
+    si b lt 0xF5 {
+        redde 4;
+    }
+    redde 5;
+}
+
+// Table 3-7's four irregular second-byte ranges, for a b1 already known to be
+// class 1 (80..BF). 1 if b1 may follow lead b0, else 0.
+functio secunda_licet(b0: u8, b1: u8) -> u8 {
+    si b0 eq 0xE0 et b1 lt 0xA0 {
+        redde 0;
+    }
+    si b0 eq 0xED et b1 gt 0x9F {
+        redde 0;
+    }
+    si b0 eq 0xF0 et b1 lt 0x90 {
+        redde 0;
+    }
+    si b0 eq 0xF4 et b1 gt 0x8F {
+        redde 0;
+    }
+    redde 1;
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    // ---- pass 1: the class tape
+    mutabilis tabula: acies<u8, 4096> = [0; 4096];
+    quisque i in 0..n {
+        tabula[i] = classis(fons[i]);
+    }
+
+    // ---- pass 2: walk the tape
+    mutabilis i: mensura = 0;
+    mutabilis j: mensura = 0;
+    dum i lt n {
+        firma b0: u8 = fons[i];
+        firma c: u8 = tabula[i];
+        si c eq 0 {
+            (*scopus)[j] = b0 sicut u16;
+            j = j + 1;
+            i = i + 1;
+            perge;
+        }
+
+        // opus: continuations the lead needs. 0 means this byte cannot lead.
+        mutabilis opus: mensura = 0;
+        mutabilis cp: u32 = 0;
+        discerne c {
+            casus 2 {
+                opus = 1;
+                cp = (b0 atque 0x1F) sicut u32;
+            }
+            casus 3 {
+                opus = 2;
+                cp = (b0 atque 0x0F) sicut u32;
+            }
+            casus 4 {
+                opus = 3;
+                cp = (b0 atque 0x07) sicut u32;
+            }
+            aliter {
+                opus = 0;
+            }
+        }
+
+        // The walk. k = bytes accepted so far, the lead included.
+        mutabilis k: mensura = 1;
+        dum k le opus {
+            si i + k ge n {
+                rumpe;
+            }
+            si tabula[i + k] ne 1 {
+                rumpe;
+            }
+            si k eq 1 et secunda_licet(b0, fons[i + k]) eq 0 {
+                rumpe;
+            }
+            cp = (cp sursum 6) sive ((fons[i + k] atque 0x3F) sicut u32);
+            k = k + 1;
+        }
+
+        si opus eq 0 vel k le opus {
+            // ill-formed: the k bytes the walk got through are the subpart
+            si modus eq modus_stricte {
+                redde Exitus { unitates: j, status: status_malformatum, positio: i };
+            }
+            (*scopus)[j] = 0xFFFD;
+            j = j + 1;
+            i = i + k;
+            perge;
+        }
+
+        si cp lt 0x10000 {
+            (*scopus)[j] = cp sicut u16;
+            j = j + 1;
+        } aliter {
+            firma v: u32 = cp - 0x10000;
+            (*scopus)[j] = (0xD800 + (v deorsum 10)) sicut u16;
+            (*scopus)[j + 1] = (0xDC00 + (v atque 0x3FF)) sicut u16;
+            j = j + 2;
+        }
+        i = i + k;
+    }
+    redde Exitus { unitates: j, status: status_bene, positio: 0 };
+}

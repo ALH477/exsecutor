@@ -1,0 +1,154 @@
+// nibbula.exsc -- UTF-8 to UTF-16 by a sixteen-way `discerne` on the lead
+// byte's HIGH NIBBLE (b0 deorsum 4).
+//
+// METHOD. The lead byte is classified once, by one `discerne` over its top four
+// bits, instead of a range chain over the byte:
+//
+//     0..7   ASCII: the byte is the unit, nothing else to read
+//     8..B   a stray continuation byte: ill-formed, a one-byte subpart
+//     C      C0/C1 ill-formed (one byte); C2..CF need 1 continuation
+//     D      need 1
+//     E      need 2; E0's first continuation is A0..BF, ED's is 80..9F
+//     F      F0..F4 need 3 (F0: 90..BF, F4: 80..8F); F5..FF ill-formed
+//
+// Each arm fills a small `Lectio` record -- continuations still needed (0
+// means the lead is ill-formed), the allowed range of the FIRST continuation,
+// and the payload bits of the lead. The four irregular second-byte ranges of
+// Table 3-7 are set inside the E and F arms by an exact comparison against the
+// one or two lead values that differ (E0, ED, F0, F4); there is no range test
+// on the byte anywhere else. The continuations are then read by one shared
+// helper, `continuationes`.
+//
+// WHERE THE MAXIMAL SUBPART COMES FROM. `continuationes` returns how many
+// bytes it consumed, the lead included. It stops at the first continuation
+// that is out of range or at the end of input, and does NOT consume that byte.
+// If the count is short of the lead's full length, the bytes consumed are a
+// well-formed prefix that the next byte was not allowed to extend: exactly one
+// maximal subpart, one U+FFFD. The byte that stopped it begins whatever comes
+// next. A lead whose `opus` is 0 (stray continuation, C0, C1, F5..FF) is a
+// one-byte subpart and never reaches the helper. Strict mode returns the
+// offset of that subpart's first byte.
+//
+// WHAT IT DOES NOT SHARE WITH ramus. ramus classifies the lead with a
+// `si`/`sin` chain of range tests (b0 ge 0xC2 et b0 le 0xDF, ...) and reads the
+// continuations inline in the main loop. This file dispatches on the nibble,
+// and keeps the continuation loop in its own function. The surrogate-pair
+// emitter `scribe_unitates` is the same arithmetic as ramus's; it is not what
+// this file is about.
+
+structura Lectio {
+    cp: u32
+    opus: mensura
+    lo: u8
+    hi: u8
+}
+
+functio scribe_unitates(scopus: &mutabilis acies<u16, 4096>, j: mensura, cp: u32) -> mensura {
+    si cp lt 0x10000 {
+        (*scopus)[j] = cp sicut u16;
+        redde j + 1;
+    }
+    firma v: u32 = cp - 0x10000;
+    (*scopus)[j] = (0xD800 + (v deorsum 10)) sicut u16;
+    (*scopus)[j + 1] = (0xDC00 + (v atque 0x3FF)) sicut u16;
+    redde j + 2;
+}
+
+// Read the continuation bytes of the sequence whose lead is fons[i]. The lead
+// has already been classified into `st`. Returns the number of bytes consumed,
+// the lead included; the sequence is whole exactly when that is st.opus + 1.
+// On a whole sequence st.cp holds the scalar. The first continuation is held to
+// [st.lo, st.hi]; every later one to 80..BF.
+functio continuationes(fons: acies<u8, 4096>, i: mensura, n: mensura,
+                       st: &mutabilis Lectio) -> mensura {
+    mutabilis ate: mensura = 1;
+    mutabilis lo: u8 = (*st).lo;
+    mutabilis hi: u8 = (*st).hi;
+    mutabilis cp: u32 = (*st).cp;
+    dum ate le (*st).opus et i + ate lt n {
+        firma b: u8 = fons[i + ate];
+        si b lt lo vel b gt hi {
+            rumpe;
+        }
+        cp = (cp sursum 6) sive ((b atque 0x3F) sicut u32);
+        lo = 0x80;
+        hi = 0xBF;
+        ate = ate + 1;
+    }
+    (*st).cp = cp;
+    redde ate;
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    mutabilis i: mensura = 0;
+    mutabilis j: mensura = 0;
+    dum i lt n {
+        firma b0: u8 = fons[i];
+        mutabilis st: Lectio = Lectio { cp: 0, opus: 0, lo: 0x80, hi: 0xBF };
+        discerne b0 deorsum 4 {
+            casus 0 { (*scopus)[j] = b0 sicut u16; j = j + 1; i = i + 1; perge; }
+            casus 1 { (*scopus)[j] = b0 sicut u16; j = j + 1; i = i + 1; perge; }
+            casus 2 { (*scopus)[j] = b0 sicut u16; j = j + 1; i = i + 1; perge; }
+            casus 3 { (*scopus)[j] = b0 sicut u16; j = j + 1; i = i + 1; perge; }
+            casus 4 { (*scopus)[j] = b0 sicut u16; j = j + 1; i = i + 1; perge; }
+            casus 5 { (*scopus)[j] = b0 sicut u16; j = j + 1; i = i + 1; perge; }
+            casus 6 { (*scopus)[j] = b0 sicut u16; j = j + 1; i = i + 1; perge; }
+            casus 7 { (*scopus)[j] = b0 sicut u16; j = j + 1; i = i + 1; perge; }
+            casus 8 { }
+            casus 9 { }
+            casus 0xA { }
+            casus 0xB { }
+            casus 0xC {
+                si b0 ge 0xC2 {
+                    st.opus = 1;
+                    st.cp = (b0 atque 0x1F) sicut u32;
+                }
+            }
+            casus 0xD {
+                st.opus = 1;
+                st.cp = (b0 atque 0x1F) sicut u32;
+            }
+            casus 0xE {
+                st.opus = 2;
+                st.cp = (b0 atque 0x0F) sicut u32;
+                si b0 eq 0xE0 {
+                    st.lo = 0xA0;
+                } sin b0 eq 0xED {
+                    st.hi = 0x9F;
+                }
+            }
+            casus 0xF {
+                si b0 le 0xF4 {
+                    st.opus = 3;
+                    st.cp = (b0 atque 0x07) sicut u32;
+                    si b0 eq 0xF0 {
+                        st.lo = 0x90;
+                    } sin b0 eq 0xF4 {
+                        st.hi = 0x8F;
+                    }
+                }
+            }
+            aliter { }
+        }
+
+        // consumed so far: the lead. opus 0 is an ill-formed lead: one byte.
+        mutabilis ate: mensura = 1;
+        si st.opus gt 0 {
+            ate = continuationes(fons, i, n, st);
+        }
+
+        si st.opus gt 0 et ate eq st.opus + 1 {
+            j = scribe_unitates(scopus, j, st.cp);
+            i = i + ate;
+        } aliter {
+            si modus eq modus_stricte {
+                redde Exitus { unitates: j, status: status_malformatum, positio: i };
+            }
+            (*scopus)[j] = 0xFFFD;
+            j = j + 1;
+            i = i + ate;
+        }
+    }
+    redde Exitus { unitates: j, status: status_bene, positio: 0 };
+}

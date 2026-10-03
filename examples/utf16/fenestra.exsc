@@ -1,0 +1,229 @@
+// fenestra.exsc -- UTF-8 to UTF-16 by masked equality on a 32-bit window.
+//
+// METHOD. At each position up to four input bytes are packed into one u32,
+// FIRST BYTE MOST SIGNIFICANT:
+//
+//     w = b0 << 24 | b1 << 16 | b2 << 8 | b3
+//
+// A byte at or beyond n is packed as 0 and fons is never READ past n-1. A form
+// is then recognised by ONE masked equality on w, not by a comparison per byte:
+//
+//     form     mask         must equal    meaning
+//     ASCII    0x80000000   0x00000000    b0 = 0xxxxxxx
+//     2-byte   0xE0C00000   0xC0800000    110xxxxx 10xxxxxx
+//     3-byte   0xF0C0C000   0xE0808000    1110xxxx 10xxxxxx 10xxxxxx
+//     4-byte   0xF8C0C0C0   0xF0808080    11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+//
+// Padding cannot forge a sequence: every required continuation byte must show
+// the bit pattern 10xxxxxx under its 0xC0 mask, and a zero byte never does, so
+// a sequence cut short by the end of input fails its mask exactly as one cut
+// short by a wrong byte does.
+//
+// What the masks admit is still too much (C0 80, E0 80 80, ED A0 80, F4 90 80
+// 80, F5 80 80 80 ...). Those are excluded by VALUE, by comparing a masked
+// field of the same window (every field below lies inside b0 and b1 only):
+//
+//     2-byte   w & 0x1E000000 ne 0                    refuses C0, C1 (overlong)
+//     3-byte   f = w & 0x0F200000   (lead nibble, bit 5 of b1)
+//              f ne 0                                 refuses E0 80..9F (overlong)
+//              f ne 0x0D200000                        refuses ED A0..BF (surrogate)
+//     4-byte   f = w & 0x07300000   (lead 3 bits, bits 5..4 of b1)
+//              f ge 0x00100000                        refuses F0 80..8F (overlong)
+//              f le 0x04000000                        refuses F4 90.. and F5..F7
+//
+// (f is ordered like the code point's top bits: lead payload above b1's two
+// payload bits, so f ge 0x00100000 is "bits 20..16 of the scalar are >= 1" and
+// f le 0x04000000 is "<= 0x10".)  The scalar is then assembled from the same
+// window by one masked shift per byte, e.g. 3-byte:
+// ((w & 0x0F000000) >> 12) | ((w & 0x003F0000) >> 10) | ((w & 0x00003F00) >> 8).
+//
+// WHERE THE MAXIMAL SUBPART COMES FROM. Only on the ill-formed path, only in
+// modus_substitue, by testing SUCCESSIVELY SHORTER PREFIXES OF THE WINDOW. The
+// lead alone fixes the form length l (2, 3 or 4) by its own mask: 0xE0000000 =
+// 0xC0000000, 0xF0000000 = 0xE0000000, 0xF8000000 = 0xF0000000; any other lead
+// (0x80..0xBF, 0xF8..0xFF) has no form and is a 1-byte subpart. For k = l down
+// to 2 the first k bytes pass if (lead mask | continuation masks of bytes
+// 1..k-1) equals (lead value | 0x80 in those bytes) AND the value field above
+// holds; the first k that passes is the subpart length, and if none passes the
+// lead stands alone (length 1: that is also the answer for C0, C1, F5..F7,
+// whose lead is not a prefix of anything). The continuation masks for k = 2,
+// 3, 4 are 0x00C00000, 0x00C0C000, 0x00C0C0C0 with values 0x00800000,
+// 0x00808000, 0x00808080. k = l is the complete form, so an overlong or
+// surrogate that passes its masks but fails its value field (E0 80 80,
+// ED A0 80) falls through k = 3, 2 and ends at 1; F0 90 80 cut by the end of
+// input fails k = 4 on the zero padding and ends at 3. Every field tested lies
+// in b0 and b1, so the value test is the same for every k >= 2.
+//
+// NOT SHARED WITH RAMUS: no per-byte range comparison on the decode path, no
+// classification of the lead into a (needed, lo, hi) triple, no loop over
+// continuation bytes. Ramus asks "is this byte in range" once per byte; this
+// asks "does this word match" once per sequence.
+
+// Pack fons[i .. i+4) into a window; bytes at or beyond n are 0.
+functio fenestra_ex(fons: acies<u8, 4096>, i: mensura, n: mensura) -> u32 {
+    mutabilis w: u32 = 0;
+    mutabilis k: mensura = 0;
+    dum k lt 4 {
+        mutabilis b: u32 = 0;
+        si i + k lt n {
+            b = fons[i + k] sicut u32;
+        }
+        w = (w sursum 8) sive b;
+        k = k + 1;
+    }
+    redde w;
+}
+
+// 1 when the masked lead/second-byte fields of w are admissible for a form of
+// length l (2, 3 or 4). Meaningful once b1 is known to be a continuation byte.
+functio campi_boni(w: u32, l: mensura) -> u8 {
+    si l eq 2 {
+        si (w atque 0x1E000000) ne 0 {
+            redde 1;
+        }
+        redde 0;
+    }
+    si l eq 3 {
+        firma f3: u32 = w atque 0x0F200000;
+        si f3 ne 0 et f3 ne 0x0D200000 {
+            redde 1;
+        }
+        redde 0;
+    }
+    firma f4: u32 = w atque 0x07300000;
+    si f4 ge 0x00100000 et f4 le 0x04000000 {
+        redde 1;
+    }
+    redde 0;
+}
+
+// The form length announced by the lead's own bits, 0 if it announces none.
+functio forma_ducis(w: u32) -> mensura {
+    si (w atque 0xE0000000) eq 0xC0000000 {
+        redde 2;
+    }
+    si (w atque 0xF0000000) eq 0xE0000000 {
+        redde 3;
+    }
+    si (w atque 0xF8000000) eq 0xF0000000 {
+        redde 4;
+    }
+    redde 0;
+}
+
+// The lead's mask and value for a form of length l.
+functio masca_ducis(l: mensura) -> u32 {
+    si l eq 2 {
+        redde 0xE0000000;
+    }
+    si l eq 3 {
+        redde 0xF0000000;
+    }
+    redde 0xF8000000;
+}
+
+functio nota_ducis(l: mensura) -> u32 {
+    si l eq 2 {
+        redde 0xC0000000;
+    }
+    si l eq 3 {
+        redde 0xE0000000;
+    }
+    redde 0xF0000000;
+}
+
+// The continuation masks and values for bytes 1..k-1 (k = 2, 3 or 4 bytes).
+functio masca_sequentium(k: mensura) -> u32 {
+    si k eq 2 {
+        redde 0x00C00000;
+    }
+    si k eq 3 {
+        redde 0x00C0C000;
+    }
+    redde 0x00C0C0C0;
+}
+
+functio nota_sequentium(k: mensura) -> u32 {
+    si k eq 2 {
+        redde 0x00800000;
+    }
+    si k eq 3 {
+        redde 0x00808000;
+    }
+    redde 0x00808080;
+}
+
+// 1 when the first k bytes of w (2 <= k <= l) are a well-formed prefix of an
+// l-byte form: masked equality on exactly those bytes, then the value fields.
+functio praefixum_congruit(w: u32, l: mensura, k: mensura) -> u8 {
+    firma masca: u32 = masca_ducis(l) sive masca_sequentium(k);
+    firma nota: u32 = nota_ducis(l) sive nota_sequentium(k);
+    si (w atque masca) eq nota et campi_boni(w, l) eq 1 {
+        redde 1;
+    }
+    redde 0;
+}
+
+// The maximal subpart at an ill-formed position: the longest prefix of the
+// window that passes, trying l, l-1, ... 2, else the lead alone.
+functio longitudo_subpartis(w: u32) -> mensura {
+    firma l: mensura = forma_ducis(w);
+    mutabilis k: mensura = l;
+    dum k ge 2 {
+        si praefixum_congruit(w, l, k) eq 1 {
+            redde k;
+        }
+        k = k - 1;
+    }
+    redde 1;
+}
+
+functio scribe_scalarem(scopus: &mutabilis acies<u16, 4096>, j: mensura, cp: u32) -> mensura {
+    si cp lt 0x10000 {
+        (*scopus)[j] = cp sicut u16;
+        redde j + 1;
+    }
+    firma v: u32 = cp - 0x10000;
+    (*scopus)[j] = (0xD800 + (v deorsum 10)) sicut u16;
+    (*scopus)[j + 1] = (0xDC00 + (v atque 0x3FF)) sicut u16;
+    redde j + 2;
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    mutabilis i: mensura = 0;
+    mutabilis j: mensura = 0;
+    dum i lt n {
+        firma w: u32 = fenestra_ex(fons, i, n);
+        mutabilis ate: mensura = 0;
+        mutabilis cp: u32 = 0;
+        si (w atque 0x80000000) eq 0 {
+            ate = 1;
+            cp = w deorsum 24;
+        } sin (w atque 0xE0C00000) eq 0xC0800000 et campi_boni(w, 2) eq 1 {
+            ate = 2;
+            cp = ((w atque 0x1F000000) deorsum 18) sive ((w atque 0x003F0000) deorsum 16);
+        } sin (w atque 0xF0C0C000) eq 0xE0808000 et campi_boni(w, 3) eq 1 {
+            ate = 3;
+            cp = ((w atque 0x0F000000) deorsum 12) sive ((w atque 0x003F0000) deorsum 10)
+                sive ((w atque 0x00003F00) deorsum 8);
+        } sin (w atque 0xF8C0C0C0) eq 0xF0808080 et campi_boni(w, 4) eq 1 {
+            ate = 4;
+            cp = ((w atque 0x07000000) deorsum 6) sive ((w atque 0x003F0000) deorsum 4)
+                sive ((w atque 0x00003F00) deorsum 2) sive (w atque 0x0000003F);
+        }
+
+        si ate gt 0 {
+            j = scribe_scalarem(scopus, j, cp);
+            i = i + ate;
+        } aliter {
+            si modus eq modus_stricte {
+                redde Exitus { unitates: j, status: status_malformatum, positio: i };
+            }
+            (*scopus)[j] = 0xFFFD;
+            j = j + 1;
+            i = i + longitudo_subpartis(w);
+        }
+    }
+    redde Exitus { unitates: j, status: status_bene, positio: 0 };
+}
