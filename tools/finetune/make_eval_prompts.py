@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # tools/finetune/make_eval_prompts.py
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 # ---------------------------------------------------------------------------
 # Step 1 of the held-out evaluation: turn the CODE records of
 # datasets/finetune/validation.jsonl into eval prompts, each carrying what

@@ -1,6 +1,6 @@
 // examples/somnium/pluvia.exsc
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 The Exsecutor authors.
+// Copyright (C) 2026 DeMoD LLC.
 // ---------------------------------------------------------------------------
 // Somnium 3: digital rain. The frame is 40 x 20 cells of 4 x 5 pixels, each
 // holding a 3 x 4 glyph and a brightness. Every column has a head that

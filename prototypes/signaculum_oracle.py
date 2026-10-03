@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # prototypes/signaculum_oracle.py
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 # ---------------------------------------------------------------------------
 # The consumer half, and the oracle examples/signaculum/ is held to byte for
 # byte. Reads the fixed-point stream prototypes/signaculum_mesh.py wrote

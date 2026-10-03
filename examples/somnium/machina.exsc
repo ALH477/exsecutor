@@ -1,6 +1,6 @@
 // examples/somnium/machina.exsc
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 The Exsecutor authors.
+// Copyright (C) 2026 DeMoD LLC.
 // ---------------------------------------------------------------------------
 // The engine: read one request on stdin, then write frames on stdout until
 // the request is satisfied. This is where authority enters, once, as the

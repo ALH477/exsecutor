@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # tools/finetune/compare.py
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 # ---------------------------------------------------------------------------
 # Step 3 of the held-out evaluation: a PAIRED comparison of two score.py
 # results files over the same eval items (normally: base model, then base +

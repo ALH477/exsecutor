@@ -278,6 +278,19 @@ because §3.9 refused the obvious version of it: `imprimere` is attested Latin
 for *print*, so Gutenberg enters only as an eponym. Put a proposal under
 `prototypes/lexicon/` with the same shape and the next number.
 
+## Copyright and outside contributions
+
+DeMoD LLC holds the copyright in this repository's own work. The licence is
+GPL-3.0-or-later with the permissions in `LICENSE.EXCEPTION`, plus the grants
+in `LICENSE.GRANTS`; `vendor/` keeps its own licences. `REUSE.toml` records
+the holder and licence of every file, the licence texts are in `LICENSES/`,
+and CI runs `reuse lint`, so a new file needs either an SPDX header or an
+entry there.
+
+Outside contributions will require a contributor licence agreement with
+DeMoD LLC. That agreement is being prepared. Until it is published, pull
+requests from outside contributors are not merged.
+
 ## Commit trailers
 
 A substantial part of this tree was written by Claude (Anthropic) working

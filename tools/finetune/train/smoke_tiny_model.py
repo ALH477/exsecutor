@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # tools/finetune/train/smoke_tiny_model.py
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 # ---------------------------------------------------------------------------
 # Test fixture, not a model: writes a 2-layer, randomly initialised Qwen2
 # causal LM next to a REAL tokenizer, so train_qlora.py --smoke and

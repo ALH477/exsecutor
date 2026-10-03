@@ -129,13 +129,15 @@ compiler other than the Compiler in order to escape that compiler's own terms.
 FILE HEADERS
 ===========================================================================
 
-Two forms. Every project-authored source file carries one of them.
+Two forms. Every project-authored source file carries one of them, or is
+covered by REUSE.toml: test programs, fixtures, generated files and data are
+not edited to add a header, because their line numbers or bytes are checked.
 
 --- FORM 1: compiler files (the default; no Exception B) -------------------
 
     ; <path>
     ; SPDX-License-Identifier: GPL-3.0-or-later
-    ; Copyright (C) 2026 The Exsecutor authors.
+    ; Copyright (C) 2026 DeMoD LLC.
     ;
     ; DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
     ;
@@ -170,20 +172,48 @@ the SPDX identifier for a designated file is:
 
 
 ===========================================================================
-THIRD-PARTY COMPONENTS
+OTHER LICENCES IN THIS REPOSITORY
 ===========================================================================
 
-`vendor/` contains third-party code that is **not** covered by the GPL or by
-either exception, and is redistributed under its own terms:
+`vendor/` holds byte-exact copies of code and data from other projects. None
+of it is covered by the GPL or by either exception; each directory keeps its
+own licence, copyright notice and PROVENANCE.md, and must not be relicensed or
+have its notices stripped.
 
   vendor/fasmg-x86/   flat assembler g (fasmg) x86 macro package
                       Copyright (c) Tomasz Grysztar
                       BSD 3-Clause -- see vendor/fasmg-x86/LICENSE.txt
                       Provenance and hashes: vendor/fasmg-x86/PROVENANCE.md
 
-BSD 3-Clause is GPL-compatible, so the combined work distributes cleanly. That
-directory keeps its own license and its own copyright notice, and must not be
-relicensed or have its notices stripped.
+  vendor/hydramesh-wire/, vendor/hydramodem-tx/, vendor/hydramodem-rx/,
+  vendor/hydramodem-melos/, vendor/hydramodem-bicinium/,
+  vendor/hydramodem-auditus/
+                      DeMoD LLC's HydraMesh and HydraModem (Punctim)
+                      specifications, golden vectors and reference renders
+                      LGPL-3.0-only, except auditus's impair.py and fluxus.py,
+                      written here (GPL-3.0-or-later)
+
+  vendor/streamdb-v3/ DeMoD LLC's StreamDB corpus
+                      LGPL-2.1-or-later -- see its PROVENANCE.md
+
+BSD 3-Clause and LGPL are GPL-compatible, so the combined work distributes
+cleanly.
+
+Outside vendor/:
+
+  examples/metronomus/{exemplum.c, exemplum_horologii.c, metronomus.h,
+  metronomus_proto.c}
+                      DeMoD LLC, MIT (per their SPDX headers)
+
+  LICENSE.GRANTS      three files additionally licensed LGPL-3.0-only: the
+                      custos gate and the DeModFrame codec it compiles with
+
+  compiler/shared/unicode/tables/*.bin
+                      generated from the Unicode Character Database 17.0.0;
+                      Unicode, Inc., Unicode-3.0
+
+REUSE.toml records the holder and licence of every file, and LICENSES/ holds
+the licence texts.
 
 
 ===========================================================================

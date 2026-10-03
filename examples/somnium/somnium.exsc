@@ -1,6 +1,6 @@
 // examples/somnium/somnium.exsc
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 The Exsecutor authors.
+// Copyright (C) 2026 DeMoD LLC.
 // ---------------------------------------------------------------------------
 // The screensaver engine's shared half: the frame geometry, the one table,
 // and the two scalar helpers every somnium ("dream") is written in.

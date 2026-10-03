@@ -1,6 +1,6 @@
 /* tests/c/exsrt_shim.c -- the differential test's stand-in for a runtime.
  * SPDX-License-Identifier: GPL-3.0-or-later
- * Copyright (C) 2026 The Exsecutor authors.
+ * Copyright (C) 2026 DeMoD LLC.
  *
  * VERIFICATION-ONLY. This is NOT a C prelude and is no part of any milestone
  * that ships (docs/design/c-backend.md D1: whole-program mode, with a

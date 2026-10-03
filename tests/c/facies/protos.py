@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # tests/c/facies/protos.py
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 #
 # Code produced by this compiler is not covered by the GPL --
 # see Exception A in LICENSE.EXCEPTION.

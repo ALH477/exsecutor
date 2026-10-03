@@ -1,6 +1,6 @@
 # tools/finetune/harness.py
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 # ---------------------------------------------------------------------------
 # Shared code for the held-out evaluation harness in tools/finetune/:
 # repository paths, finding exsc and fasmg, the compiler judge, code-block

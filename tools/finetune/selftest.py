@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # tools/finetune/selftest.py
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 # ---------------------------------------------------------------------------
 # Proves the harness, not a model. No model is involved:
 #

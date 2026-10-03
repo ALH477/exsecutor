@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # tools/finetune/score.py
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 # ---------------------------------------------------------------------------
 # Step 2 of the held-out evaluation: judge a model's generations WITH THE
 # REAL COMPILER (build/exsc, then fasmg, then the binary) and nothing else.

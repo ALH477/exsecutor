@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # exsecutor-usb/verify.sh  (source: tools/agent/usb/verify.sh)
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 #
 # Check a bundle tree against its MANIFEST (sha256sum format, one
 # "<64 hex>  <relative path>" line per file).

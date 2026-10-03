@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # tools/finetune/train/generate.py
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 # ---------------------------------------------------------------------------
 # Greedy generations for the held-out eval, from the base model or the base
 # model + a LoRA adapter written by train_qlora.py. One prompt at a time (no
