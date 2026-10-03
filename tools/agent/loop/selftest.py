@@ -281,7 +281,7 @@ class T:
     def case_j_runner_failure(self):
         bad = os.path.join(self.box, "fail_runner.sh")
         with open(bad, "w", encoding="utf-8", newline="\n") as f:
-            f.write("#!/bin/sh\necho 'sandbox setup failed' >&2\nexit 125\n")
+            f.write("#!/bin/sh\necho 'sandbox_run: sandbox setup failed: stub' >&2\nexit 125\n")
         os.chmod(bad, 0o700)
         r, recs, _ = self.loop_run("run:j", ["--run", "--runner", bad], "j")
         need(r.returncode == 4 and recs[-1]["verdict"] == "runner_failure", "exit %d" % r.returncode)
@@ -289,14 +289,32 @@ class T:
         for status, want in ((159, "SIGSYS, runner exit 159"), (139, "either exit status 139 or fatal signal 11")):
             fake = os.path.join(self.box, "fake_%d.sh" % status)
             with open(fake, "w", encoding="utf-8", newline="\n") as f:
-                f.write("#!/bin/sh\nexit %d\n" % status)
+                f.write("#!/bin/sh\n%sexit %d\n" % ("echo 'sandbox_run: killed by SIGSYS: stub' >&2\n" if status == 159 else "", status))
             os.chmod(fake, 0o700)
             r, recs, _ = self.loop_run("hello:j%d" % status, ["--run", "--runner", fake, "--max-iters", "1"],
                                        "j%d" % status)
             fb = recs[-2].get("feedback") or ""
             need(r.returncode == 1 and want in fb, "status %d: exit %d, feedback %r" % (status, r.returncode, fb))
             seen.append(str(status))
-        return "runner exit 125 -> runner_failure (exit 4); %s -> not converged, reported" % "/".join(seen)
+        # A bare 125 with no `sandbox_run:` line is a program that chose that exit status
+        forged = os.path.join(self.box, "forged_125.sh")
+        with open(forged, "w", encoding="utf-8", newline="\n") as f:
+            f.write("#!/bin/sh\nexit 125\n")
+        os.chmod(forged, 0o700)
+        r, recs, _ = self.loop_run("hello:jf", ["--run", "--runner", forged, "--max-iters", "1"], "jf")
+        run = [x for x in recs if x["kind"] == "iteration"][-1]["run"]
+        need(r.returncode != 4 and recs[-1]["verdict"] != "runner_failure" and run["outcome"] == "exit"
+             and run["exit"] == 125,
+             "a forged bare 125 was not an ordinary exit: loop exit %d, run %r" % (r.returncode, run))
+        # control bytes in program output never reach the transcript raw
+        esc = os.path.join(self.box, "esc.sh")
+        with open(esc, "w", encoding="utf-8", newline="\n") as f:
+            f.write("#!/bin/sh\nprintf 'a\\033[31mb\\007c\\n'\nexit 0\n")
+        os.chmod(esc, 0o700)
+        r, recs, _ = self.loop_run("hello:je", ["--run", "--runner", esc, "--max-iters", "1"], "je")
+        out = [x for x in recs if x["kind"] == "iteration"][-1]["run"]["stdout"]
+        need("\x1b" not in out and "\x07" not in out and "\ufffd" in out, "control bytes survived: %r" % out)
+        return "runner exit 125 -> runner_failure (exit 4); %s -> not converged, reported; bare forged 125 is an ordinary exit; control bytes scrubbed" % "/".join(seen)
 
     def case_k_real_runner(self):
         if not self.a.runner:

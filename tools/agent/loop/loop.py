@@ -319,6 +319,10 @@ class Tools:
         s = (s or "")
         for p in (self.work, self.ctx.include, self.ctx.repo):
             s = s.replace(p, "<work>" if p == self.work else "<repo>")
+        # Program output is data. C0/C1 controls (except \n and \t) become U+FFFD so
+        # no escape sequence reaches a terminal or a model prompt raw; json.dumps
+        # downstream escapes them again, but that must not be the only defence.
+        s = re.sub(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]", "\ufffd", s)
         return s[:limit]
 
     def write_program(self, d, source):
@@ -401,15 +405,21 @@ class Tools:
         res["runner_stderr"] = self.scrub(err, 600)
         res["exit"] = r.returncode
         m = re.search(r"abortus (\d+)", err)
-        if r.returncode < 0 or r.returncode == 125:
+        # A program can exit 124/125/132/159 itself. The runner always explains
+        # its OWN verdicts with a `sandbox_run:` line on stderr, so a bare status
+        # without one is the program's ordinary exit. (The program could print
+        # that marker itself; the worst that buys is the verdict it could always
+        # have forged, so this narrows the forgery and does not remove it.)
+        runner_said = re.search(r"(?m)^sandbox_run: ", err) is not None
+        if r.returncode < 0 or (r.returncode == 125 and runner_said):
             res.update(outcome="runner_failure", detail="runner exit %d" % r.returncode)
-        elif r.returncode == 124:
+        elif r.returncode == 124 and runner_said:
             res["outcome"] = "timeout"
         elif r.returncode == 132 and m:
             res.update(outcome="abort", abortus=int(m.group(1)))
-        elif r.returncode == 132:
+        elif r.returncode == 132 and runner_said:
             res["outcome"] = "sigill"
-        elif r.returncode == 159:
+        elif r.returncode == 159 and runner_said:
             res["outcome"] = "sigsys"
         elif 128 < r.returncode < 160:
             # The runner reports a fatal signal N as 128+N, and a program may

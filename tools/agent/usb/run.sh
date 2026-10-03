@@ -256,6 +256,11 @@ print(v.get("MemAvailable",0), v.get("MemTotal",0))')
     m="$(sha256sum < "$W/MANIFEST" | cut -c1-64)"
     [ "$m" = "$EXPECT" ] || fail_closed "MANIFEST sha256 is $m, not the expected $EXPECT"
     say "MANIFEST matches --expect-manifest"
+  else
+    printf '%s\n' "run.sh: WARNING: the MANIFEST is UNANCHORED (no --expect-manifest). verify.sh only checks the" \
+      "  files against a MANIFEST that lives on the same stick, so anyone who could write the stick could" \
+      "  rewrite a file and its MANIFEST line together and this run would still say OK. Build the bundle on a" \
+      "  trusted machine, keep the MANIFEST sha256 it prints OFF the stick, and pass it with --expect-manifest." >&2
   fi
   local want got
   want="$(grep -E '  verify\.sh$' "$W/MANIFEST" | cut -c1-64 || true)"

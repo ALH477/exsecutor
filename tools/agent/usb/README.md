@@ -92,8 +92,12 @@ unless you pass `--save-transcripts`. There is no network interface except
 - **Integrity anchoring.** `MANIFEST` lives on the same stick as the files, so
   only `--expect-manifest` with a hash kept elsewhere anchors it. Nothing on
   the stick can vouch for `run.sh` itself.
-- **Faked status codes.** A program can exit 124, 125 or 132 itself. The
-  runner's own diagnostics (`sandbox_run:` lines on stderr) tell them apart.
+- **Faked status codes.** A program can exit 124, 125, 132 or 159 itself. The
+  runner explains its own verdicts with a `sandbox_run:` line on stderr, and
+  `tools/agent/loop/loop.py` now treats those statuses as the runner's only when
+  that line is present (an adversary review found the loop trusted the bare
+  number). A program can still print the marker itself, so this narrows the
+  forgery and does not remove it; the effect is confined to the loop's verdict.
 - **Host root.** `RLIMIT_NPROC` does not bind when the host user is root
   (measured). There is no cgroup, so memory is bounded per process
   (`RLIMIT_AS`).
