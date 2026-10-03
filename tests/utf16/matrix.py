@@ -280,6 +280,46 @@ def mutants_of(text, limit):
     return out
 
 
+# Table mutants. MUTATE above only knows the hex boundary constants, so a
+# library whose knowledge lives in DECIMAL lookup tables (a 256-entry byte-class
+# table, a state-transition table) got almost no mutants -- found by an author
+# who mutated the tables by hand and saw an entry the fixture could not
+# distinguish. Here every numeric element of every array literal of 8 or more
+# elements is a candidate: bumped by one (down by one at 255 / 0xFF).
+ARRAY = re.compile(r'=\s*\[([^\[\];]*)\]\s*;')
+ELEMENT = re.compile(r'(?<![0-9A-Za-z_])(0x[0-9A-Fa-f]+|[0-9]+)(?![0-9A-Za-z_])')
+
+
+def table_mutants_of(text, limit):
+    cands = []
+    for m in ARRAY.finditer(text):
+        body = m.group(1)
+        if '//' in body or body.count(',') < 7:
+            continue
+        for e in ELEMENT.finditer(body):
+            tok = e.group(0)
+            a = m.start(1) + e.start()
+            b = m.start(1) + e.end()
+            if tok.lower().startswith('0x'):
+                v = int(tok, 16)
+                nv = v + 1 if v < 255 else v - 1
+                new = '0x%0*X' % (len(tok) - 2, nv)
+            else:
+                v = int(tok)
+                nv = v + 1 if v < 255 else v - 1
+                new = str(nv)
+            cands.append((a, b, tok, new))
+    if len(cands) > limit:
+        step = len(cands) / limit
+        cands = [cands[int(i * step)] for i in range(limit)]
+    out = []
+    for a, b, old, new in cands:
+        line = text.count('\n', 0, a) + 1
+        out.append((text[:a] + new + text[b:], 'table %s->%s line %d: %s' %
+                    (old, new, line, text.splitlines()[line - 1].strip()[:60])))
+    return out
+
+
 # --------------------------------------------------------------------- main
 
 def main():
@@ -290,6 +330,7 @@ def main():
     ap.add_argument('--c', action='store_true', help='also build and run the C backend (gcc, clang; -O0, -O2)')
     ap.add_argument('--audit', action='store_true', help='also run tools/syscall-audit.sh on each binary')
     ap.add_argument('--mutants', type=int, default=0, metavar='N', help='mutation-test the fixture with N mutants per library')
+    ap.add_argument('--table-mutants', type=int, default=0, metavar='N', help='also mutate up to N array-literal elements per library (lookup tables)')
     ap.add_argument('--jobs', type=int, default=os.cpu_count() or 2)
     ap.add_argument('--timeout', type=int, default=TIMEOUT, help='seconds allowed per run of one binary on one corpus')
     ap.add_argument('--keep', action='store_true', help='keep the work directory')
@@ -412,7 +453,7 @@ def main():
                 print('  ... and %d more' % (len(failures) - 60))
 
         # -- mutation
-        if a.mutants:
+        if a.mutants or a.table_mutants:
             survivors, killed, total = [], 0, 0
             fix = fixture_corpora()[0]
 
@@ -434,7 +475,9 @@ def main():
             for lib in libs:
                 with open(os.path.join(LIBDIR, lib + '.exsc'), encoding='utf-8') as f:
                     text = f.read()
-                for idx, (mt, tag) in enumerate(mutants_of(text, a.mutants)):
+                muts = mutants_of(text, a.mutants) if a.mutants else []
+                muts += table_mutants_of(text, a.table_mutants) if a.table_mutants else []
+                for idx, (mt, tag) in enumerate(muts):
                     work_items.append((lib, idx, mt, tag))
             with cf.ThreadPoolExecutor(a.jobs) as ex:
                 outcomes = list(ex.map(mutate_one, work_items))
