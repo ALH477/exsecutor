@@ -1,0 +1,161 @@
+// rapidum.exsc -- UTF-8 to UTF-16 with an ASCII fast path in groups of eight.
+//
+// METHOD. At position i:
+//   fast  if at least 8 bytes remain (i + 8 le n) and the OR of those 8 bytes has
+//         no bit 7 set, all eight are ASCII: write 8 units, advance 8. No byte is
+//         classified, no sequence is walked.
+//   slow  otherwise decode exactly ONE scalar with `unus` and advance by what it
+//         consumed. `unus` is also what handles the tail (fewer than 8 bytes
+//         left) and any group that contains a non-ASCII byte, including the
+//         ASCII bytes in front of it, one at a time.
+//
+// THE SLOW PATH is not ramus' range chain. It has two parts.
+//   Length. The number of LEADING ONES in the lead byte, counted by a bit loop:
+//     0 ASCII, 1 a stray continuation (80..BF), 2..4 a lead, 5..8 invalid (F8..FF).
+//     Two leads that the count alone would accept are refused by a numeric
+//     compare: C0 and C1 (count 2, b0 lt 0xC2: overlong) and F5..F7 (count 4,
+//     b0 gt 0xF4: above U+10FFFF). The F5..F7 compare is redundant with the
+//     window below (payload 5..7 puts p at 0x140 or more, out of 0x10..0x10F);
+//     it is kept as a direct statement of the rule, and the mutation run marks it
+//     equivalent. The payload of the lead is read back out by a shift pair,
+//     `(b0 sursum l) deorsum l`, which drops the l leading ones.
+//   Table 3-7 as a window on the PARTIAL SCALAR, not a per-lead byte range. Every
+//     continuation is first tested as `(b atque 0xC0) eq 0x80`. After the second
+//     byte, p = (payload sursum 6) sive (b1 atque 0x3F) is the scalar's top bits
+//     and the standard's four irregular second-byte ranges become ranges of p:
+//       3-byte lead:  p >= 0x20                 (E0: second byte >= A0, no overlong)
+//                     not 0x360 <= p <= 0x37F   (ED: second byte <= 9F, no D800..DFFF)
+//       4-byte lead:  0x10 <= p <= 0x10F        (F0: second byte >= 90; F4: <= 8F)
+//     Why that is the same set: for the 3-byte lead E0 p is b1 atque 0x3F, and
+//     A0..BF is exactly 0x20..0x3F; for E1..EC and EE..EF p is >= 0x40 and the
+//     only p-values ED reaches that are out of range are 0x360..0x37F, which are
+//     the second bytes A0..BF after ED (0x340 + 0x20 .. 0x340 + 0x3F). For F0,
+//     p is b1 atque 0x3F and 90..BF is 0x10..0x3F; F1..F3 give 0x40..0xFF; F4
+//     gives 0x100 + (b1 atque 0x3F) and 80..8F is 0x100..0x10F. That argument is
+//     on paper; the matrix is what ran.
+//
+// WHERE THE MAXIMAL SUBPART COMES FROM. `unus` keeps k, the number of bytes
+// accepted, lead included, and stops at the first test that fails: end of input,
+// a non-continuation, or the window above (which can only fail after the second
+// byte, so it leaves k = 1: the lead alone). The k bytes accepted are a
+// well-formed prefix the failing byte could not extend, which is the maximal
+// subpart; a byte that cannot lead (count 1, 5..8, C0, C1, F5..F7) has k = 1.
+//
+// WHAT IS DELIBERATELY NOT SHARED WITH ramus. Ramus has no multi-byte step and
+// no length computation from the bits of the lead; it spells Table 3-7 as four
+// lead arms with a floor and a ceiling. The fast path and the leading-ones count
+// are this library's own. Whether the fast path is faster has not been timed.
+
+structura Passus {
+    cp: u32
+    longitudo: mensura
+    bonum: u8
+}
+
+// Number of leading one bits of b, 0..8.
+functio unos_ducentes(b: u8) -> mensura {
+    mutabilis c: mensura = 0;
+    mutabilis m: u8 = 0x80;
+    dum (b atque m) ne 0 {
+        c = c + 1;
+        m = m deorsum 1;
+    }
+    redde c;
+}
+
+// Decode one scalar at fons[i], i lt n. bonum 1: cp is the scalar, longitudo the
+// bytes it took. bonum 0: fons[i..i+longitudo) is one maximal subpart.
+functio unus(fons: acies<u8, 4096>, i: mensura, n: mensura) -> Passus {
+    firma b0: u8 = fons[i];
+    firma l: mensura = unos_ducentes(b0);
+    si l eq 0 {
+        redde Passus { cp: b0 sicut u32, longitudo: 1, bonum: 1 };
+    }
+    si l eq 1 vel l gt 4 vel b0 lt 0xC2 vel b0 gt 0xF4 {
+        redde Passus { cp: 0, longitudo: 1, bonum: 0 };
+    }
+    firma s: u8 = l sicut u8;
+    mutabilis cp: u32 = ((b0 sursum s) deorsum s) sicut u32;
+    mutabilis k: mensura = 1;
+    dum k lt l {
+        si i + k ge n {
+            rumpe;
+        }
+        firma b: u8 = fons[i + k];
+        si (b atque 0xC0) ne 0x80 {
+            rumpe;
+        }
+        cp = (cp sursum 6) sive ((b atque 0x3F) sicut u32);
+        si k eq 1 et l eq 3 {
+            si cp lt 0x20 vel (cp ge 0x360 et cp le 0x37F) {
+                rumpe;
+            }
+        }
+        si k eq 1 et l eq 4 {
+            si cp lt 0x10 vel cp gt 0x10F {
+                rumpe;
+            }
+        }
+        k = k + 1;
+    }
+    si k eq l {
+        redde Passus { cp: cp, longitudo: k, bonum: 1 };
+    }
+    redde Passus { cp: 0, longitudo: k, bonum: 0 };
+}
+
+functio scribe_unitates(scopus: &mutabilis acies<u16, 4096>, j: mensura, cp: u32) -> mensura {
+    si cp lt 0x10000 {
+        (*scopus)[j] = cp sicut u16;
+        redde j + 1;
+    }
+    firma v: u32 = cp - 0x10000;
+    (*scopus)[j] = (0xD800 + (v deorsum 10)) sicut u16;
+    (*scopus)[j + 1] = (0xDC00 + (v atque 0x3FF)) sicut u16;
+    redde j + 2;
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    mutabilis i: mensura = 0;
+    mutabilis j: mensura = 0;
+    dum i lt n {
+        si i + 8 le n {
+            firma a0: u8 = fons[i];
+            firma a1: u8 = fons[i + 1];
+            firma a2: u8 = fons[i + 2];
+            firma a3: u8 = fons[i + 3];
+            firma a4: u8 = fons[i + 4];
+            firma a5: u8 = fons[i + 5];
+            firma a6: u8 = fons[i + 6];
+            firma a7: u8 = fons[i + 7];
+            firma alta: u8 = a0 sive a1 sive a2 sive a3 sive a4 sive a5 sive a6 sive a7;
+            si (alta atque 0x80) eq 0 {
+                (*scopus)[j] = a0 sicut u16;
+                (*scopus)[j + 1] = a1 sicut u16;
+                (*scopus)[j + 2] = a2 sicut u16;
+                (*scopus)[j + 3] = a3 sicut u16;
+                (*scopus)[j + 4] = a4 sicut u16;
+                (*scopus)[j + 5] = a5 sicut u16;
+                (*scopus)[j + 6] = a6 sicut u16;
+                (*scopus)[j + 7] = a7 sicut u16;
+                j = j + 8;
+                i = i + 8;
+                perge;
+            }
+        }
+
+        firma p: Passus = unus(fons, i, n);
+        si p.bonum eq 1 {
+            j = scribe_unitates(scopus, j, p.cp);
+        } aliter {
+            si modus eq modus_stricte {
+                redde Exitus { unitates: j, status: status_malformatum, positio: i };
+            }
+            (*scopus)[j] = 0xFFFD;
+            j = j + 1;
+        }
+        i = i + p.longitudo;
+    }
+    redde Exitus { unitates: j, status: status_bene, positio: 0 };
+}

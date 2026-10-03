@@ -1,0 +1,145 @@
+// intervalla.exsc -- UTF-8 to UTF-16 with the lead-byte rules as DATA and one
+// generic interpreter that knows no byte value.
+//
+// METHOD. Table 3-7 is a nine-row table, so it is held as one: an
+// acies<u8, 54> of nine 6-byte rows, built once in `converte` and passed down
+// read-only. A row is
+//
+//     [ lead_lo, lead_hi, need, second_lo, second_hi, payload_mask ]
+//
+// row  lead      need  second   mask      note
+//  0   00..7F    0     -        0x7F      ASCII is ROW 0 of the table: it goes
+//                                          through the same search and the
+//                                          same interpreter as everything else
+//                                          (need 0, so no continuation is read)
+//  1   C2..DF    1     80..BF   0x1F
+//  2   E0        2     A0..BF   0x0F
+//  3   E1..EC    2     80..BF   0x0F
+//  4   ED        2     80..9F   0x0F
+//  5   EE..EF    2     80..BF   0x0F
+//  6   F0        3     90..BF   0x07
+//  7   F1..F3    3     80..BF   0x07
+//  8   F4        3     80..8F   0x07
+//
+// Rows are sorted by lead_lo and their lead ranges are disjoint, which is what
+// makes a binary search valid. `quaere_lineam` searches the half-open index
+// range [lo, hi) of rows by hand: it probes mid = lo + (hi - lo) / 2, goes
+// left (hi = mid) if the lead is below that row's lead_lo, right (lo = mid + 1)
+// if above its lead_hi, and returns mid when the lead lies in lead_lo..lead_hi;
+// when the range empties no row covers the lead and it returns 9. hi >= lo
+// always holds inside the loop, so that unsigned subtraction cannot go below zero
+// and the indices stay `mensura`.
+//
+// `applica` then runs the row: payload = b0 & payload_mask, then `need`
+// continuations, the first against second_lo..second_hi and every later one
+// against 80..BF (these two literals are the only byte values in the
+// interpreter, the "rest" rule of the table), each folded in as
+// (payload << 6) | (b & 0x3F).
+//
+// WHERE THE MAXIMAL SUBPART COMES FROM. `ate` is the number of bytes the
+// interpreter has accepted, the lead included. A continuation outside its
+// range, or the end of input, stops the row there, and `ate` is the subpart,
+// exactly as in a hand-written decoder, but taken from the row's second
+// range and need and not from a branch on the lead. A lead no row covers
+// (80..C1, F5..FF) is the search's answer 9 and is a 1-byte subpart.
+//
+// NOT SHARED WITH RAMUS: the lead is never compared with a literal in the
+// decoder; changing what is well-formed means changing a table cell. What this
+// costs is a binary search (at most four probes) per byte, including ASCII.
+
+structura Gradus {
+    ate: mensura
+    cp: u32
+    bonum: u8
+}
+
+// Index of the row whose lead range contains b, or 9 if none does.
+functio quaere_lineam(t: acies<u8, 54>, b: u8) -> mensura {
+    mutabilis lo: mensura = 0;
+    mutabilis hi: mensura = 9;
+    dum lo lt hi {
+        firma mid: mensura = lo + ((hi - lo) / 2);
+        firma a: u8 = t[mid * 6];
+        firma z: u8 = t[(mid * 6) + 1];
+        si b lt a {
+            hi = mid;
+        } sin b gt z {
+            lo = mid + 1;
+        } aliter {
+            redde mid;
+        }
+    }
+    redde 9;
+}
+
+// Interpret one sequence at fons[i]: find its row, consume its continuations.
+functio applica(t: acies<u8, 54>, fons: acies<u8, 4096>, n: mensura, i: mensura) -> Gradus {
+    firma b0: u8 = fons[i];
+    firma r: mensura = quaere_lineam(t, b0);
+    si r eq 9 {
+        redde Gradus { ate: 1, cp: 0, bonum: 0 };
+    }
+    firma base: mensura = r * 6;
+    firma opus: mensura = t[base + 2] sicut mensura;
+    mutabilis lo: u8 = t[base + 3];
+    mutabilis hi: u8 = t[base + 4];
+    mutabilis cp: u32 = (b0 atque t[base + 5]) sicut u32;
+    mutabilis ate: mensura = 1;
+    dum ate le opus {
+        si i + ate ge n {
+            redde Gradus { ate: ate, cp: 0, bonum: 0 };
+        }
+        firma b: u8 = fons[i + ate];
+        si b lt lo vel b gt hi {
+            redde Gradus { ate: ate, cp: 0, bonum: 0 };
+        }
+        cp = (cp sursum 6) sive ((b atque 0x3F) sicut u32);
+        lo = 0x80;
+        hi = 0xBF;
+        ate = ate + 1;
+    }
+    redde Gradus { ate: ate, cp: cp, bonum: 1 };
+}
+
+functio scribe_scalarem(scopus: &mutabilis acies<u16, 4096>, j: mensura, cp: u32) -> mensura {
+    si cp lt 0x10000 {
+        (*scopus)[j] = cp sicut u16;
+        redde j + 1;
+    }
+    firma v: u32 = cp - 0x10000;
+    (*scopus)[j] = (0xD800 + (v deorsum 10)) sicut u16;
+    (*scopus)[j + 1] = (0xDC00 + (v atque 0x3FF)) sicut u16;
+    redde j + 2;
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    firma t: acies<u8, 54> = [
+        0x00, 0x7F, 0, 0, 0, 0x7F,
+        0xC2, 0xDF, 1, 0x80, 0xBF, 0x1F,
+        0xE0, 0xE0, 2, 0xA0, 0xBF, 0x0F,
+        0xE1, 0xEC, 2, 0x80, 0xBF, 0x0F,
+        0xED, 0xED, 2, 0x80, 0x9F, 0x0F,
+        0xEE, 0xEF, 2, 0x80, 0xBF, 0x0F,
+        0xF0, 0xF0, 3, 0x90, 0xBF, 0x07,
+        0xF1, 0xF3, 3, 0x80, 0xBF, 0x07,
+        0xF4, 0xF4, 3, 0x80, 0x8F, 0x07
+    ];
+    mutabilis i: mensura = 0;
+    mutabilis j: mensura = 0;
+    dum i lt n {
+        firma g: Gradus = applica(t, fons, n, i);
+        si g.bonum eq 1 {
+            j = scribe_scalarem(scopus, j, g.cp);
+            i = i + g.ate;
+        } aliter {
+            si modus eq modus_stricte {
+                redde Exitus { unitates: j, status: status_malformatum, positio: i };
+            }
+            (*scopus)[j] = 0xFFFD;
+            j = j + 1;
+            i = i + g.ate;
+        }
+    }
+    redde Exitus { unitates: j, status: status_bene, positio: 0 };
+}
