@@ -1,0 +1,59 @@
+// contractus.exsc -- the interface every UTF-8 -> UTF-16 library here implements.
+//
+// A library is ONE file defining
+//
+//     publica functio converte(fons: acies<u8, 4096>, n: mensura,
+//                              scopus: &mutabilis acies<u16, 4096>,
+//                              modus: u8) -> Exitus
+//
+// and nothing else public. It is pure: no `poscit`, no allocation, no
+// standard stream. It reads fons[0..n) as UTF-8 and writes UTF-16 CODE UNITS
+// -- values, not bytes -- to scopus[0..unitates). Byte order is not its
+// business: spec 1 says nothing may read the host's, and a library that never
+// serialises cannot get it wrong. probatio.exsc serialises, little or big
+// endian as its input asks.
+//
+// WELL-FORMED means Unicode 17 section 3.9, Table 3-7: the only second-byte
+// ranges that are not 80..BF are E0 A0..BF, ED 80..9F, F0 90..BF and F4 80..8F.
+// That is what refuses overlong forms, UTF-16 surrogates (U+D800..U+DFFF)
+// and anything above U+10FFFF, with no check on the decoded value.
+//
+// TWO MODES, one function, because the two policies differ only at the
+// moment a sequence is found ill-formed:
+//
+//   modus_stricte    stop at the first ill-formed subpart. Exitus.status is
+//                    status_malformatum, Exitus.positio the byte offset of
+//                    that subpart's first byte, and scopus[0..unitates) holds
+//                    the conversion of everything BEFORE it -- not nothing.
+//
+//   modus_substitue  never fail. Each MAXIMAL SUBPART of an ill-formed
+//                    subsequence (section 3.9, "U+FFFD substitution of
+//                    maximal subparts"; the practice WHATWG and Python's
+//                    decoder follow) becomes ONE U+FFFD, and decoding resumes
+//                    at the first byte after it. status is status_bene.
+//
+// A maximal subpart is the longest prefix of the remaining bytes that is the
+// start of some well-formed sequence. So E0 80 80 is THREE replacements (E0
+// alone cannot be followed by 80), F0 90 80 at the end of input is ONE, and a
+// stray 80 is one. Every library has to get exactly this right -- it is the
+// part that separates a decoder that merely works on valid text from one that
+// agrees with every other.
+//
+// CAPACITY. 4096 bytes in, 4096 units out. Output never exceeds input in
+// length: a 1-, 2- or 3-byte sequence makes one unit, a 4-byte sequence two,
+// and a replacement covers at least one byte and makes one. n greater than
+// 4096 is the caller's error and no library is asked to survive it.
+
+publica structura Exitus {
+    unitates: mensura
+    status: u8
+    positio: mensura
+}
+
+publica firma modus_stricte: u8 = 0;
+publica firma modus_substitue: u8 = 1;
+publica firma status_bene: u8 = 0;
+publica firma status_malformatum: u8 = 1;
+// 2: a lockstep library's comparator found its redundant decoders disagreeing.
+// A healthy library never returns it; the corpus is there to prove none does.
+publica firma status_discrepantia: u8 = 2;

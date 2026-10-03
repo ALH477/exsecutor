@@ -1,0 +1,107 @@
+// ramus.exsc -- UTF-8 to UTF-16 by a plain branch chain on the lead byte.
+//
+// The textbook decoder, and the baseline the other libraries are read against.
+// One `si`/`sin` chain classifies the lead byte into (continuations still
+// needed, the allowed range of the FIRST continuation, the payload bits of the
+// lead). Table 3-7's four irregular second-byte ranges are four arms; every
+// other continuation is 80..BF. The decoded scalar is never range-checked
+// after the fact, because no ill-formed sequence gets that far.
+//
+// WHERE THE MAXIMAL SUBPART COMES FROM. `ate` counts the bytes consumed so
+// far, the lead included. When a continuation is out of range -- or the input
+// ends -- the bytes already consumed ARE the maximal subpart: they were a
+// well-formed prefix, and the byte that failed was not allowed to extend it.
+// The failing byte is not consumed; it begins whatever comes next.
+
+functio scribe_unitates(scopus: &mutabilis acies<u16, 4096>, j: mensura, cp: u32) -> mensura {
+    si cp lt 0x10000 {
+        (*scopus)[j] = cp sicut u16;
+        redde j + 1;
+    }
+    firma v: u32 = cp - 0x10000;
+    (*scopus)[j] = (0xD800 + (v deorsum 10)) sicut u16;
+    (*scopus)[j + 1] = (0xDC00 + (v atque 0x3FF)) sicut u16;
+    redde j + 2;
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    mutabilis i: mensura = 0;
+    mutabilis j: mensura = 0;
+    dum i lt n {
+        firma b0: u8 = fons[i];
+        si b0 lt 0x80 {
+            (*scopus)[j] = b0 sicut u16;
+            j = j + 1;
+            i = i + 1;
+            perge;
+        }
+
+        mutabilis opus: mensura = 0;
+        mutabilis lo: u8 = 0x80;
+        mutabilis hi: u8 = 0xBF;
+        mutabilis cp: u32 = 0;
+        si b0 ge 0xC2 et b0 le 0xDF {
+            opus = 1;
+            cp = (b0 atque 0x1F) sicut u32;
+        } sin b0 eq 0xE0 {
+            opus = 2;
+            lo = 0xA0;
+            cp = (b0 atque 0x0F) sicut u32;
+        } sin b0 eq 0xED {
+            opus = 2;
+            hi = 0x9F;
+            cp = (b0 atque 0x0F) sicut u32;
+        } sin b0 ge 0xE1 et b0 le 0xEF {
+            opus = 2;
+            cp = (b0 atque 0x0F) sicut u32;
+        } sin b0 eq 0xF0 {
+            opus = 3;
+            lo = 0x90;
+            cp = (b0 atque 0x07) sicut u32;
+        } sin b0 eq 0xF4 {
+            opus = 3;
+            hi = 0x8F;
+            cp = (b0 atque 0x07) sicut u32;
+        } sin b0 ge 0xF1 et b0 le 0xF3 {
+            opus = 3;
+            cp = (b0 atque 0x07) sicut u32;
+        }
+
+        // consumed so far: the lead. `opus` 0 is an ill-formed lead (80..C1,
+        // F5..FF): a maximal subpart of one byte.
+        mutabilis ate: mensura = 1;
+        mutabilis bonum: u8 = 1;
+        si opus eq 0 {
+            bonum = 0;
+        }
+        dum bonum eq 1 et ate le opus {
+            si i + ate ge n {
+                bonum = 0;
+            } aliter {
+                firma b: u8 = fons[i + ate];
+                si b lt lo vel b gt hi {
+                    bonum = 0;
+                } aliter {
+                    cp = (cp sursum 6) sive (b atque 0x3F) sicut u32;
+                    lo = 0x80;
+                    hi = 0xBF;
+                    ate = ate + 1;
+                }
+            }
+        }
+
+        si bonum eq 1 {
+            j = scribe_unitates(scopus, j, cp);
+            i = i + ate;
+        } aliter {
+            si modus eq modus_stricte {
+                redde Exitus { unitates: j, status: status_malformatum, positio: i };
+            }
+            (*scopus)[j] = 0xFFFD;
+            j = j + 1;
+            i = i + ate;
+        }
+    }
+    redde Exitus { unitates: j, status: status_bene, positio: 0 };
+}

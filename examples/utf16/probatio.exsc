@@ -1,0 +1,102 @@
+// probatio.exsc -- the one driver every UTF-8 -> UTF-16 library is run through.
+//
+// It is the only file here that touches a stream. A library (contractus.exsc)
+// is pure; this reads framed test cases from standard input, hands each to
+// `converte`, and writes what came back, so the same binary shape tests every
+// library and the only thing that varies between binaries is which library
+// was linked.
+//
+// STANDARD INPUT, the whole format:
+//
+//   one byte   'L' (0x4C) or 'B' (0x42): the byte order the UTF-16 units are
+//              WRITTEN in. The libraries never see it.
+//   then records, to end of input:
+//     1 byte   modus   0 modus_stricte, 1 modus_substitue
+//     2 bytes  length, little endian, 0..4096
+//     length   bytes of UTF-8 (anything -- ill-formed input is the point)
+//
+// STANDARD OUTPUT, one record per input record, in order:
+//
+//     1 byte   Exitus.status
+//     2 bytes  Exitus.positio, little endian (always: this is framing)
+//     2 bytes  Exitus.unitates, little endian (always)
+//     2 x unitates bytes   the UTF-16 code units in the order the first byte
+//              asked for. THIS is the only thing the L/B byte changes.
+//
+// EXIT STATUS: 0 all records converted; 1 a record longer than 4096; 2 input
+// ended inside a record; 3 a write failed; 4 the first byte was neither L
+// nor B. A nonzero status with output already written means the output is a
+// truncated record stream, not a result.
+
+functio scribe_unitas(s: Scriptor, u: u16, ordo: u8) -> mensura {
+    firma lo: u8 = (u atque 0xFF) sicut u8;
+    firma hi: u8 = (u deorsum 8) sicut u8;
+    si ordo eq 0x42 {
+        redde s.scribe_octeto(hi) + s.scribe_octeto(lo);
+    }
+    redde s.scribe_octeto(lo) + s.scribe_octeto(hi);
+}
+
+// The `Exitus` header, then the units. Returns the bytes written, so the
+// caller can compare against 5 + 2 * unitates.
+functio emitte(s: Scriptor, e: Exitus, scopus: acies<u16, 4096>, ordo: u8) -> mensura {
+    mutabilis w: mensura = 0;
+    firma p: u16 = e.positio sicut u16;
+    firma k: u16 = e.unitates sicut u16;
+    w = w + s.scribe_octeto(e.status);
+    w = w + s.scribe_octeto((p atque 0xFF) sicut u8);
+    w = w + s.scribe_octeto((p deorsum 8) sicut u8);
+    w = w + s.scribe_octeto((k atque 0xFF) sicut u8);
+    w = w + s.scribe_octeto((k deorsum 8) sicut u8);
+    mutabilis i: mensura = 0;
+    dum i lt e.unitates {
+        w = w + scribe_unitas(s, scopus[i], ordo);
+        i = i + 1;
+    }
+    redde w;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma l = Lector.ab_introitu(a);
+    firma s = Scriptor.ad_exitum(a);
+
+    firma ordo256: u16 = l.lege_octeto();
+    si ordo256 ne 0x4C et ordo256 ne 0x42 {
+        redde 4;
+    }
+    firma ordo: u8 = ordo256 sicut u8;
+
+    mutabilis fons: acies<u8, 4096> = [0; 4096];
+    mutabilis scopus: acies<u16, 4096> = [0; 4096];
+
+    mutabilis modus256: u16 = l.lege_octeto();
+    dum modus256 ne 256 {
+        firma lo: u16 = l.lege_octeto();
+        firma hi: u16 = l.lege_octeto();
+        si lo eq 256 vel hi eq 256 {
+            redde 2;
+        }
+        firma n: mensura = (lo + (hi * 256)) sicut mensura;
+        si n gt 4096 {
+            redde 1;
+        }
+        mutabilis i: mensura = 0;
+        dum i lt n {
+            firma c: u16 = l.lege_octeto();
+            si c eq 256 {
+                redde 2;
+            }
+            fons[i] = c sicut u8;
+            i = i + 1;
+        }
+
+        firma e: Exitus = converte(fons, n, scopus, modus256 sicut u8);
+        si emitte(s, e, scopus, ordo) ne 5 + (2 * e.unitates) {
+            redde 3;
+        }
+        modus256 = l.lege_octeto();
+    }
+    redde 0;
+}
