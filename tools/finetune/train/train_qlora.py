@@ -425,6 +425,8 @@ def main(argv=None):
         log("dropping %d over-length record(s): %s" % (len(dropped), ", ".join(dropped)))
     train_ex = [e for e in train_ex if e["n_tokens"] <= args.max_seq_len]
     val_ex = [e for e in val_ex if e["n_tokens"] <= args.max_seq_len]
+    if not train_ex:
+        die("no training records left after dropping over-length ones")
 
     # 2. model
     on_gpu = torch.cuda.is_available()
