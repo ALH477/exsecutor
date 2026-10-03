@@ -91,7 +91,10 @@ def score_item(j, item, text, fix_block):
         return out
     if s["kind"] == "program":
         out.update(score_program(j, text, s["expect"], s["stdout"], "first"))
-        out["pass"] = out["run"] if out["run"] is not None else out["check"]
+        if s["expect"] == "ok":
+            out["pass"] = out["check"]
+        else:  # the headline needs the run; under --no-run a clean check is n/a, not a pass
+            out["pass"] = out["run"] if out["run"] is not None else (None if out["check"] else False)
     elif s["kind"] == "fix":
         r = score_program(j, text, s["fixed_expect"], s["fixed_stdout"], fix_block)
         out.update(r)
@@ -116,7 +119,7 @@ def score_item(j, item, text, fix_block):
     return out
 
 
-def summarise(items, results, label):
+def summarise(items, results, label, ran=True):
     by_id = {r["id"]: r for r in results}
     lines = []
 
@@ -137,8 +140,9 @@ def summarise(items, results, label):
         return out
 
     n = len(items)
-    lines.append("summary%s: %d items, judged by build/exsc (+ fasmg + execution for exit=/abort=)" % (
-        " [" + label + "]" if label else "", n))
+    lines.append("summary%s: %d items, judged by build/exsc%s" % (
+        " [" + label + "]" if label else "", n,
+        " (+ fasmg + execution for exit=/abort=)" if ran else " only (--no-run: run level and its headlines n/a)"))
     lines.append("  %-44s %s" % ("metric", "k/n    rate   Wilson 95% interval"))
     row("write+translate: checks clean", sel({"write", "translate"}, "check"))
     row("write+translate: runs, exit+stdout match", sel({"write", "translate"}, "run", need_run=True))
@@ -194,7 +198,7 @@ def main():
         j.close()
     out = a.out or (os.path.splitext(a.generations)[0] + ".results.jsonl")
     harness.write_text(out, "".join(harness.dumps(r) + "\n" for r in results))
-    summary = summarise(items, results, a.label)
+    summary = summarise(items, results, a.label, ran=not a.no_run)
     if a.summary:
         harness.write_text(a.summary, summary)
     sys.stdout.write(summary)
