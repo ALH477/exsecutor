@@ -1,0 +1,13 @@
+//! task: write
+//! ask: Return the quotient and remainder of a divided by b as two functions.
+//! expect: ok
+//! refs: §5.4, §8.6
+//! explain: `/` on two integers is the truncated quotient and traps on a zero divisor; `residuum` is the remainder. Both operands must have the same type. There is no `%` token: remainder is the contextual word `residuum`.
+
+publica functio quotiens(a: u32, b: u32) -> u32 {
+    redde a / b;
+}
+
+publica functio reliquum(a: u32, b: u32) -> u32 {
+    redde a residuum b;
+}

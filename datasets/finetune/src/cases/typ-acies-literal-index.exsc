@@ -1,0 +1,14 @@
+//! task: write
+//! ask: Build an array of four u32 values from a literal and sum it with a loop.
+//! expect: ok
+//! refs: §8.6
+//! explain: `[e1, …, en]` is an array literal of type `acies<T, n>`; `N` is part of the type. `[e; N]` repeats one value N times (the way to ask for zeros, since nothing is zero-filled). In `per i in 0..4`, a range of two literals types as `mensura`, which is what indexes an array.
+
+publica functio summa() -> u32 {
+    firma v: acies<u32, 4> = [1, 2, 3, 4];
+    mutabilis s: u32 = 0;
+    per i in 0..4 {
+        s = s + v[i];
+    }
+    redde s;
+}

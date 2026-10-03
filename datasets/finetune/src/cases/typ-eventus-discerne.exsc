@@ -1,0 +1,17 @@
+//! task: write
+//! ask: Write a division that can fail, returning a result type, and a caller that matches on the outcome.
+//! expect: ok
+//! refs: §11, docs/design/sum-types.md D5
+//! explain: `eventus<T, E>` is the prelude's result type: `prosperum(v)` is success and `adversum(e)` is failure, and the prelude's `erratum` carries a numeric code in `numerus`. A caller opens it with `discerne`, binding the payload in each arm. Both variants are named, so no `aliter` is needed. The `E?` propagation sigil is listed in §8.4 but is not accepted on an `eventus` by this compiler `[OPEN]`.
+
+functio divide(a: mensura, b: mensura) -> eventus<mensura, erratum> {
+    si b eq 0 { redde adversum(erratum { numerus: 33 }); }
+    redde prosperum(a / b);
+}
+
+publica functio valor(a: mensura, b: mensura) -> mensura {
+    discerne divide(a, b) {
+        casus prosperum(n) { redde n; }
+        casus adversum(e) { redde 0; }
+    }
+}

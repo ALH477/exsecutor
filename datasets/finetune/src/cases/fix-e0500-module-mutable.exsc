@@ -1,0 +1,17 @@
+//! task: fix
+//! ask: Keep a global counter and read it from a function.
+//! expect: EXS-E0500
+//! refs: §4.1 rule 7
+//! explain: There is no module-level mutable state (§4.1 rule 7), so a `mutabilis` at module level is `EXS-E0500`. Module-level `firma` constants are legal; state that changes is a local, or a value passed in and returned.
+
+mutabilis contor: u64 = 0;
+
+publica functio f() -> u64 {
+    redde contor;
+}
+//@ fixed
+firma CONTOR: u64 = 0;
+
+publica functio f() -> u64 {
+    redde CONTOR;
+}

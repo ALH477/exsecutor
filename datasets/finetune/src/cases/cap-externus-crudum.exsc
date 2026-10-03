@@ -1,0 +1,9 @@
+//! task: write
+//! ask: Declare a C function from the foreign library, with an explicit ABI.
+//! expect: ok
+//! refs: §5.3, §4.6
+//! explain: `externus("C", abi: sysv_amd64) { ... }` opens a foreign block with an explicit ABI; the admitted ABIs are `sysv_amd64`, `aapcs64` and `lp64d`. A raw pointer `*T` requires `Crudum`, so the foreign signature declares it. Non-atomic `refero` may not cross the boundary (`EXS-E0520`).
+
+externus("C", abi: sysv_amd64) {
+    functio strlen(s: *u8) -> mensura poscit Crudum
+}

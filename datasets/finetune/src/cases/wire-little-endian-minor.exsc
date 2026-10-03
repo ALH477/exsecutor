@@ -1,0 +1,12 @@
+//! task: write
+//! ask: Declare a little-endian wire header: a 16-bit magic, a byte, and a 32-bit payload length.
+//! expect: ok
+//! refs: §5.2
+//! explain: `:minor` is little-endian and `:maior` big-endian; both are contextual words. Each multi-byte field names its order, and the struct is packed with no padding, so this header is seven bytes on the wire: 2 + 1 + 4.
+
+@transitus
+publica structura Cabecera {
+    magia:  u16:minor
+    genus:  u8
+    onus:   u32:minor
+}

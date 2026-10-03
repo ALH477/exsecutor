@@ -1,0 +1,16 @@
+//! task: fix
+//! ask: Write a function that doubles its argument through a local named `per`.
+//! expect: EXS-E0201,EXS-E0220,EXS-E0303
+//! primary: EXS-E0220
+//! refs: §8.4
+//! explain: `per` is one of the thirty reserved words and can never be an identifier, anywhere. The reserved words read as plausible variable names, which is why `EXS-E0220` has a code of its own and a mechanical fix. The other two codes are recovery cascade from the same line. Contextual words (`versio`, `lt`, `maior`, ...) are different: they remain legal names outside their position.
+
+publica functio duplica(a: u64) -> u64 {
+    firma per: u64 = a * 2;
+    redde per;
+}
+//@ fixed
+publica functio duplica(a: u64) -> u64 {
+    firma per_: u64 = a * 2;
+    redde per_;
+}

@@ -1,0 +1,36 @@
+{
+  "by_evidence": {
+    "editorial": 52,
+    "exsc-check": 213,
+    "exsc-diagnostic": 25,
+    "exsc-run": 37,
+    "spec-table": 161,
+    "spec-text": 75
+  },
+  "by_task": {
+    "concept": 36,
+    "diagnose": 1,
+    "explain": 59,
+    "fix": 24,
+    "lexicon": 340,
+    "trace": 12,
+    "translate": 8,
+    "write": 83
+  },
+  "cases": 92,
+  "inputs_sha256": {
+    "datasets/finetune/src/cases": "4ab3e27e177103357e8e08518f7f28ad728838f31a12938bfddc3df8c27024d9",
+    "datasets/finetune/src/keywords.json": "5b1afd22ca02b2e1aaf1538a736373525c327fc98a702492a554a807be5745cd",
+    "datasets/finetune/src/qa.json": "dacfeff795ac2b3caef4fea7e12c0d3e41a919189f453b93433ffd118cb44553",
+    "docs/spec/exsecutor-spec-v0.4.md": "2aca15f001a962ffb4d0d69a9618abb00caacf232572796df2d5f62d1de4665f"
+  },
+  "outputs_sha256": {
+    "all.jsonl": "ddebada9e6f1da9050cc40d1a38eacee6aef8e54ecd7ff5255cd6c50a1234953",
+    "lexicon.json": "c720b81560367ded709fa2fcbea5c89776b49bdb3bf35917b0e2e5d01f672ffa",
+    "train.jsonl": "2a6bc25759fcd31d72a9bfbaf107950b1750fc99ce2406bf6637f9b41fdb3bb7",
+    "validation.jsonl": "cc3bf99d7a453fb35bdf72f7623ae1c8f5b70e7a904b276c06fcb0a2bc51ede9"
+  },
+  "records": 563,
+  "train": 507,
+  "validation": 56
+}

@@ -1,0 +1,17 @@
+//! task: write
+//! ask: Write a higher-order function `applica` that applies a function argument to a value and requires exactly the capabilities its argument requires.
+//! expect: ok
+//! refs: §4.2
+//! explain: A capability row is part of a function type. `poscit sicut f` means "the row carried by the type of parameter `f`", substituted positionally at each call site. A caller passing a pure function pays nothing; one passing a function that needs `rete` must declare `rete` itself, which is what makes laundering impossible rather than merely annotated.
+
+publica functio applica(v: u32, f: functio(u32) -> u32) -> u32 poscit sicut f {
+    redde f(v);
+}
+
+functio duplica(x: u32) -> u32 {
+    redde x * 2;
+}
+
+publica functio usus() -> u32 {
+    redde applica(21, duplica);
+}

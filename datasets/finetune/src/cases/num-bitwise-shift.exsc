@@ -1,0 +1,9 @@
+//! task: write
+//! ask: Combine two u32 values: shift the first left by 3, shift the second right by 1, and xor the results.
+//! expect: ok
+//! refs: §5.4, §8.6
+//! explain: Shifts and bitwise operators are words: `sursum` (shift up/left), `deorsum` (shift down/right), `aut` (xor), `atque` (and), `sive` (or). They are unsigned-only and same-type. Shifts are non-associative, so chains need parentheses, and two different bitwise words in one chain are EXS-E0201 until parenthesised.
+
+publica functio mixtio(a: u32, b: u32) -> u32 {
+    redde (a sursum 3) aut (b deorsum 1);
+}

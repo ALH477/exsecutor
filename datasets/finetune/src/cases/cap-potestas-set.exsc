@@ -1,0 +1,7 @@
+//! task: write
+//! ask: Declare a named set of capabilities.
+//! expect: ok
+//! refs: §4.5
+//! explain: `potestas` ("power") names a set of capability atoms so a long `poscit` list can be written once. The atoms are identifiers in the capability namespace, not reserved words: `Mundus alloc sermo horologium archivum rete fortuna ambitus Filum machina Crudum`.
+
+potestas Hospes = { alloc, ambitus }

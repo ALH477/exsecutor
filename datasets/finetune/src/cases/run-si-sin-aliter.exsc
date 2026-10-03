@@ -1,0 +1,19 @@
+//! task: write
+//! ask: Classify 5, 50 and 200 into 1, 2 and 3 with a three-way condition and pack the answers as decimal digits in the exit status.
+//! expect: exit=123
+//! refs: §8.5
+//! explain: `classis(5)` is 1, `classis(50)` is 2 and `classis(200)` is 3, so `1 * 100 + 2 * 10 + 3` is 123. The ladder is `si`, `sin`, `aliter`, and every arm returns, so there is no join after it. 123 fits in a `u8`, and `u8` arithmetic traps if it did not.
+
+functio classis(n: u8) -> u8 {
+    si n lt 10 {
+        redde 1;
+    } sin n lt 100 {
+        redde 2;
+    } aliter {
+        redde 3;
+    }
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    redde classis(5) * 100 + classis(50) * 10 + classis(200);
+}

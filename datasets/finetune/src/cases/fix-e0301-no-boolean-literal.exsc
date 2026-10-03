@@ -1,0 +1,13 @@
+//! task: fix
+//! ask: Return a true value from a function.
+//! expect: EXS-E0301
+//! refs: §8.4
+//! explain: Exsecutor has no `true` or `false`: they are not keywords and nothing predefines them, so `true` is an unresolved name, `EXS-E0301`. A truth value is the one-bit type `u1`, written 1 and 0. Conditions are written with the comparison words, `si x gt 0 { ... }`, and are not values of a boolean type.
+
+publica functio f() -> u1 {
+    redde true;
+}
+//@ fixed
+publica functio f() -> u1 {
+    redde 1;
+}

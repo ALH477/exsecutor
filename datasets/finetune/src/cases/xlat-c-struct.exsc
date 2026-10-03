@@ -1,0 +1,18 @@
+//! task: translate
+//! ask: Translate this C to Exsecutor.
+//!   ```c
+//!   struct Point { int32_t x; int32_t y; };
+//!   struct Point origin(void) { struct Point p = {0, 0}; return p; }
+//!   ```
+//! expect: ok
+//! refs: §6.3, §8.6
+//! explain: `struct` is `structura` and is always a value type. Fields are `name: Type`. The initializer `{0, 0}` becomes a struct literal that names every field, `Punctum { x: 0, y: 0 }`, because there is no positional form and no zero-filling of omitted fields.
+
+structura Punctum {
+    x: i32
+    y: i32
+}
+
+publica functio origo() -> Punctum {
+    redde Punctum { x: 0, y: 0 };
+}

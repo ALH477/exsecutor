@@ -1,0 +1,907 @@
+{
+  "capability_atoms": [
+    {
+      "atom": "Mundus",
+      "gloss": "the root capability, passed to `initium` (§4.7)"
+    },
+    {
+      "atom": "alloc",
+      "gloss": "allocation; arenas (§4.5, §6.3)"
+    },
+    {
+      "atom": "sermo",
+      "gloss": "human language"
+    },
+    {
+      "atom": "horologium",
+      "gloss": "clock"
+    },
+    {
+      "atom": "archivum",
+      "gloss": "filesystem"
+    },
+    {
+      "atom": "rete",
+      "gloss": "network"
+    },
+    {
+      "atom": "fortuna",
+      "gloss": "randomness"
+    },
+    {
+      "atom": "ambitus",
+      "gloss": "process environment"
+    },
+    {
+      "atom": "Filum",
+      "gloss": "threads"
+    },
+    {
+      "atom": "machina",
+      "gloss": "a separate compute device — §5.5"
+    },
+    {
+      "atom": "Crudum",
+      "gloss": "raw pointers, unchecked casts, manual lifetimes"
+    }
+  ],
+  "contextual": [
+    {
+      "label": "`ego`-file structure",
+      "words": [
+        "ego",
+        "versio",
+        "licentia",
+        "fontes",
+        "hospites",
+        "acceleratores",
+        "potestates",
+        "numeri",
+        "exitus"
+      ]
+    },
+    {
+      "label": "`numeri` keys and values",
+      "words": [
+        "rotundatio",
+        "reassociatio",
+        "contractio",
+        "subnormales",
+        "ad_parem",
+        "vetita",
+        "explicita",
+        "conservata"
+      ]
+    },
+    {
+      "label": "reduction shapes",
+      "words": [
+        "ordinata",
+        "arborea"
+      ]
+    },
+    {
+      "label": "comparison and connectives",
+      "words": [
+        "lt",
+        "le",
+        "gt",
+        "ge",
+        "eq",
+        "ne",
+        "et",
+        "vel"
+      ]
+    },
+    {
+      "label": "exclusive or and shifts",
+      "words": [
+        "aut",
+        "sursum",
+        "deorsum"
+      ]
+    },
+    {
+      "label": "remainder and bitwise and/or",
+      "words": [
+        "residuum",
+        "atque",
+        "sive"
+      ]
+    },
+    {
+      "label": "byte order",
+      "words": [
+        "maior",
+        "minor",
+        "nativus"
+      ]
+    },
+    {
+      "label": "FFI",
+      "words": [
+        "abi"
+      ]
+    }
+  ],
+  "error_codes": [
+    {
+      "code": "EXS-E0101",
+      "meaning": "source not UTF-8, or BOM present"
+    },
+    {
+      "code": "EXS-E0102",
+      "meaning": "source not NFC"
+    },
+    {
+      "code": "EXS-E0103",
+      "meaning": "bidi or invisible control character in source"
+    },
+    {
+      "code": "EXS-E0104",
+      "meaning": "mixed-script identifier (UTS #39)"
+    },
+    {
+      "code": "EXS-E0105",
+      "meaning": "confusable identifiers in import closure"
+    },
+    {
+      "code": "EXS-E0106",
+      "meaning": "CRLF line ending"
+    },
+    {
+      "code": "EXS-E0201",
+      "meaning": "unexpected token"
+    },
+    {
+      "code": "EXS-E0202",
+      "meaning": "unterminated construct"
+    },
+    {
+      "code": "EXS-E0203",
+      "meaning": "unexpected end of input"
+    },
+    {
+      "code": "EXS-E0210",
+      "meaning": "malformed literal"
+    },
+    {
+      "code": "EXS-E0220",
+      "meaning": "reserved keyword used as identifier"
+    },
+    {
+      "code": "EXS-E0301",
+      "meaning": "name does not resolve"
+    },
+    {
+      "code": "EXS-E0302",
+      "meaning": "duplicate declaration in one scope"
+    },
+    {
+      "code": "EXS-E0303",
+      "meaning": "type mismatch"
+    },
+    {
+      "code": "EXS-E0304",
+      "meaning": "wrong number of arguments"
+    },
+    {
+      "code": "EXS-E0305",
+      "meaning": "operation not defined on the type"
+    },
+    {
+      "code": "EXS-E0306",
+      "meaning": "assignment to an immutable or non-lvalue target"
+    },
+    {
+      "code": "EXS-E0307",
+      "meaning": "control flow misuse"
+    },
+    {
+      "code": "EXS-E0308",
+      "meaning": "literal cannot be typed or does not fit its width"
+    },
+    {
+      "code": "EXS-E0309",
+      "meaning": "type expression or annotation not applicable"
+    },
+    {
+      "code": "EXS-E0310",
+      "meaning": "aliased mutable argument"
+    },
+    {
+      "code": "EXS-E0311",
+      "meaning": "integer index applied to `textus`"
+    },
+    {
+      "code": "EXS-E0321",
+      "meaning": "`:nativus` in a `@transitus` type"
+    },
+    {
+      "code": "EXS-E0322",
+      "meaning": "implicit padding in a `@transitus` type"
+    },
+    {
+      "code": "EXS-E0332",
+      "meaning": "branded offset applied to the wrong buffer"
+    },
+    {
+      "code": "EXS-E0341",
+      "meaning": "reduction accumulator read inside its own body"
+    },
+    {
+      "code": "EXS-E0342",
+      "meaning": "`rumpe` inside an iteration carrying a `contrahe`"
+    },
+    {
+      "code": "EXS-E0343",
+      "meaning": "reduction shape malformed"
+    },
+    {
+      "code": "EXS-E0351",
+      "meaning": "`discerne` is not exhaustive"
+    },
+    {
+      "code": "EXS-E0421",
+      "meaning": "undeclared capability (atom or row)"
+    },
+    {
+      "code": "EXS-E0422",
+      "meaning": "capability bound twice in one scope"
+    },
+    {
+      "code": "EXS-E0423",
+      "meaning": "capability row item malformed"
+    },
+    {
+      "code": "EXS-E0424",
+      "meaning": "entry point malformed"
+    },
+    {
+      "code": "EXS-E0500",
+      "meaning": "module-level mutable state"
+    },
+    {
+      "code": "EXS-E0501",
+      "meaning": "capability stored in module-level state"
+    },
+    {
+      "code": "EXS-E0510",
+      "meaning": "capability escapes a declared bound (trait ceiling or `dyn`)"
+    },
+    {
+      "code": "EXS-E0511",
+      "meaning": "implementation does not match its interface"
+    },
+    {
+      "code": "EXS-E0520",
+      "meaning": "non-atomic `refero` crossing `externus`"
+    },
+    {
+      "code": "EXS-E0601",
+      "meaning": "public name does not decompose into the morpheme table"
+    },
+    {
+      "code": "EXS-E0602",
+      "meaning": "suffix contract disagrees with declared type"
+    },
+    {
+      "code": "EXS-E0603",
+      "meaning": "prefix signature law violated"
+    },
+    {
+      "code": "EXS-E0610",
+      "meaning": "composition depth exceeded (max two affixes)"
+    },
+    {
+      "code": "EXS-E0701",
+      "meaning": "target cannot honour the declared `numeri`"
+    },
+    {
+      "code": "EXS-E0801",
+      "meaning": "allocation after `initium` under `profilum certum`"
+    },
+    {
+      "code": "EXS-E0802",
+      "meaning": "recursion detected under `profilum certum`"
+    },
+    {
+      "code": "EXS-E0811",
+      "meaning": "loop without a statically known bound under `profilum certum`"
+    },
+    {
+      "code": "EXS-E0812",
+      "meaning": "generic does not monomorphize within the closure under `profilum certum`"
+    },
+    {
+      "code": "EXS-E0813",
+      "meaning": "capturing closure under `profilum certum`"
+    },
+    {
+      "code": "EXS-E0821",
+      "meaning": "capability forbidden by `profilum certum`"
+    },
+    {
+      "code": "EXS-E0831",
+      "meaning": "`numeri` not fully declared under `profilum certum`"
+    },
+    {
+      "code": "EXS-E0841",
+      "meaning": "`certus` module depends on a non-`certus` module"
+    }
+  ],
+  "morphemes": {
+    "prefixes": [
+      {
+        "gloss": "again",
+        "law": "same signature as the bare form",
+        "prefixes": [
+          "re"
+        ]
+      },
+      {
+        "gloss": "reverse",
+        "law": "base's return type becomes first parameter",
+        "prefixes": [
+          "de"
+        ]
+      },
+      {
+        "gloss": "out of",
+        "law": "first parameter is the source type",
+        "prefixes": [
+          "ex"
+        ]
+      },
+      {
+        "gloss": "into",
+        "law": "first parameter is the destination type",
+        "prefixes": [
+          "in"
+        ]
+      },
+      {
+        "gloss": "across",
+        "law": "parameter and return types differ",
+        "prefixes": [
+          "trans"
+        ]
+      },
+      {
+        "gloss": "together",
+        "law": "takes two or more of the base's operand type",
+        "prefixes": [
+          "con"
+        ]
+      },
+      {
+        "gloss": "before, under",
+        "law": "positional only",
+        "prefixes": [
+          "prae",
+          "sub"
+        ]
+      }
+    ],
+    "roots": [
+      {
+        "gloss": "read",
+        "root": "leg",
+        "supine": "lect"
+      },
+      {
+        "gloss": "write",
+        "root": "scrib",
+        "supine": "script"
+      },
+      {
+        "gloss": "cut",
+        "root": "sec",
+        "supine": "sect"
+      },
+      {
+        "gloss": "fold",
+        "root": "plic",
+        "supine": "plicat"
+      },
+      {
+        "gloss": "count",
+        "root": "numer",
+        "supine": "numerat"
+      },
+      {
+        "gloss": "order",
+        "root": "ordin",
+        "supine": "ordinat"
+      },
+      {
+        "gloss": "follow",
+        "root": "sequ",
+        "supine": "secut"
+      },
+      {
+        "gloss": "take",
+        "root": "cap",
+        "supine": "capt"
+      },
+      {
+        "gloss": "place",
+        "root": "pon",
+        "supine": "posit"
+      },
+      {
+        "gloss": "hold",
+        "root": "ten",
+        "supine": "tent"
+      },
+      {
+        "gloss": "turn",
+        "root": "vert",
+        "supine": "vers"
+      },
+      {
+        "gloss": "send",
+        "root": "mitt",
+        "supine": "miss"
+      },
+      {
+        "gloss": "join",
+        "root": "iung",
+        "supine": "iunct"
+      },
+      {
+        "gloss": "loosen",
+        "root": "solv",
+        "supine": "solut"
+      }
+    ],
+    "status": "illustrative table, not lexicon.norma; lexicon pass not enabled [UNTESTED]",
+    "suffixes": [
+      {
+        "declares": "functio",
+        "kind": "the action",
+        "stem": "present",
+        "suffix": "e"
+      },
+      {
+        "declares": "structura",
+        "kind": "agent",
+        "stem": "supine",
+        "suffix": "or"
+      },
+      {
+        "declares": "interfacies",
+        "kind": "can-be-Xed",
+        "stem": "present",
+        "suffix": "ibilis"
+      },
+      {
+        "declares": "structura",
+        "kind": "reified operation",
+        "stem": "supine",
+        "suffix": "io"
+      },
+      {
+        "declares": "typus",
+        "kind": "result",
+        "stem": "supine",
+        "suffix": "us"
+      },
+      {
+        "declares": "structura",
+        "kind": "instrument",
+        "stem": "supine",
+        "suffix": "orium"
+      }
+    ]
+  },
+  "operator_words": [
+    {
+      "symbol": "a < b",
+      "word": "lt"
+    },
+    {
+      "symbol": "a <= b",
+      "word": "le"
+    },
+    {
+      "symbol": "a > b",
+      "word": "gt"
+    },
+    {
+      "symbol": "a >= b",
+      "word": "ge"
+    },
+    {
+      "symbol": "a == b",
+      "word": "eq"
+    },
+    {
+      "symbol": "a != b",
+      "word": "ne"
+    },
+    {
+      "symbol": "a && b",
+      "word": "et"
+    },
+    {
+      "symbol": "a || b",
+      "word": "vel"
+    },
+    {
+      "symbol": "a ^ b",
+      "word": "aut"
+    },
+    {
+      "symbol": "a << n",
+      "word": "sursum"
+    },
+    {
+      "symbol": "a >> n",
+      "word": "deorsum"
+    },
+    {
+      "symbol": "a % b",
+      "word": "residuum"
+    },
+    {
+      "symbol": "a & b (bitwise)",
+      "word": "atque"
+    },
+    {
+      "symbol": "a | b (bitwise)",
+      "word": "sive"
+    }
+  ],
+  "operators": [
+    {
+      "first_shown": "§10.1",
+      "meaning": "reference",
+      "tokens": [
+        "&T"
+      ]
+    },
+    {
+      "first_shown": "§5.3",
+      "meaning": "raw pointer — requires `Crudum`",
+      "tokens": [
+        "*T"
+      ]
+    },
+    {
+      "first_shown": "§5.2",
+      "meaning": "explicit byte order",
+      "tokens": [
+        "T:maior"
+      ]
+    },
+    {
+      "first_shown": "§5.1",
+      "meaning": "range",
+      "tokens": [
+        "A..B"
+      ]
+    },
+    {
+      "first_shown": "§5.1",
+      "meaning": "error propagation",
+      "tokens": [
+        "E?"
+      ]
+    },
+    {
+      "first_shown": "§5.5",
+      "meaning": "generic arguments",
+      "tokens": [
+        "<…>"
+      ]
+    },
+    {
+      "first_shown": "§5.2, §5.5",
+      "meaning": "annotation — `@transitus`, `@nucleus`",
+      "tokens": [
+        "@nomen"
+      ]
+    },
+    {
+      "first_shown": "§4.2",
+      "meaning": "result type",
+      "tokens": [
+        "->"
+      ]
+    },
+    {
+      "first_shown": "§5.4",
+      "meaning": "trapping, wrapping, saturating arithmetic",
+      "tokens": [
+        "+",
+        "+%",
+        "+|"
+      ]
+    },
+    {
+      "first_shown": "§4.2",
+      "meaning": "parameter lists, argument lists, grouping",
+      "tokens": [
+        "( )"
+      ]
+    },
+    {
+      "first_shown": "§5.1",
+      "meaning": "indexing; array literals (§8.6; `tests/unit/cst_acies.asm`)",
+      "tokens": [
+        "[ ]"
+      ]
+    },
+    {
+      "first_shown": "§4.2, §10.1",
+      "meaning": "blocks, capability rows, `ego` sections",
+      "tokens": [
+        "{ }"
+      ]
+    },
+    {
+      "first_shown": "§4.2",
+      "meaning": "separator",
+      "tokens": [
+        ","
+      ]
+    },
+    {
+      "first_shown": "§4.5",
+      "meaning": "statement terminator",
+      "tokens": [
+        ";"
+      ]
+    },
+    {
+      "first_shown": "§5.1",
+      "meaning": "field and method access",
+      "tokens": [
+        "."
+      ]
+    },
+    {
+      "first_shown": "§4.5",
+      "meaning": "binding and assignment",
+      "tokens": [
+        "="
+      ]
+    },
+    {
+      "first_shown": "§5.4",
+      "meaning": "negation and subtraction, three overflow modes",
+      "tokens": [
+        "-",
+        "-%",
+        "-|"
+      ]
+    },
+    {
+      "first_shown": "§5.4",
+      "meaning": "quotient — float since the float wave, integer since 2026-09-25 (`PUN_SLASH`, `compiler/x86_64/lexer/token.inc`)",
+      "tokens": [
+        "/"
+      ]
+    },
+    {
+      "first_shown": "§4.2",
+      "meaning": "type annotation",
+      "tokens": [
+        ":"
+      ]
+    }
+  ],
+  "reserved": [
+    {
+      "english": "`pub` / `public` / `export`",
+      "group": "declaration",
+      "latin": "publicus, 'public'",
+      "role": "Marks a declaration as part of the module's interface. A `publica` function declares its `poscit` row explicitly (§4.1 rule 5), and public names must decompose under the lexicon (§3.1).",
+      "word": "publica"
+    },
+    {
+      "english": "`fn` / `function` / `def`",
+      "group": "declaration",
+      "latin": "functio, 'a performance, a carrying out'",
+      "role": "Declares a function. It also introduces function types, `functio(A) -> B poscit {R}`, and lambdas (§8.6).",
+      "word": "functio"
+    },
+    {
+      "english": "`struct`",
+      "group": "declaration",
+      "latin": "structura, 'a putting together'",
+      "role": "Declares a record type. A `structura` is always a value type with no implicit boxing (§6.3 decision 4); one with a capability-typed field is capability-bearing (§4.3).",
+      "word": "structura"
+    },
+    {
+      "english": "`type` / `enum`",
+      "group": "declaration",
+      "latin": "typus, 'form, kind'",
+      "role": "Declares a type: an alias, or a sum type written as comma-separated `casus` variants, as in `typus Color = casus ruber, casus viridis;` (§8.6).",
+      "word": "typus"
+    },
+    {
+      "english": "`interface` / `trait`",
+      "group": "declaration",
+      "latin": "interfacies, 'outward appearance'",
+      "role": "Declares an interface; `interfacies X in T poscit R { ... }` is an implementation. An interface's declared rows are a ceiling on every implementation (§4.4).",
+      "word": "interfacies"
+    },
+    {
+      "english": "none; a named set of capabilities",
+      "group": "declaration",
+      "latin": "potestas, 'power, ability'",
+      "role": "Names a set of capability atoms so a long `poscit` list is written once: `potestas Hospes = { alloc, ambitus }` (§4.5).",
+      "word": "potestas"
+    },
+    {
+      "english": "`extern` block / FFI",
+      "group": "declaration",
+      "latin": "externus, 'external'",
+      "role": "Opens a foreign-function block with an explicit ABI, `externus(\"C\", abi: sysv_amd64) { ... }` (§5.3). A non-atomic `refero` may not cross it (`EXS-E0520`).",
+      "word": "externus"
+    },
+    {
+      "english": "`let` / `const` / `val`",
+      "group": "binding",
+      "latin": "firmus, 'firm, stable'",
+      "role": "Binds an immutable name. Assigning to it is `EXS-E0306`. At module level it declares a constant (§8.6 decision 5).",
+      "word": "firma"
+    },
+    {
+      "english": "`let mut` / `var`",
+      "group": "binding",
+      "latin": "mutabilis, 'changeable'",
+      "role": "Binds a reassignable variable. In type position it marks a mutable borrow, `&mutabilis T` (ADR 0016), the form a callee needs to write through a parameter.",
+      "word": "mutabilis"
+    },
+    {
+      "english": "none; closest to an effect or permission annotation",
+      "group": "capability",
+      "latin": "poscit, 'it requires' (indicative, describing)",
+      "role": "Introduces a function's capability row, meaning authority drawn from the enclosing scope (§4.1 rule 4). It is bare on a declaration (`-> u8 poscit alloc, ambitus`) and braced in function and `dyn` types (`poscit { rete }`), and a lambda takes none.",
+      "word": "poscit"
+    },
+    {
+      "english": "none; a scoped dependency binding",
+      "group": "capability",
+      "latin": "sub, 'under'",
+      "role": "Binds a capability provider for a scope: `sub ambitus = a;` to the end of the scope, or a block form (§4.5). The provider must have the atom's own capability type (`EXS-E0303` otherwise), and binding one atom twice in a scope is `EXS-E0422`.",
+      "word": "sub"
+    },
+    {
+      "english": "`as` (cast)",
+      "group": "capability",
+      "latin": "sicut, 'just as, in the way of'",
+      "role": "Two uses: the cast `x sicut u32` (§8.6 level 3), and the row-substitution item `poscit sicut f`, meaning the row carried by parameter `f`'s type (§4.2). No `sicut` retypes a value into or out of a capability atom (`EXS-E0305`).",
+      "word": "sicut"
+    },
+    {
+      "english": "`dyn`",
+      "group": "capability",
+      "latin": "an English abbreviation of 'dynamic', the one non-Latin reserved word (§8.4)",
+      "role": "Marks a trait object, `dyn Trait poscit {P}`, whose braced row narrows the trait's ceiling at the cast site (§4.4).",
+      "word": "dyn"
+    },
+    {
+      "english": "`return`",
+      "group": "value flow",
+      "latin": "reddere, imperative 'give back!'",
+      "role": "Returns a value from a function, `redde expr;`, or `redde;` with none. It is an imperative, as `rumpe`, `perge`, `contrahe` and `discerne` are (§8.5, Mood).",
+      "word": "redde"
+    },
+    {
+      "english": "none; a placement suffix",
+      "group": "value flow",
+      "latin": "apud, 'at, beside'",
+      "role": "Suffix in the type grammar for placement, `acies<f32, 1024> apud machina` (§8.6 Types), where a value lives; device placement is designed in §5.5.",
+      "word": "apud"
+    },
+    {
+      "english": "none; a reference-counted reference",
+      "group": "value flow",
+      "latin": "referre, 'to carry back' (refero, 'I carry back')",
+      "role": "`refero<T>` is the non-atomic reference-counted reference type (§6.4). It cannot cross an `externus` boundary (`EXS-E0520`); `refero_communis<T>` is the atomic one and may. A bare `refero` with no `<T>` is `EXS-E0201`.",
+      "word": "refero"
+    },
+    {
+      "english": "`if`",
+      "group": "condition",
+      "latin": "si, 'if'",
+      "role": "Opens a condition, `si COND { ... }`. The condition is an ordinary expression, so it needs no parentheses, and the body is always a braced block (§8.5).",
+      "word": "si"
+    },
+    {
+      "english": "`else if` / `elif`",
+      "group": "condition",
+      "latin": "sin, 'but if' (Cicero's correlative `si ... sin ...`)",
+      "role": "The next test in a `si` ladder: `si x lt 0 { } sin x eq 0 { } aliter { }`. Latin supplies as one morpheme what other languages compound (§8.5).",
+      "word": "sin"
+    },
+    {
+      "english": "`else` / `default`",
+      "group": "condition",
+      "latin": "aliter, 'otherwise'",
+      "role": "The final branch of a `si` ladder, and the catch-all arm of `discerne`: one word, one meaning, two places (§8.5).",
+      "word": "aliter"
+    },
+    {
+      "english": "`while`",
+      "group": "iteration",
+      "latin": "dum, 'while, as long as'",
+      "role": "The sequential loop, written with a declared bound: `dum COND terminus N { ... }` (§8.5).",
+      "word": "dum"
+    },
+    {
+      "english": "`for`",
+      "group": "iteration",
+      "latin": "per, 'through'",
+      "role": "The ordered loop, `per i in 0..n { ... }`: iteration k may observe iteration k-1 (§8.5).",
+      "word": "per"
+    },
+    {
+      "english": "none; a parallel for-each",
+      "group": "iteration",
+      "latin": "quisque, 'each one'",
+      "role": "The independent loop, `quisque i in 0..n { ... }`: iterations do not observe one another and their order is unspecified. No dependency analysis exists, so today it is a trusted assertion `[OPEN]` (§8.5).",
+      "word": "quisque"
+    },
+    {
+      "english": "`in`",
+      "group": "iteration",
+      "latin": "in, 'in, into'",
+      "role": "Separates a loop variable from its iterable (`per i in 0..n`) and introduces an implementation's target type (`interfacies X in T`).",
+      "word": "in"
+    },
+    {
+      "english": "none; a declared loop bound",
+      "group": "iteration",
+      "latin": "terminus, 'boundary, limit'",
+      "role": "The declared bound of a `dum` loop. The bound is evaluated once; the iteration that would be the N+1th is a runtime abort, which is what makes `certus` rule 6 syntax rather than analysis (§8.5).",
+      "word": "terminus"
+    },
+    {
+      "english": "`reduce` / `fold`",
+      "group": "reduction",
+      "latin": "contrahere, imperative 'draw together!'",
+      "role": "Declares a loop's reduction accumulator and its operator, `contrahe s: +`. Inside the body `s = e;` is a contribution and any read of `s` is `EXS-E0341` (§5.4, §8.5).",
+      "word": "contrahe"
+    },
+    {
+      "english": "none; a reduction shape",
+      "group": "reduction",
+      "latin": "forma, 'shape'",
+      "role": "Names the reduction shape after `contrahe`: `forma ordinata` (strictly left to right) or `forma arborea 8` (a fixed-width pairwise tree). The shape is part of the operation's meaning (§5.4).",
+      "word": "forma"
+    },
+    {
+      "english": "`match` / `switch`",
+      "group": "selection",
+      "latin": "discernere, imperative 'distinguish!'",
+      "role": "Selects by pattern over a scrutinee, with `casus` arms and no fallthrough. A `discerne` with no `aliter` is `EXS-E0351` unless its arms cover a sum scrutinee's variants (§8.5).",
+      "word": "discerne"
+    },
+    {
+      "english": "`case` / an enum variant",
+      "group": "selection",
+      "latin": "casus, 'case, occurrence'",
+      "role": "An arm of a `discerne`, and a variant of a sum type in a `typus` declaration; one word for both.",
+      "word": "casus"
+    },
+    {
+      "english": "`break`",
+      "group": "jump",
+      "latin": "rumpere, imperative 'break!'",
+      "role": "Leaves the innermost loop. It is forbidden inside an iteration carrying a `contrahe` (`EXS-E0342`).",
+      "word": "rumpe"
+    },
+    {
+      "english": "`continue`",
+      "group": "jump",
+      "latin": "pergere, imperative 'proceed!'",
+      "role": "Continues to the next iteration of the innermost loop.",
+      "word": "perge"
+    }
+  ]
+}

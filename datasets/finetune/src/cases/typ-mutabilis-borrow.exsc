@@ -1,0 +1,13 @@
+//! task: write
+//! ask: Write a function that fills a four-byte array that its caller owns.
+//! expect: ok
+//! refs: §6.3, ADR 0016
+//! explain: Parameters are borrowed by default and immutable. To write through one, the parameter type is `&mutabilis T` and the writes go through a dereference, `(*v)[0] = 65;`. `mutabilis` is therefore used in two places: on a binding (a variable that can be reassigned) and inside a reference type (a mutable borrow).
+
+publica functio imple(v: &mutabilis acies<u8, 4>) -> u8 {
+    (*v)[0] = 65;
+    (*v)[1] = 66;
+    (*v)[2] = 67;
+    (*v)[3] = 68;
+    redde 0;
+}

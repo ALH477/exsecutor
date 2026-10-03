@@ -1,0 +1,9 @@
+//! task: write
+//! ask: Declare a parameter that lives on a separate compute device.
+//! expect: ok
+//! refs: §5.5, §8.6
+//! explain: Placement is in the type: `T apud machina` says the value lives on the device, so a CPU function cannot read it by accident. The suffix follows the type, `acies<f32, 4> apud machina`. Reaching a device is itself a capability, `machina`. Device execution is design-stage in this tree and only the type form is checked here.
+
+publica functio f(a: acies<f32, 4> apud machina) -> u8 {
+    redde 0;
+}

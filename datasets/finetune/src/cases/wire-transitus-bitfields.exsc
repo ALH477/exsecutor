@@ -1,0 +1,11 @@
+//! task: write
+//! ask: Declare a one-byte wire header holding two 4-bit fields, version and kind.
+//! expect: ok
+//! refs: §5.2
+//! explain: Sub-byte fields `u1`–`u7` pack MSB-first in declaration order, so `versio` takes the high nibble. A field wider than 8 bits must begin on a byte boundary and be a whole number of bytes (`u12` does not parse), and the declared widths must sum to a whole number of bytes: a lone `u4` is implicit padding, EXS-E0322. A byte-order suffix on a sub-byte field does not parse (`u4:maior` is EXS-E0201).
+
+@transitus
+publica structura Praefixum {
+    versio: u4
+    genus:  u4
+}

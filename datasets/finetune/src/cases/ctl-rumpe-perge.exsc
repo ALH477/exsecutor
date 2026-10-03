@@ -1,0 +1,17 @@
+//! task: write
+//! ask: Return the first even number below n (or 0), using `perge` to skip odd numbers and `rumpe` to stop.
+//! expect: ok
+//! refs: §8.4, §8.5
+//! explain: `perge` continues to the next iteration and `rumpe` leaves the loop; both are imperatives, as `redde` is (§8.5, "Mood"). `residuum` is integer remainder, one of the contextual words — it is an operator only in operator position. Neither jump is allowed inside an iteration carrying a `contrahe` (`rumpe` there is EXS-E0342).
+
+publica functio primum_par(n: u64) -> u64 {
+    mutabilis r: u64 = 0;
+    per i in 0..n {
+        si i residuum 2 ne 0 {
+            perge;
+        }
+        r = i;
+        rumpe;
+    }
+    redde r;
+}

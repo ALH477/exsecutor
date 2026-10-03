@@ -1,0 +1,12 @@
+//! task: write
+//! ask: Write a function that is true when x lies between lo and hi inclusive, using Exsecutor's comparison and connective words.
+//! expect: ok
+//! refs: §8.4, §8.6
+//! explain: The six comparisons are the words `lt le gt ge eq ne`, and the connectives are `et` (and) and `vel` (or). `et` and `vel` short-circuit. Comparison is non-associative: `a lt b lt c` is EXS-E0201. `u1` is the one-bit type used for truth values.
+
+publica functio intra(x: u32, lo: u32, hi: u32) -> u1 {
+    si x ge lo et x le hi {
+        redde 1;
+    }
+    redde 0;
+}

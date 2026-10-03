@@ -1,0 +1,17 @@
+//! task: write
+//! ask: Declare an interface and implement it for a struct.
+//! expect: ok
+//! refs: §4.4, §8.6
+//! explain: `interfacies Name { ... }` declares the member signatures; `interfacies Name in T { ... }` implements them for `T`. A trait's declared rows are a ceiling on every implementation, checked at each implementation head: an implementation whose capability mark exceeds the trait's is `EXS-E0510`. Here neither declares a row, so the implementation may draw nothing.
+
+structura Duplex { n: u32 }
+
+interfacies Contabilis {
+    functio numera(x: Duplex) -> u32
+}
+
+interfacies Contabilis in Duplex {
+    functio numera(x: Duplex) -> u32 {
+        redde x.n;
+    }
+}

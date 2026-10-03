@@ -1,0 +1,18 @@
+//! task: fix
+//! ask: Declare a wire struct with a 4-bit field followed by a byte.
+//! expect: EXS-E0322
+//! refs: §5.2
+//! explain: Declared widths in a `@transitus` type must sum to a whole number of bytes. A lone `u4` leaves half a byte unwritten, which is implicit padding and so `EXS-E0322`. Pair it with another nibble, or name the unused bits explicitly. Sub-byte fields pack MSB-first.
+
+@transitus
+publica structura Capitulum {
+    a: u4
+    b: u8
+}
+//@ fixed
+@transitus
+publica structura Capitulum {
+    a: u4
+    reserva: u4
+    b: u8
+}

@@ -1,0 +1,18 @@
+//! task: fix
+//! ask: Bind the environment capability and make a writer.
+//! expect: EXS-E0422
+//! refs: §4.5
+//! explain: `sub` resolution is lexical and non-searching: one value per capability type per scope, and shadowing is an error. Binding `ambitus` twice in one scope is `EXS-E0422`, and the fix is to delete the second `sub`.
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    sub ambitus = a;
+    redde 0;
+}
+//@ fixed
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    redde 0;
+}

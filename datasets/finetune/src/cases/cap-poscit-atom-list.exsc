@@ -1,0 +1,9 @@
+//! task: write
+//! ask: Declare a public function that needs allocation and the clock.
+//! expect: ok
+//! refs: §4.1 rule 5, §4.6
+//! explain: A `publica` function writes its row explicitly after the result type: a comma-separated list of capability atoms, `poscit alloc, horologium`. Whoever calls it must hold both. `alloc` appears in about 70% of non-kernel rows and carries little signal, so the audit view hides it by default.
+
+publica functio f() -> u8 poscit alloc, horologium {
+    redde 0;
+}

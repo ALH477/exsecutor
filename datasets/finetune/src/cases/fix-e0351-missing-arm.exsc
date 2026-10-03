@@ -1,0 +1,24 @@
+//! task: fix
+//! ask: Map a three-variant sum type to numbers with `discerne`.
+//! expect: EXS-E0351
+//! refs: §8.5
+//! explain: A `discerne` over a sum type without an `aliter` must name every variant. Here `caeruleus` is missing, so the compiler answers `EXS-E0351`, lists the missing arm and ships the insertion as a machine-applicable fix. For a scalar scrutinee the only way to be exhaustive is `aliter`.
+
+typus Color = casus ruber, casus viridis, casus caeruleus;
+
+publica functio index(c: Color) -> u8 {
+    discerne c {
+        casus ruber   { redde 0; }
+        casus viridis { redde 1; }
+    }
+}
+//@ fixed
+typus Color = casus ruber, casus viridis, casus caeruleus;
+
+publica functio index(c: Color) -> u8 {
+    discerne c {
+        casus ruber     { redde 0; }
+        casus viridis   { redde 1; }
+        casus caeruleus { redde 2; }
+    }
+}

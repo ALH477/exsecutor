@@ -1,0 +1,9 @@
+//! task: write
+//! ask: Declare an in-process struct with a native-order integer field.
+//! expect: ok
+//! refs: §5.2
+//! explain: `:nativus` is the machine's own byte order and is legal in-process. The same annotation in a `@transitus` type is `EXS-E0321`, because a wire format must say which order it means. Choosing `:nativus` for something that later crosses a wire is exactly the mistake the annotation makes visible.
+
+structura Locus {
+    n: u32:nativus
+}

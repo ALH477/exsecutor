@@ -1,0 +1,9 @@
+//! task: write
+//! ask: Return the length in bytes of a textus.
+//! expect: ok
+//! refs: §5.1
+//! explain: `textus` is a UTF-8 view — a pointer and a byte length over storage it does not own — and it has no integer index. Its views are distinct types: `octeti` (bytes), `scalares`, `grapha`. `t.octeti().numerus()` type-checks. `[OPEN]`: it cannot be emitted yet, because the lowering refuses the text methods (measured: `exsc ... -o` on a program that calls it terminates abnormally), so it is checked and not run, and §5.1's "types and runs" is stale on the second word. The same call on `scalares()` and `grapha()` is EXS-E0305 until `numerus` has a row per view.
+
+publica functio longitudo(t: textus) -> mensura {
+    redde t.octeti().numerus();
+}

@@ -1,0 +1,20 @@
+//! task: fix
+//! ask: Map a u8 to a score using `discerne`, without a default arm.
+//! expect: EXS-E0351
+//! refs: §8.5
+//! explain: A scalar scrutinee's value space is 2^N, so no list of literal arms is exhaustive; the catch-all `aliter` is the only way. There is no machine fix, because the body of the default arm is the author's.
+
+publica functio puncta(m: u8) -> u8 {
+    discerne m {
+        casus 1 { redde 10; }
+        casus 2 { redde 20; }
+    }
+}
+//@ fixed
+publica functio puncta(m: u8) -> u8 {
+    discerne m {
+        casus 1 { redde 10; }
+        casus 2 { redde 20; }
+        aliter  { redde 0; }
+    }
+}

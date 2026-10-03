@@ -1,0 +1,18 @@
+//! task: translate
+//! ask: Translate this C program to Exsecutor.
+//!   ```c
+//!   int main(void) { puts("Ave"); return 0; }
+//!   ```
+//! expect: exit=0
+//! stdout: Ave\n
+//! refs: §4.6, §4.7
+//! explain: `main` becomes `initium`, which receives the root capability `Mundus` instead of ambient access to the process. Standard output belongs to `ambitus`, so the program derives it explicitly, binds it with `sub`, and builds a `Scriptor`. `puts` adds a newline and `scribe` does not, so the newline is written as the byte 10. `return 0` is `redde 0`, and the `u8` result is the exit status.
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma s = Scriptor.ad_exitum(a);
+    s.scribe("Ave");
+    s.scribe_octeto(10);
+    redde 0;
+}

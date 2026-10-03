@@ -1,0 +1,17 @@
+//! task: write
+//! ask: Write a program whose exit status is 5 factorial.
+//! expect: exit=120
+//! refs: §4.7, §8.5
+//! explain: The exit status is `initium`'s `u8` result, and 120 fits in a byte. The range is `1..n + 1`, which includes `n`, since a range excludes its upper bound. `*` on `u64` traps on overflow, so a factorial that outgrows 64 bits aborts instead of wrapping silently.
+
+functio factorialis(n: u64) -> u64 {
+    mutabilis r: u64 = 1;
+    per i in 1..n + 1 {
+        r = r * i;
+    }
+    redde r;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    redde factorialis(5) sicut u8;
+}

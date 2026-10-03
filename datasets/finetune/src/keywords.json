@@ -1,0 +1,431 @@
+{
+  "_note": "Editorial text for datasets/finetune. The WORD SETS are not authoritative here: tools/gen-finetune.py refuses to run if `reserved` or `contextual` differ from spec §8.4, so this file can only gloss what the spec lists, never add to it. Latin glosses and English analogues are the author's, not the spec's, and every record built from them is labelled evidence=editorial. Role text restates the spec; the section is cited.",
+  "reserved": {
+    "publica": {
+      "latin": "publicus, 'public'",
+      "english": "`pub` / `public` / `export`",
+      "role": "Marks a declaration as part of the module's interface. A `publica` function declares its `poscit` row explicitly (§4.1 rule 5), and public names must decompose under the lexicon (§3.1)."
+    },
+    "functio": {
+      "latin": "functio, 'a performance, a carrying out'",
+      "english": "`fn` / `function` / `def`",
+      "role": "Declares a function. It also introduces function types, `functio(A) -> B poscit {R}`, and lambdas (§8.6)."
+    },
+    "structura": {
+      "latin": "structura, 'a putting together'",
+      "english": "`struct`",
+      "role": "Declares a record type. A `structura` is always a value type with no implicit boxing (§6.3 decision 4); one with a capability-typed field is capability-bearing (§4.3)."
+    },
+    "typus": {
+      "latin": "typus, 'form, kind'",
+      "english": "`type` / `enum`",
+      "role": "Declares a type: an alias, or a sum type written as comma-separated `casus` variants, as in `typus Color = casus ruber, casus viridis;` (§8.6)."
+    },
+    "interfacies": {
+      "latin": "interfacies, 'outward appearance'",
+      "english": "`interface` / `trait`",
+      "role": "Declares an interface; `interfacies X in T poscit R { ... }` is an implementation. An interface's declared rows are a ceiling on every implementation (§4.4)."
+    },
+    "potestas": {
+      "latin": "potestas, 'power, ability'",
+      "english": "none; a named set of capabilities",
+      "role": "Names a set of capability atoms so a long `poscit` list is written once: `potestas Hospes = { alloc, ambitus }` (§4.5)."
+    },
+    "externus": {
+      "latin": "externus, 'external'",
+      "english": "`extern` block / FFI",
+      "role": "Opens a foreign-function block with an explicit ABI, `externus(\"C\", abi: sysv_amd64) { ... }` (§5.3). A non-atomic `refero` may not cross it (`EXS-E0520`)."
+    },
+    "firma": {
+      "latin": "firmus, 'firm, stable'",
+      "english": "`let` / `const` / `val`",
+      "role": "Binds an immutable name. Assigning to it is `EXS-E0306`. At module level it declares a constant (§8.6 decision 5)."
+    },
+    "mutabilis": {
+      "latin": "mutabilis, 'changeable'",
+      "english": "`let mut` / `var`",
+      "role": "Binds a reassignable variable. In type position it marks a mutable borrow, `&mutabilis T` (ADR 0016), the form a callee needs to write through a parameter."
+    },
+    "poscit": {
+      "latin": "poscit, 'it requires' (indicative, describing)",
+      "english": "none; closest to an effect or permission annotation",
+      "role": "Introduces a function's capability row, meaning authority drawn from the enclosing scope (§4.1 rule 4). It is bare on a declaration (`-> u8 poscit alloc, ambitus`) and braced in function and `dyn` types (`poscit { rete }`), and a lambda takes none."
+    },
+    "sub": {
+      "latin": "sub, 'under'",
+      "english": "none; a scoped dependency binding",
+      "role": "Binds a capability provider for a scope: `sub ambitus = a;` to the end of the scope, or a block form (§4.5). The provider must have the atom's own capability type (`EXS-E0303` otherwise), and binding one atom twice in a scope is `EXS-E0422`."
+    },
+    "sicut": {
+      "latin": "sicut, 'just as, in the way of'",
+      "english": "`as` (cast)",
+      "role": "Two uses: the cast `x sicut u32` (§8.6 level 3), and the row-substitution item `poscit sicut f`, meaning the row carried by parameter `f`'s type (§4.2). No `sicut` retypes a value into or out of a capability atom (`EXS-E0305`)."
+    },
+    "dyn": {
+      "latin": "an English abbreviation of 'dynamic', the one non-Latin reserved word (§8.4)",
+      "english": "`dyn`",
+      "role": "Marks a trait object, `dyn Trait poscit {P}`, whose braced row narrows the trait's ceiling at the cast site (§4.4)."
+    },
+    "redde": {
+      "latin": "reddere, imperative 'give back!'",
+      "english": "`return`",
+      "role": "Returns a value from a function, `redde expr;`, or `redde;` with none. It is an imperative, as `rumpe`, `perge`, `contrahe` and `discerne` are (§8.5, Mood)."
+    },
+    "apud": {
+      "latin": "apud, 'at, beside'",
+      "english": "none; a placement suffix",
+      "role": "Suffix in the type grammar for placement, `acies<f32, 1024> apud machina` (§8.6 Types), where a value lives; device placement is designed in §5.5."
+    },
+    "refero": {
+      "latin": "referre, 'to carry back' (refero, 'I carry back')",
+      "english": "none; a reference-counted reference",
+      "role": "`refero<T>` is the non-atomic reference-counted reference type (§6.4). It cannot cross an `externus` boundary (`EXS-E0520`); `refero_communis<T>` is the atomic one and may. A bare `refero` with no `<T>` is `EXS-E0201`."
+    },
+    "si": {
+      "latin": "si, 'if'",
+      "english": "`if`",
+      "role": "Opens a condition, `si COND { ... }`. The condition is an ordinary expression, so it needs no parentheses, and the body is always a braced block (§8.5)."
+    },
+    "sin": {
+      "latin": "sin, 'but if' (Cicero's correlative `si ... sin ...`)",
+      "english": "`else if` / `elif`",
+      "role": "The next test in a `si` ladder: `si x lt 0 { } sin x eq 0 { } aliter { }`. Latin supplies as one morpheme what other languages compound (§8.5)."
+    },
+    "aliter": {
+      "latin": "aliter, 'otherwise'",
+      "english": "`else` / `default`",
+      "role": "The final branch of a `si` ladder, and the catch-all arm of `discerne`: one word, one meaning, two places (§8.5)."
+    },
+    "dum": {
+      "latin": "dum, 'while, as long as'",
+      "english": "`while`",
+      "role": "The sequential loop, written with a declared bound: `dum COND terminus N { ... }` (§8.5)."
+    },
+    "per": {
+      "latin": "per, 'through'",
+      "english": "`for`",
+      "role": "The ordered loop, `per i in 0..n { ... }`: iteration k may observe iteration k-1 (§8.5)."
+    },
+    "quisque": {
+      "latin": "quisque, 'each one'",
+      "english": "none; a parallel for-each",
+      "role": "The independent loop, `quisque i in 0..n { ... }`: iterations do not observe one another and their order is unspecified. No dependency analysis exists, so today it is a trusted assertion `[OPEN]` (§8.5)."
+    },
+    "in": {
+      "latin": "in, 'in, into'",
+      "english": "`in`",
+      "role": "Separates a loop variable from its iterable (`per i in 0..n`) and introduces an implementation's target type (`interfacies X in T`)."
+    },
+    "terminus": {
+      "latin": "terminus, 'boundary, limit'",
+      "english": "none; a declared loop bound",
+      "role": "The declared bound of a `dum` loop. The bound is evaluated once; the iteration that would be the N+1th is a runtime abort, which is what makes `certus` rule 6 syntax rather than analysis (§8.5)."
+    },
+    "contrahe": {
+      "latin": "contrahere, imperative 'draw together!'",
+      "english": "`reduce` / `fold`",
+      "role": "Declares a loop's reduction accumulator and its operator, `contrahe s: +`. Inside the body `s = e;` is a contribution and any read of `s` is `EXS-E0341` (§5.4, §8.5)."
+    },
+    "forma": {
+      "latin": "forma, 'shape'",
+      "english": "none; a reduction shape",
+      "role": "Names the reduction shape after `contrahe`: `forma ordinata` (strictly left to right) or `forma arborea 8` (a fixed-width pairwise tree). The shape is part of the operation's meaning (§5.4)."
+    },
+    "discerne": {
+      "latin": "discernere, imperative 'distinguish!'",
+      "english": "`match` / `switch`",
+      "role": "Selects by pattern over a scrutinee, with `casus` arms and no fallthrough. A `discerne` with no `aliter` is `EXS-E0351` unless its arms cover a sum scrutinee's variants (§8.5)."
+    },
+    "casus": {
+      "latin": "casus, 'case, occurrence'",
+      "english": "`case` / an enum variant",
+      "role": "An arm of a `discerne`, and a variant of a sum type in a `typus` declaration; one word for both."
+    },
+    "rumpe": {
+      "latin": "rumpere, imperative 'break!'",
+      "english": "`break`",
+      "role": "Leaves the innermost loop. It is forbidden inside an iteration carrying a `contrahe` (`EXS-E0342`)."
+    },
+    "perge": {
+      "latin": "pergere, imperative 'proceed!'",
+      "english": "`continue`",
+      "role": "Continues to the next iteration of the innermost loop."
+    }
+  },
+  "contextual": {
+    "ego": {
+      "latin": "ego, 'I'",
+      "role": "Begins an `ego` file, the module declaring itself: its interface and dependency closure in one declarative file, `ego norma.textus { ... }` (§10); it is a keyword only there."
+    },
+    "versio": {
+      "latin": "versio, 'a turning; version'",
+      "role": "The version entry of an `ego` file, `versio \"0.4.1\"` (§10.1)."
+    },
+    "licentia": {
+      "latin": "licentia, 'licence'",
+      "role": "The licence entry of an `ego` file, `licentia \"LGPL-3.0-or-later\"` (§10.1)."
+    },
+    "fontes": {
+      "latin": "fontes, 'sources'",
+      "role": "The sources entry of an `ego` file: module names with content hashes, including the morpheme table `lexicon.norma` (§10.1)."
+    },
+    "hospites": {
+      "latin": "hospites, 'hosts'",
+      "role": "The list of host targets in an `ego` file, `hospites [ x86_64-linux, ... ]`; with an empty `potestates` it is a machine-checked claim a module runs on bare metal (§10.1)."
+    },
+    "acceleratores": {
+      "latin": "acceleratores, 'accelerators'",
+      "role": "The list of accelerator targets in an `ego` file; empty means no device code in the module (§5.5, §10.1)."
+    },
+    "potestates": {
+      "latin": "potestates, 'powers' (plural of potestas)",
+      "role": "The capability set a module needs, in an `ego` file, `potestates { }` meaning it observes nothing; the audit computes the transitive closure from these (§10.1, §10.3)."
+    },
+    "numeri": {
+      "latin": "numeri, 'numbers'",
+      "role": "The per-module numeric-semantics block of an `ego` file; it is interface-affecting (§5.4)."
+    },
+    "exitus": {
+      "latin": "exitus, 'a way out; output'",
+      "role": "The outputs list of an `ego` file, `exitus [ lib, dev, doc ]` (§10.1)."
+    },
+    "rotundatio": {
+      "latin": "rotundatio, 'rounding'",
+      "role": "A `numeri` key: the rounding mode, default `ad_parem` (§5.4)."
+    },
+    "reassociatio": {
+      "latin": "reassociatio, 'reassociation'",
+      "role": "A `numeri` key: whether the compiler may reassociate, default `vetita` (forbidden) (§5.4)."
+    },
+    "contractio": {
+      "latin": "contractio, 'a drawing together'",
+      "role": "A `numeri` key: FMA formation, default `explicita` (only where written) (§5.4)."
+    },
+    "subnormales": {
+      "latin": "subnormales, 'subnormals'",
+      "role": "A `numeri` key: subnormal handling, default `conservata`, meaning no flush-to-zero (§5.4)."
+    },
+    "ad_parem": {
+      "latin": "ad parem, 'to the equal'",
+      "role": "A `numeri` value for `rotundatio`: round to nearest, ties to even (§5.4)."
+    },
+    "vetita": {
+      "latin": "vetita, 'forbidden'",
+      "role": "A `numeri` value: the default for `reassociatio` (§5.4)."
+    },
+    "explicita": {
+      "latin": "explicita, 'unfolded, made explicit'",
+      "role": "A `numeri` value: the default for `contractio`, FMA only where written (§5.4)."
+    },
+    "conservata": {
+      "latin": "conservata, 'preserved'",
+      "role": "A `numeri` value: the default for `subnormales`, no FTZ/DAZ (§5.4)."
+    },
+    "ordinata": {
+      "latin": "ordinata, 'ordered'",
+      "role": "A reduction shape after `forma`: strictly left to right, exactly reproducible (§5.4, §8.5)."
+    },
+    "arborea": {
+      "latin": "arborea, 'tree-like'",
+      "role": "A reduction shape after `forma`: a fixed-width pairwise tree, `forma arborea 8` (§5.4, §8.5)."
+    },
+    "lt": {
+      "latin": "English abbreviation, 'less than'",
+      "role": "Comparison, `<` in other languages (§8.6 level 7). Contextual because operator position is never operand position."
+    },
+    "le": {
+      "latin": "English abbreviation, 'less than or equal'",
+      "role": "Comparison, `<=` in other languages (§8.6 level 7)."
+    },
+    "gt": {
+      "latin": "English abbreviation, 'greater than'",
+      "role": "Comparison, `>` in other languages (§8.6 level 7)."
+    },
+    "ge": {
+      "latin": "English abbreviation, 'greater than or equal'",
+      "role": "Comparison, `>=` in other languages (§8.6 level 7)."
+    },
+    "eq": {
+      "latin": "English abbreviation, 'equal'",
+      "role": "Comparison, `==` in other languages (§8.6 level 7)."
+    },
+    "ne": {
+      "latin": "English abbreviation, 'not equal'",
+      "role": "Comparison, `!=` in other languages (§8.6 level 7)."
+    },
+    "et": {
+      "latin": "et, 'and'",
+      "role": "Short-circuit conjunction (§8.6 level 8)."
+    },
+    "vel": {
+      "latin": "vel, 'or'",
+      "role": "Short-circuit disjunction (§8.6 level 9)."
+    },
+    "aut": {
+      "latin": "aut, 'or (exclusive)'",
+      "role": "Bitwise exclusive or on unsigned integers; it does not short-circuit and lowers to one xor (§5.4, §8.6 level 5b)."
+    },
+    "sursum": {
+      "latin": "sursum, 'upward'",
+      "role": "Shift up (left); non-associative (§5.4, §8.6 level 5a)."
+    },
+    "deorsum": {
+      "latin": "deorsum, 'downward'",
+      "role": "Shift down (right); non-associative (§5.4, §8.6 level 5a)."
+    },
+    "residuum": {
+      "latin": "residuum, 'remainder'",
+      "role": "Integer remainder, at multiplicative precedence (§5.4, §8.6 level 4)."
+    },
+    "atque": {
+      "latin": "atque, 'and also'",
+      "role": "Bitwise and on unsigned integers of one type (§5.4, §8.6 level 5b)."
+    },
+    "sive": {
+      "latin": "sive, 'or if'",
+      "role": "Bitwise or on unsigned integers of one type (§5.4, §8.6 level 5b)."
+    },
+    "maior": {
+      "latin": "maior, 'greater' (big end first)",
+      "role": "A byte-order suffix, `u32:maior`: big-endian (§5.2)."
+    },
+    "minor": {
+      "latin": "minor, 'lesser' (small end first)",
+      "role": "A byte-order suffix, `u32:minor`: little-endian (§5.2)."
+    },
+    "nativus": {
+      "latin": "nativus, 'native, by birth'",
+      "role": "The in-process byte order; legal in-process and illegal in any `@transitus` type (`EXS-E0321`) (§5.2)."
+    },
+    "abi": {
+      "latin": "an abbreviation of 'application binary interface'",
+      "role": "The ABI key in an `externus` head, `externus(\"C\", abi: sysv_amd64)`; the admitted values are `sysv_amd64`, `aapcs64`, `lp64d` (§5.3)."
+    }
+  },
+  "operator_words": [
+    [
+      "a < b",
+      "lt",
+      "`<` and `>` only ever delimit generic arguments (§8.6 decision 6), so written `a < b` the compiler answers `EXS-E0201` and offers the edit `lt`. Comparison is non-associative: `a lt b lt c` is `EXS-E0201` too."
+    ],
+    [
+      "a <= b",
+      "le",
+      "Same rule as `lt`: the comparison words are `lt le gt ge eq ne`, one per operator, at §8.6 level 7."
+    ],
+    [
+      "a > b",
+      "gt",
+      "`>` is never an operator, only a generic-argument delimiter (§8.6 decision 6); the compiler offers the edit `gt`."
+    ],
+    [
+      "a >= b",
+      "ge",
+      "Same rule as `gt`: the comparison words are `lt le gt ge eq ne`."
+    ],
+    [
+      "a == b",
+      "eq",
+      "`==` is not a token. Equality is the word `eq` (§8.6 level 7); assignment `=` is a statement, never an operator."
+    ],
+    [
+      "a != b",
+      "ne",
+      "`!=` is not a token. Inequality is the word `ne` (§8.6 level 7)."
+    ],
+    [
+      "a && b",
+      "et",
+      "Short-circuit conjunction, left-associative, at level 8: the right operand is evaluated only when the left has not decided the result."
+    ],
+    [
+      "a || b",
+      "vel",
+      "Short-circuit disjunction, left-associative, at level 9, below `et`."
+    ],
+    [
+      "a ^ b",
+      "aut",
+      "Bitwise exclusive or on unsigned integers of one type. Unlike `et` and `vel` it does not short-circuit: both operands are always evaluated."
+    ],
+    [
+      "a << n",
+      "sursum",
+      "Shift up. Shifts are non-associative, so `a sursum 1 sursum 2` is `EXS-E0201` at the second word; parenthesise."
+    ],
+    [
+      "a >> n",
+      "deorsum",
+      "Shift down. Non-associative, like `sursum`: parenthesise a chain."
+    ],
+    [
+      "a % b",
+      "residuum",
+      "Integer remainder, at the multiplicative level with `*` and `/`. There is no `%` token."
+    ],
+    [
+      "a & b (bitwise)",
+      "atque",
+      "Bitwise and, unsigned and same-typed. Two different bitwise words in one chain (`a atque b sive c`) is `EXS-E0201`; parenthesise."
+    ],
+    [
+      "a | b (bitwise)",
+      "sive",
+      "Bitwise or, unsigned and same-typed. Parenthesise when mixed with `atque` or `aut`."
+    ]
+  ],
+  "coinage": [
+    [
+      "When may a new root be coined for the Exsecutor lexicon?",
+      "Only after showing the concept cannot be expressed by the existing morpheme table within §3.8's two-affix ceiling. The proposal records the combinations tried and why each fails; most apparently new concepts turn out to be compounds of roots already present. Failing to find a word is not the same as one not existing, and the burden is on the proposer (§3.9.1). `[UNTESTED]`: the process is defined and no root has been coined through it.",
+      [
+        "§3.9.1"
+      ]
+    ],
+    [
+      "What is the ladder for coining an Exsecutor root?",
+      "Five rungs, descended only when the rung above genuinely fails (§3.9.2): (1) attested classical Latin, however rare; (2) late, medieval or Neo-Latin scientific vocabulary; (3) a Greek combining form, where §3.3 already admits Greek; (4) a descriptive compound from attested roots, accepting a longer name; (5) a marked loan, given a Latin declension and recorded as a loan, never disguised as native. `[UNTESTED]`: defined and never exercised.",
+      [
+        "§3.9.2"
+      ]
+    ],
+    [
+      "Can I coin an Exsecutor root by using a bare English word?",
+      "No. A bare English word is never admissible: that is not a coinage but a surrender, and it defeats §3 entirely (§3.9.2). The lowest rung is a marked loan with a Latin declension, recorded in the loan register.",
+      [
+        "§3.9.2",
+        "§3.9.5"
+      ]
+    ],
+    [
+      "What must a root-coinage proposal for Exsecutor contain?",
+      "(§3.9.3) The concept and its exhaustion argument; the candidates considered and the ladder rung each sits on; the chosen root with both stems, present and supine, for verbal roots, since suffix contracts bind to stems; a collision check against every registered root, every reserved keyword and every module namespace (`norma` is both the standard-library namespace and the Latin for a vector norm, which is the class of collision to catch); and at least three derivations showing the root composes under §3.4 and §3.5.",
+      [
+        "§3.9.3"
+      ]
+    ],
+    [
+      "Can a registered Exsecutor root be renamed or reused?",
+      "No. A registered root is permanent: it may be deprecated, meaning discouraged but still valid and still compiling, but never reused for a different meaning. Public names are interfaces, and silently repointing a root changes what already-published code means. It is §8.3's discipline for error codes applied to morphemes. Registration amends `lexicon.norma`, whose content hash changes, so a coinage is visible to every dependent as a version bump (§3.9.4).",
+      [
+        "§3.9.4",
+        "§8.3"
+      ]
+    ],
+    [
+      "What is the Exsecutor loan register?",
+      "A register carried with the morpheme table that records every rung-5 loan. The spec treats it as a running measurement of whether §3 scales: a loan count that stays small is evidence the derivational frame does real work, and one that climbs as the standard library grows is evidence it does not. The instruction in the spec is to report it, not to bury it (§3.9.5).",
+      [
+        "§3.9.5"
+      ]
+    ],
+    [
+      "Can a domain such as linear algebra have its own Exsecutor lexicon?",
+      "Yes. `lexicon.norma` holds the core, and a specialised domain may carry its own separately hashed and separately depended-upon table, such as `lexicon.algebra` or `lexicon.rete`, so a program that never touches the domain does not inherit its vocabulary. Sub-lexicons obey §3.9 in full; they are not a relaxation (§3.9.6). `exsc lexicon` is the intended checker and is a stub today `[OPEN]` (§3.9.7).",
+      [
+        "§3.9.6",
+        "§3.9.7"
+      ]
+    ]
+  ]
+}

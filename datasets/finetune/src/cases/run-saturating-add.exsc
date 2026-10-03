@@ -1,0 +1,13 @@
+//! task: write
+//! ask: Add 200 to 100 as u8 with saturating arithmetic and return the result.
+//! expect: exit=255
+//! refs: §5.4, §8.4
+//! explain: `+|` saturates at the type's maximum: 100 + 200 would be 300, which does not fit a `u8`, so the result is 255. Contrast `+%`, which wraps to 44, and plain `+`, which traps.
+
+functio satura(a: u8) -> u8 {
+    redde a +| 200;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    redde satura(100);
+}
