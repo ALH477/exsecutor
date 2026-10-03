@@ -141,6 +141,18 @@ Exsecutor source, ten programs, all compiled and run by `tests/run.sh`:
   It passes on the reference backend and under all four C builds
   (`onus/README.md`). Oligarchy's FAUST orchestra performs the file.
 
+- **`utf16/`, twenty-seven UTF-8 to UTF-16 converters** — one pure contract
+  (`contractus.exsc`), one driver (`probatio.exsc`), and twenty-seven libraries
+  that differ in how a sequence is recognised, how a pass is structured, how
+  lockstep stages are connected, and how a fault would be caught (a DFA, a
+  WHATWG register machine, Table 3-7 as data, divide and conquer, a registered
+  pipeline, a bit reservoir, dual and triple redundant decoders, ...). All 27 are
+  held byte for byte to Python's codec on valid and ill-formed input, in a strict
+  mode and in a U+FFFD-per-maximal-subpart mode, through `exsc`, both byte orders
+  and gcc/clang. `utf16/README.md` has the roster, the commands, and what was and
+  was not checked; `tests/programs/utf16_*/` run them in `tests/run.sh`, and
+  `tools/identify.py` says which library a binary is.
+
 And one more that is **not** yet in the "all compiled and run" count above,
 because it has not been: **`somnium/`, the screensaver engine** — one
 program, nine effects: a sine plasma, a heat-diffusion fire, Life coloured
