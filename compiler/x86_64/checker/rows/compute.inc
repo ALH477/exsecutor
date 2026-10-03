@@ -99,12 +99,25 @@
 ;      draw induced by a CALL -- an atom in the callee's row after
 ;      substitution -- was never looked up in them. For those, and only those,
 ;      this pass reads the declaration table instead: a `PARAM` of capability
-;      type and every `SUB` whose `Decl.parent` is `F` provide their atoms for
-;      the whole of `F`. That is an OVER-APPROXIMATION -- a `sub` in one block
-;      satisfies a call-induced draw in a sibling block -- so it can only
-;      ACCEPT what a frame walk would reject, never the reverse. Closing it
-;      needs pass 1 to keep a per-function provider mask; requested, not
-;      assumed.
+;      type provides its atom for the whole of `F` (`wprov`, always in scope),
+;      and every `SUB` whose `Decl.parent` is `F` provides its atom over its
+;      own LEXICAL SCOPE -- the §4.5 frame walk the lowering does. The `sub`
+;      term is therefore NODE-scoped, not function-scoped: `__chk_row_eff`
+;      builds `weff[node]` = F's params plus the `sub`s of F whose lexical scope
+;      covers `node`, where `sub P = e;` (statement form) scopes from just AFTER
+;      the `sub` to the end of its enclosing block and `sub P = e { body }`
+;      (block form) scopes to `body`, neither reaching the initializer `e`. The
+;      fixpoint and `__chk_row_e0421` subtract that, not a flat function mask.
+;      So the checker refuses, with EXS-E0421 and at the drawing node, exactly
+;      what the lowering refuses across the whole `sub`-provision class: a draw
+;      in a `sub`'s own `e` (self-provision, spec §4.1 rule 4), a call textually
+;      BEFORE a `sub`, and a draw in a SIBLING branch. It is no longer the
+;      flow-insensitive over-approximation it was when first written; the
+;      per-function provider mask from pass 1 that would have been needed to
+;      close that is not, because the lexical scope is computable here (`wblk`).
+;      SAFETY (D2's contract, "accepts what a frame walk would reject, never the
+;      reverse"): a `sub` whose enclosing block is not found falls back to the
+;      whole function -- OVER-approximate, never over-reject.
 ;  D3. THE ENCLOSING FUNCTION OF A NODE IS COMPUTED HERE. No slot holds it
 ;      and no pass records it. It falls out of postorder for free: a
 ;      subtree's node ids are the contiguous range `[lo(X), X]`, `lo` is one
@@ -171,8 +184,13 @@ struct ChkRowWork
 	field warena, dq
 	wlo	Vec		; dd by node id -- the subtree's least node id
 	wenc	Vec		; dd by node id -- enclosing `Fn`/`Lambda` node
+	wblk	Vec		; dd by node id -- innermost enclosing `Block` node
+	weff	Vec		; dd by node id -- the providers IN SCOPE at a node:
+				; F's params plus the `sub`s of F whose LEXICAL
+				; scope covers the node (D2, §4.5 frame walk)
 	wbear	Vec		; dd by decl id -- capability-bearing atom mask
-	wprov	Vec		; dd by decl id -- atoms F provides (D2)
+	wprov	Vec		; dd by decl id -- atoms F's PARAMETERS provide (D2);
+				; `sub` providers are node-scoped in `weff`
 	wrat	Vec		; dd by decl id -- F's DECLARED row atoms
 	wror	Vec		; dq by decl id -- F's DECLARED row ordinals
 	wdra	Vec		; dd by decl id -- F's drawn atoms (the lfp)
@@ -265,6 +283,16 @@ proc chk_row_work_init, chkw_wk, chkw_cx, chkw_pb
 	mov	rcx, r12
 	call	__chk_row_zvec
 	lea	rdi, [rbx + ChkRowWork.wenc]
+	mov	rsi, [chkw_ar]
+	mov	rdx, 4
+	mov	rcx, r12
+	call	__chk_row_zvec
+	lea	rdi, [rbx + ChkRowWork.wblk]
+	mov	rsi, [chkw_ar]
+	mov	rdx, 4
+	mov	rcx, r12
+	call	__chk_row_zvec
+	lea	rdi, [rbx + ChkRowWork.weff]
 	mov	rsi, [chkw_ar]
 	mov	rdx, 4
 	mov	rcx, r12
@@ -597,6 +625,60 @@ proc __chk_row_encmap, chkw_wk
 	call	__chk_row_s4
   .fill_next:
 	inc	qword [chkw_j]
+	jmp	.fill
+  .next:
+	inc	r12
+	jmp	.node
+  .done:
+	return
+endp
+
+; `wblk[i]` = the innermost `Block` node containing `i`, or 0 outside any
+; block. Same shape as `__chk_row_encmap`: ascending node order is
+; innermost-first (a nested block has the smaller id, by postorder), so "first
+; writer wins" is "innermost wins" with no comparison. Used by `__chk_row_eff`
+; to bound a statement-form `sub`'s lexical scope to the end of its own block.
+proc __chk_row_blkmap, chkw_wk
+	uses	rbx, r12, r13, r14
+	locals
+		slot chkw_bj, dq
+	endl
+	mov	rbx, [chkw_wk]
+	mov	r14, [rbx + ChkRowWork.wtree]
+	mov	r12, 1
+  .node:
+	mov	rdi, r14
+	call	ast_node_count
+	cmp	r12, rax
+	jg	.done
+	mov	rdi, r14
+	mov	rsi, r12
+	call	ast_node_at
+	movzx	ecx, word [rax + AstNode.kind]
+	cmp	ecx, AST_BLOCK
+	jne	.next
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wlo
+	mov	rsi, r12
+	call	__chk_row_g4
+	mov	[chkw_bj], rax
+  .fill:
+	mov	rax, [chkw_bj]
+	cmp	rax, r12
+	jg	.next
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wblk
+	mov	rsi, rax
+	call	__chk_row_g4
+	test	rax, rax
+	jnz	.fill_next
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wblk
+	mov	rsi, [chkw_bj]
+	mov	rdx, r12
+	call	__chk_row_s4
+  .fill_next:
+	inc	qword [chkw_bj]
 	jmp	.fill
   .next:
 	inc	r12
@@ -1146,12 +1228,17 @@ proc __chk_row_seed, chkw_wk
 	return
 endp
 
-; ---- D2: providers, from the declaration table -----------------------------
-; Spec §4.1 rule 4's first two ways -- bound by `sub`, received as a parameter
-; -- read off `Ast.decls` rather than off pass 1's frames. The third way (a
-; field of the receiver) is deliberately NOT a provider: checker.md section
-; 2.1 rule 2 declines it, because reading it as one would make lookup search
-; the receiver's fields and that is the kill criterion firing.
+; ---- D2: PARAMETER providers, from the declaration table --------------------
+; Spec §4.1 rule 4's "received as a parameter" way, read off `Ast.decls` rather
+; than off pass 1's frames. A capability-typed `PARAM` of `F` provides its atom
+; for the whole of `F`, unconditionally -- a parameter is in scope at every
+; draw in the body. The OTHER declared provider, `sub P = e` (rule 4's "bound
+; by `sub`"), is NOT registered here: it must be withheld from draws inside its
+; own initializer `e` (the self-provision rule), which is a node-scoped fact,
+; so `__chk_row_eff` handles it per node in `weff`. The third way (a field of
+; the receiver) is deliberately NOT a provider: checker.md section 2.1 rule 2
+; declines it, because reading it as one would make lookup search the
+; receiver's fields and that is the kill criterion firing.
 proc __chk_row_prov, chkw_wk
 	uses	rbx, r12, r13, r14
 	locals
@@ -1170,10 +1257,7 @@ proc __chk_row_prov, chkw_wk
 	call	ast_decl_at
 	movzx	ecx, byte [rax + AstDecl.kind]
 	cmp	ecx, AST_D_PARAM
-	je	.maybe
-	cmp	ecx, AST_D_SUB
-	je	.maybe
-	jmp	.next
+	jne	.next
   .maybe:
 	mov	r13d, [rax + AstDecl.parent]
 	test	r13, r13
@@ -1211,6 +1295,215 @@ proc __chk_row_prov, chkw_wk
 	mov	rdx, rax
 	call	__chk_row_s4
   .next:
+	inc	r12
+	jmp	.decl
+  .done:
+	return
+endp
+
+; ---- D2: the providers IN SCOPE at every node, by LEXICAL scope ------------
+; `weff[N]` = the capability atoms a draw at node `N` may use: the PARAM
+; providers of `N`'s enclosing function (always in scope, from `wprov`), PLUS
+; every `sub` of that function whose LEXICAL SCOPE covers `N`. This mirrors the
+; §4.5 frame walk the lowering does (resolve.inc's `.sub` arm and
+; lower/stmt.inc's `__lwr_sub`): `sub P = e` binds `P`
+;
+;   - STATEMENT form (`sub P = e;`, `Sub.c == 0`): from JUST AFTER the `sub`
+;     node to the END of its enclosing block (`wblk`). Nodes at or before the
+;     `sub` -- its own initializer `e` among them, since `e` is in the `sub`'s
+;     own subtree and so has a SMALLER id -- are out of scope, and so is
+;     anything after the block; and
+;   - BLOCK form (`sub P = e { body }`, `Sub.c != 0`): WITHIN `body` only
+;     (`Sub.c`'s subtree). `e` (`Sub.b`) is a sibling subtree, before `body`,
+;     so it is out of scope -- self-provision -- and later statements are too.
+;
+; So a `sub` does NOT provide to a draw in its own initializer (self-provision,
+; spec §4.1 rule 4), to a call textually BEFORE it, or into a SIBLING branch --
+; each of which the lowering also refuses. The fixpoint and `__chk_row_e0421`
+; subtract `weff[drawing node]`, so the checker now matches the lowering across
+; the whole `sub`-provision class, not just self-provision.
+;
+; WHY ADDITIVE, NOT `wprov & ~scope[N]`. Rebuilding the in-scope set by OR-ing
+; each `sub` over its own scope -- rather than masking a self-`sub`'s atom out
+; of a flat union -- is what keeps a draw covered by ANOTHER in-scope provider
+; (a param, or a different `sub` whose scope does reach it) accepted. A `sub`
+; inside a nested `Lambda` is NOT folded into the enclosing function: `wenc`
+; attributes the `Lambda`'s body to the `Lambda`, and the scatter's `wenc`
+; guard keeps a `sub` from leaking across that boundary, as `wprov`'s keying
+; does for params.
+;
+; SAFETY (D2's contract -- accepts what a frame walk would reject, never the
+; reverse): a `sub` whose enclosing block is not found (`wblk == 0`, which a
+; real statement never is) falls back to the whole function -- an
+; OVER-approximation, never an over-rejection.
+proc __chk_row_eff, chkw_wk
+	uses	rbx, r12, r13, r14
+	locals
+		slot chkw_ef_p,   dq	; the current `sub`'s atom bit
+		slot chkw_ef_sn,  dq	; the `Sub` node
+		slot chkw_ef_fn,  dq	; the enclosing function's `Fn` node
+		slot chkw_ef_lo,  dq	; the `sub`'s lexical scope [lo, hi], node ids
+		slot chkw_ef_hi,  dq
+		slot chkw_ef_n,   dq	; the scatter index
+	endl
+	mov	rbx, [chkw_wk]
+	mov	r14, [rbx + ChkRowWork.wtree]
+
+	; ---- base: each node inherits its enclosing function's PARAM mask ----
+	mov	r12, 1
+  .init:
+	mov	rdi, r14
+	call	ast_node_count
+	cmp	r12, rax
+	jg	.subs
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wenc
+	mov	rsi, r12
+	call	__chk_row_g4			; the node's enclosing `Fn`/`Lambda`
+	test	rax, rax
+	jz	.init_next			; module level: no provider in scope
+	mov	rdi, r14
+	mov	rsi, rax
+	call	ast_node_at
+	mov	esi, [rax + AstNode.d]		; that function's declaration
+	test	rsi, rsi
+	jz	.init_next
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wprov
+	call	__chk_row_g4			; its PARAM providers
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.weff
+	mov	rsi, r12
+	mov	rdx, rax
+	call	__chk_row_s4
+  .init_next:
+	inc	r12
+	jmp	.init
+
+	; ---- each capability `sub`: provide its atom over its LEXICAL scope ----
+  .subs:
+	mov	r12, 1
+  .decl:
+	mov	rdi, r14
+	call	ast_decl_count
+	cmp	r12, rax
+	jg	.done
+	mov	rdi, r14
+	mov	rsi, r12
+	call	ast_decl_at
+	movzx	ecx, byte [rax + AstDecl.kind]
+	cmp	ecx, AST_D_SUB
+	jne	.decl_next
+	mov	r13d, [rax + AstDecl.parent]
+	test	r13, r13
+	jz	.decl_next			; module level: nothing to scope to
+	mov	esi, [rax + AstDecl.ty]
+	test	rsi, rsi
+	jz	.decl_next
+	mov	rdi, r14
+	call	ast_type_at
+	movzx	ecx, byte [rax + AstType.kind]
+	cmp	ecx, AST_TY_CAP
+	jne	.decl_next			; a `sub` of a non-atom provides nothing
+	; the atom's bit (mirrors `__chk_row_prov`)
+	mov	ecx, [rax + AstType.a]		; the atom's declaration
+	mov	[chkw_ef_p], rcx
+	mov	rdi, r14
+	call	ast_cap_base
+	rassert	rax ge 1
+	mov	rcx, [chkw_ef_p]
+	sub	rcx, rax
+	rassert	rcx ge 0
+	mov	rdx, AST_CAP_COUNT
+	dec	rdx
+	rassert	rcx le rdx
+	mov	rax, 1
+	shl	rax, cl
+	mov	[chkw_ef_p], rax		; the atom's BIT, now
+	; the `Sub` node, for its RHS slots
+	mov	rdi, r14
+	mov	rsi, r12
+	call	ast_decl_at
+	mov	ecx, [rax + AstDecl.node]
+	mov	[chkw_ef_sn], rcx
+	test	rcx, rcx
+	jz	.decl_next
+	; the enclosing function's `Fn` node
+	mov	rdi, r14
+	mov	rsi, r13
+	call	ast_decl_at
+	mov	ecx, [rax + AstDecl.node]
+	mov	[chkw_ef_fn], rcx
+	test	rcx, rcx
+	jz	.decl_next
+	; ---- the lexical scope [lo, hi] ----
+	mov	rdi, r14
+	mov	rsi, [chkw_ef_sn]
+	call	ast_node_at
+	mov	ecx, [rax + AstNode.c]		; the block-form body, or 0
+	test	rcx, rcx
+	jz	.stmtform
+	; BLOCK form: the body `Sub.c`'s subtree [wlo[c], c]. `Sub.b` is a
+	; sibling subtree, before `c`, so it is not in this range.
+	mov	[chkw_ef_hi], rcx
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wlo
+	mov	rsi, rcx
+	call	__chk_row_g4
+	mov	[chkw_ef_lo], rax
+	jmp	.scan_init
+  .stmtform:
+	; STATEMENT form: from just after the `sub` to the end of its
+	; enclosing block. (sub, wblk[sub]] excludes the `sub`'s own subtree
+	; -- its initializer included -- below, and anything after the block.
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wblk
+	mov	rsi, [chkw_ef_sn]
+	call	__chk_row_g4
+	test	rax, rax
+	jz	.stmt_fallback
+	mov	[chkw_ef_hi], rax
+	mov	rax, [chkw_ef_sn]
+	inc	rax
+	mov	[chkw_ef_lo], rax
+	jmp	.scan_init
+  .stmt_fallback:
+	; no enclosing block (a statement always has one; belt and braces):
+	; the whole function -- over-approximate, never over-reject.
+	mov	rax, [chkw_ef_fn]
+	mov	[chkw_ef_hi], rax
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wlo
+	mov	rsi, [chkw_ef_fn]
+	call	__chk_row_g4
+	mov	[chkw_ef_lo], rax
+  .scan_init:
+	mov	rax, [chkw_ef_lo]
+	mov	[chkw_ef_n], rax
+  .scan:
+	mov	rax, [chkw_ef_n]
+	cmp	rax, [chkw_ef_hi]
+	jg	.decl_next
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.wenc
+	mov	rsi, [chkw_ef_n]
+	call	__chk_row_g4
+	cmp	rax, [chkw_ef_fn]
+	jne	.scan_next			; inside a nested lambda: not F's
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.weff
+	mov	rsi, [chkw_ef_n]
+	call	__chk_row_g4
+	or	rax, [chkw_ef_p]
+	mov	rdi, rbx
+	add	rdi, ChkRowWork.weff
+	mov	rsi, [chkw_ef_n]
+	mov	rdx, rax
+	call	__chk_row_s4
+  .scan_next:
+	inc	qword [chkw_ef_n]
+	jmp	.scan
+  .decl_next:
 	inc	r12
 	jmp	.decl
   .done:
@@ -1854,6 +2147,7 @@ proc __chk_row_fix, chkw_wk
 		slot chkw_f, dq
 		slot chkw_na, dq
 		slot chkw_no, dq
+		slot chkw_nd, dq
 	endl
 	mov	rbx, [chkw_wk]
 	mov	r14, [rbx + ChkRowWork.wtree]
@@ -1868,6 +2162,8 @@ proc __chk_row_fix, chkw_wk
 	lea	rdi, [rbx + ChkRowWork.wuse]
 	mov	rsi, r12
 	call	vec_get
+	mov	ecx, [rax + ChkRowUse.node]
+	mov	[chkw_nd], rcx			; the drawing node, for `weff`
 	mov	esi, [rax + ChkRowUse.fnode]
 	mov	rdi, rbx
 	call	__chk_row_fdecl
@@ -1887,11 +2183,13 @@ proc __chk_row_fix, chkw_wk
 	mov	[chkw_na], rax
 	mov	[chkw_no], rdx
 	mov	rdi, rbx
-	add	rdi, ChkRowWork.wprov
-	mov	rsi, r13
+	add	rdi, ChkRowWork.weff
+	mov	rsi, [chkw_nd]
 	call	__chk_row_g4
 	not	rax
-	and	[chkw_na], rax			; a provided atom is not drawn
+	and	[chkw_na], rax			; a provider IN SCOPE here is not drawn
+						; (`weff`: a `sub` not covering its own
+						; RHS -- D2 self-provision)
 
 	mov	rdi, rbx
 	add	rdi, ChkRowWork.wdra
@@ -2311,11 +2609,13 @@ proc __chk_row_e0421, chkw_wk
 	mov	[chkw_ea], rax
 	mov	[chkw_eo], rdx
 	mov	rdi, rbx
-	add	rdi, ChkRowWork.wprov
-	mov	rsi, r13
+	add	rdi, ChkRowWork.weff
+	mov	rsi, [chkw_nd]
 	call	__chk_row_g4
 	not	rax
-	and	[chkw_ea], rax
+	and	[chkw_ea], rax			; ... nor a provider IN SCOPE at the
+						; drawing node (`weff`: a `sub` does not
+						; cover a draw in its own RHS -- D2)
 	mov	rdi, rbx
 	add	rdi, ChkRowWork.wrat
 	mov	rsi, r13
@@ -3000,6 +3300,8 @@ proc chk_rows, chkw_c2
 	mov	rdi, rbx
 	call	__chk_row_encmap
 	mov	rdi, rbx
+	call	__chk_row_blkmap
+	mov	rdi, rbx
 	call	__chk_row_bear
 	mov	rdi, rbx
 	call	__chk_row_e0501
@@ -3007,6 +3309,8 @@ proc chk_rows, chkw_c2
 	call	__chk_row_seed
 	mov	rdi, rbx
 	call	__chk_row_prov
+	mov	rdi, rbx
+	call	__chk_row_eff
 	mov	rdi, rbx
 	call	__chk_row_seed_draws
 	mov	rdi, rbx

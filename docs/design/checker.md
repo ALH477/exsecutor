@@ -351,6 +351,41 @@ enclosing scope" (spec §4.1 rule 4) and `sub` is the opposite — a provider.
 The probe's `sub_atoms_of` is an over-approximation not adopted (finding
 12); no probe case turns on it.
 
+**A `sub`'s provision is its own LEXICAL SCOPE, mirroring the §4.5 frame walk
+the lowering does** (`compute.inc`, `__chk_row_eff`). This closes a
+TCB-authority gap from the 2026-10-03 audit: the checker is the authority for
+the capability rule, so a draw the lowering refuses `EXS-E0421` the checker must
+refuse, *and* a draw the lowering accepts the checker must accept. D2 now
+splits the two declared providers. A capability *parameter* is a flat
+per-function provider (`__chk_row_prov` → `wprov`), always in scope. A `sub`'s
+atom is rebuilt per node into `weff[node]` = the function's params plus the
+`sub`s whose lexical scope covers `node`, where
+
+- `sub P = e;` (statement form) scopes from **just after** the `sub` to the
+  **end of its enclosing block** (the block comes from `wblk`, an
+  innermost-enclosing-`Block` map built like the enclosing-function map); and
+- `sub P = e { body }` (block form) scopes to **`body`** (the `Sub.c` subtree);
+
+neither reaching the initializer `e` (`Sub.b`, which has smaller node ids than
+the `sub` itself). The fixpoint and `__chk_row_e0421` subtract
+`weff[drawing node]`. So the checker now refuses, at the drawing node, exactly
+what the lowering refuses across the whole `sub`-provision class: a draw in a
+`sub`'s own `e` (self-provision — the `sub` is not yet in scope while `e`
+runs), a call textually **before** a `sub`, and a draw in a **sibling** branch.
+Rebuilding the in-scope set *additively* (OR-ing each `sub` over its own scope)
+rather than masking a self-`sub`'s atom out of a flat union is what keeps a draw
+covered by *another* in-scope provider accepted — e.g. a legitimate
+call-induced draw inside `sub P = e { … }`, where the binding is live. A `sub`
+inside a nested `Lambda` is not folded into the enclosing function: the
+scatter's `wenc` guard keeps it from crossing that boundary, as `wprov`'s keying
+does for params. This replaces the earlier flow-insensitive over-approximation;
+the per-function provider mask from pass 1 that would have been needed to close
+it is unnecessary, because the lexical scope is computable in pass 3. A
+differential over the whole class (bare checker vs both lowerings) found the
+checker's `EXS-E0421` verdict equal to the lowering's on every program, with
+zero over-rejection — D2's contract ("accepts what a frame walk would reject,
+never the reverse") holds, now at equality rather than strict over-acceptance.
+
 **Ceiling and bounds** (spec §4.4, `EXS-E0510`), all in pass 3's check loop:
 
 - at every `Impl`: `mark ⊆ ceiling`, where `mark` = head row ∪ the
