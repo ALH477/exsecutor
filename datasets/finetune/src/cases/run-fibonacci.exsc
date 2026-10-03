@@ -1,0 +1,22 @@
+//! task: write
+//! ask: Write a program whose exit status is the 10th Fibonacci number, computed with a bounded `dum` loop.
+//! expect: exit=55
+//! refs: §8.5
+//! explain: `dum i lt n terminus 100` loops while the condition holds and declares a bound of 100 entries; the bound is evaluated once and exceeding it aborts. `firma t` inside the loop is a fresh immutable binding per iteration, used to swap without a temporary variable that outlives the step.
+
+functio fibonacci(n: u64) -> u64 {
+    mutabilis a: u64 = 0;
+    mutabilis b: u64 = 1;
+    mutabilis i: u64 = 0;
+    dum i lt n terminus 100 {
+        firma t = a + b;
+        a = b;
+        b = t;
+        i = i + 1;
+    }
+    redde a;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    redde fibonacci(10) sicut u8;
+}

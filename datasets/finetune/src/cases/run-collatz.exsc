@@ -1,0 +1,23 @@
+//! task: write
+//! ask: Count the Collatz steps from 27 and return the count as the exit status.
+//! expect: exit=111
+//! refs: §5.4, §8.5
+//! explain: 27 reaches 1 after 111 steps, which fits in a `u8`. `x / 2` is the integer quotient. The bound `terminus 200` is generous enough for this input and still finite, so the loop's termination is declared, not assumed.
+
+functio gradus(n: u64) -> u64 {
+    mutabilis x: u64 = n;
+    mutabilis k: u64 = 0;
+    dum x ne 1 terminus 200 {
+        si x residuum 2 eq 0 {
+            x = x / 2;
+        } aliter {
+            x = 3 * x + 1;
+        }
+        k = k + 1;
+    }
+    redde k;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    redde gradus(27) sicut u8;
+}

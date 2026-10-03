@@ -1,0 +1,17 @@
+//! task: write
+//! ask: Write a program that prints the digits 0 to 9 and a newline to standard output, and exits 0.
+//! expect: exit=0
+//! stdout: 0123456789\n
+//! refs: §4.6, §8.5
+//! explain: `per i in 0..10` runs ten times with `i` typed as `mensura`, so it is cast down with `sicut u8` before adding to the ASCII code of `0` (48). `scribe_octeto` writes one raw byte, and the final `10` is the newline. A string literal could carry a raw newline, but writing the byte avoids depending on the editor.
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma s = Scriptor.ad_exitum(a);
+    per i in 0..10 {
+        s.scribe_octeto(48 + (i sicut u8));
+    }
+    s.scribe_octeto(10);
+    redde 0;
+}

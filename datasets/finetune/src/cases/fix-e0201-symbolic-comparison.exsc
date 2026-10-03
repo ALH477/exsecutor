@@ -1,0 +1,20 @@
+//! task: fix
+//! ask: Write a function returning the smaller of two u64 values.
+//! expect: EXS-E0201,EXS-E0303
+//! primary: EXS-E0201
+//! refs: §8.4, §8.6 decision 6
+//! explain: `<` and `>` are never operators in Exsecutor: they delimit generic arguments, and comparison is the contextual words `lt le gt ge eq ne`. The `EXS-E0303` after the first diagnostic is recovery cascade from the unparsed condition, and disappears with the fix.
+
+publica functio minimum(a: u64, b: u64) -> u64 {
+    si a < b {
+        redde a;
+    }
+    redde b;
+}
+//@ fixed
+publica functio minimum(a: u64, b: u64) -> u64 {
+    si a lt b {
+        redde a;
+    }
+    redde b;
+}

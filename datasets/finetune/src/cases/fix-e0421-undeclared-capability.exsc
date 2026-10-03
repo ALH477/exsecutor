@@ -1,0 +1,15 @@
+//! task: fix
+//! ask: Write a function that makes a standard-output writer, without being handed any capability.
+//! expect: EXS-E0421
+//! refs: §4.1, §4.6
+//! explain: `ambitus` is a capability atom, and a function may only draw one it has declared. This `publica` function has an empty row and no capability parameter, so it is pure with respect to the host and `EXS-E0421` fires. The compiler ships a machine-applicable fix that inserts the row. The other legitimate shape is to receive the authority as a parameter, as `initium` receives `Mundus`.
+
+publica functio f() -> u8 {
+    firma s = Scriptor.ad_exitum(ambitus);
+    redde 0;
+}
+//@ fixed
+publica functio f() -> u8 poscit ambitus {
+    firma s = Scriptor.ad_exitum(ambitus);
+    redde 0;
+}

@@ -1,0 +1,9 @@
+//! task: write
+//! ask: Take a non-atomic reference-counted reference as a parameter.
+//! expect: ok
+//! refs: §6.4
+//! explain: `refero<T>` is the non-atomic reference-counted reference type. Its atomic sibling `refero_communis<T>` may cross an `externus` boundary and `refero<T>` may not (`EXS-E0520`). A bare `refero` with no `<T>` is `EXS-E0201`.
+
+publica functio f(r: refero<u8>) -> u8 {
+    redde 0;
+}

@@ -1,0 +1,9 @@
+//! task: write
+//! ask: Compute the mean of two f64 values.
+//! expect: ok
+//! refs: §5.4, §8.4
+//! explain: Float literals are `DIGITS.DIGITS` with an optional lowercase `e` exponent and no suffix; the literal takes `f32` or `f64` from its expectation. `/` on two floats is the IEEE-754 quotient. Integer and float operands never mix: converting is explicit, `n sicut f64`.
+
+publica functio media(a: f64, b: f64) -> f64 {
+    redde (a + b) / 2.0;
+}

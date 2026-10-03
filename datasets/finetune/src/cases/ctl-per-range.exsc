@@ -1,0 +1,13 @@
+//! task: write
+//! ask: Sum the integers 0..n-1 with an ordered `per` loop.
+//! expect: ok
+//! refs: §8.5
+//! explain: `per i in 0..n` is the ordered loop: iteration k may observe iteration k-1. `0..n` is a range (`..`, level 6 in the precedence table) and `i` takes the range's element type, here u64 because `n` is u64. Contrast `quisque`, which declares the iterations independent.
+
+publica functio summa_ad(n: u64) -> u64 {
+    mutabilis s: u64 = 0;
+    per i in 0..n {
+        s = s + i;
+    }
+    redde s;
+}

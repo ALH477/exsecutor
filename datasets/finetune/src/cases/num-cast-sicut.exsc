@@ -1,0 +1,9 @@
+//! task: write
+//! ask: Widen a u8 to a u32.
+//! expect: ok
+//! refs: §5.4, §8.6
+//! explain: There is no implicit widening. The conversion is explicit with `sicut Type` (the cast sits at precedence level 3, tighter than `*`). Without it, `redde x;` where u32 is expected is EXS-E0303.
+
+publica functio amplia(x: u8) -> u32 {
+    redde x sicut u32;
+}

@@ -1,0 +1,13 @@
+//! task: fix
+//! ask: Return a u8 as a u32.
+//! expect: EXS-E0303
+//! refs: §5.4, §8.6
+//! explain: Exsecutor has no implicit widening: a `u8` is not a `u32`. The conversion is the explicit cast `sicut u32`, so that every width change is visible in the source.
+
+publica functio amplia(a: u8) -> u32 {
+    redde a;
+}
+//@ fixed
+publica functio amplia(a: u8) -> u32 {
+    redde a sicut u32;
+}

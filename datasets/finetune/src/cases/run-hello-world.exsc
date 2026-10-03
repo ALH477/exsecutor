@@ -1,0 +1,22 @@
+//! task: write
+//! ask: Write the hello world as a library function that returns the greeting, a writer helper, and the entry point that prints it.
+//! expect: exit=0
+//! stdout: Ave, mundus.
+//! refs: §4.2, §4.7, examples/initium.exsc
+//! explain: Three functions, three different authorities. `saluta` has an empty row and so cannot print; `imprime_gutenbergio` needs exactly what its writer carries (`poscit sicut s`); `initium` is where authority enters, once, as the `Mundus` parameter, and everything below it is derived from that value. The repository ships these as three files forming one compilation unit; they are shown here as one module.
+
+publica functio saluta() -> textus {
+    redde "Ave, mundus.";
+}
+
+publica functio imprime_gutenbergio(s: Scriptor, t: textus) -> mensura poscit sicut s {
+    redde s.scribe(t);
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma s = Scriptor.ad_exitum(a);
+    imprime_gutenbergio(s, saluta());
+    redde 0;
+}

@@ -1,0 +1,9 @@
+//! task: diagnose
+//! ask: Take the first byte of a textus.
+//! expect: EXS-E0311
+//! refs: §5.1
+//! explain: `textus` has no integer index: `t[0]` could mean a byte, a scalar value or a grapheme cluster, and Exsecutor will not pick one silently. Use an explicit view, `t.octeti()`, `t.scalares()` or `t.grapha()`, which are distinct types that do not coerce. `[OPEN]`: of those views only `octeti` has a working `numerus` today.
+
+publica functio f(t: textus) -> u8 {
+    redde t[0];
+}

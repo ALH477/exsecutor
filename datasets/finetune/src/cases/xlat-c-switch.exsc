@@ -1,0 +1,22 @@
+//! task: translate
+//! ask: Translate this C to Exsecutor.
+//!   ```c
+//!   uint8_t score(uint8_t m) {
+//!       switch (m) {
+//!           case 1: return 10;
+//!           case 2: return 20;
+//!           default: return 0;
+//!       }
+//!   }
+//!   ```
+//! expect: ok
+//! refs: §8.5
+//! explain: `switch` becomes `discerne`, `case` becomes `casus`, and `default` becomes `aliter`. There is no fallthrough, so no `break` is needed, and a scalar `discerne` without an `aliter` would be `EXS-E0351`. Each arm is a block.
+
+publica functio puncta(m: u8) -> u8 {
+    discerne m {
+        casus 1 { redde 10; }
+        casus 2 { redde 20; }
+        aliter  { redde 0; }
+    }
+}

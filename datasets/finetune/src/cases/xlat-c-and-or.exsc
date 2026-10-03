@@ -1,0 +1,17 @@
+//! task: translate
+//! ask: Translate this C to Exsecutor.
+//!   ```c
+//!   int in_range(uint32_t x, uint32_t lo, uint32_t hi) {
+//!       return x >= lo && x <= hi;
+//!   }
+//!   ```
+//! expect: ok
+//! refs: §8.4, §8.6
+//! explain: `>=` and `<=` are the words `ge` and `le`, and `&&` is the short-circuit `et`. There is no boolean expression type to return directly, so the condition selects between the one-bit values 1 and 0 of `u1`.
+
+publica functio intra(x: u32, lo: u32, hi: u32) -> u1 {
+    si x ge lo et x le hi {
+        redde 1;
+    }
+    redde 0;
+}

@@ -1,0 +1,20 @@
+//! task: write
+//! ask: Euclid's algorithm for gcd(48, 18), returned as the exit status.
+//! expect: exit=6
+//! refs: §5.4, §8.5
+//! explain: `residuum` is the integer remainder. The loop is `dum y ne 0 terminus 64`: Euclid on 64-bit operands terminates in far fewer than 64 steps, and the declared bound turns any bug in the loop into an abort instead of a hang.
+
+functio mcd(a: u64, b: u64) -> u64 {
+    mutabilis x: u64 = a;
+    mutabilis y: u64 = b;
+    dum y ne 0 terminus 64 {
+        firma t = x residuum y;
+        x = y;
+        y = t;
+    }
+    redde x;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    redde mcd(48, 18) sicut u8;
+}

@@ -1,0 +1,25 @@
+//! task: fix
+//! ask: Sum an array of eight u64 values with a reduction, accumulating in the body.
+//! expect: EXS-E0341
+//! refs: §5.4, §8.5
+//! explain: Inside a `contrahe` body the accumulator is write-only: `s = v[i];` is the contribution, and reading `s` would make the summation order observable, so no tree shape but strictly left to right could be a valid implementation. `s = s + v[i];` reads `s` and is `EXS-E0341`. Write the contribution alone.
+
+publica functio f(v: acies<u64, 8>) -> u64 {
+    quisque i in 0..8
+        contrahe s: +
+        forma ordinata
+    {
+        s = s + v[i];
+    }
+    redde s;
+}
+//@ fixed
+publica functio f(v: acies<u64, 8>) -> u64 {
+    quisque i in 0..8
+        contrahe s: +
+        forma ordinata
+    {
+        s = v[i];
+    }
+    redde s;
+}

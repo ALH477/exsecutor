@@ -1,0 +1,9 @@
+//! task: write
+//! ask: Write a function that reads the first element of an array it only borrows.
+//! expect: ok
+//! refs: §6.3, ADR 0016
+//! explain: `&T` is a reference and a parameter is borrowed by default, so the caller keeps ownership and the callee retains only what it stores. The referent is read through an explicit dereference, `(*v)[0]`. Writing through a reference needs `&mutabilis T`; an assignment through a plain `&T` is rejected.
+
+publica functio lege(v: &acies<u8, 4>) -> u8 {
+    redde (*v)[0];
+}

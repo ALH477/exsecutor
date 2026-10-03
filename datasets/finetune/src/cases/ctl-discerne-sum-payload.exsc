@@ -1,0 +1,14 @@
+//! task: write
+//! ask: Write a sum type with a payload variant and extract the payload in a match.
+//! expect: ok
+//! refs: §8.6
+//! explain: A variant can carry a payload, `casus arborea(mensura)`, and the matching arm binds it: `casus arborea(n)`. The binding is scoped to its arm. `mensura` is the target's `usize` — the type of sizes and indices.
+
+typus Modus = casus ordinata, casus arborea(mensura);
+
+publica functio valor(m: Modus) -> mensura {
+    discerne m {
+        casus ordinata { redde 1; }
+        casus arborea(n) { redde n; }
+    }
+}

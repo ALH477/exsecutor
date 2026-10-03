@@ -1,0 +1,9 @@
+//! task: write
+//! ask: Keep the low nibble of a byte and set its top bit.
+//! expect: ok
+//! refs: §5.4
+//! explain: `atque` is bitwise and, `sive` is bitwise or. Hexadecimal literals are `0x` followed by digits in either case; the prefix is always lowercase `0x` (`0X10` is EXS-E0210).
+
+publica functio larva(a: u8) -> u8 {
+    redde (a atque 0x0f) sive 0x80;
+}

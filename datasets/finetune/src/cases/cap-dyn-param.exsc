@@ -1,0 +1,13 @@
+//! task: write
+//! ask: Take a trait object as a parameter.
+//! expect: ok
+//! refs: §4.4
+//! explain: `dyn Contabilis` is a trait object. `dyn Trait poscit {P}` narrows the trait's declared ceiling at the cast site, and the row is braced in type position. The reserved word `dyn` is the one English abbreviation among the Latin words, kept because it is the established term.
+
+interfacies Contabilis {
+    functio numera(x: u32) -> u32
+}
+
+publica functio f(x: dyn Contabilis) -> u8 {
+    redde 0;
+}

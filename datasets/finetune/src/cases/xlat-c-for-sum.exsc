@@ -1,0 +1,20 @@
+//! task: translate
+//! ask: Translate this C to Exsecutor.
+//!   ```c
+//!   uint64_t sum(uint64_t n) {
+//!       uint64_t s = 0;
+//!       for (uint64_t i = 0; i < n; i++) s += i;
+//!       return s;
+//!   }
+//!   ```
+//! expect: ok
+//! refs: §8.4, §8.5
+//! explain: `uint64_t` becomes `u64`; `uint64_t s = 0` becomes `mutabilis s: u64 = 0;` since `s` changes; the counting `for` becomes the ordered `per i in 0..n`, where the range excludes `n` as the C condition `i < n` does; `s += i` becomes `s = s + i;` because compound assignment is `[OPEN]`; `return` is `redde`. Note that `+` traps on overflow where C's unsigned `+=` wraps; use `+%` to keep the C meaning.
+
+publica functio summa(n: u64) -> u64 {
+    mutabilis s: u64 = 0;
+    per i in 0..n {
+        s = s + i;
+    }
+    redde s;
+}

@@ -1,0 +1,13 @@
+//! task: write
+//! ask: Show Exsecutor's three overflow behaviours for u8 addition.
+//! expect: ok
+//! refs: §5.4, §8.4
+//! explain: Overflow is a property of the operator, not a compiler flag. Plain `+` traps on overflow, `+%` wraps modulo 2^N, `+|` saturates. The same three spellings exist for subtraction (`-`, `-%`, `-|`). `circum(100)` is 44 and `satura(100)` is 255.
+
+publica functio circum(a: u8) -> u8 {
+    redde a +% 200;
+}
+
+publica functio satura(a: u8) -> u8 {
+    redde a +| 200;
+}

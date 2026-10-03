@@ -1,0 +1,13 @@
+//! task: write
+//! ask: Write a function mapping a u8 mode number to a score with `discerne`: 1 gives 10, 2 gives 20, anything else 0.
+//! expect: ok
+//! refs: §8.5
+//! explain: `discerne` selects over a scrutinee with `casus` arms. A scalar scrutinee's value space is 2^N, so exhaustiveness can only be had with an `aliter` arm; without one it is EXS-E0351. Arms are blocks, there is no fallthrough, and the first matching arm wins.
+
+publica functio puncta(modus: u8) -> u8 {
+    discerne modus {
+        casus 1 { redde 10; }
+        casus 2 { redde 20; }
+        aliter  { redde 0; }
+    }
+}

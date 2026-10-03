@@ -1,0 +1,22 @@
+//! task: translate
+//! ask: Translate this C to Exsecutor.
+//!   ```c
+//!   uint64_t gcd(uint64_t a, uint64_t b) {
+//!       while (b != 0) { uint64_t t = a % b; a = b; b = t; }
+//!       return a;
+//!   }
+//!   ```
+//! expect: ok
+//! refs: §5.4, §8.5
+//! explain: `while` becomes `dum`, and `terminus N` declares the loop's bound; the grammar makes it optional and `exsc` accepts an unbounded `dum` today (whether that stays admitted outside `certus` is `[OPEN]`), but a declared bound turns a bug into an abort rather than a hang. Here 64 is enough for Euclid on 64-bit operands. `!=` is the word `ne`, `%` is `residuum`, and parameters are immutable, so `a` and `b` are copied into `mutabilis` locals before being reassigned.
+
+publica functio mcd(a: u64, b: u64) -> u64 {
+    mutabilis x: u64 = a;
+    mutabilis y: u64 = b;
+    dum y ne 0 terminus 64 {
+        firma t = x residuum y;
+        x = y;
+        y = t;
+    }
+    redde x;
+}

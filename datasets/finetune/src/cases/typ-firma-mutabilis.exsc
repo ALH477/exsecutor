@@ -1,0 +1,12 @@
+//! task: write
+//! ask: Show the difference between `firma` and `mutabilis` bindings.
+//! expect: ok
+//! refs: §8.4
+//! explain: `firma` ("firm") binds a value that cannot be reassigned; assigning to it is EXS-E0306. `mutabilis` binds a variable that can. The type annotation is optional where the initializer determines it. A binding declared without an initializer is not zero-filled, and reading it before assignment is EXS-E0307.
+
+publica functio exemplum() -> u32 {
+    firma a: u32 = 40;
+    mutabilis b: u32 = 1;
+    b = b + 1;
+    redde a + b;
+}

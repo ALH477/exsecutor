@@ -1,0 +1,13 @@
+//! task: write
+//! ask: Add 200 to 100 as u8 with the plain `+` operator.
+//! expect: abort=1
+//! refs: §5.4, §6.6
+//! explain: Plain `+` is the trapping operator: 100 + 200 does not fit a `u8`, so the program aborts. A trap is observable in exactly one shape, `abortus N` on fd 2 followed by `SIGILL`, because `initium -> u8` makes every exit status a legitimate result and so none can be reserved for failure. Choose `+%` to wrap or `+|` to saturate if overflow is expected.
+
+functio addit(a: u8) -> u8 {
+    redde a + 200;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    redde addit(100);
+}

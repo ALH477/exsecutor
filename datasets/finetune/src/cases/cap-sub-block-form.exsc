@@ -1,0 +1,14 @@
+//! task: write
+//! ask: Bind the environment capability only for a block, and write inside it.
+//! expect: ok
+//! refs: §4.5
+//! explain: `sub P = e;` binds to the end of the enclosing scope, and `sub P = e { ... }` is the block form, so authority can be scoped tightly instead of the rest of the function being indented. The provider `a = m.ambitus()` has the atom's own type, which is what `sub` requires.
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a {
+        firma s = Scriptor.ad_exitum(a);
+        s.scribe("x");
+    }
+    redde 0;
+}

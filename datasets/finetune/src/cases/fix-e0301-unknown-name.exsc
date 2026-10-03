@@ -1,0 +1,14 @@
+//! task: fix
+//! ask: Return the sum of a parameter and a local.
+//! expect: EXS-E0301
+//! refs: §13
+//! explain: `EXS-E0301` is "name does not resolve": `y` was never declared in this scope. Declare it with `firma` (or `mutabilis`) before use, or take it as a parameter.
+
+publica functio f(x: u32) -> u32 {
+    redde x + y;
+}
+//@ fixed
+publica functio f(x: u32) -> u32 {
+    firma y: u32 = 5;
+    redde x + y;
+}

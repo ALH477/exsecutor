@@ -1,0 +1,18 @@
+//! task: write
+//! ask: Declare a `Punctum` struct with two i32 fields, a function that builds the origin, and one that sums the coordinates.
+//! expect: ok
+//! refs: §6.3, §8.6
+//! explain: `structura` declares a value type — no implicit boxing, ever (§6.3 decision 4). Fields are `name: Type`, separated by whitespace or newlines in a declaration. A struct literal is `Path { field: expr, … }` with every field exactly once and commas between, no trailing comma. Missing fields are never zero-filled (EXS-E0304).
+
+structura Punctum {
+    x: i32
+    y: i32
+}
+
+publica functio origo() -> Punctum {
+    redde Punctum { x: 0, y: 0 };
+}
+
+publica functio summa(p: Punctum) -> i32 {
+    redde p.x + p.y;
+}

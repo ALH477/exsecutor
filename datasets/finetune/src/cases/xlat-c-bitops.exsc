@@ -1,0 +1,14 @@
+//! task: translate
+//! ask: Translate this C to Exsecutor.
+//!   ```c
+//!   uint32_t mix(uint32_t a, uint32_t b) {
+//!       return (a << 3) ^ (b >> 1);
+//!   }
+//!   ```
+//! expect: ok
+//! refs: §5.4, §8.6
+//! explain: `<<` is `sursum`, `>>` is `deorsum` and `^` is `aut`. The parentheses are required: shifts are non-associative and a bare chain of two different bitwise or shift words is `EXS-E0201`. These operators are defined on unsigned integers.
+
+publica functio mixtio(a: u32, b: u32) -> u32 {
+    redde (a sursum 3) aut (b deorsum 1);
+}

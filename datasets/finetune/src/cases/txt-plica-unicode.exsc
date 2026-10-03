@@ -1,0 +1,9 @@
+//! task: write
+//! ask: Fold the text "I" to lowercase without needing any capability.
+//! expect: ok
+//! refs: §5.1
+//! explain: Locale-free case folding is total and needs no capability: `"I".plica_unicode()` is always `"i"`. The locale-dependent variant, `plica_sermone(sermo)`, takes the `sermo` capability as an argument. `[OPEN]`: text methods type-check but the lowering cannot emit them yet, so this is checked and not run.
+
+publica functio f() -> textus {
+    redde "I".plica_unicode();
+}

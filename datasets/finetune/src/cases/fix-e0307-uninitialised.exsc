@@ -1,0 +1,15 @@
+//! task: fix
+//! ask: Declare a variable and return it.
+//! expect: EXS-E0307
+//! refs: §8.6
+//! explain: A binding declared without an initializer is not zero-filled, and reading it before any assignment is `EXS-E0307` (definite assignment). Zero-filling would put bytes on the wire that no source line wrote, which is the disclosure class `@transitus` exists to close. Initialise it, with `[0; N]` for an array.
+
+publica functio f() -> u8 {
+    mutabilis x: u8;
+    redde x;
+}
+//@ fixed
+publica functio f() -> u8 {
+    mutabilis x: u8 = 0;
+    redde x;
+}

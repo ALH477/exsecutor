@@ -1,0 +1,25 @@
+//! task: fix
+//! ask: Reduce an array with subtraction using `contrahe`.
+//! expect: EXS-E0343
+//! refs: §5.4
+//! explain: The operator of a `contrahe` must be associative: `+`, `+%`, `+|` or `*`. The grammar also admits `-`, `-%` and `-|`, but a tree shape over subtraction has no meaning the spec defines, so a `contrahe` declared with one is `EXS-E0343`.
+
+publica functio f(v: acies<u64, 8>) -> u64 {
+    quisque i in 0..8
+        contrahe s: -
+        forma ordinata
+    {
+        s = v[i];
+    }
+    redde s;
+}
+//@ fixed
+publica functio f(v: acies<u64, 8>) -> u64 {
+    quisque i in 0..8
+        contrahe s: +
+        forma ordinata
+    {
+        s = v[i];
+    }
+    redde s;
+}
