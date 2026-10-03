@@ -1,6 +1,6 @@
 # tests/c/facies/crate/Cargo.toml -- the smallest Rust host of a library unit.
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 #
 # It links one `exsc --emitte c` unit and calls it through the unit's
 # generated Rust face (`exsc --emitte rs`). No dependencies, so it builds

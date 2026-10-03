@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # tools/finetune/train/train_qlora.py
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 # ---------------------------------------------------------------------------
 # QLoRA (or plain LoRA) supervised fine-tuning on datasets/finetune/, sized
 # for a laptop GPU with ~8 GB of usable VRAM. transformers + peft, plain

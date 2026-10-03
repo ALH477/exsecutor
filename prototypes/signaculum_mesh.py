@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # prototypes/signaculum_mesh.py
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 # ---------------------------------------------------------------------------
 # Ships the Exsecutor logo's 3D model to a COMPILED EXSECUTOR PROGRAM, as a
 # fixed-point binary stream on stdin. This is the producer half;

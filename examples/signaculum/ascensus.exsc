@@ -1,6 +1,6 @@
 // examples/signaculum/ascensus.exsc
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 The Exsecutor authors.
+// Copyright (C) 2026 DeMoD LLC.
 // ---------------------------------------------------------------------------
 // The entry point, and the only file of the unit that names Mundus. Reads
 // the fixed-point mesh stream on stdin, writes the 512x512 P6 on stdout;

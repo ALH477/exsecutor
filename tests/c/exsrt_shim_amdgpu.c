@@ -1,6 +1,6 @@
 /* tests/c/exsrt_shim_amdgpu.c -- the device phase's stand-in for a runtime.
  * SPDX-License-Identifier: GPL-3.0-or-later
- * Copyright (C) 2026 The Exsecutor authors.
+ * Copyright (C) 2026 DeMoD LLC.
  *
  * VERIFICATION-ONLY, exactly as exsrt_shim.c and exsrt_shim_mips.c beside it
  * are, and for the same reason: whole-program mode is a later milestone

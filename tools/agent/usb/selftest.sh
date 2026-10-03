@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tools/agent/usb/selftest.sh
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 #
 # Tests for the USB bundle that run with NO model: the runner contract, the
 # sandbox's denials, fail-closed behaviour, bundle build / verify / tamper

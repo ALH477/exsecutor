@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 """
 exsecutor_gendict_check.py -- probe for Sec 15 open problem #5: the
 three-way interaction of generics x capability rows x dictionary layout

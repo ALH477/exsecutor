@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # tools/agent/usb/sandbox_run.py
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 """sandbox_run.py -- run ONE untrusted, freestanding x86-64 ELF in a throwaway
 namespace sandbox. Python 3 standard library only (ctypes for the syscalls).
 

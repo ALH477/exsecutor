@@ -1,6 +1,6 @@
 /* examples/somnium/hospes.c -- somnium's host for the C backend.
  * SPDX-License-Identifier: GPL-3.0-or-later
- * Copyright (C) 2026 The Exsecutor authors.
+ * Copyright (C) 2026 DeMoD LLC.
  *
  * `exsc --emitte c` emits a translation unit in LIBRARY MODE: pure
  * functions, no entry point, and a handful of `exsrt_*` routines it expects

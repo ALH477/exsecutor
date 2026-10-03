@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tools/agent/usb/build_bundle.sh
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 #
 # Assemble the portable USB bundle `exsecutor-usb/` from this repository.
 # Copies only; downloads nothing; bundles no model weights and no llama.cpp.

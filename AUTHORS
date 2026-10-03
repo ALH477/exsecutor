@@ -1,11 +1,16 @@
 Exsecutor authors
 
-ALH477 (repository owner) -- author, and the copyright holder named in the
-per-file headers as "The Exsecutor authors".
+Copyright: DeMoD LLC holds the copyright in this repository's own work, named
+in the per-file headers as "DeMoD LLC". Earlier versions of those headers said
+"The Exsecutor authors", meaning the same holder.
+
+Author: Asher LeRoy (ALH477), founder of DeMoD LLC.
 
 A substantial part of this tree was written by Claude (Anthropic) working
 under the author's direction, as recorded by the Co-Authored-By trailers in
 git log.
 
-vendor/ is third-party and is not authored by this project; each directory
-there carries its own copyright notice and licence.
+vendor/ holds copies of other code, each directory with its own copyright
+notice, licence and PROVENANCE.md. fasmg (vendor/fasmg-x86/) is third-party;
+the HydraMesh, HydraModem and StreamDB copies are DeMoD LLC's own work from
+other repositories. REUSE.toml records the holder and licence of every file.

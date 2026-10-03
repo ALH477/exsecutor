@@ -1,6 +1,6 @@
 // tests/c/facies/crate/build.rs -- builds the unit into a static library.
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 The Exsecutor authors.
+// Copyright (C) 2026 DeMoD LLC.
 //
 // Compiles the unit named by EXS_FACIES_UNIT with $CC (default cc) into a
 // static library and links it, and copies the generated face (EXS_FACIES_RS)

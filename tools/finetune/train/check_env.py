@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # tools/finetune/train/check_env.py
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 # ---------------------------------------------------------------------------
 # Answers, by running things rather than by reading version strings:
 #   1. is the GPU visible to torch (and is it a ROCm/HIP build)?

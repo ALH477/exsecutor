@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # tools/agent/loop/loop.py
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 # ---------------------------------------------------------------------------
 # The generate -> compile -> read diagnostics -> retry loop for a (small,
 # fine-tuned) language model writing Exsecutor, with the real compiler

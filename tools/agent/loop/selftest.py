@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # tools/agent/loop/selftest.py
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 # ---------------------------------------------------------------------------
 # End-to-end self-test of loop.py against mock_backend.py and the REAL
 # compiler (build/exsc). No model is involved anywhere: every reply is

@@ -1,6 +1,6 @@
 // examples/somnium/plasma.exsc
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 The Exsecutor authors.
+// Copyright (C) 2026 DeMoD LLC.
 // ---------------------------------------------------------------------------
 // Somnium 0: the demoscene plasma. Four sine waves summed per pixel -- two
 // axial, one diagonal, and a ring field around a centre that itself drifts

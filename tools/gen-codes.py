@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # tools/gen-codes.py
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 #
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 #
@@ -140,7 +140,7 @@ def emit_inc(entries, out_path, spec_display_path):
     lines = [
         "; compiler/x86_64/diag/codes.inc",
         "; SPDX-License-Identifier: GPL-3.0-or-later",
-        "; Copyright (C) 2026 The Exsecutor authors.",
+        "; Copyright (C) 2026 DeMoD LLC.",
         ";",
         "; DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.",
         ";",

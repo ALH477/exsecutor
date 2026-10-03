@@ -1,7 +1,7 @@
 /* tools/amd-dispatch/amd-dispatch.c -- dispatch one compiled Exsecutor
  * program on a real AMD GPU and return its output bytes.
  * SPDX-License-Identifier: GPL-3.0-or-later
- * Copyright (C) 2026 The Exsecutor authors.
+ * Copyright (C) 2026 DeMoD LLC.
  *
  * DEV TOOLING, in the qemu/ucd-gen role: never on the compiler's build path,
  * linked against nothing at build time (the HSA runtime is dlopen'd; a host

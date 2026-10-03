@@ -1,6 +1,6 @@
 // tests/c/facies/consumer.rs -- facies.exsc's face, called.
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 The Exsecutor authors.
+// Copyright (C) 2026 DeMoD LLC.
 //
 // Calls every function of the face once, with arguments whose answers are known: 0 when all agree, else the
 // number of the first that does not.

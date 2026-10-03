@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # exsecutor-usb/run.sh  (source: tools/agent/usb/run.sh)
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 #
 # The launcher. Run it with `bash run.sh ...` -- a FAT/exFAT stick is often
 # mounted noexec and cannot hold exec bits, which is why nothing is executed

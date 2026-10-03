@@ -1,6 +1,6 @@
 // tests/c/facies/crate/src/main.rs -- the host.
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 The Exsecutor authors.
+// Copyright (C) 2026 DeMoD LLC.
 //
 // The face is the generated `extern "C"` block, included verbatim; the
 // consumer is written against the signatures it expects, so a face

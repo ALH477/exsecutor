@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # tools/gen-lexicon.py
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 #
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 #
@@ -312,7 +312,7 @@ def emit_pool(out, label, items):
 HEADER = """\
 ; compiler/x86_64/checker/lexicon/morphemes.inc
 ; SPDX-License-Identifier: GPL-3.0-or-later
-; Copyright (C) 2026 The Exsecutor authors.
+; Copyright (C) 2026 DeMoD LLC.
 ;
 ; DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 ;

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # tools/agent/usb/session.py  (bundled as lib/session.py)
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 """session.py -- small Linux helpers for run.sh. Python 3 standard library only.
 
 usage: session.py SUBCOMMAND [ARGS]

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # tools/render-logo.py
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 The Exsecutor authors.
+# Copyright (C) 2026 DeMoD LLC.
 # ---------------------------------------------------------------------------
 # Renders logo/exsecutor-logo.{png,jpg,gif} from the OBJ in logo/. A textured
 # software rasteriser -- z-buffered, backface-culled, Lambert plus a rim term,

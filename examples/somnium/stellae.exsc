@@ -1,6 +1,6 @@
 // examples/somnium/stellae.exsc
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 The Exsecutor authors.
+// Copyright (C) 2026 DeMoD LLC.
 // ---------------------------------------------------------------------------
 // Somnium 4: warp-speed starfield. 256 stars, each an (x, y) offset from
 // the centre and a depth z, falling toward the viewer 3 units a frame. The
