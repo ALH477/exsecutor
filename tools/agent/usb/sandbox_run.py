@@ -276,13 +276,11 @@ def sandbox_init(opts, data, fds, st_w):
         os.dup2(devnull, 0)
         os.dup2(out_w, 1)
         os.dup2(err_w, 2)
-        keep = {0, 1, 2, st_w}
-        for fd in range(3, 1024):
-            if fd not in keep:
-                try:
-                    os.close(fd)
-                except OSError:
-                    pass
+        top = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
+        if top == resource.RLIM_INFINITY or top > (1 << 20):
+            top = 1 << 20
+        os.closerange(3, st_w)
+        os.closerange(st_w + 1, top)
         mem = opts["mem"] << 20
         lims = [(RLIMIT_AS, mem, mem),
                 (RLIMIT_CPU, opts["timeout"], opts["timeout"] + 1),
