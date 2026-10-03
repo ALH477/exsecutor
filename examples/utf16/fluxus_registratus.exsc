@@ -1,0 +1,374 @@
+// fluxus_registratus.exsc -- UTF-8 to UTF-16 as a REGISTERED three-stage
+// pipeline: each stage reads only what its predecessor latched on the previous
+// tick and latches its own result.
+//
+// METHOD. Same three stages as fluxus_tres, now separated by registers, all
+// fields of one `&mutabilis` struct (Registra), each a valid flag + payload:
+//
+//   input port -> stage 1 -> R1 -> stage 2 -> R2 -> stage 3 -> R3 -> output port
+//
+//   stage 1  gradus_primus    byte at the input pointer -> R1 (class, byte, its
+//                             offset). State: Introitus (pointer, end-of-stream
+//                             token issued).
+//   stage 2  gradus_secundus  R1 -> R2: a scalar, or, for an ill-formed
+//                             subpart, a halt (strict) or the scalar U+FFFD
+//                             (substitue). State: Assemblatio. The mode is
+//                             looked at here; fluxus_quattuor splits it out.
+//   stage 3  gradus_tertius   R2 -> R3: a scalar becomes one or two UTF-16
+//                             units, a halt passes through.
+//   output   in converte      samples R3 after the tick's stages have run and
+//                             appends its units to scopus. It is the observer
+//                             of the last register, not a fourth stage.
+//
+// One pass of the loop in `converte` is one tick. The stages run in REVERSE
+// order (3, 2, 1) so that each reads the register its predecessor has not yet
+// overwritten. LATENCY IS 3 TICKS: a byte offered on tick t is in R1 after t,
+// in R2 after t+1, in R3 after t+2, and the output port has it in scopus at the
+// end of t+2. Measured: for every input that starts with an ASCII byte, the
+// first unit is written on tick 3 (72,337 such inputs).
+//
+// FLUSH. The end of input is a token, not a side channel: once the bytes are
+// spent stage 1 latches ONE item of class cl_finis, which stage 2 reads like
+// any other item (a pending sequence becomes one ill-formed subpart), then
+// stage 1 latches bubbles (valid flag 0). The loop runs until the token has
+// been issued and R1, R2 and R3 are all empty. Measured on 543,648 inputs:
+// ticks = n + r + 3, plus 1 more when the input ends inside a sequence (n = 0
+// takes 2); r is the number of re-presented bytes below.
+//
+// THE RE-PRESENTED BYTE IS A STALL. When stage 2 refuses a byte (it breaks a
+// pending sequence) it latches the result for the sequence into R2, goes idle,
+// and raises `tene` for THIS tick. Stage 1 runs after stage 2 in the tick, so
+// it sees `tene` already set, and does nothing at all: R1 keeps the refused
+// byte, the valid flag stays 1, and the input pointer does not move. `tene` is
+// the one signal here that is not a register: the refusal is discovered in the
+// same tick in which stage 1 would otherwise overwrite R1, so a registered
+// signal would arrive a tick too late. On the next tick stage 2 reads the same
+// R1 with its state idle and takes the byte as the start of a new sequence;
+// stage 1 resumes. Nothing is squashed and no bubble is inserted; each stall
+// costs exactly one tick. Real trace for the bytes E2 41 42, substitue mode
+// (values at the END of each tick; `tene` is the value stage 2 set that tick;
+// "-" is an empty register; stage 2 reads the R1 of the previous line):
+//
+//   tick  tene  R1 (valid byte)  R2             R3             scopus gets
+//    1     0    1 E2             -              -
+//    2     0    1 41             -              -
+//    3     1    1 41 (HELD)      FFFD           -
+//    4     0    1 42             0041           FFFD           FFFD
+//    5     0    1 EOS            0042           0041           0041
+//    6     0    -                -              0042           0042
+//    7     0    -                -              -
+//
+// Tick 3 is the stall: E2 was waiting for a continuation, 41 refused it, so
+// R2 gets the replacement for E2 alone, R1 still holds 41, and stage 1 did not
+// fetch 42. Tick 4 decodes the held 41 and only then fetches 42. In strict
+// mode the same input latches a halt carrying offset 0 in R2 on tick 3, R3 on
+// tick 4, where the output port returns.
+//
+// STRICT MODE. Stage 2 latches a halt carrying the sequence-start offset
+// instead of a replacement. Nothing special drains the pipeline: the halt
+// travels in order like any other item, so every item older than it is ahead
+// of it, already written or in R3, and reaches the output port first. The
+// output port acts on the halt only when it reaches R3; whatever is younger
+// (in the trace above: R1 and the re-presented byte in R2) is dropped, never
+// reaches scopus. So every unit before the error is emitted.
+//
+// WHERE THE MAXIMAL SUBPART COMES FROM. As in fluxus_tres: stage 2 accepts a
+// continuation only if its class bit is set in `permissum` (Table 3-7 as a
+// bit mask over the three continuation classes), and when a byte is refused,
+// or the end-of-stream item arrives, the bytes assembled so far ARE the
+// subpart. Its first byte is `inicium`, the offset stage 2 saved from R1 when
+// it saw the lead; an ill-formed lead is its own subpart and uses R1's offset.
+//
+// NOT SHARED WITH ramus. No loop over fons[i + ate]; fons is read once per
+// tick by stage 1, never looked ahead. The decoder state persists in structs
+// across ticks, the three stages never run on the same item in the same tick,
+// and a refused byte is re-offered by holding a register, not by re-reading
+// the input. Shared because it is the standard: Table 3-7 and the surrogate
+// arithmetic.
+
+// ---- stage 1 vocabulary: the class of a byte -------------------------------
+
+firma cl_ascii: u8 = 0;
+firma cl_cont_a: u8 = 1;
+firma cl_cont_b: u8 = 2;
+firma cl_cont_c: u8 = 3;
+firma cl_malus: u8 = 4;
+firma cl_duo: u8 = 5;
+firma cl_e0: u8 = 6;
+firma cl_tres: u8 = 7;
+firma cl_ed: u8 = 8;
+firma cl_f0: u8 = 9;
+firma cl_quattuor: u8 = 10;
+firma cl_f4: u8 = 11;
+firma cl_finis: u8 = 12;
+
+// ---- what travels in R2 and R3 ---------------------------------------------
+
+firma ev_scalaris: u8 = 1;
+firma ev_halt: u8 = 2;
+
+// Bit k of a `permissum` mask says: a byte of class k may be the next
+// continuation. Classes 1, 2, 3 are the three continuation ranges.
+firma perm_omnes: u32 = 14;
+firma perm_e0: u32 = 8;
+firma perm_ed: u32 = 6;
+firma perm_f0: u32 = 12;
+firma perm_f4: u32 = 2;
+
+// The pipeline registers, one valid flag and one payload per register, plus
+// `tene`, the single wire that is NOT a register (see gradus_secundus).
+// A payload is meaningful only while its valid flag is 1.
+structura Registra {
+    v1: u8
+    cl1: u8
+    b1: u8
+    off1: mensura
+    v2: u8
+    g2: u8
+    cp2: u32
+    pos2: mensura
+    v3: u8
+    g3: u8
+    nu3: u8
+    u0: u16
+    u1: u16
+    pos3: mensura
+    tene: u8
+}
+
+// Stage 1's own state: the input pointer, and whether the end-of-stream token
+// has been issued.
+structura Introitus {
+    p: mensura
+    finis_missum: u8
+}
+
+// Stage 2's own state: the sequence being assembled.
+structura Assemblatio {
+    cp: u32
+    opus: mensura
+    permissum: u32
+    inicium: mensura
+}
+
+// STAGE 1 logic. A byte in, a class out.
+functio classis(b: u8) -> u8 {
+    si b lt 0x80 {
+        redde cl_ascii;
+    }
+    si b lt 0x90 {
+        redde cl_cont_a;
+    }
+    si b lt 0xA0 {
+        redde cl_cont_b;
+    }
+    si b lt 0xC0 {
+        redde cl_cont_c;
+    }
+    si b lt 0xC2 {
+        redde cl_malus;
+    }
+    si b lt 0xE0 {
+        redde cl_duo;
+    }
+    si b eq 0xE0 {
+        redde cl_e0;
+    }
+    si b eq 0xED {
+        redde cl_ed;
+    }
+    si b lt 0xF0 {
+        redde cl_tres;
+    }
+    si b eq 0xF0 {
+        redde cl_f0;
+    }
+    si b lt 0xF4 {
+        redde cl_quattuor;
+    }
+    si b eq 0xF4 {
+        redde cl_f4;
+    }
+    redde cl_malus;
+}
+
+// STAGE 1. Reads the input port and its own pointer; latches R1. On a hold
+// tick it does nothing at all: R1 keeps the byte stage 2 refused, and the
+// pointer stays where it is.
+functio gradus_primus(fons: acies<u8, 4096>, n: mensura, reg: &mutabilis Registra,
+                      intro: &mutabilis Introitus) {
+    si (*reg).tene eq 0 {
+        si (*intro).p lt n {
+            firma b: u8 = fons[(*intro).p];
+            (*reg).v1 = 1;
+            (*reg).cl1 = classis(b);
+            (*reg).b1 = b;
+            (*reg).off1 = (*intro).p;
+            (*intro).p = (*intro).p + 1;
+        } sin (*intro).finis_missum eq 0 {
+            (*reg).v1 = 1;
+            (*reg).cl1 = cl_finis;
+            (*reg).b1 = 0;
+            (*reg).off1 = n;
+            (*intro).finis_missum = 1;
+        } aliter {
+            (*reg).v1 = 0;
+        }
+    }
+}
+
+// Stage 2's policy join: an ill-formed subpart starting at `pos` becomes a
+// halt in strict mode and one U+FFFD in substitue mode. Latches R2.
+functio mitte_malum(reg: &mutabilis Registra, modus: u8, pos: mensura) {
+    (*reg).v2 = 1;
+    si modus eq modus_stricte {
+        (*reg).g2 = ev_halt;
+        (*reg).pos2 = pos;
+    } aliter {
+        (*reg).g2 = ev_scalaris;
+        (*reg).cp2 = 0xFFFD;
+    }
+}
+
+// STAGE 2. Reads R1 (what stage 1 latched on the previous tick), its own
+// state, and latches R2. It also drives `tene` for THIS tick: stage 1 runs
+// after stage 2 in the tick, so it sees the value stage 2 just set.
+functio gradus_secundus(reg: &mutabilis Registra, st: &mutabilis Assemblatio, modus: u8) {
+    (*reg).tene = 0;
+    (*reg).v2 = 0;
+    si (*reg).v1 eq 0 {
+        redde;
+    }
+    firma cl: u8 = (*reg).cl1;
+    firma b: u8 = (*reg).b1;
+    si (*st).opus gt 0 {
+        si cl eq cl_finis {
+            mitte_malum(reg, modus, (*st).inicium);
+            (*st).opus = 0;
+        } sin cl ge cl_cont_a et cl le cl_cont_c et (((*st).permissum deorsum (cl sicut u32)) atque 1) eq 1 {
+            (*st).cp = ((*st).cp sursum 6) sive (b atque 0x3F) sicut u32;
+            (*st).opus = (*st).opus - 1;
+            (*st).permissum = perm_omnes;
+            si (*st).opus eq 0 {
+                (*reg).v2 = 1;
+                (*reg).g2 = ev_scalaris;
+                (*reg).cp2 = (*st).cp;
+            }
+        } aliter {
+            mitte_malum(reg, modus, (*st).inicium);
+            (*st).opus = 0;
+            (*reg).tene = 1;
+        }
+        redde;
+    }
+
+    si cl eq cl_finis {
+        redde;
+    }
+    si cl eq cl_ascii {
+        (*reg).v2 = 1;
+        (*reg).g2 = ev_scalaris;
+        (*reg).cp2 = b sicut u32;
+        redde;
+    }
+    mutabilis opus: mensura = 0;
+    mutabilis masca: u8 = 0;
+    mutabilis perm: u32 = perm_omnes;
+    si cl eq cl_duo {
+        opus = 1;
+        masca = 0x1F;
+    } sin cl eq cl_e0 {
+        opus = 2;
+        masca = 0x0F;
+        perm = perm_e0;
+    } sin cl eq cl_ed {
+        opus = 2;
+        masca = 0x0F;
+        perm = perm_ed;
+    } sin cl eq cl_tres {
+        opus = 2;
+        masca = 0x0F;
+    } sin cl eq cl_f0 {
+        opus = 3;
+        masca = 0x07;
+        perm = perm_f0;
+    } sin cl eq cl_f4 {
+        opus = 3;
+        masca = 0x07;
+        perm = perm_f4;
+    } sin cl eq cl_quattuor {
+        opus = 3;
+        masca = 0x07;
+    }
+    si opus eq 0 {
+        // a stray continuation or an ill-formed lead: one byte, consumed
+        firma pos: mensura = (*reg).off1;
+        mitte_malum(reg, modus, pos);
+        redde;
+    }
+    (*st).opus = opus;
+    (*st).cp = (b atque masca) sicut u32;
+    (*st).permissum = perm;
+    (*st).inicium = (*reg).off1;
+}
+
+// STAGE 3. Reads R2, latches R3: a scalar becomes one or two units, a halt is
+// carried through untouched.
+functio gradus_tertius(reg: &mutabilis Registra) {
+    (*reg).v3 = 0;
+    si (*reg).v2 eq 0 {
+        redde;
+    }
+    (*reg).v3 = 1;
+    si (*reg).g2 eq ev_halt {
+        (*reg).g3 = ev_halt;
+        (*reg).pos3 = (*reg).pos2;
+        redde;
+    }
+    (*reg).g3 = ev_scalaris;
+    firma cp: u32 = (*reg).cp2;
+    si cp lt 0x10000 {
+        (*reg).nu3 = 1;
+        (*reg).u0 = cp sicut u16;
+    } aliter {
+        firma v: u32 = cp - 0x10000;
+        (*reg).nu3 = 2;
+        (*reg).u0 = (0xD800 + (v deorsum 10)) sicut u16;
+        (*reg).u1 = (0xDC00 + (v atque 0x3FF)) sicut u16;
+    }
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    mutabilis reg: Registra = Registra {
+        v1: 0, cl1: 0, b1: 0, off1: 0,
+        v2: 0, g2: 0, cp2: 0, pos2: 0,
+        v3: 0, g3: 0, nu3: 0, u0: 0, u1: 0, pos3: 0,
+        tene: 0
+    };
+    mutabilis intro: Introitus = Introitus { p: 0, finis_missum: 0 };
+    mutabilis asm: Assemblatio = Assemblatio { cp: 0, opus: 0, permissum: perm_omnes, inicium: 0 };
+    mutabilis j: mensura = 0;
+    // One pass of this loop is one clock tick. Run until the input is spent,
+    // the end-of-stream token has been issued and all three registers are empty.
+    dum intro.finis_missum eq 0 vel reg.v1 eq 1 vel reg.v2 eq 1 vel reg.v3 eq 1 {
+        // reverse order: each stage reads the register its predecessor
+        // latched on the previous tick before the predecessor overwrites it
+        gradus_tertius(reg);
+        gradus_secundus(reg, asm, modus);
+        gradus_primus(fons, n, reg, intro);
+        // the output port: whatever stage 3 has just latched
+        si reg.v3 eq 1 {
+            si reg.g3 eq ev_halt {
+                redde Exitus { unitates: j, status: status_malformatum, positio: reg.pos3 };
+            }
+            (*scopus)[j] = reg.u0;
+            j = j + 1;
+            si reg.nu3 eq 2 {
+                (*scopus)[j] = reg.u1;
+                j = j + 1;
+            }
+        }
+    }
+    redde Exitus { unitates: j, status: status_bene, positio: 0 };
+}

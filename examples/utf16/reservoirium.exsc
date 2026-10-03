@@ -1,0 +1,205 @@
+// reservoirium.exsc -- UTF-8 to UTF-16 through a 32-bit bit reservoir, the way
+// a DSP block would hold a bit stream: a shift register and a fill count.
+//
+// METHOD. The reservoir is a struct (Lacus): a 32-bit shift register `r` and a
+// fill count `f`. Each tick shifts exactly one input byte in at the bottom,
+// r = (r << 8) | byte, and bumps f. The `f` bytes held sit in the low 8 * f
+// bits of r, the oldest (the lead of the sequence being assembled) highest and
+// every bit above them zero. After the shift, `vacua` drains everything that is
+// decided: while the reservoir holds a complete sequence for the lead at its
+// top, or an ill-formed subpart, it is taken out; what is left is empty or a
+// well-formed incomplete prefix that the next byte may extend. The decode path
+// reads the reservoir and nothing else: the lead is r >> 8 * (f - 1), the
+// scalar is folded out of r with shifts and masks (`extrahe`), validity is
+// checked on r (`prefixum`). `fons[i]` is read once per tick, to shift it in,
+// and never fons[i + k]. Consumed bytes are shifted out by dropping the top
+// of r and masking (`exhauri`). At the end of input one more `vacua` call with
+// finis = 1 treats a held incomplete prefix as the subpart it is.
+//
+// THE RESERVOIR NEVER HOLDS MORE THAN 4 BYTES. After a drain, what is held is
+// an incomplete prefix, strictly shorter than its sequence (at most 3 bytes);
+// one shift-in makes at most 4. Measured with an instrumented copy over 543,648
+// inputs: the fill after a shift-in reached 4 and never 5, and after every
+// drain f <= 3 with no bit of r set above its 8 * f low bits.
+//
+// WHERE THE MAXIMAL SUBPART COMES FROM. `prefixum` counts how many of the
+// held bytes, lead first, are a well-formed prefix of the sequence the lead
+// announces (second byte's range from Table 3-7 by lead, 80..BF after that;
+// it stops at the sequence's length). If all `f` held bytes are valid and the
+// sequence is not complete, the reservoir waits (or, on the flush, those `f`
+// bytes are the subpart). If fewer are valid, the valid ones ARE the maximal
+// subpart: the byte that broke them is the newest one and was not allowed to
+// extend them. A lead that cannot lead (80..C1, F5..FF) is a subpart of one.
+//
+// THE RE-PRESENTATION RULE. A byte that breaks a pending sequence is already
+// in the reservoir, as its newest byte. The pending bytes leave as one subpart
+// (strict: halt at the offset of the oldest held byte, ingested - f; substitue:
+// one U+FFFD), `exhauri` shifts exactly those out, and the breaker stays: it is
+// now the only byte held and the drain loop goes round again with it as the
+// lead, so it can complete (ASCII), be an ill-formed subpart of its own, or
+// start the next pending sequence. There is no re-read of the input and no
+// stall. Never more than two decisions come out of one tick (measured: the
+// maximum over 543,648 inputs was 2).
+//
+// NOT SHARED WITH ramus. ramus decodes straight from fons[i + k] with a
+// per-byte range check inside one loop; here the input is never indexed
+// beyond the one byte shifted in per tick, the state is a bit register that
+// persists between ticks, and "is it complete" is decided from the register's
+// contents. Shared because it is the standard: Table 3-7 and the surrogate
+// arithmetic.
+
+// The reservoir: `r` holds `f` bytes in its low 8 * f bits, the oldest byte
+// highest, every bit above them zero. `j` is the output cursor and `positio`
+// where a strict-mode halt was found.
+structura Lacus {
+    r: u32
+    f: u32
+    j: mensura
+    positio: mensura
+}
+
+// How many bytes a sequence led by `b` has in all; 0 for a byte that cannot
+// lead one.
+functio longitudo_capitis(b: u32) -> u32 {
+    si b lt 0x80 {
+        redde 1;
+    }
+    si b lt 0xC2 {
+        redde 0;
+    }
+    si b lt 0xE0 {
+        redde 2;
+    }
+    si b lt 0xF0 {
+        redde 3;
+    }
+    si b lt 0xF5 {
+        redde 4;
+    }
+    redde 0;
+}
+
+// How many of the `f` held bytes, lead first, are a well-formed prefix of a
+// sequence of `need` bytes. Reads only the reservoir. Table 3-7: the second
+// byte's range depends on the lead, every later one is 80..BF.
+functio prefixum(r: u32, f: u32, need: u32) -> u32 {
+    si need eq 0 {
+        redde 0;
+    }
+    firma cap: u32 = (r deorsum ((f - 1) * 8)) atque 0xFF;
+    mutabilis m: u32 = 1;
+    dum m lt f et m lt need {
+        firma b: u32 = (r deorsum ((f - 1 - m) * 8)) atque 0xFF;
+        mutabilis lo: u32 = 0x80;
+        mutabilis hi: u32 = 0xBF;
+        si m eq 1 {
+            si cap eq 0xE0 {
+                lo = 0xA0;
+            } sin cap eq 0xED {
+                hi = 0x9F;
+            } sin cap eq 0xF0 {
+                lo = 0x90;
+            } sin cap eq 0xF4 {
+                hi = 0x8F;
+            }
+        }
+        si b lt lo vel b gt hi {
+            rumpe;
+        }
+        m = m + 1;
+    }
+    redde m;
+}
+
+// The scalar of `need` complete bytes `s`, lead in the highest of them: mask
+// the lead's payload, then fold each continuation's low six bits in.
+functio extrahe(s: u32, need: u32) -> u32 {
+    si need eq 1 {
+        redde s;
+    }
+    mutabilis cp: u32 = 0;
+    si need eq 2 {
+        cp = (s deorsum 8) atque 0x1F;
+    } sin need eq 3 {
+        cp = (s deorsum 16) atque 0x0F;
+    } aliter {
+        cp = (s deorsum 24) atque 0x07;
+    }
+    mutabilis k: u32 = need - 1;
+    dum k gt 0 {
+        cp = (cp sursum 6) sive ((s deorsum ((k - 1) * 8)) atque 0x3F);
+        k = k - 1;
+    }
+    redde cp;
+}
+
+functio scribe_unitates(scopus: &mutabilis acies<u16, 4096>, j: mensura, cp: u32) -> mensura {
+    si cp lt 0x10000 {
+        (*scopus)[j] = cp sicut u16;
+        redde j + 1;
+    }
+    firma v: u32 = cp - 0x10000;
+    (*scopus)[j] = (0xD800 + (v deorsum 10)) sicut u16;
+    (*scopus)[j + 1] = (0xDC00 + (v atque 0x3FF)) sicut u16;
+    redde j + 2;
+}
+
+// Shift `k` bytes, the oldest ones, out of the reservoir.
+functio exhauri(lacus: &mutabilis Lacus, k: u32) {
+    (*lacus).f = (*lacus).f - k;
+    firma unum: u32 = 1;
+    (*lacus).r = (*lacus).r atque ((unum sursum ((*lacus).f * 8)) - 1);
+}
+
+// Empty the reservoir of everything that is decided: a complete sequence, or
+// an ill-formed subpart. What is left is empty, or a well-formed incomplete
+// prefix that one more byte may extend. `ingesta` is how many bytes have been
+// shifted in so far; `finis` 1 says no more will come, so an incomplete
+// prefix is itself a subpart. Returns 1 if strict mode halted.
+functio vacua(lacus: &mutabilis Lacus, scopus: &mutabilis acies<u16, 4096>,
+              modus: u8, ingesta: mensura, finis: u8) -> u8 {
+    dum (*lacus).f gt 0 {
+        firma f: u32 = (*lacus).f;
+        firma r: u32 = (*lacus).r;
+        firma cap: u32 = (r deorsum ((f - 1) * 8)) atque 0xFF;
+        firma need: u32 = longitudo_capitis(cap);
+        firma m: u32 = prefixum(r, f, need);
+        si need gt 0 et m eq need {
+            firma s: u32 = r deorsum ((f - need) * 8);
+            (*lacus).j = scribe_unitates(scopus, (*lacus).j, extrahe(s, need));
+            exhauri(lacus, need);
+        } sin need gt 0 et m eq f et finis eq 0 {
+            rumpe;
+        } aliter {
+            mutabilis pars: u32 = m;
+            si pars eq 0 {
+                pars = 1;
+            }
+            si modus eq modus_stricte {
+                (*lacus).positio = ingesta - (f sicut mensura);
+                redde 1;
+            }
+            (*lacus).j = scribe_unitates(scopus, (*lacus).j, 0xFFFD);
+            exhauri(lacus, pars);
+        }
+    }
+    redde 0;
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    mutabilis lacus: Lacus = Lacus { r: 0, f: 0, j: 0, positio: 0 };
+    mutabilis i: mensura = 0;
+    dum i lt n {
+        lacus.r = (lacus.r sursum 8) sive (fons[i] sicut u32);
+        lacus.f = lacus.f + 1;
+        i = i + 1;
+        si vacua(lacus, scopus, modus, i, 0) eq 1 {
+            redde Exitus { unitates: lacus.j, status: status_malformatum, positio: lacus.positio };
+        }
+    }
+    si vacua(lacus, scopus, modus, n, 1) eq 1 {
+        redde Exitus { unitates: lacus.j, status: status_malformatum, positio: lacus.positio };
+    }
+    redde Exitus { unitates: lacus.j, status: status_bene, positio: 0 };
+}
