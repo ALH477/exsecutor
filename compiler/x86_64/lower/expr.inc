@@ -710,6 +710,7 @@ proc __lwr_unary, lwrsp, lwrn
 		slot lwrop, dd
 		slot lwrt, dd
 		slot lwrz, dd
+		slot lwrv, dq
 	endl
 	mov	rbx, [lwrsp]
 	mov	rdi, rbx
@@ -724,8 +725,10 @@ proc __lwr_unary, lwrsp, lwrn
 	cmp	dword [lwrop], AST_U_DEREF
 	je	.deref
 
-	; `-x`. On an integer this is `sub T 0 x` -- TRAPPING, so `-MIN` traps,
-	; which is spec section 5.4's `-`; on a float it is `fneg`.
+	; `-x`. A SIGNED-integer literal is FOLDED to one canonical iconst of the
+	; two's-complement value (`.negfold` below); any other integer is
+	; `sub T 0 x` -- TRAPPING, so an unsigned `-V` and a non-literal `-MIN`
+	; trap, which is spec section 5.4's `-`; on a float it is `fneg`.
 	mov	rdi, rbx
 	mov	esi, [lwrn]
 	call	__lwr_nty
@@ -734,6 +737,63 @@ proc __lwr_unary, lwrsp, lwrn
 	mov	esi, r13d
 	call	lwr_ty_ir
 	mov	[lwrt], eax
+
+	; Fold `-<signed integer literal>` to a SINGLE canonical `iconst iN`.
+	; `__chk_ty_fits` (its `neg` argument) admitted the operand's magnitude
+	; V in `[0, 2^(w-1)]` for a signed `iN`, so the negated value `-V` is in
+	; range at EVERY width -- i8::MIN through i64::MIN. Lowering `-e` as
+	; `sub iN %zero %V` could not even EMIT the operand when `V = 2^(w-1)`
+	; (that magnitude is not a canonical `iN`, ssa-ir.md 2.2, so the emitter
+	; refused the `iconst`), and at width 64 `sub i64 0 i64::MIN` overflowed
+	; and TRAPPED; folding emits the two's-complement value directly, so
+	; `-128: i8` becomes `iconst i8 -128` and `i64::MIN` emits with no sub.
+	; SIGNED INTEGER LITERAL ONLY: an unsigned `-V` must keep trapping on
+	; underflow (`0 - V`), so `uN` and `mensura` fall through to the `sub`
+	; below, as does a non-literal `-e`. r12d is still the OPERAND NODE id
+	; here (`lwr_expr` below overwrites it with the operand's VALUE).
+	mov	rdi, rbx
+	mov	esi, r13d
+	call	lwr_ty_kind
+	cmp	eax, AST_TY_INT
+	jne	.negsub			; float (fneg) / mensura (unsigned) / etc.
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, r13d
+	call	ast_type_at
+	cmp	byte [rax + AstType.sign], AST_SIGN_I
+	jne	.negsub			; unsigned `iN` spelling is `uN`: keep `0 - V`
+	mov	rdi, rbx
+	mov	esi, r12d
+	call	__lwr_nkind
+	cmp	eax, AST_LIT
+	jne	.negsub
+	mov	rdi, rbx
+	mov	esi, r12d
+	call	__lwr_node
+	movzx	eax, word [rax + AstNode.aux]
+	cmp	eax, AST_LIT_INT
+	jne	.negsub			; a FLOAT literal under `-` stays `fneg`
+  .negfold:
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, r12d
+	call	ast_konst_get		; rax = the literal's magnitude V
+	neg	rax			; 0 - V, 64-bit two's complement
+	mov	[lwrv], rax
+	mov	rdi, rbx
+	mov	esi, r13d
+	call	__lwr_ty_bits		; eax = width N (1..64)
+	mov	ecx, 64
+	sub	ecx, eax		; cl = 64 - N
+	mov	rax, [lwrv]
+	shl	rax, cl
+	sar	rax, cl			; iN sign-canonical (bfa_type_canon's rule)
+	mov	rdi, rbx
+	mov	esi, [lwrt]
+	mov	edx, eax		; lo 32 bits
+	shr	rax, 32
+	mov	ecx, eax		; hi 32 bits
+	call	lwr_iconst
+	return
+  .negsub:
 	mov	rdi, rbx
 	mov	esi, r12d
 	call	lwr_expr

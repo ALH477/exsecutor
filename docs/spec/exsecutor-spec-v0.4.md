@@ -981,12 +981,21 @@ scales.
   canonical `iconst`, RUN as a reinterpreted i64::MIN — a silent wrong value,
   not a diagnostic. The rule is now sign-aware (`checker/types/types.inc`,
   `__chk_ty_fits`'s `neg` argument and the `.un` arm of `__chk_ty_expect`;
-  `tests/unit/chk_ty_hexlit.asm`'s signed-boundary rows). `[OPEN]`: the
-  *lowering* still cannot emit a sub-64 `iN`::MIN — `-e` lowers as `0 − e`
-  and `iconst iN 2^(N−1)` is not canonical (`docs/design/ssa-ir.md` §2.2), so
-  `-128: i8` type-checks and then fails at emit; the fold of `−`<literal> into
-  one canonical constant is the fix and is not yet made
-  (`docs/design/lowering.md`).
+  `tests/unit/chk_ty_hexlit.asm`'s signed-boundary rows). The *lowering* now
+  emits a sub-64 `iN`::MIN too: `__lwr_unary` FOLDS `−`<integer literal> into
+  one canonical `iconst iN` of the two's-complement value
+  (`compiler/x86_64/lower/expr.inc`), so `-128: i8` is `iconst i8 -128` and no
+  longer the old `0 − e`'s non-canonical `iconst i8 128` (which the emitter
+  refused, `docs/design/ssa-ir.md` §2.2), and `-9223372036854775808: i64`
+  emits with no subtraction rather than `0 − i64::MIN` (which overflowed and
+  TRAPPED). The fold is restricted to a SIGNED-integer literal: an unsigned
+  `−V` keeps lowering as `0 − V` and traps on underflow, and a non-literal
+  `−e` is unchanged. `tests/programs/integri_minimi/` builds `i8`/`i16`/`i32`/
+  `i64` ::MIN from decimal literals and proves each equals MIN on both
+  backends; `docs/design/lowering.md`'s `Unary −` row is the lowering
+  reference. (This was `[OPEN]` until 2026-10-03, with the prose asserting the
+  lowering could not emit it: that prose was the stale half — the fix is this
+  fold, and the checker half was already in place.)
 - **`sicut` between integer types is total and never traps.** Widening
   is §5.2's explicit sentence: a `uN` is zero-extended, an `iN`
   sign-extended, **by the source's sign**. The two other cases were not
