@@ -1,14 +1,11 @@
 Exsecutor authors
 
-Copyright: DeMoD LLC holds the copyright in this repository's own work, named
-in the per-file headers as "DeMoD LLC". Earlier versions of those headers said
-"The Exsecutor authors", meaning the same holder.
+Copyright (C) 2026 DeMoD LLC.
 
-Author: Asher LeRoy (ALH477), founder of DeMoD LLC.
-
-A substantial part of this tree was written by Claude (Anthropic) working
-under the author's direction, as recorded by the Co-Authored-By trailers in
-git log.
+Exsecutor was conceived, designed and directed by Asher LeRoy (ALH477),
+founder of DeMoD LLC. It was built with Claude (Anthropic) as an AI pair
+programmer working under his direction; the Co-Authored-By trailers in git log
+record the commits written that way.
 
 vendor/ holds copies of other code, each directory with its own copyright
 notice, licence and PROVENANCE.md. fasmg (vendor/fasmg-x86/) is third-party;
