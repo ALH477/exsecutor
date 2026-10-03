@@ -1,0 +1,18 @@
+// selftest: a program holding `archivum` derives a root at the HOST's /etc
+// and opens `passwd` beneath it. Exit 0: it opened the host's file. Exit 1:
+// no /etc to derive a root from. Exit 2: root derived, open refused.
+// The checker accepts this program: the capability is the spec's own §4.6
+// design. Only the runner keeps it from the host's filesystem.
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.archivum();
+    sub archivum = a;
+    discerne Directorium.ad_radicem(a, "/etc") {
+        casus prosperum(d) {
+            discerne d.lege_ex("passwd") {
+                casus prosperum(r) { redde 0; }
+                casus adversum(e) { redde 2; }
+            }
+        }
+        casus adversum(e) { redde 1; }
+    }
+}

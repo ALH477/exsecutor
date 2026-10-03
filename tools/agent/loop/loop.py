@@ -576,7 +576,7 @@ def run_loop(args, ctx, work, tw):
         try:
             text, finish, replaced = chat(endpoint, payload, args.http_timeout)
         except BackendError as e:
-            rec["backend_error"] = str(e)
+            rec.update(backend_error=str(e), outcome="backend_failure")
             tw(rec)
             return "backend_failure", n, str(e), last_code
         rec["response"] = {"text": text, "finish_reason": finish, "invalid_unicode_replaced": replaced}
@@ -584,8 +584,7 @@ def run_loop(args, ctx, work, tw):
         rec["code"], rec["code_source"] = code, how
         key = code if code is not None else "\0no-code\0" + text
         if key in seen:
-            rec["stuck"] = True
-            rec["repeat_of"] = seen.index(key) + 1
+            rec.update(stuck=True, repeat_of=seen.index(key) + 1, outcome="stuck")
             tw(rec)
             return "stuck", n, "iteration %d repeats iteration %d %s" % (
                 n, seen.index(key) + 1, "program" if code is not None else "reply (no code block)"), last_code
