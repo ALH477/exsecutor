@@ -1,0 +1,38 @@
+// Out-of-range float -> integer casts must land in the DESTINATION width's
+// canonical form, and the reference and C backends must agree on it (spec
+// §9.2). `inf sicut i32` converts (on x86, both backends' cvttsd2si and C's
+// `(int64_t)`) to INT64_MIN, whose low 32 bits are 0 -- so the i32 result is
+// 0, not a 64-bit negative. The C backend used to omit the width-N
+// normalisation after the conversion, so it read the un-normalised 64-bit
+// value and DIVERGED from the reference (ref said n == 0, C said n < 0). This
+// program fails the differential phase if that regresses: every `eq 0` below
+// is true on both backends only when both normalise to i32/i16/u16.
+//
+// Exit = the number of the checks that held (6 when all do); each `si` that
+// disagrees between backends makes the differential phase's byte compare fail.
+
+publica functio initium(m: Mundus) -> u8 {
+    firma one: f64 = 1.0;
+    firma zero: f64 = 0.0;
+    firma inf: f64 = one / zero;            // +inf
+    firma ninf: f64 = (zero - one) / zero;  // -inf
+    firma nan: f64 = zero / zero;           // NaN
+    firma onef: f32 = 1.0;
+    firma zerof: f32 = 0.0;
+    firma inff: f32 = onef / zerof;         // +inf, f32
+
+    mutabilis r: u8 = 0;
+    firma a: i32 = inf sicut i32;
+    si a eq 0 { r = r +% 1; }
+    firma b: i32 = ninf sicut i32;
+    si b eq 0 { r = r +% 1; }
+    firma c: i32 = nan sicut i32;
+    si c eq 0 { r = r +% 1; }
+    firma d: u32 = inf sicut u32;
+    si d eq 0 { r = r +% 1; }
+    firma e: i16 = inff sicut i16;
+    si e eq 0 { r = r +% 1; }
+    firma f: u16 = inff sicut u16;
+    si f eq 0 { r = r +% 1; }
+    redde r;
+}

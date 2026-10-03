@@ -1,0 +1,11 @@
+# Out-of-range float -> integer casts must normalise to the destination
+# width's canonical form on BOTH backends (spec §9.2). The reference backend
+# normalised after `ftoi`; the C backend did not, so `inf sicut i32` (and the
+# NaN/-inf/u32/f32/i16/u16 siblings below) diverged -- the differential phase
+# is what catches it, by requiring the C build's exit and bytes to equal the
+# reference's. Fixed in backend_c/emit_c.inc's `.ftoi` (wrapped in
+# __bfc_norm_open/close, matching backend_fasmg/emit.inc's `.ftoinorm`).
+#
+# expect-exit=6: all six checks hold. With the normalisation omitted on the C
+# side, the C build returns a different count and the differential phase fails.
+TEST: expect-exit=6

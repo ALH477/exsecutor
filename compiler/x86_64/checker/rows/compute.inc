@@ -2658,6 +2658,75 @@ proc __chk_row_findimpl, chkw_wk, chkw_i2, chkw_t3
 	return
 endp
 
+; rax = the atom mask of the row declared by interface `chkw_mif`'s member
+; whose name is `chkw_mnm`; rdx = 1 if such a member was found, else 0 with
+; rax = 0. checker.md section 2.3's per-member ceiling is "a member-level
+; `poscit` ⊆ THE TRAIT MEMBER'S" -- a lookup by name in the interface's member
+; range (section 2.7, `a method call on a: T` row), NOT the union of every
+; member's row. Using the union (`__chk_row_ceil`) for the per-member check
+; let one member's declared atom cover a *different* member's impl draw, which
+; re-opened §4.4's generic-laundering hole for any trait with more than one
+; member (a `<T: Trait>` call attributes only the trait member's own row, so an
+; impl member exceeding ITS trait member launders the surplus undeclared).
+proc __chk_row_memrow, chkw_wk, chkw_mif, chkw_mnm
+	uses	rbx, r12, r13, r14
+	locals
+		slot chkw_mmi, dq	; member list offset
+		slot chkw_mmc, dq	; member count
+	endl
+	mov	rbx, [chkw_wk]
+	mov	r14, [rbx + ChkRowWork.wtree]
+	mov	rsi, [chkw_mif]
+	test	rsi, rsi
+	jz	.none
+	mov	rdi, r14
+	call	ast_decl_at
+	mov	esi, [rax + AstDecl.node]
+	test	rsi, rsi
+	jz	.none
+	mov	rdi, r14
+	call	ast_node_at
+	movzx	ecx, word [rax + AstNode.kind]
+	cmp	ecx, AST_IFACE
+	jne	.none
+	mov	ecx, [rax + AstNode.a]		; the member list offset
+	mov	[chkw_mmi], rcx
+	mov	ecx, [rax + AstNode.b]		; how many
+	mov	[chkw_mmc], rcx
+  .loop:
+	cmp	qword [chkw_mmc], 0
+	jle	.none
+	mov	rdi, r14
+	mov	rsi, [chkw_mmi]
+	call	ast_extra_at
+	mov	r13, rax			; a trait member `Fn` node
+	mov	rdi, r14
+	mov	rsi, r13
+	call	ast_node_at
+	mov	ecx, [rax + AstNode.d]		; `Fn.d` -- the member's decl
+	test	ecx, ecx
+	jz	.lnext
+	mov	rdi, r14
+	mov	rsi, rcx
+	call	ast_decl_at
+	mov	ecx, [rax + AstDecl.name]
+	cmp	ecx, [chkw_mnm]
+	jne	.lnext
+	mov	rdi, rbx
+	mov	rsi, r13
+	call	__chk_row_fnrow
+	mov	rdx, 1
+	return
+  .lnext:
+	inc	qword [chkw_mmi]
+	dec	qword [chkw_mmc]
+	jmp	.loop
+  .none:
+	xor	eax, eax
+	xor	edx, edx
+	return
+endp
+
 ; ---- EXS-E0510 -------------------------------------------------------------
 ; Spec §4.4, all three sites checker.md section 2.3 names:
 ;
@@ -2681,6 +2750,8 @@ proc __chk_row_e0510, chkw_wk
 		slot chkw_bd, dq
 		slot chkw_ml, dq
 		slot chkw_mn, dq
+		slot chkw_imr, dq	; the current impl member's written row
+		slot chkw_mc2, dq	; the per-member ceiling for it
 	endl
 	mov	rbx, [chkw_wk]
 	mov	r14, [rbx + ChkRowWork.wtree]
@@ -2740,7 +2811,9 @@ proc __chk_row_e0510, chkw_wk
 	call	__chk_row_at
 
   .members:
-	; each member's own written row against the trait member's
+	; each impl member's own written row against ITS trait member's -- the
+	; corresponding member looked up BY NAME, not the union of every
+	; member's row (checker.md 2.3; `__chk_row_memrow`'s header).
 	cmp	qword [chkw_mn], 0
 	jle	.next
 	mov	rdi, r14
@@ -2752,8 +2825,38 @@ proc __chk_row_e0510, chkw_wk
 	call	__chk_row_fnrow
 	test	rax, rax
 	jz	.member_next			; wrote none: nothing to check
-	mov	rcx, [chkw_bd]
+	mov	[chkw_imr], rax
+	; the per-member ceiling: the trait member of the same name. The impl
+	; member's name is `Fn.d`'s `AstDecl.name`.
+	mov	rdi, r14
+	mov	rsi, r13
+	call	ast_node_at
+	mov	ecx, [rax + AstNode.d]
+	test	ecx, ecx
+	jz	.member_union			; no decl: fall back to the union
+	mov	rdi, r14
+	mov	rsi, rcx
+	call	ast_decl_at
+	mov	ecx, [rax + AstDecl.name]
+	test	ecx, ecx
+	jz	.member_union
+	mov	rdi, rbx
+	mov	rsi, [chkw_id]
+	mov	rdx, rcx
+	call	__chk_row_memrow
+	test	rdx, rdx
+	jz	.member_union			; the trait has no such member:
+						; a separate error, so stay
+						; conservative and use the union
+	mov	[chkw_mc2], rax
+	jmp	.member_test
+  .member_union:
+	mov	rax, [chkw_bd]
+	mov	[chkw_mc2], rax
+  .member_test:
+	mov	rcx, [chkw_mc2]
 	not	rcx
+	mov	rax, [chkw_imr]
 	and	rcx, rax
 	jz	.member_next
 	mov	rdi, rbx
@@ -2819,11 +2922,31 @@ proc __chk_row_e0510, chkw_wk
 	mov	rdx, [chkw_ml]
 	call	__chk_row_findimpl
 	test	rax, rax
-	jz	.next				; no impl: class N, not ours
+	jz	.dyn_noimpl			; a CONCRETE source type that does
+						; not implement the interface --
+						; checker.md class N, `EXS-E0511`.
+						; This was `jz .next` ("class N,
+						; not ours"), but no other pass
+						; raised it either, so `s sicut dyn
+						; Foo` with no `interfacies Foo in S`
+						; was accepted silently (it then
+						; SIGILLed in the dyn lowering, which
+						; is a separate [OPEN]). sig.inc's
+						; E0511 fires only for a `dyn` over a
+						; NON-interface; this is the sibling
+						; case, a `dyn` over an interface the
+						; source does not implement.
 	mov	rdi, rbx
 	mov	rsi, rax
 	call	__chk_row_implmark
 	jmp	.dyn_test
+  .dyn_noimpl:
+	mov	rdi, rbx
+	mov	rsi, CHK_P_ROWS
+	mov	rdx, 511
+	mov	rcx, r12
+	call	__chk_row_at
+	jmp	.next
   .dyn_generic:
 	; `e`'s type is a generic parameter bound to the interface: nothing is
 	; instantiated, so the CEILING is what must fit inside the bound.
