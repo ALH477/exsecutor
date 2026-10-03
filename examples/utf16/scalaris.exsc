@@ -1,0 +1,152 @@
+// scalaris.exsc -- UTF-8 to UTF-16 through a materialised SCALAR TAPE (UTF-32).
+//
+// METHOD. Two passes that share no code and communicate only through a tape.
+//
+//   Pass 1  decodifica: UTF-8 -> UTF-32. It writes one u32 per scalar value to
+//           `tape: acies<u32, 4096>` and returns, in an Exitus, the tape length
+//           (unitates), a status, and the byte offset of the first ill-formed
+//           subpart (positio). In modus_substitue each maximal subpart becomes a
+//           tape entry 0xFFFD and the pass never fails. In modus_stricte the
+//           pass stops at the first ill-formed subpart: the tape holds everything
+//           before it, `unitates` is the entry count at that moment, and
+//           `positio` is the byte offset where the subpart begins.
+//   Pass 2  codifica: UTF-32 -> UTF-16. It reads tape[0..m) and knows nothing
+//           about bytes, ill-formedness or modes. A scalar below 0x10000 is one
+//           unit; otherwise v = cp - 0x10000 gives a surrogate pair, high
+//           0xD800 + (v deorsum 10), low 0xDC00 + (v atque 0x3FF).
+//   converte runs pass 1, then pass 2 over the entries pass 1 produced, and
+//   reports pass 2's unit count with pass 1's status and positio.
+//
+// WHERE THE MAXIMAL SUBPART COMES FROM. In pass 1 `k` counts the bytes accepted
+// so far, the lead included. The lead announces the total length (0 for a byte
+// that cannot lead: 80..C1, F5..FF) and, through two small functions, the floor
+// and ceiling of the SECOND byte (Table 3-7: E0 A0..BF, ED 80..9F, F0 90..BF,
+// F4 80..8F, else 80..BF); every later continuation is 80..BF. The walk stops at
+// the first byte outside its range or at the end of input; the k bytes behind it
+// are a well-formed prefix the next byte may not extend, i.e. the maximal
+// subpart, and k is its length (1 for a byte that cannot lead).
+//
+// WHAT IS DELIBERATELY NOT SHARED WITH ramus. Ramus writes UTF-16 units as it
+// decodes. Here no unit is produced until the whole input has been decoded
+// (or, in strict mode, until the first error), and the surrogate arithmetic sits
+// in a function that has never seen a byte. The payload mask of a lead is not a
+// per-lead constant: it is `0x7F deorsum l` for an l-byte lead (0x1F, 0x0F, 0x07
+// for l = 2, 3, 4). The price is a 16 KiB tape on the stack and a second pass;
+// this library has not been timed.
+
+// Total length in bytes of the sequence a lead byte announces: 1 for ASCII,
+// 2, 3 or 4 for a lead, 0 for a byte that cannot begin a well-formed sequence.
+functio longitudo_ducis(b0: u8) -> mensura {
+    si b0 lt 0x80 {
+        redde 1;
+    }
+    si b0 lt 0xC2 {
+        redde 0;
+    }
+    si b0 lt 0xE0 {
+        redde 2;
+    }
+    si b0 lt 0xF0 {
+        redde 3;
+    }
+    si b0 lt 0xF5 {
+        redde 4;
+    }
+    redde 0;
+}
+
+// Floor of the second byte after lead b0.
+functio imus_secundi(b0: u8) -> u8 {
+    si b0 eq 0xE0 {
+        redde 0xA0;
+    }
+    si b0 eq 0xF0 {
+        redde 0x90;
+    }
+    redde 0x80;
+}
+
+// Ceiling of the second byte after lead b0.
+functio summus_secundi(b0: u8) -> u8 {
+    si b0 eq 0xED {
+        redde 0x9F;
+    }
+    si b0 eq 0xF4 {
+        redde 0x8F;
+    }
+    redde 0xBF;
+}
+
+// Pass 1. UTF-8 to scalar tape. Returns {tape length, status, error offset}.
+functio decodifica(fons: acies<u8, 4096>, n: mensura,
+                   tape: &mutabilis acies<u32, 4096>, modus: u8) -> Exitus {
+    mutabilis i: mensura = 0;
+    mutabilis m: mensura = 0;
+    dum i lt n {
+        firma b0: u8 = fons[i];
+        firma l: mensura = longitudo_ducis(b0);
+        mutabilis k: mensura = 1;
+        mutabilis cp: u32 = b0 sicut u32;
+        si l gt 1 {
+            firma plena: u8 = 0x7F;
+            cp = (b0 atque (plena deorsum (l sicut u8))) sicut u32;
+            mutabilis lo: u8 = imus_secundi(b0);
+            mutabilis hi: u8 = summus_secundi(b0);
+            dum k lt l {
+                si i + k ge n {
+                    rumpe;
+                }
+                firma b: u8 = fons[i + k];
+                si b lt lo vel b gt hi {
+                    rumpe;
+                }
+                cp = (cp sursum 6) sive ((b atque 0x3F) sicut u32);
+                lo = 0x80;
+                hi = 0xBF;
+                k = k + 1;
+            }
+        }
+        // l eq 0: a byte that cannot lead, one-byte subpart (k is 1).
+        // k lt l: the walk fell short, the k bytes it accepted are the subpart.
+        si l eq 0 vel k lt l {
+            si modus eq modus_stricte {
+                redde Exitus { unitates: m, status: status_malformatum, positio: i };
+            }
+            (*tape)[m] = 0xFFFD;
+            m = m + 1;
+            i = i + k;
+            perge;
+        }
+        (*tape)[m] = cp;
+        m = m + 1;
+        i = i + k;
+    }
+    redde Exitus { unitates: m, status: status_bene, positio: 0 };
+}
+
+// Pass 2. Scalar tape to UTF-16 units. Returns the unit count.
+functio codifica(tape: acies<u32, 4096>, m: mensura,
+                 scopus: &mutabilis acies<u16, 4096>) -> mensura {
+    mutabilis j: mensura = 0;
+    per t in 0..m {
+        firma cp: u32 = tape[t];
+        si cp lt 0x10000 {
+            (*scopus)[j] = cp sicut u16;
+            j = j + 1;
+        } aliter {
+            firma v: u32 = cp - 0x10000;
+            (*scopus)[j] = (0xD800 + (v deorsum 10)) sicut u16;
+            (*scopus)[j + 1] = (0xDC00 + (v atque 0x3FF)) sicut u16;
+            j = j + 2;
+        }
+    }
+    redde j;
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    mutabilis tape: acies<u32, 4096> = [0; 4096];
+    firma d: Exitus = decodifica(fons, n, tape, modus);
+    firma j: mensura = codifica(tape, d.unitates, scopus);
+    redde Exitus { unitates: j, status: d.status, positio: d.positio };
+}
