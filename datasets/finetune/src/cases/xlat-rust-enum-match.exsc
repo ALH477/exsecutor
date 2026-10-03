@@ -1,0 +1,21 @@
+//! task: translate
+//! ask: Translate this Rust to Exsecutor.
+//!   ```rust
+//!   enum Color { Ruber, Viridis, Caeruleus }
+//!   fn index(c: Color) -> u8 {
+//!       match c { Color::Ruber => 0, Color::Viridis => 1, Color::Caeruleus => 2 }
+//!   }
+//!   ```
+//! expect: ok
+//! refs: §8.5, §8.6
+//! explain: An enum is a `typus` of comma-separated `casus` variants, written without a namespace prefix, and `match` is `discerne`. Arms are blocks that `redde` rather than expressions that yield, because `discerne` is a statement. Naming every variant makes it exhaustive, so no `aliter` is needed.
+
+typus Color = casus ruber, casus viridis, casus caeruleus;
+
+publica functio index(c: Color) -> u8 {
+    discerne c {
+        casus ruber     { redde 0; }
+        casus viridis   { redde 1; }
+        casus caeruleus { redde 2; }
+    }
+}

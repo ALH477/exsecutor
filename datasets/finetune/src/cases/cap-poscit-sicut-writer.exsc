@@ -1,0 +1,9 @@
+//! task: write
+//! ask: Write a function that writes a textus to a Scriptor, requiring exactly whatever authority the writer carries.
+//! expect: ok
+//! refs: §4.2, examples/imprime.exsc
+//! explain: The row is deliberately not `poscit archivum`. The authority comes from the writer that was handed in, so the function requires exactly what its `Scriptor` requires and nothing more. Point it at a writer holding `ambitus` and it requires `ambitus`; point it at one holding nothing and it requires nothing. The function does not decide and does not have to guess.
+
+publica functio imprime_gutenbergio(s: Scriptor, t: textus) -> mensura poscit sicut s {
+    redde s.scribe(t);
+}

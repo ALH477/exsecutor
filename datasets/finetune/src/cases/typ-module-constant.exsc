@@ -1,0 +1,12 @@
+//! task: write
+//! ask: Declare a module-level constant and use it to clamp a value.
+//! expect: ok
+//! refs: §4.1 rule 7, §8.6 decision 5
+//! explain: A module-level `firma` is a constant. The initializer must be a plain literal today (an array literal at module level type-checks but does not lower, a documented implementation gap). Module-level `mutabilis` is not allowed: that is `EXS-E0500`.
+
+firma LIMES: u64 = 3;
+
+publica functio clausum(x: u64) -> u64 {
+    si x gt LIMES { redde LIMES; }
+    redde x;
+}

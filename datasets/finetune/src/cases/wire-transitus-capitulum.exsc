@@ -1,0 +1,14 @@
+//! task: write
+//! ask: Declare a wire-format header struct with a 32-bit magic, two bytes, a reserved 16-bit field and a length, all big-endian.
+//! expect: ok
+//! refs: §5.2
+//! explain: `@transitus` marks a type that crosses a wire. Byte order belongs to the *place*: a field `u32:maior` reads and writes as a plain `u32`, and the conversion is the field access. `:nativus` (the in-process order) is illegal in a `@transitus` type (EXS-E0321). Fields are packed, alignment 1, no padding ever inserted, so a `reserva` field is written out explicitly rather than implied.
+
+@transitus
+publica structura Capitulum {
+    signum:    u32:maior
+    versio:    u8
+    genus:     u8
+    reserva:   u16:maior
+    longitudo: u32:maior
+}

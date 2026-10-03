@@ -1,0 +1,12 @@
+//! task: write
+//! ask: Write a public Exsecutor function `maximum` that takes two u64 values and returns the larger one.
+//! expect: ok
+//! refs: §8.5, §8.6
+//! explain: `si` opens the condition and `redde` gives the value back. The comparison is the word `gt`, never `>`: `<` and `>` only ever delimit generic arguments (§8.6 decision 6). The block after `si` returns, so control only reaches the final `redde` when `a gt b` was false. `publica` makes the function part of the module's interface; with no `poscit` its declared row is empty, so it can touch nothing but its arguments.
+
+publica functio maximum(a: u64, b: u64) -> u64 {
+    si a gt b {
+        redde a;
+    }
+    redde b;
+}

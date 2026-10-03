@@ -1,0 +1,15 @@
+//! task: write
+//! ask: Write a function that sums 0..n-1 with a `dum` loop. The loop must be explicitly bounded.
+//! expect: ok
+//! refs: §8.5
+//! explain: `dum COND terminus N { … }` is the sequential loop with a declared bound. The bound is evaluated once; the iteration that would be the N+1th is a runtime abort rather than silent, so a loop that outruns its declaration has made a false declaration (§8.5). A `dum` with no `terminus` is a parse-level fact for `certus` rule 6, which is why the keyword exists. Note `mutabilis`: a `firma` binding could not be reassigned.
+
+publica functio summa_ad(n: u64) -> u64 {
+    mutabilis s: u64 = 0;
+    mutabilis i: u64 = 0;
+    dum i lt n terminus 1000 {
+        s = s + i;
+        i = i + 1;
+    }
+    redde s;
+}

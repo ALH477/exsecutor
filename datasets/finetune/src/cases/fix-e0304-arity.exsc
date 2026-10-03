@@ -1,0 +1,21 @@
+//! task: fix
+//! ask: Call a two-parameter function.
+//! expect: EXS-E0304
+//! refs: §13
+//! explain: `EXS-E0304` is "wrong number of arguments": `suma` takes two and the call passes one.
+
+functio suma(a: u8, b: u8) -> u8 {
+    redde a + b;
+}
+
+publica functio f() -> u8 {
+    redde suma(1);
+}
+//@ fixed
+functio suma(a: u8, b: u8) -> u8 {
+    redde a + b;
+}
+
+publica functio f() -> u8 {
+    redde suma(1, 2);
+}

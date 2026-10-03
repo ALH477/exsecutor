@@ -1,0 +1,8 @@
+// selftest: never terminates. The runner must kill it (exit 124).
+publica functio initium(m: Mundus) -> u8 {
+    mutabilis i: u64 = 0;
+    dum i lt 10 {
+        i = 0;
+    }
+    redde 0;
+}

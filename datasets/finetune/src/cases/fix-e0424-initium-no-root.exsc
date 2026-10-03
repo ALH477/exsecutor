@@ -1,0 +1,13 @@
+//! task: fix
+//! ask: Write the program's entry point.
+//! expect: EXS-E0424
+//! refs: §4.7
+//! explain: The entry point must be exactly `publica functio initium(m: Mundus) -> u8`: its one parameter is the root capability, and its result is the exit status. An `initium` that takes nothing is malformed, `EXS-E0424`.
+
+publica functio initium() -> u8 {
+    redde 0;
+}
+//@ fixed
+publica functio initium(m: Mundus) -> u8 {
+    redde 0;
+}

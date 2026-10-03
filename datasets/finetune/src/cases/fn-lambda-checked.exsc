@@ -1,0 +1,10 @@
+//! task: write
+//! ask: Bind a lambda to a local and call it.
+//! expect: ok
+//! refs: §8.6
+//! explain: A lambda is `functio(params) -> T { ... }` used as an expression, and it takes no `poscit`: its row is always inferred. This type-checks. `[OPEN]`: the lowering does not support lambdas yet, so `exsc ... -o` on a program containing one does not emit code (measured: it terminates abnormally rather than refusing cleanly); only checking is evidenced here.
+
+publica functio f() -> u32 {
+    firma g = functio(x: u32) -> u32 { redde x + 1; };
+    redde g(2);
+}

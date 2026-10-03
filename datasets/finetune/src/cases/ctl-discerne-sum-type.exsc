@@ -1,0 +1,15 @@
+//! task: write
+//! ask: Declare a three-variant sum type `Color` and a function that maps each variant to a number with `discerne`.
+//! expect: ok
+//! refs: §8.5, §8.6
+//! explain: A sum type is a `typus` whose body is a comma-separated list of `casus` variants, and the same keyword `casus` introduces each arm of the `discerne`. A sum scrutinee is exhaustive by naming every variant, so no `aliter` is needed here; leave a variant out and the compiler answers EXS-E0351 and lists the missing arms in declaration order.
+
+typus Color = casus ruber, casus viridis, casus caeruleus;
+
+publica functio index(c: Color) -> u8 {
+    discerne c {
+        casus ruber     { redde 0; }
+        casus viridis   { redde 1; }
+        casus caeruleus { redde 2; }
+    }
+}

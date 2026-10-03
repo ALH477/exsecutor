@@ -1,0 +1,13 @@
+//! task: fix
+//! ask: Declare a public function that returns its argument.
+//! expect: EXS-E0201
+//! refs: §8.4
+//! explain: `funtcio` is a misspelling of the reserved word `functio`. The compiler recognises it as a near miss of a keyword in the closed thirty-word set and attaches the note "did you mean the reserved word functio".
+
+publica funtcio identica(a: u64) -> u64 {
+    redde a;
+}
+//@ fixed
+publica functio identica(a: u64) -> u64 {
+    redde a;
+}

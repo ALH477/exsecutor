@@ -1,0 +1,15 @@
+//! task: fix
+//! ask: Declare a wire struct with one u32 field.
+//! expect: EXS-E0321
+//! refs: §5.2
+//! explain: An unannotated multi-byte field in a `@transitus` type is `:nativus`, the in-process byte order, which is illegal on the wire. Say which order the wire uses: `u32:maior` for big-endian, `u32:minor` for little-endian.
+
+@transitus
+publica structura Capitulum {
+    a: u32
+}
+//@ fixed
+@transitus
+publica structura Capitulum {
+    a: u32:maior
+}

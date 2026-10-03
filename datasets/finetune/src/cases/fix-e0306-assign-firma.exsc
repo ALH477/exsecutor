@@ -1,0 +1,17 @@
+//! task: fix
+//! ask: Compute 2 plus 1, reassigning a local.
+//! expect: EXS-E0306
+//! refs: §8.4
+//! explain: `firma` binds an immutable name, so assigning to `x` is `EXS-E0306`. A variable that changes is declared `mutabilis`.
+
+publica functio f() -> u8 {
+    firma x: u8 = 1;
+    x = 2;
+    redde x;
+}
+//@ fixed
+publica functio f() -> u8 {
+    mutabilis x: u8 = 1;
+    x = 2;
+    redde x;
+}

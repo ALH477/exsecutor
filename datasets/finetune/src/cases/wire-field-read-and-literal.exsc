@@ -1,0 +1,19 @@
+//! task: write
+//! ask: Build a wire struct with a big-endian field and read the field back as a plain integer.
+//! expect: ok
+//! refs: §5.2, §8.6
+//! explain: A field declared `u16:maior` is a place whose bytes lie big-endian. Reading it yields an ordinary `u16`, and a literal assigns an ordinary `u16`: the conversion is the field access. A struct literal names every field exactly once, because missing fields are never zero-filled, which on a wire type would put bytes on the wire that no source line wrote.
+
+@transitus
+publica structura Cabecera {
+    magia:  u16:maior
+    genus:  u8
+}
+
+publica functio magia_de(c: Cabecera) -> u16 {
+    redde c.magia;
+}
+
+publica functio facere() -> Cabecera {
+    redde Cabecera { magia: 0xd3d3, genus: 1 };
+}

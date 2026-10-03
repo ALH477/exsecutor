@@ -1,0 +1,11 @@
+//! task: write
+//! ask: Make a zeroed 16-byte buffer and set its first byte.
+//! expect: ok
+//! refs: §6.3, §8.6
+//! explain: `[0; 16]` is the repeat form: the value is evaluated once and copied N times. A binding declared with `mutabilis b: acies<u8, 16>;` and no initializer is *not* zero-filled and reading it is EXS-E0307, so the literal is how a program asks for zeros.
+
+publica functio buffer() -> u8 {
+    mutabilis b: acies<u8, 16> = [0; 16];
+    b[0] = 7;
+    redde b[0];
+}

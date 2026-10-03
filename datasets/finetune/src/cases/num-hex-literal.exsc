@@ -1,0 +1,13 @@
+//! task: write
+//! ask: Return the 16-bit CCITT initial value 0xffff and the polynomial 0x1021 as constants.
+//! expect: ok
+//! refs: §8.4
+//! explain: An integer literal is a run of decimal digits or `0x` plus hexadecimal digits, either case. The value is typed by what it lands in, so a literal too wide for its type is EXS-E0308. There are no binary or octal literals and no digit separators `[OPEN]`.
+
+publica functio initialis() -> u16 {
+    redde 0xffff;
+}
+
+publica functio polynomium() -> u16 {
+    redde 0x1021;
+}

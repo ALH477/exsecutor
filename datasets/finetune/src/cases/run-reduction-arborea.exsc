@@ -1,0 +1,16 @@
+//! task: write
+//! ask: Sum 0 to 9 with a `quisque` reduction as a width-4 tree and return the total as the exit status.
+//! expect: exit=45
+//! refs: §5.4, §8.5
+//! explain: The groups are `[0..4) [4..8) [8..10)`, each reduced pairwise and folded left to right. For integers the shape does not change the value, so the total is 45, but the declaration is the same one that fixes the bit pattern for floats. `s` is write-only inside the body and an ordinary binding afterwards.
+
+publica functio initium(m: Mundus) -> u8 {
+    firma v: acies<u64, 10> = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    quisque i in 0..10
+        contrahe s: +
+        forma arborea 4
+    {
+        s = v[i];
+    }
+    redde s sicut u8;
+}

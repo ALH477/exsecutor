@@ -1,0 +1,15 @@
+//! task: write
+//! ask: Write the canonical Exsecutor program: a public function that returns a greeting and has no authority to do anything else.
+//! expect: ok
+//! refs: §4.1 rule 6, examples/saluta.exsc
+//! explain: The empty row is the point. `publica` with no `poscit` declares that the function observes nothing about the host, so it cannot print: printing is I/O, I/O is authority, and authority is declared. String literals may contain raw newlines (LF only); there is no separate multiline form and no indentation stripping.
+
+publica functio saluta() -> textus {
+    redde "Ave, mundus.
+
+Ex silentio surgit forma.
+Ex signo nascitur vox.
+Ex codice fit lumen.
+
+Hodie incipimus.";
+}

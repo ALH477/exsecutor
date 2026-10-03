@@ -1,0 +1,8 @@
+// selftest: stdout capture and a chosen exit status (7).
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a;
+    firma s = Scriptor.ad_exitum(a);
+    s.scribe("salve");
+    redde 7;
+}

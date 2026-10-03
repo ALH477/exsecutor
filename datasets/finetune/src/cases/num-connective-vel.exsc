@@ -1,0 +1,12 @@
+//! task: write
+//! ask: Write a function that is true when x lies outside the interval lo to hi.
+//! expect: ok
+//! refs: §8.4, §8.6
+//! explain: `vel` is the short-circuit disjunction, one level below `et`, and the right operand is evaluated only when the left is false. The comparison words are contextual, so `lt` and `gt` stay ordinary identifiers everywhere except in operator position.
+
+publica functio extra(x: u32, lo: u32, hi: u32) -> u1 {
+    si x lt lo vel x gt hi {
+        redde 1;
+    }
+    redde 0;
+}

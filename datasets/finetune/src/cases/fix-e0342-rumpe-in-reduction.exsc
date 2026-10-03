@@ -1,0 +1,25 @@
+//! task: fix
+//! ask: Sum an array but stop early with `rumpe` inside the reducing loop.
+//! expect: EXS-E0342
+//! refs: §5.4
+//! explain: An early exit makes the result depend on which iterations ran, and under `quisque` that is not even well defined, so `rumpe` inside an iteration that carries a `contrahe` is `EXS-E0342`. If an early-exit fold is wanted, write a `per` loop with an explicit accumulator: it is ordinary sequential code and claims nothing about shape.
+
+publica functio f(v: acies<u64, 8>) -> u64 {
+    quisque i in 0..8
+        contrahe s: +
+        forma ordinata
+    {
+        s = v[i];
+        rumpe;
+    }
+    redde s;
+}
+//@ fixed
+publica functio f(v: acies<u64, 8>) -> u64 {
+    mutabilis s: u64 = 0;
+    per i in 0..8 {
+        s = s + v[i];
+        si s gt 100 { rumpe; }
+    }
+    redde s;
+}

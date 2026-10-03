@@ -1,0 +1,15 @@
+//! task: write
+//! ask: Write a function that sums an array of eight u64 values with an independent `quisque` loop and a declared reduction, strictly left to right.
+//! expect: ok
+//! refs: §5.4, §8.5
+//! explain: `quisque` declares that iterations do not observe one another. `contrahe s: +` names the accumulator and its operator, and `forma ordinata` fixes the reduction shape to strictly left to right, so the result is reproducible whatever the machine does. Inside the body, `s = v[i];` is the *contribution*, not an assignment of the total, and the running `s` may not be read there (that is EXS-E0341). After the loop `s` is an ordinary binding. Because there is no dependency analysis yet, `quisque` is today a trusted assertion `[OPEN]` (§8.5).
+
+publica functio summa_octo(v: acies<u64, 8>) -> u64 {
+    quisque i in 0..8
+        contrahe s: +
+        forma ordinata
+    {
+        s = v[i];
+    }
+    redde s;
+}

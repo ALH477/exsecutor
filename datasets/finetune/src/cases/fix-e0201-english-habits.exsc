@@ -1,0 +1,15 @@
+//! task: fix
+//! ask: Return `a` when it exceeds 10, else 0.
+//! expect: EXS-E0201,EXS-E0307
+//! primary: EXS-E0201
+//! refs: §8.4, §8.5
+//! explain: This is the C or Rust spelling. In Exsecutor `if` and `return` are not keywords at all, only ordinary identifiers, so the parser does not recognise a condition or a return; the spellings are `si` and `redde`, and `>` is the word `gt`. The `EXS-E0307` is cascade: with no `redde` recognised the function appears to fall off its end.
+
+publica functio maxima(a: u64) -> u64 {
+    if a > 10 { return a; }
+}
+//@ fixed
+publica functio maxima(a: u64) -> u64 {
+    si a gt 10 { redde a; }
+    redde 0;
+}

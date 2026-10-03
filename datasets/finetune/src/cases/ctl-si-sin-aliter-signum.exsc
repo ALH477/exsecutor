@@ -1,0 +1,15 @@
+//! task: write
+//! ask: Write `signum`, taking an i32 and returning -1, 0 or 1, using a three-way condition.
+//! expect: ok
+//! refs: §8.5
+//! explain: `si … sin … aliter` is the whole conditional ladder. `sin` is classical Latin for "but if" and takes the place of `else if` / `elif`; `aliter` ("otherwise") is the final branch. Every branch ends in `redde`, so no join is needed after the ladder.
+
+publica functio signum(x: i32) -> i32 {
+    si x lt 0 {
+        redde -1;
+    } sin x eq 0 {
+        redde 0;
+    } aliter {
+        redde 1;
+    }
+}

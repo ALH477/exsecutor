@@ -1,0 +1,15 @@
+//! task: fix
+//! ask: Bind the value 300 to a variable.
+//! expect: EXS-E0308
+//! refs: §8.4
+//! explain: A literal takes its type from where it lands, and 300 does not fit a `u8` (0 to 255), so it is `EXS-E0308`. Widen the type. There are no literal suffixes, so the type is chosen on the binding, not on the number.
+
+publica functio f() -> u8 {
+    firma x: u8 = 300;
+    redde 0;
+}
+//@ fixed
+publica functio f() -> u8 {
+    firma x: u16 = 300;
+    redde 0;
+}
