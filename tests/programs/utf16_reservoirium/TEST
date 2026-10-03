@@ -1,0 +1,28 @@
+# utf16_reservoirium: examples/utf16/reservoirium.exsc, one of 27 UTF-8 -> UTF-16 libraries.
+# METHOD: a 32-bit bit reservoir, one byte shifted in per tick, as a DSP block would hold it. Its own header says how it gets the maximal subpart right.
+#
+# THE UNIT is contractus.exsc (the interface) + reservoirium.exsc + probatio.exsc (the one
+# driver all 27 libraries are linked with), in that order, as sources= names it.
+# THE INPUT is tests/data/utf16_corpus_L.bin: framed test cases, each in both modes
+# (strict, and U+FFFD per maximal subpart) -- every boundary scalar, every single
+# byte, a Table 3-7 walk, every byte value at every mid-sequence position, the
+# 4096-byte capacity edges, seeded fuzz. THE GOLDEN is tests/data/utf16_expected_L.bin, and
+# it is the SAME file for every library: written by Python's codec
+# (tests/utf16/oracle.py), not by any Exsecutor program, and cross-checked there
+# against a hand-written WHATWG decoder. Regenerate both with
+#   python3 tests/utf16/corpus.py write tests/data
+#
+# MEASURED 2026-10-03 with tests/run.sh's own run_program_tests, run IN ISOLATION (a
+# temporary copy of the script with the other phases' calls deleted: the full script
+# cannot go green on the host that wrote this, where clang cannot link UBSan's
+# runtime): compiles and assembles, exit 0, stdout byte-identical to the golden,
+# syscall surface within {Mundus, ambitus}. That run found 182 program directories
+# (154 before these 28) and passed 696 checks (584 before), 0 failed: exactly four
+# new checks per directory. The C-backend differential PHASE was not run for
+# these; tests/utf16/matrix.py --c built each library with gcc and clang at -O0 and
+# -O2 (clang with -fsanitize-trap) and matched the golden on the fixture.
+#
+# The cross phase is not opted into: no qemu on the host that wrote this, so a
+# big-endian mips64 run of it is [UNTESTED]. The C-backend differential phase is
+# on, as for every directory without c-differentia=.
+TEST: expect-exit=0 sources=examples/utf16/contractus.exsc,examples/utf16/reservoirium.exsc,examples/utf16/probatio.exsc stdin=tests/data/utf16_corpus_L.bin stdout=tests/data/utf16_expected_L.bin
