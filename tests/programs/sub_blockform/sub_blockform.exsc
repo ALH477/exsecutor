@@ -1,0 +1,30 @@
+// A block-form `sub` (`sub P = e { ... }`, spec §4.5) whose BLOCK contains a
+// call-induced draw of the atom it binds. The block is where the binding is
+// LIVE, so the draw is covered and the program is accepted and runs.
+//
+// This is the regression guard for the checker fix that made a `sub`'s
+// provision its own lexical scope: an interim version excluded the block
+// (`Sub.c`) as if it were the initializer and wrongly refused this with
+// EXS-E0421, though the lowering accepted it. The checker is the authority
+// for the capability rule (CLAUDE.md), so it must accept exactly what the
+// lowering accepts -- this file is the "accepts" half, byte for byte through
+// the whole pipeline.
+//
+// `getenv` draws `ambitus`; `initium` holds it only through the `sub`, which
+// binds it for the block. `use(getenv())` draws inside the block -> covered.
+// `ambitus` (not `archivum`) so the binary's closure stays within the audit's
+// default {Mundus, ambitus} -- the atom is immaterial to the lexical-scope
+// rule under test. Exit 0 (the block's `redde` returns `use`'s 0).
+
+functio getenv() -> ambitus poscit ambitus { redde ambitus; }
+
+functio use(a: ambitus) -> u8 { redde 0; }
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    sub ambitus = a {
+        firma k = use(getenv());
+        redde k;
+    }
+    redde 0;
+}

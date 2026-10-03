@@ -1,0 +1,25 @@
+// Audit 2026-10-03 finding 5: reading a `Scriptor` capability field.
+//
+// `Scriptor` is `structura Scriptor { a: ambitus, descriptor: i32 }`, but its
+// fields are the PRELUDE's, not a program's: the blob reads them by constant
+// and a source program has no business with either. The checker used to
+// answer `ambitus` for `s.a` and `i32` for `s.descriptor` -- so this program
+// TYPE-CHECKED -- and the lowering, which has no case for a prelude field
+// (a prelude member carries `Member.d` == 0), died on an `rassert`: `exsc`
+// exited 132, SIGILL, on a well-formed program, on both backends. It is not
+// an escape (`a` is an `ambitus` the program already holds) and it is not
+// forgivable either: a compiler does not trap on input.
+//
+// The fix is the checker's: `s.a` is `EXS-E0305`, exactly as it is for the
+// three ADR 0017 roots (R3). THIS DIRECTORY IS THE END-TO-END HALF --
+// `exsc-exit=1` is a diagnostic's exit status, and 132 is the trap. The CODE
+// is pinned one layer down, in tests/unit/chk_directorium.asm rows 27-30,
+// which also cover a write, an address, a call result and a nested struct.
+// The differential phase holds `--emitte c` to the same status.
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    firma s = Scriptor.ad_exitum(a);
+    firma x = s.a;
+    redde 0;
+}

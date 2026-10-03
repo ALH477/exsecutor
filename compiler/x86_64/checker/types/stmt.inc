@@ -34,18 +34,36 @@
 ;              value not the target's type -> `E0303`.
 ;   Redde      against the enclosing function's result -> `E0303`; and it is
 ;              what clears `E0307`'s fall-off check.
-;   Rumpe      outside a loop -> `E0307`; inside a `contrahe` iteration ->
-;   Perge      `E0342` (spec §5.4). `perge` outside a loop -> `E0307`.
+;   Rumpe      outside a loop -> `E0307`; one that EXITS a `contrahe` loop
+;   Perge      -> `E0342` (spec §5.4, §8.5). `perge` outside a loop ->
+;              `E0307`.
 ;   Si Dum     the condition is `u1` -> `E0303`.
 ;   For        the iterable is a range or an `acies` -> `E0305`; the `forma`
 ;              shape and its width -> `E0343` (spec §5.4, §8.6).
 ;   Contrahe   the operator must be ASSOCIATIVE -> `E0343` (spec §5.4).
 ;   Sub        the provider's type must be the atom's `cap` type -> `E0303`.
 ;
-; `EXS-E0342` IS ON `rumpe` AND NOT ON `perge`, because spec §13 says exactly
-; that ("`rumpe` inside an iteration carrying a `contrahe`") and §5.4's reason
-; -- a reduction that exits early has no defined value -- does not apply to
+; `EXS-E0342` IS ON `rumpe` AND NOT ON `perge`, because §5.4's reason -- a
+; reduction that exits early has no defined value -- does not apply to
 ; `perge`, which completes the iteration.
+;
+; AND IT IS ON THE `rumpe` THAT EXITS THE REDUCTION, NOT ON EVERY `rumpe`
+; LEXICALLY UNDER ONE. A `rumpe` leaves its NEAREST enclosing loop and nothing
+; else (§8.6 has no labelled form), so
+;
+;     quisque i in 0..4 contrahe acc: + {
+;         per j in 0..4 { si j gt 2 { rumpe; } }      // leaves the `per`
+;         acc = i;                                    // the reduction completes
+;     }
+;
+; breaks the inner loop, every iteration of the reduction still runs to its
+; `acc = e;`, and the result does not depend on which iterations ran. The
+; first version of this check asked "is ANY enclosing loop a reduction"
+; (`wcon`), which is §13's wording read literally and is broader than §5.4's
+; reason; it refused the program above. `wnear` asks the right question --
+; "is the NEAREST enclosing loop a reduction" -- and is saved and restored
+; around every loop body, so a `rumpe` AFTER an inner loop has closed, in the
+; reduction's own body, is the reduction's again.
 ;
 ; Spec: docs/spec/exsecutor-spec-v0.4.md §4.1, §4.5, §5.4, §8.5, §8.6, §13.
 ; -----------------------------------------------------------------------------
@@ -110,6 +128,7 @@ proc __chk_ty_stmt, chkt_wST, chkt_nST
 		slot chkt_xST, dq
 		slot chkt_iST, dq
 		slot chkt_vST, dq	; `discerne`: the variant coverage
+		slot chkt_nearST, dq	; `dum`: the enclosing `wnear`, restored
 	endl
 	mov	rbx, [chkt_wST]
 	mov	r12, [chkt_nST]
@@ -298,8 +317,10 @@ proc __chk_ty_stmt, chkt_wST, chkt_nST
 	call	__chk_ty_raise
 	jmp	.unit
   .r_inloop:
-	; spec §5.4 / `EXS-E0342`: a reduction that exits early has no value
-	cmp	dword [rbx + ChkTyWork.wcon], 0
+	; spec §5.4 / `EXS-E0342`: a reduction that exits early has no value.
+	; `wnear`, NOT `wcon`: only a `rumpe` whose target -- the nearest
+	; enclosing loop -- IS a reduction exits one (see the header).
+	cmp	dword [rbx + ChkTyWork.wnear], 0
 	je	.unit
 	mov	rdi, rbx
 	mov	rsi, 342
@@ -386,9 +407,18 @@ proc __chk_ty_stmt, chkt_wST, chkt_nST
 	call	__chk_ty_want
   .d_body:
 	inc	dword [rbx + ChkTyWork.wloop]
+	; a `dum` never carries a `contrahe` (only a `ForHead` does), so a
+	; `rumpe` directly in its body leaves THIS loop, not an enclosing
+	; reduction: the nearest loop is not a reduction for the body's
+	; duration, and is whatever it was again afterwards.
+	mov	eax, [rbx + ChkTyWork.wnear]
+	mov	[chkt_nearST], rax
+	mov	dword [rbx + ChkTyWork.wnear], 0
 	mov	rdi, rbx
 	mov	rsi, [chkt_cST]
 	call	__chk_ty_stmt
+	mov	rax, [chkt_nearST]
+	mov	[rbx + ChkTyWork.wnear], eax
 	dec	dword [rbx + ChkTyWork.wloop]
 	jmp	.unit
 
@@ -1013,6 +1043,7 @@ proc __chk_ty_for, chkt_wFR, chkt_nFR
 		slot chkt_cFR, dq
 		slot chkt_dFR, dq
 		slot chkt_eFR, dq
+		slot chkt_nearFR, dq		; the enclosing `wnear`, restored
 	endl
 	mov	rbx, [chkt_wFR]
 	mov	r12, [chkt_nFR]
@@ -1124,13 +1155,23 @@ proc __chk_ty_for, chkt_wFR, chkt_nFR
 
   .body:
 	inc	dword [rbx + ChkTyWork.wloop]
+	; `wnear` is "the NEAREST enclosing loop carries a `contrahe`" (the
+	; `rumpe` rule, `EXS-E0342`): this loop's own answer for the length of
+	; its body, and the enclosing loop's again once the body is done --
+	; which is what makes a `rumpe` AFTER an inner loop the reduction's.
+	mov	eax, [rbx + ChkTyWork.wnear]
+	mov	[chkt_nearFR], rax
+	mov	dword [rbx + ChkTyWork.wnear], 0
 	test	r14, r14
 	jz	.no_con
 	inc	dword [rbx + ChkTyWork.wcon]
+	mov	dword [rbx + ChkTyWork.wnear], 1
   .no_con:
 	mov	rdi, rbx
 	mov	rsi, [chkt_bFR]
 	call	__chk_ty_stmt
+	mov	rax, [chkt_nearFR]
+	mov	[rbx + ChkTyWork.wnear], eax
 	test	r14, r14
 	jz	.no_con2
 	dec	dword [rbx + ChkTyWork.wcon]

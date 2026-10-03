@@ -375,7 +375,7 @@ path was absent, which stopped being true when the rebuild landed.
 3. Capability sets are part of **`functio` types**, not only declarations.
 4. **A capability becomes available in a scope in exactly four ways — bound by `sub`, received as a parameter, held in a field of the receiver, or **captured by a closure from an enclosing scope** — and all four are visible in the interface.** `poscit` means *drawn from the enclosing scope*, nothing else. Capture was absent from this list in v0.4 and earlier, which is precisely where the closure-capture hole lived: it is visible because a captured row appears in the closure's **type** (§4.2), not because it is bound or passed.
 5. `publica` functions declare `poscit` explicitly. Private functions infer it from their bodies, transitively.
-6. A function whose **declared** row is empty — `publica` with no `poscit`, or any function written `poscit {}` — and which takes no capability parameter is **pure with respect to ambient state**. It may allocate and diverge; it may not observe the host. A private function with no `poscit` has no declared row and is governed by rule 5, not this one; the two rules read together had said opposite things about it (`docs/design/checker.md`, finding 10).
+6. A function whose **declared** row is empty — `publica` with no `poscit`, or any function written `poscit {}` — and which takes no capability parameter is **pure with respect to ambient state**. It may allocate and diverge; it may not observe the host. A private function with no `poscit` has no declared row and is governed by rule 5, not this one; the two rules read together had said opposite things about it (`docs/design/checker.md`, finding 10). **`poscit {}` is how a private function declares the empty row** — it is then held to it, and a draw in its body, direct or through a call, is `EXS-E0421`, where the same body with no `poscit` would infer — and it is a second, explicit spelling of what a `publica` function states by writing nothing: the two are one row, the same type. Rule 6 cited the form for as long as it has existed, but §8.6's `DeclRow` had no braced alternative, so `poscit {}` on a declaration was `EXS-E0201` until 2026-10-03: the prose and the grammar disagreed, the parser followed the grammar, and the grammar was the defect (`docs/design/audit-2026-10-03-followups.md`, item 6). `tests/unit/chk_decl_row_empty.asm` pins the form, its meaning on private and `publica` functions, and the one edit `EXS-E0421`'s fix makes to such a row.
 7. **No module-level mutable state.** (`EXS-E0500`; with a capability, `EXS-E0501`.)
 
 ## 4.2 Rows and substitution
@@ -468,7 +468,7 @@ potestas Hospes = { alloc, archivum, horologium, ambitus }
 
 **Standard input, output and error belong to `ambitus`.** They are handed to a process by its environment, not found on a filesystem: a program that writes to its terminal has touched nothing under `archivum`, and borrowing that atom for it would over-grant in exactly the way §10.3's audit exists to expose. `examples/README.md` recorded this as `[OPEN]` when the companion program was written; it is closed by placing the streams, not by spending a root on a twelfth atom.
 
-**The streams' two prelude types.** Standard output is written through `Scriptor`, a capability-bearing `structura` with mark `{ambitus}`, obtained by `Scriptor.ad_exitum(a: ambitus) -> Scriptor` — an associated function with no receiver, total — and written one byte at a time by `s.scribe_octeto(b: u8) -> mensura` (`docs/design/wire-codec.md` D7; `tests/unit/prelude_scribe_octeto.asm`, `tests/programs/octeti/`) or as a `textus` by `s.scribe(t)` (§11). Standard input is read through **`Lector`**, the same record with the same mark, obtained by `Lector.ab_introitu(a: ambitus) -> Lector` and read one byte at a time by `l.lege_octeto() -> u16`: the byte, 0–255, or **256** at end of input and on a read error, the two undistinguished — provisional in exactly `scribe`'s way: `eventus` is inhabited now (§11, the prelude's `eventus<T, E>`), and the call becomes `-> eventus<u8, erratum>` with the whole-tree migration of the prelude's I/O that §11 records as not yet made. `read(0)` is in `ambitus`'s admitted syscall set already; the compiler itself never issues it. `docs/design/receptor.md` D1 is the design; the routine is `compiler/x86_64/prelude/prelude.asm`'s `exsrt_lector_lege_octeto`, pinned by `tests/unit/prelude_lege_octeto.asm` (the four bytes `0x00 0x7f 0x80 0xff` in order, then 256 twice, then 256 on a refused descriptor) and run from source by `tests/programs/lector/` (`cat`, 41 bytes in and the same 41 out), `lector_numerus/` (the count as the exit status) and the receiver's `tests/programs/receptio_*/` (38,060 bytes a WAV). Because the prelude gates by atom and not by call, every binary whose closure holds `ambitus` carries the reader whether it reads or not. The part after the `_` in both constructors is a noun the preposition governs, and neither `ad` nor `ab` decomposes under §3.1 — recorded there as an open question for the lexicon, not resolved here.
+**The streams' two prelude types.** Standard output is written through `Scriptor`, a capability-bearing `structura` with mark `{ambitus}`, obtained by `Scriptor.ad_exitum(a: ambitus) -> Scriptor` — an associated function with no receiver, total — and written one byte at a time by `s.scribe_octeto(b: u8) -> mensura` (`docs/design/wire-codec.md` D7; `tests/unit/prelude_scribe_octeto.asm`, `tests/programs/octeti/`) or as a `textus` by `s.scribe(t)` (§11). Standard input is read through **`Lector`**, the same record with the same mark, obtained by `Lector.ab_introitu(a: ambitus) -> Lector` and read one byte at a time by `l.lege_octeto() -> u16`: the byte, 0–255, or **256** at end of input and on a read error, the two undistinguished — provisional in exactly `scribe`'s way: `eventus` is inhabited now (§11, the prelude's `eventus<T, E>`), and the call becomes `-> eventus<u8, erratum>` with the whole-tree migration of the prelude's I/O that §11 records as not yet made. **A prelude capability type has only its own members.** The members of `Scriptor` and `Lector` -- and of `Directorium`, `Lectorium`, `Scriptorium`, a capability atom such as `Mundus`, or a reference to one -- are the prelude's rows for it and nothing a program declares can add one. `a` and `descriptor` are the records' own layout, which the runtime reads by constant, and are not rows: `s.a`, `s.descriptor`, `l.a` and `l.descriptor`, as a read, a write, an address or a call, are EXS-E0305, the same refusal the roots below get (R3). So is any other name that is not one of the type's rows, **including one that matches an `interfacies` member the module declares**, and so is a struct literal of either record. This was not so until 2026-10-03: the checker typed `s.a` and `exsc` then exited 132 (SIGILL) in the lowering, on both backends; and a first fix that only withdrew the field rows let `s.a()` bind to a same-named module member and trapped the same way (audit 2026-10-03, finding 5). `tests/unit/chk_directorium.asm` rows 27-34 pin the code and `tests/programs/scriptor_campus_occultus/`, `lector_campus_occultus/` and `scriptor_nomen_collidens/` pin the exit status. `read(0)` is in `ambitus`'s admitted syscall set already; the compiler itself never issues it. `docs/design/receptor.md` D1 is the design; the routine is `compiler/x86_64/prelude/prelude.asm`'s `exsrt_lector_lege_octeto`, pinned by `tests/unit/prelude_lege_octeto.asm` (the four bytes `0x00 0x7f 0x80 0xff` in order, then 256 twice, then 256 on a refused descriptor) and run from source by `tests/programs/lector/` (`cat`, 41 bytes in and the same 41 out), `lector_numerus/` (the count as the exit status) and the receiver's `tests/programs/receptio_*/` (38,060 bytes a WAV). Because the prelude gates by atom and not by call, every binary whose closure holds `ambitus` carries the reader whether it reads or not. The part after the `_` in both constructors is a noun the preposition governs, and neither `ad` nor `ab` decomposes under §3.1 — recorded there as an open question for the lexicon, not resolved here.
 
 **`archivum` reaches the filesystem only beneath a root** (ADR 0017, accepted 2026-10-02). Holding the atom does not let a program name a file. It lets the program derive a `Directorium`: `Directorium.ad_radicem(a: archivum, via: textus) -> eventus<Directorium, erratum>`, for an absolute `via`, a capability-bearing `structura` with mark `{archivum}` whose fields have no rows; `d.infra(via)` derives one beneath `d`, and nothing derives one above it. Every operation on a `Directorium` resolves its path beneath it. A function that receives one can reach that tree and nothing else, and what bounds it is the set of *values* it holds, not a row: every prelude row on a `Directorium` is empty (`d.infra`, `d.lege_ex` and `d.crea` draw no atom), so a function that merely uses one needs no `poscit` at all and its own row shows nothing for `archivum`. `poscit sicut d` is needed only to forward the handle to a callee that is itself declared `sicut`; what it says is `d`'s mark, `{archivum}`, substituted at that call (§4.2), and it is not the atom's carrier. What keeps such a function from reaching any *other* tree is that it cannot obtain the raw atom, and what is enforced is: **(R1)** a `sicut` item binds no carrier, so `archivum` in expression position in a function whose row is only `sicut d` is EXS-E0421; and `sub P = e` requires `e` to have the atom's own capability type (EXS-E0303, §4.5), so a `sub` cannot bind the atom from a `Directorium`, or from any value whose *type* is not `archivum`; and **no `sicut` retypes a value into or out of a capability atom, or a reference to one** (EXS-E0305, §5.2): the value cast `d sicut archivum` and the reference cast `&d sicut &archivum` are both refused. The reference form was accepted until review of this very rule: it retyped a reference to a `Directorium` as a reference to the raw atom, `*p` then *had* type `archivum`, and `sub archivum = *p;` passed the provider check above on a type that had been forged one line earlier (`tests/unit/chk_directorium.asm` rows 17-26). What stops it is the cast judgement, not `sub`; "cannot be minted" is true only as the two together. `[OPEN]` `Crudum` (§4.6) is the capability for "unchecked casts", and no cast is gated on it yet: a reference cast that changes the pointee is refused outright, whether or not the function holds `Crudum`. And a lambda's draw is read at its live inferred row when the lambda is called or forwarded (§4.2), so a closure over the atom is EXS-E0421 at the call and is not laundered. `[OPEN]`: that last check follows a lambda written in place or held in an immutable local; it does not follow one that reaches a parameter whose function type has an empty row, one stored in a field, one returned, or a `mutabilis` local reassigned to another lambda. No such shape yields an object today, because the lowering refuses every lambda (`docs/design/lowering.md` section 2.7), and the lowering answers an atom with no carrier as EXS-E0421 rather than a trap. **(R2)** no prelude routine draws `archivum` implicitly. **(R3)** the fields have no rows (`d.a` and `d.descriptor` are EXS-E0305). The three are pinned by `tests/unit/chk_directorium.asm`, `tests/unit/chk_row_sicut_forward.asm` and `tests/unit/lwr_unprovided.asm`. **The surface (ADR 0017 stage 2, 2026-10-02):** `m.archivum()` (total, §4.7); `Directorium.ad_radicem(a: archivum, via: textus) -> eventus<Directorium, erratum>`; `d.infra(via) -> eventus<Directorium, erratum>`; `d.lege_ex(via) -> eventus<Lectorium, erratum>`, an existing regular file to read, and `d.crea(via) -> eventus<Scriptorium, erratum>`, a new file (`O_EXCL`, mode `0600`), to write. `Lectorium` and `Scriptorium` are the reader and writer, capability-bearing with mark `{archivum}` and no field rows, like `Directorium` — two prelude types rather than `Lector` and `Scriptor` made generic over the atom (`docs/design/archivum-beneath.md` section 10 gives the reason). `r.exlege_octeto() -> eventus<u16, erratum>` reads one byte, `256` at end of file and `adversum` on an error, so the two are different answers; `w.inscribe(t)` and `w.inscribe_octeto(b) -> eventus<mensura, erratum>` write a whole `textus` or one raw byte, never reporting a short count as success. `erratum.numerus` is the kernel's errno, or the prelude's own `EINVAL` for a relative root, an interior NUL or a non-regular file, and `ENAMETOOLONG` for a path of 4096 bytes or more. There is no `close` (descriptors live until exit; design D7), and no `mkdirat`, `unlinkat`, `getdents64`, rewrite or append. All of these spellings are provisional under §3.9. `tests/programs/archivum_radix/`, `archivum_refusa/` and `archivum_profundum/` run the surface end to end, on both backends, and audit it under `--potestates Mundus,archivum`. **Beneath the surface are the runtime and the audit.** `compiler/x86_64/prelude/archivum.asm`, gated on the atom, resolves every path beneath a directory descriptor with `openat2(2)` and `RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV`, so `..` past the root, an absolute path, a symlink out of it, a magic link and a mount crossing are refused by the kernel and not by the program; its one unscoped open derives a root from an absolute path, and nothing falls back to `openat` when `openat2` fails. `tests/unit/prelude_archivum.asm` runs those routines and asserts each refusal, with a legal twin for each, on the kernel that runs it (Linux 6.18 when this was written). `tools/syscall-audit.sh --potestates` admits `openat2(437)`, `close(3)`, `fstat(5)`, `lseek(8)`, `read(0)` and `write(1)` for `archivum`, never `openat(257)`, and admits an `openat2` site only when the `open_how` it passes is proven, byte for byte, to be one of the prelude's four constants in a non-writable segment (`tests/unit/audit_openat2.asm`). What `RESOLVE_BENEATH` bounds is *names*: a hard link beneath the root to a file outside it is reachable (measured, `prototypes/beneath/`). `docs/design/archivum-beneath.md` is the design, and its section 2 is the measurement.
 
@@ -914,11 +914,32 @@ order would be observable, and no tree shape but strictly-left-to-right would
 be a valid implementation — the declaration would become a lie the moment
 anything used it. The accumulator is write-only until the reduction completes. **Writing to it is the contribution:** inside the body, `acc = e;` contributes `e` under the operator `contrahe` declared, and is the only statement that may name `acc`; any other read is `EXS-E0341`. After the loop `acc` is an ordinary binding. **The operator must be associative:** `+`, `+%`, `+|`, `*` — §8.6's `ArithOp` also admits `-`, `-%` and `-|`, and subtraction under `arborea` has no meaning this section defines; a `contrahe` declared with one is `EXS-E0343` (`docs/design/lowering.md`, finding 4). §8.5 gave the declaration and §8.6 its grammar and neither had said how a value gets in (`docs/design/checker.md`, finding 9).
 
-**`rumpe` is forbidden inside an iteration carrying a `contrahe`.** An early
-exit makes the result depend on which iterations ran, and under `quisque` that
-is not even well defined. Use `per` with an explicit accumulator if an
-early-exit fold is what is wanted; it is then ordinary sequential code and
-claims nothing about shape.
+**`rumpe` is forbidden where it would exit a reduction** (`EXS-E0342`). An
+early exit of the reduction makes the result depend on which iterations ran,
+and under `quisque` that is not even well defined. A `rumpe` leaves its
+**nearest enclosing loop** and nothing else (§8.6 has no labelled form), so the
+rule is about the `rumpe` whose nearest enclosing loop is the one carrying the
+`contrahe` — directly in its body, or under an `si`, `discerne` or block there
+that is not itself inside a further loop. A `rumpe` of a loop nested *inside*
+the body leaves only that inner loop: every iteration of the reduction still
+runs to the end of its body, none is skipped, and the stated reason does not
+apply — so it is accepted. An inner loop that itself carries a `contrahe` is a
+reduction in its own right, and a `rumpe` that exits *it* is refused. Use `per`
+with an explicit accumulator if an early-exit fold is what is wanted; it is
+then ordinary sequential code and claims nothing about shape.
+Evidence: `tests/unit/chk_ty_contrahe.asm` (`fx_a07`–`fx_a10` accepted,
+`fx_c09`–`fx_c13` refused, each with its code and offset) and, run end to end,
+`tests/programs/contractio_rumpe_interior/` — exit 18 on the reference backend
+and through the C backend under gcc at `-O0` and `-O2` (UBSan); its clang
+builds could not be linked in the environment that measured this (no UBSan
+runtime), and it is not `cross=yes`. **Narrowed 2026-10-03.** This
+paragraph, and §13's row for `EXS-E0342`, first read "`rumpe` is forbidden
+*inside* an iteration carrying a `contrahe`", and the checker implemented that
+wording: any `rumpe` lexically under a reduction was refused, including one
+that leaves an inner `per` and so exits nothing the reduction depends on. The
+wording was broader than its own reason; the checker was right to follow the
+text and the text was wrong to say it, and the fix is to the text and the
+checker together.
 
 ### Vectors
 
@@ -981,12 +1002,21 @@ scales.
   canonical `iconst`, RUN as a reinterpreted i64::MIN — a silent wrong value,
   not a diagnostic. The rule is now sign-aware (`checker/types/types.inc`,
   `__chk_ty_fits`'s `neg` argument and the `.un` arm of `__chk_ty_expect`;
-  `tests/unit/chk_ty_hexlit.asm`'s signed-boundary rows). `[OPEN]`: the
-  *lowering* still cannot emit a sub-64 `iN`::MIN — `-e` lowers as `0 − e`
-  and `iconst iN 2^(N−1)` is not canonical (`docs/design/ssa-ir.md` §2.2), so
-  `-128: i8` type-checks and then fails at emit; the fold of `−`<literal> into
-  one canonical constant is the fix and is not yet made
-  (`docs/design/lowering.md`).
+  `tests/unit/chk_ty_hexlit.asm`'s signed-boundary rows). The *lowering* now
+  emits a sub-64 `iN`::MIN too: `__lwr_unary` FOLDS `−`<integer literal> into
+  one canonical `iconst iN` of the two's-complement value
+  (`compiler/x86_64/lower/expr.inc`), so `-128: i8` is `iconst i8 -128` and no
+  longer the old `0 − e`'s non-canonical `iconst i8 128` (which the emitter
+  refused, `docs/design/ssa-ir.md` §2.2), and `-9223372036854775808: i64`
+  emits with no subtraction rather than `0 − i64::MIN` (which overflowed and
+  TRAPPED). The fold is restricted to a SIGNED-integer literal: an unsigned
+  `−V` keeps lowering as `0 − V` and traps on underflow, and a non-literal
+  `−e` is unchanged. `tests/programs/integri_minimi/` builds `i8`/`i16`/`i32`/
+  `i64` ::MIN from decimal literals and proves each equals MIN on both
+  backends; `docs/design/lowering.md`'s `Unary −` row is the lowering
+  reference. (This was `[OPEN]` until 2026-10-03, with the prose asserting the
+  lowering could not emit it: that prose was the stale half — the fix is this
+  fold, and the checker half was already in place.)
 - **`sicut` between integer types is total and never traps.** Widening
   is §5.2's explicit sentence: a `uN` is zero-extended, an `iN`
   sign-extended, **by the source's sign**. The two other cases were not
@@ -2059,18 +2089,31 @@ always parsed as `Path [GenericArgs]`.
 
 | position | form | ends at |
 |---|---|---|
-| function declaration, interface member, `externus` member | bare row after `-> Type` or `)` | first token that is not `,` |
-| implementation head (`interfacies … in T poscit …`) | bare row | `{` |
+| function declaration, interface member, `externus` member | bare row after `-> Type` or `)`; or the empty row braced, `poscit {}` | first token that is not `,`; the `}` of `poscit {}` |
+| implementation head (`interfacies … in T poscit …`) | bare row, or `poscit {}` | `{` |
 | function type, `dyn` type | braced `poscit { … }` | `}` |
 | lambda | none — `EXS-E0201` if present | — |
 
 `RowItem ::= Path | 'sicut' IDENT` in both forms. `poscit {}` is an explicit
-empty row; a bare `poscit` with no item is `EXS-E0201`. A type consumes
+empty row, **in a declaration as in a type**. `DeclRow` admits exactly one
+braced alternative, `'poscit' '{' '}'`, and no other: `poscit {rete}` on a
+declaration is `EXS-E0201` at the `{`, as is a bare `poscit` with no item. What
+decides it is the two tokens after `poscit`, `{ }`, both of them — a lone `{`
+after a bare `poscit` is a function body, and reading it as the opening of a
+braced row would swallow the body and move the error from the `{` to somewhere
+inside it. A comment or whitespace between the braces is not a token, so
+`poscit { }` is the same row. A written empty row is a *declared* row (§4.1
+rule 6): a private function that writes it is held to it and does not infer.
+A lambda still takes no `poscit`, `poscit {}` included (decision 2). A type consumes
 `poscit` **only when the next token is `{`** — so a declaration whose result
 type is a function type still takes a bare row without parentheses, and a
 body is never mistaken for a row. The one odd corner is deterministic:
 `-> functio(A) -> B poscit {rete} poscit alloc {` is a braced row on the
-result type followed by the declaration's own bare row, then the body.
+result type followed by the declaration's own bare row, then the body. It is
+also where the declaration's own empty row is spelled when the result is a
+function type: `-> functio(A) -> B poscit {} poscit {} {` — the first `poscit {`
+is the type's, by the peek above, and the second is the declaration's. With
+only one, the declaration has no row of its own.
 
 ### Grammar
 
@@ -2088,7 +2131,7 @@ Terminals are §8.4's tokens; `IDENT` `INT` `STRING` are the lexer's classes.
     Param         ::= IDENT ':' Type
     GenericParams ::= '<' GenericParam (',' GenericParam)* '>'
     GenericParam  ::= IDENT [':' Type]
-    DeclRow       ::= 'poscit' RowItem (',' RowItem)*
+    DeclRow       ::= 'poscit' ( RowItem (',' RowItem)* | '{' '}' )
     TypeRow       ::= 'poscit' '{' [Path (',' Path)*] '}'
     RowItem       ::= Path | 'sicut' IDENT
     StructDecl    ::= 'structura' IDENT [GenericParams] '{' Field* '}'
@@ -2196,6 +2239,7 @@ Every place the parser looks past the current token, and how it resolves.
 |---|---|---|
 | statement start `functio` | `functio IDENT` | a nested named function: `EXS-E0201`, **no fix payload**; otherwise a lambda expression statement |
 | after a function or `dyn` type | `poscit {` | braced `TypeRow` belongs to the type; bare `poscit` belongs to the enclosing declaration |
+| after a declaration's `poscit` | `{ }` | the explicit empty row; anything else is a `RowItem` list, and a `{` not followed by `}` is the missing item's error, at the `{`, with the body still parsed as a body |
 | struct / `interfacies` / `externus` body recovery | `IDENT :` or `}` | next member, or end of body |
 | `TypeArg` | `INT` | value argument (`acies<f32, 1024>`); anything else is a `Type`; a named constant parses as `Path` and is resolved semantically |
 
@@ -2916,7 +2960,7 @@ Scratch work without ambient authority: `exsc curre --potestates omnes scratch.e
 | `EXS-E0322` | implicit padding in a `@transitus` type |
 | `EXS-E0332` | branded offset applied to the wrong buffer |
 | `EXS-E0341` | reduction accumulator read inside its own body |
-| `EXS-E0342` | `rumpe` inside an iteration carrying a `contrahe` |
+| `EXS-E0342` | `rumpe` that exits a loop carrying a `contrahe` |
 | `EXS-E0343` | reduction shape malformed |
 | `EXS-E0351` | `discerne` is not exhaustive |
 | `EXS-E0421` | undeclared capability (atom or row) |
@@ -2958,11 +3002,15 @@ the bound was written. The `dyn` case turns out to be the special one.
 
 `EXS-E0341` and `EXS-E0342` close a gap §5.4 opened. That section states two
 rules — a running accumulator is not readable inside the reduction body, and
-`rumpe` is forbidden inside an iteration carrying a `contrahe` — and neither
+`rumpe` is forbidden where it would exit a reduction — and neither
 had a code to be reported with. Both are `03xx` because they are semantic
 rules about a §5.x construct, alongside `EXS-E0311`'s `textus` index and
 `EXS-E0332`'s branded offsets. Neither carries a machine-applicable fix: the
 edit in both cases is a restructure that changes what the program computes.
+`EXS-E0342`'s **text** narrowed on 2026-10-03 and the code did not move: it
+was registered as "`rumpe` inside an iteration carrying a `contrahe`", which
+also described a `rumpe` of an inner `per` — one that exits nothing the
+reduction depends on. §8.3: codes are permanent, text is not.
 
 `EXS-E0351` closes a gap §8.5 opened and is `03xx` on the same reasoning as
 `EXS-E0341` above: a semantic rule about a §8.x construct. §8.5 has said since

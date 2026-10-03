@@ -373,6 +373,11 @@ segment readable
   sample_26:	db	'publica functio f() { x = y = z; }'
   sample_26_end:
   sample_26_LEN = sample_26_end - sample_26
+  ; the explicit empty row (§4.1 rule 6): trivia INSIDE the braces -- a blank,
+  ; a newline and a comment -- must come back out byte for byte
+  sample_27:	db	'functio f() -> f32 poscit {  ', 10, '  // none', 10, '} { redde 1.0; }'
+  sample_27_end:
+  sample_27_LEN = sample_27_end - sample_27
 
   case_tab:
 	dq	sample_a, sample_a_LEN	; examples/saluta.exsc
@@ -401,9 +406,10 @@ segment readable
 	dq	sample_24, sample_24_LEN	; generic arguments nested five deep and closed none
 	dq	sample_25, sample_25_LEN	; separators with nothing to separate
 	dq	sample_26, sample_26_LEN	; §8.6 decision 5: assignment is a statement, so the second `=` is not an operator
+	dq	sample_27, sample_27_LEN	; `poscit {` trivia `}` -- a declaration's explicit empty row, with a comment between the braces
   case_end:
   CASE_N = (case_end - case_tab) / 16
-  assert CASE_N = 26
+  assert CASE_N = 27
 
 segment readable writeable
   ct_arena	rb sizeof.Arena

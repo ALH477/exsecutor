@@ -202,7 +202,7 @@ diag_code_msg_len:
 	dd	37
 	dd	42
 	dd	46
-	dd	45
+	dd	43
 	dd	25
 	dd	26
 	dd	35
@@ -310,7 +310,7 @@ diag_msg22 db	':nativus in a @transitus type'	; EXS-E0321
 diag_msg23 db	'implicit padding in a @transitus type'	; EXS-E0322
 diag_msg24 db	'branded offset applied to the wrong buffer'	; EXS-E0332
 diag_msg25 db	'reduction accumulator read inside its own body'	; EXS-E0341
-diag_msg26 db	'rumpe inside an iteration carrying a contrahe'	; EXS-E0342
+diag_msg26 db	'rumpe that exits a loop carrying a contrahe'	; EXS-E0342
 diag_msg27 db	'reduction shape malformed'	; EXS-E0343
 diag_msg28 db	'discerne is not exhaustive'	; EXS-E0351
 diag_msg29 db	'undeclared capability (atom or row)'	; EXS-E0421

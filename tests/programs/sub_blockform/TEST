@@ -1,0 +1,15 @@
+# A block-form `sub P = e { ... }` with a call-induced draw of P INSIDE the
+# block. The block is the scope the binding is live for (spec §4.5), so the
+# checker must accept the draw -- exactly as the lowering does -- and the
+# program builds, runs to exit 0, and audits clean. The regression guard for
+# the lexical-scope `sub` provision fix (checker/rows/compute.inc
+# `__chk_row_eff`): an interim version refused this at the checker while the
+# lowering accepted it, the kind of checker/lowering divergence the fix exists
+# to remove.
+#
+# No `sources=`: the directory's own sub_blockform.exsc is the unit. The
+# program phase audits every binary with --potestates Mundus,ambitus; the atom
+# here is `ambitus`, so the binary's closure stays within that default -- the
+# atom is immaterial to the lexical-scope rule under test, and the archivum
+# surface is audited in archivum_{radix,profundum,refusa}/.
+TEST: expect-exit=0

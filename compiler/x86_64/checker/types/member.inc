@@ -85,11 +85,91 @@ proc __chk_ty_pre_assoc, chkt_kv
 	return
 endp
 
+; __chk_ty_closed_recv(w, t) -> eax = 1 if type `t` -- seen through any number
+; of `&`, `&mutabilis`, `refero` and pointer layers -- is a PRELUDE
+; CAPABILITY-BEARING type: one of the records whose type carries a TAGGED
+; prelude reference instead of a declaration (`Scriptor`, `Lector`,
+; `Directorium`, `Lectorium`, `Scriptorium`; `chk_ty_prelude_type`'s
+; `.scriptor` and `.struct_pre`), or a capability atom (`AST_TY_CAP`: `Mundus`
+; and the ten others).
+;
+; THE MEMBERS OF SUCH A TYPE ARE A CLOSED SET: its own prelude rows, which
+; `__chk_ty_pre_member` has already answered before this is asked. Nothing a
+; source program declares can add one -- a name that is not one of those rows
+; is not a member -- and `__chk_ty_member` ends in `EXS-E0305` for it without
+; looking further. The "further" it would otherwise look is what this exists to
+; stop: the impl scan, and above all the LAST-RESORT module-wide hint (pass
+; 1's unique member of that name), which will bind `s.a` or `s.zzz` to ANY
+; `interfacies` member the module happens to declare under that name. For a
+; receiver with a source declaration that is a reasonable guess; for a prelude
+; one it types a call the lowering then traps on, and `exsc` dies on SIGILL, exit
+; 132, on a well-formed program (audit 2026-10-03 finding 5, found by review of
+; its first fix, which removed the field rows and so let `s.a()` fall into the
+; hint). WHICH `rassert` fires was not isolated -- `__lwr_call_user` carries
+; several, and a call of a user impl method on a plain USER struct traps there
+; too, a separate and older matter -- so no mechanism is claimed beyond the
+; exit status.
+;
+; NOT `erratum`, NOT `eventus`: those are source-level prelude declarations
+; with a real declaration id in `AstType.a` (prim.inc's `__chk_ty_pre_eventus`
+; builds them over `__chk_ty_decl_type`), found by the ordinary scans, and
+; `e.numerus` is a field read of one.
+;
+; The peel terminates: an interned type's operand is an id interned before it.
+proc __chk_ty_closed_recv, chkt_wCR, chkt_tCR
+	uses	rbx, r12
+	locals
+	endl
+	mov	rbx, [chkt_wCR]
+	mov	r12, [chkt_tCR]
+  .peel:
+	mov	rdi, rbx
+	mov	rsi, r12
+	call	__chk_ty_kindof
+	cmp	rax, AST_TY_CAP
+	je	.yes
+	cmp	rax, AST_TY_STRUCT
+	je	.struct
+	cmp	rax, AST_TY_BORROW
+	je	.layer
+	cmp	rax, AST_TY_REF
+	je	.layer
+	cmp	rax, AST_TY_REFC
+	je	.layer
+	cmp	rax, AST_TY_PTR
+	jne	.no
+  .layer:
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, AstType.a
+	call	__chk_ty_field		; the pointee's type id
+	mov	r12, rax
+	test	r12, r12
+	jnz	.peel
+	jmp	.no
+  .struct:
+	mov	rdi, rbx
+	mov	rsi, r12
+	mov	rdx, AstType.a
+	call	__chk_ty_field		; a declaration id, or a TAGGED prelude row
+	mov	rdi, rax
+	call	__chk_ty_is_pre
+	jmp	.out
+  .yes:
+	mov	eax, 1
+	jmp	.out
+  .no:
+	xor	eax, eax
+  .out:
+	return
+endp
+
 ; __chk_ty_pre_member(w, recvty, nameid) -> rax = the 1-based prelude row a
 ; member of `recvty` named `nameid` resolves to, or 0.
 ;
-; Reachable this way: `Scriptor.a`, `Scriptor.descriptor`, `Scriptor.scribe`,
-; `Scriptor.scribe_octeto` and `Scriptor.ad_exitum` on a `Scriptor`;
+; Reachable this way: `Scriptor.scribe`, `Scriptor.scribe_octeto` and
+; `Scriptor.ad_exitum` on a `Scriptor` (its FIELDS `a` and `descriptor` are
+; not -- see `.scriptor` below);
 ; `Lector.lege_octeto` and `Lector.ab_introitu` on a `Lector`;
 ; `ad_radicem`, `infra`, `lege_ex`, `crea` on a `Directorium`, `exlege_octeto`
 ; on a `Lectorium`, `inscribe` and `inscribe_octeto` on a `Scriptorium`
@@ -180,16 +260,34 @@ proc __chk_ty_pre_member, chkt_wPM, chkt_tPM, chkt_mPM
 	je	.yes
 	jmp	.no
 
+  ; ---- NO FIELD ROW IS A MEMBER OF `Scriptor` EITHER ---------------------------
+  ; `Scriptor.a` and `Scriptor.descriptor` are rows 2 and 3 of this pool and
+  ; this arm used to answer `.yes` for both, so `s.a` and `s.descriptor` TYPED
+  ; (`ambitus`, `i32`) and then reached the lowering, whose `__lwr_member_read`
+  ; has no case for a prelude field -- a prelude member carries `Member.d` == 0
+  ; -- and `rassert`ed: `exsc` died on SIGILL, exit 132, on a well-formed
+  ; program (audit 2026-10-03 finding 5). `Directorium`, `Lectorium` and
+  ; `Scriptorium` below hide their fields (ADR 0017 R3), `Lector` never listed
+  ; them, and `Scriptor` is brought into line: `s.a` falls through to
+  ; `.fields`, where `__chk_ty_closed_recv` stops it as `EXS-E0305`, no new
+  ; code. DROPPING THE ROWS ALONE WAS NOT ENOUGH, and the first version of this
+  ; fix stopped there: with the rows gone `s.a` fell on to the last-resort
+  ; module-wide hint, and a module declaring `interfacies Gx { functio a(self:
+  ; Scriptor) -> u8 }` had `s.a()` bound to it, typed, and killed in the
+  ; lowering -- a SIGILL where the field row had given a clean E0305. The rule
+  ; is the closed set, not the removal.
+  ;
+  ; THE ROWS STAY. They are the type's layout facts (`chk_row_pre_marks`,
+  ; `chk_ty_prelude_type`'s `.amb`/`.i32`, interface.inc's offset asserts) and
+  ; the blob reads those fields by constant; only their reachability BY NAME
+  ; from a source program is withdrawn. Nothing in the language read them: no
+  ; example, fixture or program in the tree contains `s.a` or `s.descriptor`.
   .scriptor:
 	mov	rdi, rbx
 	mov	rsi, CHK_TY_PRE_SCRIPTOR
 	call	chk_ty_prelude_type
 	cmp	rax, r12
 	jne	.lector
-	cmp	r13, CHK_TY_PRE_SCR_A
-	je	.yes
-	cmp	r13, CHK_TY_PRE_SCR_FD
-	je	.yes
 	cmp	r13, CHK_TY_PRE_SCRIBE
 	je	.yes
 	cmp	r13, CHK_TY_PRE_SCRIBE_OCT
@@ -213,7 +311,9 @@ proc __chk_ty_pre_member, chkt_wPM, chkt_tPM, chkt_mPM
   ; ---- ADR 0017. NO FIELD ROW IS A MEMBER OF ANY OF THE THREE -- not `a`,
   ; not `descriptor` -- so `d.a` falls through to `.fields`, finds a prelude
   ; struct, and is EXS-E0305 (design D1, R3). The `Scriptor.a` row (2) is
-  ; `Scriptor`'s and is compared against `recvty` like every other row here.
+  ; `Scriptor`'s and is compared against `recvty` like every other row here
+  ; -- and, since the `.scriptor` arm above stopped answering it, it names no
+  ; member of anything.
   .directorium:
 	mov	rdi, rbx
 	mov	rsi, CHK_TY_PRE_DIRECTORIUM
@@ -609,6 +709,23 @@ proc __chk_ty_member, chkt_wMB, chkt_nMB
 	return
 
   .fields:
+	; THE CLOSED SET. A prelude capability-bearing receiver -- `Scriptor`,
+	; `Lector`, `Directorium`, `Lectorium`, `Scriptorium`, a capability atom
+	; such as `Mundus`, or a reference to one -- has exactly its own prelude
+	; rows for members, and `__chk_ty_pre_member` has just answered them. A
+	; name it did not answer is EXS-E0305, for the read `s.a` and the call
+	; `s.a()` alike, and is NOT looked up in an impl or in pass 1's module-wide
+	; hint below: that hint would bind it to any user `interfacies` member of
+	; the same name, type the call, and hand the lowering one it traps on --
+	; SIGILL, exit 132 (`__chk_ty_closed_recv`'s header). A field name
+	; (`a`, `descriptor`), an unknown name and a colliding name are the same
+	; case, and it is one rule rather than three.
+	mov	rdi, rbx
+	mov	rsi, [chkt_tMB]
+	call	__chk_ty_closed_recv
+	test	eax, eax
+	jnz	.nomember
+
 	; a field of a source struct
 	mov	rdi, rbx
 	mov	rsi, [chkt_tMB]
@@ -623,7 +740,8 @@ proc __chk_ty_member, chkt_wMB, chkt_nMB
 	mov	rdi, r13
 	call	__chk_ty_is_pre
 	test	eax, eax
-	jnz	.methods		; the prelude's `Scriptor`, already tried
+	jnz	.nomember		; unreachable behind the closed set above; a
+					; TAGGED id must never reach `__chk_ty_field_of`
 	mov	rdi, rbx
 	mov	rsi, r13
 	mov	rdx, [chkt_mMB]

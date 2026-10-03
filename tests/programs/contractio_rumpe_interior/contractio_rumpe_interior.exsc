@@ -1,0 +1,40 @@
+// contractio_rumpe_interior -- spec §8.5's `rumpe` rule, narrowed 2026-10-03:
+// a `rumpe` is `EXS-E0342` only when it EXITS a loop carrying a `contrahe`.
+//
+// The `rumpe` below leaves the inner `per`, not the reduction. Every
+// iteration of the `quisque` still runs to its `acc = n + i;`, so the result
+// does not depend on which iterations ran -- §5.4's reason for the rule, which
+// the old literal wording ("inside an iteration carrying a `contrahe`")
+// over-stated and refused this program for.
+//
+// WHAT THE EXIT STATUS PROVES, and why the inner loop counts rather than
+// merely breaks. `n` is local to the reduction body, so each of the four
+// iterations counts its own inner iterations before the `rumpe`:
+//
+//   j = 0, 1, 2   `n` becomes 1, 2, 3
+//   j = 3         `j gt 2` -> `rumpe`: the inner loop ends with n = 3
+//
+// and contributes `n + i` = 3 + i. Under `+` the four contributions are
+// 3 + 4 + 5 + 6 = 18, and 18 is the one value consistent with BOTH "the inner
+// loop stopped after three increments" AND "all four reduction iterations
+// contributed". The two ways to be wrong separate:
+//
+//   22   the inner loop ran to its end (n = 4 each time: 4 * 4 + 6)
+//   <18  the `rumpe` was lowered as an exit of the reduction, and iterations
+//        never reached their `acc = n + i;`
+//
+// The same body with the `rumpe` as a direct child of the reduction is
+// `EXS-E0342` and stays so: `tests/unit/chk_ty_contrahe.asm`'s
+// `fx_c09`, `fx_c10`, `fx_c11` and `fx_c12` hold that half, and this program
+// is the half that must RUN.
+publica functio initium(m: Mundus) -> u8 {
+    quisque i in 0..4 contrahe acc: + {
+        mutabilis n: mensura = 0;
+        per j in 0..4 {
+            si j gt 2 { rumpe; }
+            n = n + 1;
+        }
+        acc = n + i;
+    }
+    redde acc sicut u8;
+}

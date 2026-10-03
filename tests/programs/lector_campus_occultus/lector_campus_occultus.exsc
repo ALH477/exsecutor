@@ -1,0 +1,18 @@
+// `Scriptor`'s mirror for audit 2026-10-03 finding 5: a `Lector` field.
+//
+// `Lector` was never open -- interface.inc gives it NO field rows, and its
+// `.lector` arm in `__chk_ty_pre_member` lists only `lege_octeto` and
+// `ab_introitu` -- so this program has always been `EXS-E0305`. It is here
+// because the finding named both types and because the way it would reopen is
+// the way `Scriptor` was open: someone adds a field row to `Lector` so that
+// `l.descriptor` can be read, lists it in the arm, and gets the same
+// lowering trap (exit 132) instead of a refusal. `exsc-exit=1` fails then.
+//
+// See ../scriptor_campus_occultus/ for the full account.
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    firma l = Lector.ab_introitu(a);
+    firma x = l.descriptor;
+    redde 0;
+}

@@ -1,0 +1,3 @@
+# A prelude `Lector` field is not a member: EXS-E0305, exsc exits 1. Always
+# true; pinned so it stays true. See ../scriptor_campus_occultus/.
+TEST: exsc-exit=1

@@ -33,7 +33,10 @@
 ;       chk_row_sicut_forward.asm rows 11-18;
 ;   R2  no prelude routine draws `archivum` implicitly: `ad_radicem` takes it
 ;       as a value, and every other row is empty;
-;   R3  `Directorium`, `Lectorium` and `Scriptorium` have no field rows.
+;   R3  `Directorium`, `Lectorium` and `Scriptorium` have no field rows --
+;       and neither have `Scriptor` and `Lector` (rows 27-30, audit
+;       2026-10-03 finding 5: `Scriptor` listed its two field rows as
+;       members, `s.a` type-checked, and the lowering died on SIGILL);
 ;
 ;	1  a whole program over the surface                     clean
 ;	2  a root forwarded two levels, derived beneath          clean
@@ -61,6 +64,14 @@
 ;	24 `a sicut u64` (the atom as a number)                  {EXS-E0305}
 ;	25 `g sicut functio(u8) -> u8` (a row taken off `g`)     {EXS-E0305}
 ;	26 `&x sicut &mutabilis u8` (mutability gained)          {EXS-E0305}
+;	27 R3: `s.a`, `s.descriptor` on a `Scriptor`             {E0305, E0305}
+;	28 R3: `l.a`, `l.descriptor` on a `Lector`               {E0305, E0305}
+;	29 R3: a `Scriptor` field WRITTEN and ADDRESSED          {E0305, E0305}
+;	30 R3: a `Scriptor` field of a call result / a nested one {E0305, E0305}
+;	31 CLOSED SET: `s.a`, `s.descriptor` WITH a module member of that name  {E0305, E0305}
+;	32 CLOSED SET: the CALL forms `s.a()`, `s.descriptor()`, same module     {E0305, E0305}
+;	33 CLOSED SET: `l.la()` on a `Lector`, `m.zz()` on `Mundus`             {E0305, E0305}
+;	34 CLOSED SET: `r.a()` on a `&Scriptor`, `s.zzz()` an unknown name      {E0305, E0305}
 ;
 ; NON-VACUITY, run when this fixture was written (each mutant in a scratch
 ; copy of the tree; the exit given is the one measured -- the first three
@@ -87,6 +98,55 @@
 ; own row, started one at a time (exit 10+N); row 20, the one that must stay
 ; clean, fails (exit 30) when castrel loses its same-type arm or stops
 ; counting an integer as a numeric scalar.
+;
+; Rows 27-30 close audit 2026-10-03 finding 5. `__chk_ty_pre_member`'s
+; `.scriptor` arm answered `.yes` for the rows `Scriptor.a` and
+; `Scriptor.descriptor`, so `s.a` (a read, a write, `&s.a`, `s.a sicut T`, and
+; the same through a call result or a nested struct) TYPED, reached
+; `__lwr_member_read`'s `rassert r13d ne 0` -- a prelude member carries
+; `Member.d` == 0 -- and `exsc` exited 132. `Lector` never listed its fields
+; and `Directorium` and its two siblings hide theirs, so only `Scriptor` was
+; open; row 28 is `Lector`'s pin so a field row added to it later meets the
+; same refusal. The END-TO-END half is `tests/programs/scriptor_campus_occultus/`
+; and `lector_campus_occultus/`, which hold `exsc`'s own exit status to 1
+; on both backends (132 is the trap).
+; NON-VACUITY of rows 27-30, measured against HEAD's member.inc (the two `cmp r13,
+; CHK_TY_PRE_SCR_A/FD ; je .yes` pairs back in the `.scriptor` arm): through
+; tests/run.sh this fixture stops at row 27, exit 37, and `scriptor_campus_
+; occultus/` reports `exsc exit=132, expected 1`. Run on each row's own source,
+; that checker reports 0 diagnostics for rows 27, 29 and 30 -- they TYPE-CHECK,
+; which is the bug -- where 2 are expected, and 2 for row 28, which stays green
+; because `Lector` was never open.
+;
+; Rows 31-34 are the CLOSED SET, and they exist because rows 27-30 were not
+; enough. The first version of this fix only dropped the two field rows from
+; `__chk_ty_pre_member`'s `.scriptor` arm; `s.a` then fell through `.fields`
+; and `.methods` to `__chk_ty_member`'s LAST-RESORT hint -- pass 1's unique
+; module-wide member of that name -- so a module declaring `interfacies Gx {
+; functio a(self: Scriptor) -> u8 }` had `s.a()` bound to `Gx::a`, typed, and
+; handed to a lowering that traps on it: exit 132 where
+; the field row had given a clean E0305 (found by review of that fix, which is
+; the review CLAUDE.md requires; rows 27-30 were green throughout, because none
+; of them has a colliding member in its module). The rule now is that a prelude
+; capability-bearing receiver -- `Scriptor`, `Lector`, `Directorium`,
+; `Lectorium`, `Scriptorium`, a capability atom such as `Mundus`, or a
+; reference to one -- has ONLY its own prelude rows for members
+; (`__chk_ty_closed_recv`), so a field name, an unknown name and a name that
+; collides with a user member are one case and one code, for the read and the
+; call alike. Rows 31 and 32 are the adversary's own shape (read and call);
+; row 33 is the other receivers (`Lector`, the `Mundus` atom), row 34 a
+; reference receiver and an unknown name. NON-VACUITY, measured against
+; e055d10's member.inc (rows 27-30 green, the guard absent): through
+; tests/run.sh this fixture stops at row 31, exit 41; and `scriptor_nomen_
+; collidens/` reports `exsc exit=132, expected 1`. Run on each row's own source
+; with that checker, rows 31-34 produce 0 diagnostics -- they TYPE-CHECK, which
+; is the bug. Rows 33 and 34 have teeth of their own, measured by mutating the
+; guard: with `__chk_ty_closed_recv`'s capability-atom arm removed the fixture
+; stops at row 33 (exit 43); with the `&`/`&mutabilis`/`refero`/pointer layers
+; not peeled, at row 34 (exit 44). Removing its struct arm alone changes
+; nothing for a DIRECT `Scriptor` receiver -- `.fields` also routes a tagged
+; struct to `.nomember` (it was `jnz .methods` in e055d10, which is the hole) --
+; so that mutant too stops at row 34, the reference.
 ;
 ; Exit 0 = every row passed; 10+N = row N of the table above did not match,
 ; with the diagnostics it did produce printed to stdout first.
@@ -652,6 +712,104 @@ segment readable
 		db '}', 10
   fx_s26_LEN = $ - fx_s26
 
+  ; s27: R3 for `Scriptor` -- audit 2026-10-03 finding 5. `s.a` and
+  ; `s.descriptor` used to TYPE (`ambitus`, `i32`) and then killed the
+  ; lowering with SIGILL. EXS-E0305 twice, like row 7's `Directorium`.
+  fx_s27:	db 'publica functio f(s: Scriptor) -> u8 poscit sicut s {', 10
+		db 9, 'firma x = s.a;', 10
+		db 9, 'firma y = s.descriptor;', 10
+		db 9, 'redde 0;', 10
+		db '}', 10
+  fx_s27_LEN = $ - fx_s27
+  ; s28: the same for `Lector`, which was already refused -- the pin that keeps
+  ; it so if a field row is ever added to it (interface.inc says what that
+  ; would take).
+  fx_s28:	db 'publica functio f(l: Lector) -> u8 poscit sicut l {', 10
+		db 9, 'firma x = l.a;', 10
+		db 9, 'firma y = l.descriptor;', 10
+		db 9, 'redde 0;', 10
+		db '}', 10
+  fx_s28_LEN = $ - fx_s28
+  ; s29: not only a read. A WRITE through a copy and an ADDRESS of a field are
+  ; the other two ways a `Member` reaches the lowering, and both went through
+  ; the same arm. EXS-E0305 at each.
+  fx_s29:	db 'publica functio f(s: Scriptor) -> u8 poscit sicut s {', 10
+		db 9, 'mutabilis t = s;', 10
+		db 9, 't.descriptor = 5;', 10
+		db 9, 'firma r = &s.a;', 10
+		db 9, 'redde 0;', 10
+		db '}', 10
+  fx_s29_LEN = $ - fx_s29
+  ; s30: the field of a CALL RESULT (`Scriptor.ad_exitum(a).descriptor`, no
+  ; named receiver for anything to object to) and of a struct that HOLDS a
+  ; `Scriptor` (`w.w.a`): a refusal keyed on the receiver's spelling rather
+  ; than its type would pass rows 27-29 and miss these two.
+  fx_s30:	db 'publica structura W { w: Scriptor }', 10
+		db 'publica functio f(s: Scriptor, m: Mundus) -> u8 poscit sicut s {', 10
+		db 9, 'firma x = Scriptor.ad_exitum(m.ambitus()).descriptor;', 10
+		db 9, 'firma w = W { w: s };', 10
+		db 9, 'firma y = w.w.a;', 10
+		db 9, 'redde 0;', 10
+		db '}', 10
+  fx_s30_LEN = $ - fx_s30
+
+  ; s31: THE CLOSED SET, the read forms. The module declares an `interfacies`
+  ; member of each name with a `Scriptor` receiver -- pass 1's unique-member
+  ; hint -- and `s.a`, `s.descriptor` must STILL be EXS-E0305: the hint is not
+  ; consulted for a prelude capability receiver. Rows 27-30 have no such member
+  ; in their module and so cannot see the difference.
+  fx_s31:	db 'interfacies Gx {', 10
+		db 9, 'functio a(self: Scriptor) -> u8', 10
+		db 9, 'functio descriptor(self: Scriptor) -> u8', 10
+		db '}', 10
+		db 'publica functio f(s: Scriptor) -> u8 poscit sicut s {', 10
+		db 9, 'firma x = s.a;', 10
+		db 9, 'firma y = s.descriptor;', 10
+		db 9, 'redde 0;', 10
+		db '}', 10
+  fx_s31_LEN = $ - fx_s31
+  ; s32: the same module, the CALL forms -- the ones that trapped. Before the
+  ; closed set a call of a name that matched a member typed `u8` and reached
+  ; the lowering with a prelude receiver. EXS-E0305 at each.
+  fx_s32:	db 'interfacies Gx {', 10
+		db 9, 'functio a(self: Scriptor) -> u8', 10
+		db 9, 'functio descriptor(self: Scriptor) -> u8', 10
+		db '}', 10
+		db 'publica functio f(s: Scriptor) -> u8 poscit sicut s {', 10
+		db 9, 'firma x = s.a();', 10
+		db 9, 'firma y = s.descriptor();', 10
+		db 9, 'redde 0;', 10
+		db '}', 10
+  fx_s32_LEN = $ - fx_s32
+  ; s33: not only `Scriptor`. A `Lector` (a name that is no row of it) and the
+  ; `Mundus` ATOM (`m.archivum` and `m.ambitus` are its rows; `zz` is not).
+  fx_s33:	db 'interfacies Gx {', 10
+		db 9, 'functio la(self: Lector) -> u8', 10
+		db 9, 'functio zz(self: Mundus) -> u8', 10
+		db '}', 10
+		db 'publica functio f(l: Lector, m: Mundus) -> u8 poscit sicut l {', 10
+		db 9, 'firma x = l.la();', 10
+		db 9, 'firma y = m.zz();', 10
+		db 9, 'redde 0;', 10
+		db '}', 10
+  fx_s33_LEN = $ - fx_s33
+  ; s34: a REFERENCE to a prelude record is the same receiver for this purpose
+  ; (`r.a()` with a `&Scriptor` receiver member trapped identically), and so is
+  ; a name that is simply unknown. The twin of both -- a real row of the same
+  ; receiver, `s.scribe_octeto(65)` -- is accepted: tests/programs/octeti/ runs
+  ; it, and `Directorium`'s own rows are rows 1-3.
+  fx_s34:	db 'interfacies Gx {', 10
+		db 9, 'functio a(self: &Scriptor) -> u8', 10
+		db 9, 'functio zzz(self: Scriptor) -> u8', 10
+		db '}', 10
+		db 'publica functio f(s: Scriptor) -> u8 poscit sicut s {', 10
+		db 9, 'firma r = &s;', 10
+		db 9, 'firma x = r.a();', 10
+		db 9, 'firma y = s.zzz();', 10
+		db 9, 'redde 0;', 10
+		db '}', 10
+  fx_s34_LEN = $ - fx_s34
+
   fx_tab:
 	dq fx_s01, fx_s01_LEN
 	dd 0, 0, 0, 0
@@ -705,6 +863,22 @@ segment readable
 	dd 1, 305, 0, 0
 	dq fx_s26, fx_s26_LEN
 	dd 1, 305, 0, 0
+	dq fx_s27, fx_s27_LEN
+	dd 2, 305, 305, 0
+	dq fx_s28, fx_s28_LEN
+	dd 2, 305, 305, 0
+	dq fx_s29, fx_s29_LEN
+	dd 2, 305, 305, 0
+	dq fx_s30, fx_s30_LEN
+	dd 2, 305, 305, 0
+	dq fx_s31, fx_s31_LEN
+	dd 2, 305, 305, 0
+	dq fx_s32, fx_s32_LEN
+	dd 2, 305, 305, 0
+	dq fx_s33, fx_s33_LEN
+	dd 2, 305, 305, 0
+	dq fx_s34, fx_s34_LEN
+	dd 2, 305, 305, 0
   FX_NROWS = ($ - fx_tab) / FX_ROW
   assert ($ - fx_tab) mod FX_ROW = 0
 

@@ -45,10 +45,10 @@ command_allow = [
                "examples/hydramodem/emitte.exsc"],
   # Every fixture floor tests/run.sh declares, matched as one count. If any
   # floor moves, the count drops and the README's suite figures fail with it
-  # -- which is the only way those eight numbers can be gated from here: the
+  # -- which is the only way those nine numbers can be gated from here: the
   # totals themselves need the whole suite, and the suite needs fasmg.
   ["grep", "-cE",
-   "FLOOR:-(193|78|128|236|59|236|13|6)\\}", "tests/run.sh"],
+   "FLOOR:-(193|78|131|236|59|236|45|13|6)\\}", "tests/run.sh"],
   # The two rasterizer goldens. Committed files, so unlike the emitted-unit
   # and exsc sizes these can be measured from here.
   ["wc", "-c", "tests/programs/pictura_triangulum/expected.out"],
