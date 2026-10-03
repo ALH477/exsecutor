@@ -1,0 +1,196 @@
+// dividua.exsc -- UTF-8 to UTF-16 by DIVIDE AND CONQUER on the byte range.
+//
+// `divide` takes a byte range [lo, hi). A range of at most 16 bytes goes to
+// `folium`, a plain sequential decoder. A longer one is cut in two at a byte
+// that is NOT a continuation byte (not 10xxxxxx), found by scanning forward
+// from the midpoint; if no such byte exists before `hi`, the range is not cut
+// and `folium` takes it whole, however long (a run of stray continuation
+// bytes is the case). The left half is converted first; the right half is
+// converted independently, writing at offset (off + the left half's unit
+// count). Strict mode: the left half's error is the leftmost error, so the
+// right half is never started once the shared state records one.
+//
+// WHY THE CUT IS EXACT. Take a decoder that walks [lo, hi) from the start. Each
+// step it takes starts at some byte p and covers p, then zero or more bytes it
+// ACCEPTED as continuations (each of those is 10xxxxxx), and stops at the first
+// byte it refuses, without consuming that byte. Now let s be a byte that is
+// not 10xxxxxx, lo < s < hi. (a) No step can cover s as anything but its first
+// byte, because every byte after the first that a step covers is a
+// continuation byte and s is not one. Steps tile the range, so some step
+// starts exactly at s, and every step before it ends at or before s. (b) The
+// steps before s never needed to see s as anything but "a byte I refuse":
+// when the left half is given [lo, s), a step that reached s in the whole-range
+// walk sees the end of its input instead of byte s, and end of input also
+// stops it with the same bytes consumed -- s could not have been accepted
+// either way. (c) The steps from s on depend only on the bytes from s on and
+// on the end of the input, which both halves share (hi). So the left half
+// makes exactly the steps the whole walk makes before s, the right half
+// exactly the steps from s, and their outputs concatenate to the whole
+// output. The same holds for a strict-mode error: the whole walk stops at the
+// first refused subpart, the left half's walk stops at that same subpart if it
+// lies before s, and otherwise the left half is clean and the right half's
+// first error is the whole walk's first error. Offsets in `positio` are
+// absolute because the leaf decoder indexes the whole of `fons`.
+//
+// SHARED STATE: a `Divisio` passed as `&mutabilis`. `unitates` is the running
+// total of units written (each leaf adds its own), `malum` and `ubi` the strict
+// error flag and its absolute byte offset, `modus` the mode. Offsets for the
+// right halves come from the halves' return values, not from `unitates`.
+//
+// MAXIMAL SUBPART in `modus_substitue`: decided entirely inside `folium`, by
+// the same argument as every sequential decoder here (the bytes accepted so
+// far are a well-formed prefix, and the refused byte, or the end of the leaf's
+// range, was not allowed to extend it). The argument above is what lets the
+// leaf's range ends stand in for the real end of input.
+//
+// MEASURED, with a throwaway copy that counted (not part of this file), over
+// the committed fixture's records that returned status_bene: the deepest
+// recursion was 10 calls, the most leaves in one record 341, and the longest
+// leaf 4096 bytes (a record of nothing but continuation bytes has no cut
+// point, so the leaf takes it whole).
+//
+// WHAT THIS DOES NOT SHARE WITH ramus. The control structure, wholly. The leaf
+// classifies the lead byte with `discerne` on its high nibble, not a branch
+// chain on its value; but it uses the same Table 3-7 second-byte bounds as
+// ramus does, deliberately plain, so that a disagreement with ramus would be
+// the cutting's fault and not the leaf's.
+
+structura Divisio {
+    unitates: mensura
+    ubi: mensura
+    modus: u8
+    malum: u8
+}
+
+// Convert fons[lo, hi) into scopus at offset `off`. Returns the units written.
+// Adds them to st.unitates; on a strict error records it and stops.
+functio folium(fons: acies<u8, 4096>, lo: mensura, hi: mensura, off: mensura,
+               scopus: &mutabilis acies<u16, 4096>, st: &mutabilis Divisio) -> mensura {
+    mutabilis i: mensura = lo;
+    mutabilis j: mensura = off;
+    dum i lt hi {
+        firma b0: u8 = fons[i];
+        si b0 lt 0x80 {
+            (*scopus)[j] = b0 sicut u16;
+            j = j + 1;
+            i = i + 1;
+        } aliter {
+            mutabilis opus: mensura = 0;
+            mutabilis clo: u8 = 0x80;
+            mutabilis chi: u8 = 0xBF;
+            mutabilis cp: u32 = 0;
+            discerne b0 deorsum 4 {
+                casus 0xC {
+                    si b0 ge 0xC2 {
+                        opus = 1;
+                        cp = (b0 atque 0x1F) sicut u32;
+                    }
+                }
+                casus 0xD {
+                    opus = 1;
+                    cp = (b0 atque 0x1F) sicut u32;
+                }
+                casus 0xE {
+                    opus = 2;
+                    cp = (b0 atque 0x0F) sicut u32;
+                    si b0 eq 0xE0 {
+                        clo = 0xA0;
+                    } sin b0 eq 0xED {
+                        chi = 0x9F;
+                    }
+                }
+                casus 0xF {
+                    si b0 le 0xF4 {
+                        opus = 3;
+                        cp = (b0 atque 0x07) sicut u32;
+                        si b0 eq 0xF0 {
+                            clo = 0x90;
+                        } sin b0 eq 0xF4 {
+                            chi = 0x8F;
+                        }
+                    }
+                }
+                aliter {
+                }
+            }
+
+            // bytes of this sequence taken so far, the lead included
+            mutabilis ate: mensura = 1;
+            mutabilis bonum: u8 = 0;
+            si opus gt 0 {
+                bonum = 1;
+            }
+            dum bonum eq 1 et ate le opus {
+                si i + ate ge hi {
+                    bonum = 0;
+                } aliter {
+                    firma b: u8 = fons[i + ate];
+                    si b lt clo vel b gt chi {
+                        bonum = 0;
+                    } aliter {
+                        cp = (cp sursum 6) sive ((b atque 0x3F) sicut u32);
+                        clo = 0x80;
+                        chi = 0xBF;
+                        ate = ate + 1;
+                    }
+                }
+            }
+
+            si bonum eq 1 {
+                si cp lt 0x10000 {
+                    (*scopus)[j] = cp sicut u16;
+                    j = j + 1;
+                } aliter {
+                    firma v: u32 = cp - 0x10000;
+                    (*scopus)[j] = (0xD800 + (v deorsum 10)) sicut u16;
+                    (*scopus)[j + 1] = (0xDC00 + (v atque 0x3FF)) sicut u16;
+                    j = j + 2;
+                }
+            } sin (*st).modus eq modus_stricte {
+                (*st).malum = 1;
+                (*st).ubi = i;
+                (*st).unitates = (*st).unitates + (j - off);
+                redde j - off;
+            } aliter {
+                (*scopus)[j] = 0xFFFD;
+                j = j + 1;
+            }
+            i = i + ate;
+        }
+    }
+    (*st).unitates = (*st).unitates + (j - off);
+    redde j - off;
+}
+
+// Convert fons[lo, hi) into scopus at `off`; returns the units written.
+functio divide(fons: acies<u8, 4096>, lo: mensura, hi: mensura, off: mensura,
+               scopus: &mutabilis acies<u16, 4096>, st: &mutabilis Divisio) -> mensura {
+    si hi - lo le 16 {
+        redde folium(fons, lo, hi, off, scopus, st);
+    }
+    // First byte at or after the midpoint that is not 10xxxxxx. `et`
+    // short-circuits, so fons[hi] is never read.
+    mutabilis s: mensura = lo + ((hi - lo) / 2);
+    dum s lt hi et (fons[s] atque 0xC0) eq 0x80 {
+        s = s + 1;
+    }
+    si s ge hi {
+        redde folium(fons, lo, hi, off, scopus, st);
+    }
+    firma a: mensura = divide(fons, lo, s, off, scopus, st);
+    si (*st).malum eq 1 {
+        redde a;
+    }
+    firma b: mensura = divide(fons, s, hi, off + a, scopus, st);
+    redde a + b;
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    mutabilis st: Divisio = Divisio { unitates: 0, ubi: 0, modus: modus, malum: 0 };
+    divide(fons, 0, n, 0, scopus, st);
+    si st.malum eq 1 {
+        redde Exitus { unitates: st.unitates, status: status_malformatum, positio: st.ubi };
+    }
+    redde Exitus { unitates: st.unitates, status: status_bene, positio: 0 };
+}
