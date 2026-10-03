@@ -1,0 +1,203 @@
+// fragmenta.exsc -- UTF-8 to UTF-16 as a CHUNKED, RESUMABLE decoder.
+//
+// The input is fed to `alimenta` in chunks of exactly 7 bytes (the last one
+// shorter), and every call picks up where the previous one stopped, from a
+// `Fragmentum` held as `&mutabilis`: continuation bytes still needed, the
+// allowed range of the next byte, the scalar built so far, the output index,
+// the absolute offset of the next byte, and the offset of the pending
+// sequence's first byte (strict mode's `positio`). `fini` is called once,
+// after the last chunk, and flushes whatever is still pending. `alimenta` is
+// handed a copy of the chunk in a 7-byte array and nothing else of the input,
+// so it cannot look ahead or behind.
+//
+// 7 is chosen because it is prime and larger than 4, so it shares no factor
+// with a sequence length of 2, 3 or 4: in a run of identical sequences, the
+// chunk boundary falls at a different offset inside each successive one, and
+// after 7 sequences it has fallen at every offset. Every kind of sequence is
+// therefore split across a boundary in every possible place. Measured with a
+// throwaway copy that counted (not part of this file), on 4096 bytes of one
+// repeated sequence: 1024 four-byte sequences left a sequence pending with 1, 2
+// and 3 of its bytes in hand after 146, 146 and 147 of the 586 calls
+// respectively; 1365 three-byte ones, 195 and 195 (1 and 2 bytes); 2048
+// two-byte ones, 293 (1 byte). The same file built with chunk sizes 1, 2, 3, 4,
+// 5, 6, 8, 9, 13, 16 and 64 also matched the oracle on the committed fixture.
+//
+// WHERE THE MAXIMAL SUBPART COMES FROM. While a sequence is pending, the state
+// holds the range the next byte must fall in. A byte inside it is accepted; a
+// byte outside it ends the pending sequence as ill-formed. The bytes accepted
+// so far were a well-formed prefix the refused byte may not extend, so they are
+// the maximal subpart: one U+FFFD in `modus_substitue`, and the sequence's
+// first byte is the `positio` in `modus_stricte`. The refused byte is NOT
+// consumed: the state goes back to "idle" and the same byte is looked at again
+// as a possible lead, which is the only place `alimenta` does not advance. At
+// the end of input, `fini` treats a still-pending sequence the same way: its
+// bytes are the maximal subpart.
+//
+// WHAT THIS DOES NOT SHARE WITH ramus. Nothing is decided by looking ahead: no
+// decision reads a byte past the one being fed. Where ramus holds a sequence's
+// state in locals across an inner `dum`, this holds it in a struct across calls.
+// What it does share is Table 3-7 (the same four irregular second-byte ranges,
+// set once when the lead is seen) and the output step.
+//
+// The pending bytes themselves are not stored. Their values are already folded
+// into the running scalar, a replacement does not depend on them, and how many
+// there are is `pos - inceptum`.
+
+structura Fragmentum {
+    opus: mensura
+    lo: u8
+    hi: u8
+    cp: u32
+    j: mensura
+    pos: mensura
+    inceptum: mensura
+    modus: u8
+    ubi: mensura
+}
+
+functio pone_scalarem(scopus: &mutabilis acies<u16, 4096>, j: mensura, cp: u32) -> mensura {
+    si cp lt 0x10000 {
+        (*scopus)[j] = cp sicut u16;
+        redde j + 1;
+    }
+    firma v: u32 = cp - 0x10000;
+    (*scopus)[j] = (0xD800 + (v deorsum 10)) sicut u16;
+    (*scopus)[j + 1] = (0xDC00 + (v atque 0x3FF)) sicut u16;
+    redde j + 2;
+}
+
+// An ill-formed subpart has ended, its first byte at offset `onde`. In strict
+// mode: remember the offset and answer 1, meaning stop. Otherwise: write one
+// U+FFFD and answer 0.
+functio malum_nota(scopus: &mutabilis acies<u16, 4096>, st: &mutabilis Fragmentum,
+                   onde: mensura) -> u8 {
+    si (*st).modus eq modus_stricte {
+        (*st).ubi = onde;
+        redde 1;
+    }
+    (*scopus)[(*st).j] = 0xFFFD;
+    (*st).j = (*st).j + 1;
+    redde 0;
+}
+
+// Feed chunk[0..m). Returns 1 as soon as a strict-mode error is found (the rest
+// of the chunk is not looked at), else 0.
+functio alimenta(chunk: acies<u8, 7>, m: mensura,
+                 scopus: &mutabilis acies<u16, 4096>, st: &mutabilis Fragmentum) -> u8 {
+    mutabilis k: mensura = 0;
+    dum k lt m {
+        firma b: u8 = chunk[k];
+
+        si (*st).opus gt 0 {
+            // a sequence is pending: b either continues it or ends it
+            si b ge (*st).lo et b le (*st).hi {
+                (*st).cp = ((*st).cp sursum 6) sive ((b atque 0x3F) sicut u32);
+                (*st).lo = 0x80;
+                (*st).hi = 0xBF;
+                (*st).opus = (*st).opus - 1;
+                (*st).pos = (*st).pos + 1;
+                k = k + 1;
+                si (*st).opus eq 0 {
+                    (*st).j = pone_scalarem(scopus, (*st).j, (*st).cp);
+                }
+            } aliter {
+                firma onde: mensura = (*st).inceptum;
+                si malum_nota(scopus, st, onde) eq 1 {
+                    redde 1;
+                }
+                (*st).opus = 0;
+                // b is not consumed: it is looked at again, idle
+            }
+        } sin b lt 0x80 {
+            (*scopus)[(*st).j] = b sicut u16;
+            (*st).j = (*st).j + 1;
+            (*st).pos = (*st).pos + 1;
+            k = k + 1;
+        } aliter {
+            // idle, and b is not ASCII: a lead, or an ill-formed byte
+            mutabilis opus: mensura = 0;
+            mutabilis lo: u8 = 0x80;
+            mutabilis hi: u8 = 0xBF;
+            mutabilis cp: u32 = 0;
+            si b ge 0xC2 et b le 0xDF {
+                opus = 1;
+                cp = (b atque 0x1F) sicut u32;
+            } sin b eq 0xE0 {
+                opus = 2;
+                lo = 0xA0;
+                cp = (b atque 0x0F) sicut u32;
+            } sin b eq 0xED {
+                opus = 2;
+                hi = 0x9F;
+                cp = (b atque 0x0F) sicut u32;
+            } sin b ge 0xE1 et b le 0xEF {
+                opus = 2;
+                cp = (b atque 0x0F) sicut u32;
+            } sin b eq 0xF0 {
+                opus = 3;
+                lo = 0x90;
+                cp = (b atque 0x07) sicut u32;
+            } sin b eq 0xF4 {
+                opus = 3;
+                hi = 0x8F;
+                cp = (b atque 0x07) sicut u32;
+            } sin b ge 0xF1 et b le 0xF3 {
+                opus = 3;
+                cp = (b atque 0x07) sicut u32;
+            }
+            si opus eq 0 {
+                // 80..C1, F5..FF: a subpart of one byte, nothing pending
+                firma onde: mensura = (*st).pos;
+                si malum_nota(scopus, st, onde) eq 1 {
+                    redde 1;
+                }
+            } aliter {
+                (*st).opus = opus;
+                (*st).lo = lo;
+                (*st).hi = hi;
+                (*st).cp = cp;
+                (*st).inceptum = (*st).pos;
+            }
+            (*st).pos = (*st).pos + 1;
+            k = k + 1;
+        }
+    }
+    redde 0;
+}
+
+// End of input: a sequence still pending is one maximal subpart. Final: the
+// state is not reset. Returns 1 for a strict-mode error, else 0.
+functio fini(scopus: &mutabilis acies<u16, 4096>, st: &mutabilis Fragmentum) -> u8 {
+    si (*st).opus eq 0 {
+        redde 0;
+    }
+    firma onde: mensura = (*st).inceptum;
+    redde malum_nota(scopus, st, onde);
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    mutabilis st: Fragmentum = Fragmentum {
+        opus: 0, lo: 0x80, hi: 0xBF, cp: 0, j: 0, pos: 0, inceptum: 0,
+        modus: modus, ubi: 0
+    };
+    mutabilis chunk: acies<u8, 7> = [0; 7];
+    mutabilis a: mensura = 0;
+    mutabilis halt: u8 = 0;
+    dum a lt n et halt eq 0 {
+        mutabilis m: mensura = 0;
+        dum m lt 7 et a + m lt n {
+            chunk[m] = fons[a + m];
+            m = m + 1;
+        }
+        halt = alimenta(chunk, m, scopus, st);
+        a = a + m;
+    }
+    si halt eq 0 {
+        halt = fini(scopus, st);
+    }
+    si halt eq 1 {
+        redde Exitus { unitates: st.j, status: status_malformatum, positio: st.ubi };
+    }
+    redde Exitus { unitates: st.j, status: status_bene, positio: 0 };
+}
