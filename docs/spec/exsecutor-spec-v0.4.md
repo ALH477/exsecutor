@@ -914,11 +914,32 @@ order would be observable, and no tree shape but strictly-left-to-right would
 be a valid implementation — the declaration would become a lie the moment
 anything used it. The accumulator is write-only until the reduction completes. **Writing to it is the contribution:** inside the body, `acc = e;` contributes `e` under the operator `contrahe` declared, and is the only statement that may name `acc`; any other read is `EXS-E0341`. After the loop `acc` is an ordinary binding. **The operator must be associative:** `+`, `+%`, `+|`, `*` — §8.6's `ArithOp` also admits `-`, `-%` and `-|`, and subtraction under `arborea` has no meaning this section defines; a `contrahe` declared with one is `EXS-E0343` (`docs/design/lowering.md`, finding 4). §8.5 gave the declaration and §8.6 its grammar and neither had said how a value gets in (`docs/design/checker.md`, finding 9).
 
-**`rumpe` is forbidden inside an iteration carrying a `contrahe`.** An early
-exit makes the result depend on which iterations ran, and under `quisque` that
-is not even well defined. Use `per` with an explicit accumulator if an
-early-exit fold is what is wanted; it is then ordinary sequential code and
-claims nothing about shape.
+**`rumpe` is forbidden where it would exit a reduction** (`EXS-E0342`). An
+early exit of the reduction makes the result depend on which iterations ran,
+and under `quisque` that is not even well defined. A `rumpe` leaves its
+**nearest enclosing loop** and nothing else (§8.6 has no labelled form), so the
+rule is about the `rumpe` whose nearest enclosing loop is the one carrying the
+`contrahe` — directly in its body, or under an `si`, `discerne` or block there
+that is not itself inside a further loop. A `rumpe` of a loop nested *inside*
+the body leaves only that inner loop: every iteration of the reduction still
+runs to the end of its body, none is skipped, and the stated reason does not
+apply — so it is accepted. An inner loop that itself carries a `contrahe` is a
+reduction in its own right, and a `rumpe` that exits *it* is refused. Use `per`
+with an explicit accumulator if an early-exit fold is what is wanted; it is
+then ordinary sequential code and claims nothing about shape.
+Evidence: `tests/unit/chk_ty_contrahe.asm` (`fx_a07`–`fx_a10` accepted,
+`fx_c09`–`fx_c13` refused, each with its code and offset) and, run end to end,
+`tests/programs/contractio_rumpe_interior/` — exit 18 on the reference backend
+and through the C backend under gcc at `-O0` and `-O2` (UBSan); its clang
+builds could not be linked in the environment that measured this (no UBSan
+runtime), and it is not `cross=yes`. **Narrowed 2026-10-03.** This
+paragraph, and §13's row for `EXS-E0342`, first read "`rumpe` is forbidden
+*inside* an iteration carrying a `contrahe`", and the checker implemented that
+wording: any `rumpe` lexically under a reduction was refused, including one
+that leaves an inner `per` and so exits nothing the reduction depends on. The
+wording was broader than its own reason; the checker was right to follow the
+text and the text was wrong to say it, and the fix is to the text and the
+checker together.
 
 ### Vectors
 
@@ -2939,7 +2960,7 @@ Scratch work without ambient authority: `exsc curre --potestates omnes scratch.e
 | `EXS-E0322` | implicit padding in a `@transitus` type |
 | `EXS-E0332` | branded offset applied to the wrong buffer |
 | `EXS-E0341` | reduction accumulator read inside its own body |
-| `EXS-E0342` | `rumpe` inside an iteration carrying a `contrahe` |
+| `EXS-E0342` | `rumpe` that exits a loop carrying a `contrahe` |
 | `EXS-E0343` | reduction shape malformed |
 | `EXS-E0351` | `discerne` is not exhaustive |
 | `EXS-E0421` | undeclared capability (atom or row) |
@@ -2981,11 +3002,15 @@ the bound was written. The `dyn` case turns out to be the special one.
 
 `EXS-E0341` and `EXS-E0342` close a gap §5.4 opened. That section states two
 rules — a running accumulator is not readable inside the reduction body, and
-`rumpe` is forbidden inside an iteration carrying a `contrahe` — and neither
+`rumpe` is forbidden where it would exit a reduction — and neither
 had a code to be reported with. Both are `03xx` because they are semantic
 rules about a §5.x construct, alongside `EXS-E0311`'s `textus` index and
 `EXS-E0332`'s branded offsets. Neither carries a machine-applicable fix: the
 edit in both cases is a restructure that changes what the program computes.
+`EXS-E0342`'s **text** narrowed on 2026-10-03 and the code did not move: it
+was registered as "`rumpe` inside an iteration carrying a `contrahe`", which
+also described a `rumpe` of an inner `per` — one that exits nothing the
+reduction depends on. §8.3: codes are permanent, text is not.
 
 `EXS-E0351` closes a gap §8.5 opened and is `03xx` on the same reasoning as
 `EXS-E0341` above: a semantic rule about a §8.x construct. §8.5 has said since

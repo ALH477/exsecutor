@@ -288,9 +288,16 @@ struct ChkTyWork
 	field wnint,  dd	; the interner's live id count, for the bounds guard
 	field winfer, dd	; 1 while a lambda's result type is being INFERRED
 	field winf,   dd	; the type of that lambda's first `redde`
-	field wpad,   dd	; so the `Map` and the three `Vec`s below start on
-				; an eight-byte boundary: `map_init` and `vec_init`
-				; write qwords, and this struct is byte-packed
+	field wnear,  dd	; 1 while the NEAREST enclosing loop is one CARRYING
+				; a `contrahe`, else 0 (§5.4/§8.5, `EXS-E0342`). A
+				; `rumpe` targets the nearest loop and nothing else
+				; (§8.6 has no labelled form), so this -- and not
+				; `wcon`, which counts EVERY enclosing reduction --
+				; is "does this `rumpe` exit a reduction". It is
+				; also the field that keeps the `Map` and the three
+				; `Vec`s below on an eight-byte boundary: 14 dwords
+				; after two qwords, and `map_init`/`vec_init` write
+				; qwords on a struct that is byte-packed
 				; (macros/struct.inc inserts nothing)
 	wimpl  Map		; 8 key bytes (iface decl, target type id) -> impl decl
 	field wikey,  dq	; stable key block for the map above
@@ -410,7 +417,7 @@ proc chk_ty_work_init, chkt_w, chkt_cx
 	mov	dword [rbx + ChkTyWork.wsigp], 0
 	mov	dword [rbx + ChkTyWork.winfer], 0
 	mov	dword [rbx + ChkTyWork.winf], 0
-	mov	dword [rbx + ChkTyWork.wpad], 0
+	mov	dword [rbx + ChkTyWork.wnear], 0
 	mov	eax, [r12 + ChkCtx.ptrbits]
 	mov	[rbx + ChkTyWork.wpb], eax
 

@@ -439,7 +439,7 @@ that shape cannot be written (§5.2 r.3) and is therefore parser recovery, which
 the parser has already diagnosed `EXS-E0201` (finding 23).
 | `E0332` | branded offset applied to another buffer | §5.1 | 2 | the argument |
 | `E0341` | accumulator read in its own body | §5.4 | 2 | the `Path` |
-| `E0342` | `rumpe` in an iteration carrying `contrahe` | §5.4 | 2 | the `Rumpe` |
+| `E0342` | `rumpe` that exits a loop carrying `contrahe` (its NEAREST enclosing loop is one) | §5.4 | 2 | the `Rumpe` |
 | `E0421` | a draw with no provider in a declared function | §4.1–§4.2 | 3 | the drawing node |
 | `E0500` | module-level `mutabilis` of a type bearing no capability | §4.1 r.7 | 3 | the `Binding` |
 | `E0501` | module-level binding of a capability-bearing type | §4.1 r.7, §4.3 | 3 | the `Binding` |

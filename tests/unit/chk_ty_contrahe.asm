@@ -74,6 +74,21 @@
 ; `EXS-E0303` -- and the lowering still `rassert`s at the `ForHead`
 ; (`lower/stmt.inc`). Deciding it is a spec amendment.
 ;
+; `EXS-E0342` -- WHICH `rumpe`. Spec §8.5 (narrowed 2026-10-03) forbids the
+; `rumpe` that EXITS a loop carrying a `contrahe`, because an early exit of the
+; REDUCTION makes the result depend on which iterations ran. A `rumpe` leaves
+; its nearest enclosing loop and nothing else (§8.6 has no labelled form), so
+; one inside an inner `per`/`dum` leaves THAT loop and the reduction completes.
+; The check was first written as "any enclosing loop carries a `contrahe`"
+; (`wcon`), which is §13's old wording read literally and refused that
+; program; it is now "the NEAREST enclosing loop does" (`wnear`). Rows fx_a07
+; to fx_a10 are the accepted half (an inner `per`, an inner `dum`, nested
+; reductions, a plain loop after a closed reduction). Rows fx_c09 to fx_c13 are
+; the half that must stay refused, and fx_c10 and fx_c12 are the ones that
+; catch a `wnear` which is CLEARED instead of RESTORED when an inner loop
+; closes: a `rumpe` after the inner loop, directly in the reduction's body, is
+; the reduction's again.
+;
 ; Exit 0 = every check passed; 10+N = table row N failed (the diagnostics the
 ; row did produce are rendered first); 41 = no accumulator declaration,
 ; 42 = its type after the loop is not `u32`, 43 = not exactly one settled
@@ -661,6 +676,163 @@ segment readable
 	db '}', 10
   fx_c09_LEN = $ - fx_c09
 
+  ; `rumpe` of an INNER `per`, directly inside a `contrahe` body -- accepted.
+  ; spec §8.5, narrowed 2026-10-03: `EXS-E0342` is a `rumpe` that EXITS a
+  ; reduction, and this one leaves the `per`; the reduction body still runs to
+  ; its `s = v[i];`. The pre-narrowing check asked "is ANY enclosing loop a
+  ; reduction" (`wcon`) and refused it.
+  fx_a07:
+	db 'publica functio f(v: acies<u32, 8>, w: acies<u8, 8>) -> u32 {', 10
+	db '    quisque i in 0..8', 10
+	db '        contrahe s: +', 10
+	db '        forma arborea 4', 10
+	db '    {', 10
+	db '        per j in 0..4 {', 10
+	db '            si j gt 2 { rumpe; }', 10
+	db '        }', 10
+	db '        s = v[i];', 10
+	db '    }', 10
+	db '    redde s;', 10
+	db '}', 10
+  fx_a07_LEN = $ - fx_a07
+
+  ; the same, with an inner `dum` -- `dum` is the other loop form, with its own
+  ; save/restore of `wnear`
+  fx_a08:
+	db 'publica functio f(v: acies<u32, 8>, w: acies<u8, 8>) -> u32 {', 10
+	db '    quisque i in 0..8', 10
+	db '        contrahe s: +', 10
+	db '        forma arborea 4', 10
+	db '    {', 10
+	db '        mutabilis n: mensura = 0;', 10
+	db '        dum n lt 4 {', 10
+	db '            n = n + 1;', 10
+	db '            si n gt 2 { rumpe; }', 10
+	db '        }', 10
+	db '        s = v[i];', 10
+	db '    }', 10
+	db '    redde s;', 10
+	db '}', 10
+  fx_a08_LEN = $ - fx_a08
+
+  ; two reductions nested, and a `rumpe` in a plain `per` that follows the
+  ; INNER reduction inside the OUTER one -- accepted
+  fx_a09:
+	db 'publica functio f(v: acies<u32, 8>, w: acies<u8, 8>) -> u32 {', 10
+	db '    per i in 0..2', 10
+	db '        contrahe outer: +', 10
+	db '        forma ordinata', 10
+	db '    {', 10
+	db '        per j in 0..8', 10
+	db '            contrahe inner: +', 10
+	db '            forma ordinata', 10
+	db '        {', 10
+	db '            inner = v[j];', 10
+	db '        }', 10
+	db '        per k in 0..4 {', 10
+	db '            si k gt 2 { rumpe; }', 10
+	db '        }', 10
+	db '        outer = inner;', 10
+	db '    }', 10
+	db '    redde outer;', 10
+	db '}', 10
+  fx_a09_LEN = $ - fx_a09
+
+  ; a `rumpe` in a plain loop AFTER a reduction nested in it has closed --
+  ; accepted: `wnear` does not leak out of the reduction's body
+  fx_a10:
+	db 'publica functio f(v: acies<u32, 8>, w: acies<u8, 8>) -> u32 {', 10
+	db '    per k in 0..2 {', 10
+	db '        per i in 0..8', 10
+	db '            contrahe s: +', 10
+	db '            forma ordinata', 10
+	db '        {', 10
+	db '            s = v[i];', 10
+	db '        }', 10
+	db '        si k gt 0 { rumpe; }', 10
+	db '    }', 10
+	db '    redde 0;', 10
+	db '}', 10
+  fx_a10_LEN = $ - fx_a10
+
+  ; E0342 -- a `rumpe` AFTER an inner `per` has closed, directly in the
+  ; reduction's body. The inner loop's `rumpe` (line 7) is fine; the second is
+  ; the REDUCTION's, which is what `wnear` being restored (not cleared) is for.
+  ; Exactly one diagnostic, at the second `rumpe`.
+  fx_c10:
+	db 'publica functio f(v: acies<u32, 8>, w: acies<u8, 8>) -> u32 {', 10
+	db '    per i in 0..8', 10
+	db '        contrahe s: +', 10
+	db '        forma ordinata', 10
+	db '    {', 10
+	db '        per j in 0..4 {', 10
+	db '            si j gt 2 { rumpe; }', 10
+	db '        }', 10
+	db '        si i gt 3 { rumpe; }', 10
+	db '        s = v[i];', 10
+	db '    }', 10
+	db '    redde s;', 10
+	db '}', 10
+  fx_c10_LEN = $ - fx_c10
+
+  ; E0342 -- an inner loop that itself carries a `contrahe`: its own `rumpe`
+  ; exits THAT reduction, so the narrowing does not exempt it just because
+  ; another loop encloses it
+  fx_c11:
+	db 'publica functio f(v: acies<u32, 8>, w: acies<u8, 8>) -> u32 {', 10
+	db '    per i in 0..2', 10
+	db '        contrahe outer: +', 10
+	db '        forma ordinata', 10
+	db '    {', 10
+	db '        per j in 0..8', 10
+	db '            contrahe inner: +', 10
+	db '            forma ordinata', 10
+	db '        {', 10
+	db '            inner = v[j];', 10
+	db '            rumpe;', 10
+	db '        }', 10
+	db '        outer = inner;', 10
+	db '    }', 10
+	db '    redde outer;', 10
+	db '}', 10
+  fx_c11_LEN = $ - fx_c11
+
+  ; E0342 -- as c10, with an inner `dum` in front: `dum` restores `wnear` too
+  fx_c12:
+	db 'publica functio f(v: acies<u32, 8>, w: acies<u8, 8>) -> u32 {', 10
+	db '    per i in 0..8', 10
+	db '        contrahe s: +', 10
+	db '        forma ordinata', 10
+	db '    {', 10
+	db '        mutabilis n: mensura = 0;', 10
+	db '        dum n lt 4 {', 10
+	db '            n = n + 1;', 10
+	db '            si n gt 2 { rumpe; }', 10
+	db '        }', 10
+	db '        si i gt 3 { rumpe; }', 10
+	db '        s = v[i];', 10
+	db '    }', 10
+	db '    redde s;', 10
+	db '}', 10
+  fx_c12_LEN = $ - fx_c12
+
+  ; E0342 -- a reduction nested in a plain `per`: the `rumpe` is still the
+  ; reduction's, whatever encloses it
+  fx_c13:
+	db 'publica functio f(v: acies<u32, 8>, w: acies<u8, 8>) -> u32 {', 10
+	db '    per k in 0..2 {', 10
+	db '        per i in 0..8', 10
+	db '            contrahe s: +', 10
+	db '            forma ordinata', 10
+	db '        {', 10
+	db '            s = v[i];', 10
+	db '            rumpe;', 10
+	db '        }', 10
+	db '    }', 10
+	db '    redde 0;', 10
+	db '}', 10
+  fx_c13_LEN = $ - fx_c13
+
   fx_tab:
 	; shape 1 -- `per`, `forma ordinata`, one accumulator, read after
 	dq fx_a01, fx_a01_LEN
@@ -709,6 +881,31 @@ segment readable
 	; E0342 -- `rumpe` under a `contrahe`, unchanged
 	dq fx_c09, fx_c09_LEN
 	dd 1, 342, 157, 0, 0, 0
+
+	; `rumpe` of an inner `per` under a `contrahe` -- ACCEPTED (§8.5, 2026-10-03)
+	dq fx_a07, fx_a07_LEN
+	dd 0, 0, 0, 0, 0, 0
+	; ... of an inner `dum`
+	dq fx_a08, fx_a08_LEN
+	dd 0, 0, 0, 0, 0, 0
+	; nested reductions, a `rumpe` in a plain `per` between them and the end
+	dq fx_a09, fx_a09_LEN
+	dd 0, 0, 0, 0, 0, 0
+	; a `rumpe` in a plain loop after a reduction nested in it has closed
+	dq fx_a10, fx_a10_LEN
+	dd 0, 0, 0, 0, 0, 0
+	; E0342 -- the reduction's own `rumpe`, AFTER an inner `per` has closed
+	dq fx_c10, fx_c10_LEN
+	dd 1, 342, 218, 0, 0, 0
+	; E0342 -- an inner loop that is itself a reduction
+	dq fx_c11, fx_c11_LEN
+	dd 1, 342, 262, 0, 0, 0
+	; E0342 -- the reduction's own `rumpe`, AFTER an inner `dum` has closed
+	dq fx_c12, fx_c12_LEN
+	dd 1, 342, 272, 0, 0, 0
+	; E0342 -- a reduction nested in a plain `per`
+	dq fx_c13, fx_c13_LEN
+	dd 1, 342, 201, 0, 0, 0
   FX_NROWS = ($ - fx_tab) / FX_ROW
 
 segment readable writeable
