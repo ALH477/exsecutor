@@ -674,11 +674,11 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   paragraph whose whole job is to say what was measured. The pass total is
   stated with its commit for the same reason the binary sizes above are: it
   moves with every fixture added and the gate cannot re-derive it. The floors
-  can be, so the floors are what is bound — all nine of them, as one count,
+  can be, so the floors are what is bound — all eight of them, as one count,
   so that any floor moving fails this bullet with it:
 
-```bash truth:id=suite-floors truth:kind=command truth:expect_exit=0 truth:expect_stdout=9
-grep -cE "FLOOR:-(193|78|131|236|59|236|45|13|6)\}" tests/run.sh
+```bash truth:id=suite-floors truth:kind=command truth:expect_exit=0 truth:expect_stdout=8
+grep -cE "FLOOR:-(193|78|128|236|59|236|13|6)\}" tests/run.sh
 ```
 
 - `tests/run.sh --device=amdgcn` (measured 2026-09-21, not part of the
