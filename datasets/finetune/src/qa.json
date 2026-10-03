@@ -2,7 +2,7 @@
   {
     "id": "con.cap.root",
     "q": "Where do capabilities come from in Exsecutor? Can a function just construct one?",
-    "a": "No. Capability types are unforgeable: no literal, no cast, no default (§4.1 rule 1). The only root is the `Mundus` value passed to `initium`, and every other capability is derived from it explicitly, by method, as in `m.ambitus()` or `m.archivum()` (§4.1 rule 2, §4.7). A capability becomes available in a scope in exactly four ways, and all four are visible in the interface: bound by `sub`, received as a parameter, held in a field of the receiver, or captured by a closure from an enclosing scope (§4.1 rule 4).",
+    "a": "No. Capability types are unforgeable: no literal, no cast, no default (§4.1 rule 1). The only root is the `Mundus` value passed to `initium`, and every other capability is derived from it explicitly, by method, as in `m.ambitus()` or `m.archivum()` (§4.1 rule 2, §4.7). A capability becomes available in a scope in exactly four ways, and all four are visible in the interface: bound by `sub`, received as a parameter, held in a field of the receiver, or captured by a closure from an enclosing scope (§4.1 rule 4). `[OPEN]`: only `m.ambitus()` and `m.archivum()` exist today; the other atoms are declared and not yet derivable (§4.7), and `m.rete()` is `EXS-E0305`.",
     "refs": [
       "§4.1",
       "§4.7"
@@ -11,7 +11,7 @@
   {
     "id": "con.cap.poscit",
     "q": "What does `poscit` mean and who must write it?",
-    "a": "`poscit` (\"it requires\") introduces a function's capability row: authority drawn from the enclosing scope and nothing else. A `publica` function must declare its row explicitly; a private function infers it from its body, transitively (§4.1 rule 5). A function whose declared row is empty and which takes no capability parameter is pure with respect to ambient state: it may allocate and diverge, but it may not observe the host (§4.1 rule 6). An undeclared draw is `EXS-E0421`, and the compiler ships a machine-applicable fix that inserts the row.",
+    "a": "`poscit` (\"it requires\") introduces a function's capability row: authority drawn from the enclosing scope and nothing else. A `publica` function must declare its row explicitly; a private function infers it from its body, transitively (§4.1 rule 5). A function whose declared row is empty and which takes no capability parameter is pure with respect to ambient state: it may allocate and diverge, but it may not observe the host (§4.1 rule 6). An undeclared draw is `EXS-E0421`, and for an atom named in an expression the compiler ships a machine-applicable fix that inserts the row; a call into a function whose row needs more gets no fix (measured).",
     "refs": [
       "§4.1",
       "§8.3"
@@ -52,16 +52,17 @@
   {
     "id": "con.cap.archivum",
     "q": "Does holding the `archivum` capability let a program open any file?",
-    "a": "No (ADR 0017, §4.6). The atom lets a program derive a `Directorium` with `Directorium.ad_radicem(a, via)` for an absolute path, and every operation on a `Directorium` resolves beneath it: `d.infra(via)` derives a directory below, and nothing derives one above. The runtime resolves each path with `openat2(2)` and `RESOLVE_BENEATH`, so `..` past the root, an absolute path, a symlink out, a magic link and a mount crossing are refused by the kernel. A function holding only a `Directorium` cannot obtain the raw atom: `sub archivum = d;` is `EXS-E0303`, and no `sicut` retypes a value into or out of a capability atom or a reference to one (`EXS-E0305`). What `RESOLVE_BENEATH` bounds is names, so a hard link beneath the root to a file outside it is reachable (measured). The spellings are provisional under §3.9.",
+    "a": "Yes, in effect, for whoever holds the raw atom. `Directorium.ad_radicem(a, via)` derives a root from any absolute path, `/` included: it is the one unscoped open (§4.6), and a program that did `m.archivum()` then `ad_radicem(a, \"/\")` then `d.lege_ex(\"etc/passwd\")` read the first byte of `/etc/passwd` (measured with `exsc`; exit status 114). What ADR 0017 bounds is a function that holds only a `Directorium`: every operation on it resolves beneath that root, `d.infra(via)` derives one beneath and nothing derives one above, and such a function cannot obtain the raw atom (`sub archivum = d;` is `EXS-E0303`; `d sicut archivum` and `&d sicut &archivum` are `EXS-E0305`). Beneath a root the runtime resolves paths with `openat2(2)` and `RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV`, so `..` past the root, an absolute path, a symlink out, a magic link and a mount crossing are refused by the kernel. What `RESOLVE_BENEATH` bounds is names, so a hard link beneath the root to a file outside it is reachable (measured). Passing a `Directorium` instead of the atom is the pattern; the atom itself is broad authority. The spellings are provisional under §3.9.",
     "refs": [
       "§4.6",
       "ADR 0017"
-    ]
+    ],
+    "evidence": "compiler-measured"
   },
   {
     "id": "con.cap.rows",
     "q": "How does a higher-order function declare what its function argument may do?",
-    "a": "A capability row is part of a function type, `functio(A) -> B poscit {R}`, and a row variable in a callee's `poscit` names one of the callee's parameters: `poscit sicut f`. At each call site it is substituted positionally with the row carried by the actual argument's type. So `applica(v, nocens)` where `nocens` needs `rete` makes the caller require `rete`, and `EXS-E0421` is raised if the caller did not declare it. A row inside a function type is braced because a bare one is ambiguous in a comma-separated list; the parser takes a row on the two-token peek `poscit {` (§4.2, §8.6).",
+    "a": "A capability row is part of a function type, `functio(A) -> B poscit {R}`, and a row variable in a callee's `poscit` names one of the callee's parameters: `poscit sicut f`. At each call site it is substituted positionally with the row carried by the actual argument's type. So `applica(v, nocens)` where `nocens` needs `rete` makes the caller require `rete`, and `EXS-E0421` is raised if the caller did not declare it. A row inside a function type is braced because a bare one is ambiguous in a comma-separated list; the parser takes a row on the two-token peek `poscit {` (§4.2, §8.6). `[OPEN]`: a call through a function-typed parameter type-checks and cannot be emitted yet, because `callind` is a refused opcode (§9.2); measured, `exsc -o` on such a function terminates with `SIGILL`.",
     "refs": [
       "§4.2",
       "§8.6"
@@ -70,7 +71,7 @@
   {
     "id": "con.cap.crudum",
     "q": "What is `Crudum` and how does the audit treat it?",
-    "a": "`Crudum` is the capability for raw pointers (`*T`), unchecked casts and manual lifetimes (§4.6). Because raw pointers can fabricate any capability, the audit renders it as `Crudum (⇒ ALL)` and sorts it first rather than listing it as a peer of `rete` (§10.3). `[OPEN]`: no cast is gated on `Crudum` yet; a reference cast that changes the pointee is refused outright (§4.6).",
+    "a": "`Crudum` is the capability for raw pointers (`*T`), unchecked casts and manual lifetimes (§4.6). §10.3 designs the audit to render it as `Crudum (⇒ ALL)` and sort it first, on the stated reasoning that raw pointers can fabricate any capability, rather than list it as a peer of `rete`. `[OPEN]`: `exsc ego` is a stub and `--potestates` is not an option, so that audit view is the design and not behaviour (§10.2). Also `[OPEN]`: no cast is gated on `Crudum` yet, and a reference cast that changes the pointee is refused outright (§4.6). What does run: a `*T` in a signature with no `Crudum` in the row is `EXS-E0421`.",
     "refs": [
       "§4.6",
       "§10.3"
@@ -90,7 +91,7 @@
   {
     "id": "con.mem.refero",
     "q": "What is the difference between `refero<T>` and `refero_communis<T>`?",
-    "a": "`refero<T>` is a non-atomic reference-counted reference and cannot cross an `externus` boundary (`EXS-E0520`); `refero_communis<T>` is atomic and may cross. A foreign thread racing a non-atomic refcount is a use-after-free that the type system cannot see (§6.4). The refcount is 64-bit on every target, and the retain that would carry out of 64 bits aborts rather than saturating (§6.5).",
+    "a": "`refero<T>` is a non-atomic reference-counted reference and cannot cross an `externus` boundary (`EXS-E0520`); `refero_communis<T>` is atomic and may cross. A foreign thread racing a non-atomic refcount is a use-after-free that the type system cannot see (§6.4). The refcount is 64-bit on every target, and the retain that would carry out of 64 bits aborts rather than saturating (§6.5). `[OPEN]`: only the type form exists; how a program constructs a `refero` (the expression form) is unspecified (§8.6).",
     "refs": [
       "§6.4",
       "§6.5"
@@ -107,7 +108,7 @@
   {
     "id": "con.typ.textus",
     "q": "What is `textus` and why can't I index it with an integer?",
-    "a": "`textus` is a value: a two-word view, pointer and byte length, over UTF-8 storage it does not own, and it may not outlive that storage's arena. `t[0]` is `EXS-E0311` because an integer index would silently pick a byte, a scalar or a grapheme. The views are distinct non-coercing types, `t.octeti()`, `t.scalares()` and `t.grapha()`. Slicing by byte offset is O(1) and returns `eventus<textus, erratum>`, never panics (§5.1). `[OPEN]`: the branded-offset design (`quaere`, `sectio`, `positio<'t>`) is not implemented; `EXS-E0332` has no raise site.",
+    "a": "`textus` is a value: a two-word view, pointer and byte length, over UTF-8 storage it does not own, and it may not outlive that storage's arena. `t[0]` is `EXS-E0311` because an integer index would silently pick a byte, a scalar or a grapheme. The views are distinct non-coercing types, `t.octeti()`, `t.scalares()` and `t.grapha()`. The spec states that slicing by byte offset is O(1) and returns `eventus<textus, erratum>` (§5.1); `[OPEN]` nothing implements it: `t[0..2]` is `EXS-E0311`, `t.sectio(...)` is `EXS-E0305`, and slices are listed as `[OPEN]` in §8.6. Only `t.octeti().numerus()` type-checks, and no text method can be emitted yet (measured: `SIGILL` under `-o`). `[OPEN]`: the branded-offset design (`quaere`, `sectio`, `positio<'t>`) is not implemented; `EXS-E0332` has no raise site.",
     "refs": [
       "§5.1"
     ]
@@ -115,7 +116,7 @@
   {
     "id": "con.typ.casefold",
     "q": "How does Exsecutor handle locale-dependent case folding?",
-    "a": "The locale-free version is total and needs no capability: `\"I\".plica_unicode()` is always `\"i\"`. The locale-dependent one takes the `sermo` capability as an argument: `\"I\".plica_sermone(sermo)` gives `\"ı\"` under tr-TR. Collation follows the same shape, `ordina_binarie()` total and `ordina_sermone(sermo)` capability-gated, and neither collation name has a prelude row yet `[OPEN]` (§5.1). The compiler itself never calls `setlocale` (§9.3).",
+    "a": "The locale-free version is total and needs no capability: `\"I\".plica_unicode()` is always `\"i\"`. The locale-dependent one takes the `sermo` capability as an argument: `\"I\".plica_sermone(sermo)` gives `\"ı\"` under tr-TR. Collation follows the same shape, `ordina_binarie()` total and `ordina_sermone(sermo)` capability-gated, and neither collation name has a prelude row yet `[OPEN]` (§5.1). The compiler itself never calls `setlocale` (§9.3). `[OPEN]`: the calls type-check and have never run, because the lowering cannot emit text methods (measured: `exsc -o` terminates with `SIGILL`).",
     "refs": [
       "§5.1",
       "§9.3"
@@ -151,7 +152,7 @@
   {
     "id": "con.num.float",
     "q": "How does Exsecutor control floating-point behaviour?",
-    "a": "By declaration in the module's `numeri` block, never by a compiler flag (§5.4): `rotundatio` (rounding, default `ad_parem`), `reassociatio` (default `vetita`, forbidden), `contractio` (FMA formation, default `explicita`, only where written) and `subnormales` (default `conservata`, no FTZ/DAZ). `numeri` is interface-affecting, so changing it rebuilds dependents. A target that cannot honour the declared `numeri` fails the build (`EXS-E0701`). The fasmg backend is the reference, and where the two backends disagree its result is the answer.",
+    "a": "By declaration in the module's `numeri` block, never by a compiler flag (§5.4): `rotundatio` (rounding, default `ad_parem`), `reassociatio` (default `vetita`, forbidden), `contractio` (FMA formation, default `explicita`, only where written) and `subnormales` (default `conservata`, no FTZ/DAZ). `numeri` is interface-affecting, so changing it rebuilds dependents. The spec requires that a target that cannot honour the declared `numeri` fails the build (`EXS-E0701`), but `EXS-E0701` has no raise site yet. `[OPEN]`: the CST parses no `ego` block and `exsc ego` exits 4, so `numeri` cannot be declared at all today and every program gets these defaults (§12). The fasmg backend is the reference, and where the two backends disagree its result is the answer.",
     "refs": [
       "§5.4"
     ]
@@ -184,7 +185,7 @@
   {
     "id": "con.syn.literals",
     "q": "Which numeric literal forms does Exsecutor accept?",
-    "a": "Decimal integers; hexadecimal with a lowercase `0x` prefix and digits in either case (`0xd3` equals `0xD3`); and floats written `DIGITS.DIGITS` with an optional lowercase `e` exponent of one to three digits, or `DIGITS e Exp` with no dot. Rejected as `EXS-E0210`: `0X10`, `0x`, `0x1G`, `10u32`, `1.5f32`, `1e`, a leading dot. There are no suffixes: a literal takes its type from its expectation, so `firma x: f32 = 1;` is `EXS-E0308`. Binary and octal bases and digit separators are `[OPEN]` (§8.4).",
+    "a": "Decimal integers; hexadecimal with a lowercase `0x` prefix and digits in either case (`0xd3` equals `0xD3`); and floats written `DIGITS.DIGITS` with an optional lowercase `e` exponent of one to three digits, or `DIGITS e Exp` with no dot. Rejected as `EXS-E0210`: `0X10`, `0x`, `0x1G`, `10u32`, `1.5f32`, `1e`. A leading dot is not a literal at all (`.` is field access), so `.5` is `EXS-E0201`. There are no suffixes: a literal takes its type from its expectation, so `firma x: f32 = 1;` is `EXS-E0308`. Binary and octal bases and digit separators are `[OPEN]` (§8.4).",
     "refs": [
       "§8.4"
     ]
@@ -218,7 +219,7 @@
   {
     "id": "con.syn.precedence",
     "q": "What is the operator precedence in Exsecutor, tightest first?",
-    "a": "From §8.6: postfix (`.f`, call, index, `?`); prefix (`-`, `&`, `*`); cast (`sicut`); multiplicative (`*`, `/`, `residuum`); additive (`+ +% +| - -% -|`); shift (`sursum`, `deorsum`, non-associative); bitwise (`aut`, `atque`, `sive`, left within one word); range (`..`, non-associative); comparison (`lt le gt ge eq ne`, non-associative); conjunction (`et`, short-circuit); disjunction (`vel`, short-circuit). Two different bitwise words in one chain, a chained shift and a chained comparison are each `EXS-E0201`: parenthesise.",
+    "a": "From §8.6: postfix (`.f`, call, index, `?`); prefix (`-`, `&`, `*`); cast (`sicut`); multiplicative (`*`, `/`, `residuum`); additive (`+ +% +| - -% -|`); shift (`sursum`, `deorsum`, non-associative); bitwise (`aut`, `atque`, `sive`, left within one word); range (`..`, non-associative); comparison (`lt le gt ge eq ne`, non-associative); conjunction (`et`, short-circuit); disjunction (`vel`, short-circuit). Two different bitwise words in one chain, a chained shift and a chained comparison are each `EXS-E0201`: parenthesise. `[OPEN]`: the postfix `?` is listed in the table but every `e?` is `EXS-E0305` today (measured; §8.6).",
     "refs": [
       "§8.6"
     ]
@@ -276,11 +277,11 @@
   {
     "id": "con.diag.shape",
     "q": "What does an Exsecutor diagnostic carry?",
-    "a": "A stable code (`EXS-E0201`), a source span in bytes, an English message, optionally one note and one related span, and, for mechanically derivable edits, a machine-applicable fix (§8.3). Tools match codes and never English text. All source echoed in a diagnostic is escaped, so an error message cannot become an attack surface. `exsc --diagnostica json` emits JSON Lines, one object per diagnostic, whose fields include `code`, `line`, `col`, `span`, `message`, `note`, `snippet`, `fix` and `suggestion`. One mistake can produce follow-on diagnostics: the first one is the cause, and the later ones may be recovery cascade.",
+    "a": "A stable code (`EXS-E0201`), a source span in bytes, an English message, optionally one note and one related span, and, for mechanically derivable edits, a machine-applicable fix (§8.3). Tools match codes and never English text. All source echoed in a diagnostic is escaped, so an error message cannot become an attack surface. `exsc --diagnostica json` emits JSON Lines, one object per diagnostic, whose fields include `code`, `line`, `col`, `span`, `message`, `note`, `snippet`, `fix` and `suggestion`. One mistake can produce follow-on diagnostics: the earlier ones are usually the cause and the later ones recovery cascade, but the order is not guaranteed (for `a <= b` the first diagnostic is at `=` and the helpful one comes second). The JSON field list is the driver's behaviour as measured, not something the spec states.",
     "refs": [
       "§8.3"
     ],
-    "evidence": "spec-text"
+    "evidence": "compiler-measured"
   },
   {
     "id": "con.diag.codeclasses",
@@ -302,7 +303,7 @@
   {
     "id": "con.intro",
     "q": "In one paragraph, what is Exsecutor?",
-    "a": "Exsecutor is a freestanding, Nix-native systems language whose reference compiler `exsc` is written in x86-64 assembly and built with `fasmg` alone. Its design centres on explicit authority (capabilities in function types, rooted in the `Mundus` passed to `initium`), explicit numerics (byte order in the type, overflow in the operator, reduction shape in the loop), deterministic output (a pure compiler with byte-identical results), and a bespoke Latin lexicon: thirty Latin reserved words, contextual operator words such as `lt`, `et` and `sursum`, and a morphological scheme for public names. The spec is `docs/spec/exsecutor-spec-v0.4.md` and is the source of truth; it records that earlier versions asserted things measurement later contradicted.",
+    "a": "Exsecutor is a freestanding, Nix-native systems language whose reference compiler `exsc` is written in x86-64 assembly and built with `fasmg` plus the vendored x86-64 macro package. Its design centres on explicit authority (capabilities in function types, rooted in the `Mundus` passed to `initium`), explicit numerics (byte order in the type, overflow in the operator, reduction shape in the loop), deterministic output (a pure compiler with byte-identical results), and a bespoke Latin lexicon: thirty reserved words, twenty-nine of them Latin (`dyn` is the exception), contextual operator words such as `lt`, `et` and `sursum`, and a morphological scheme for public names. The spec is `docs/spec/exsecutor-spec-v0.4.md` and is the source of truth; it records that earlier versions asserted things measurement later contradicted.",
     "refs": [
       "§1",
       "§3",
@@ -313,9 +314,12 @@
   {
     "id": "con.evidence",
     "q": "What do `[OPEN]`, `[UNTESTED]` and `[UNREPRODUCED]` mean in the Exsecutor docs?",
-    "a": "The evidence-discipline markers from CLAUDE.md: `[OPEN]` marks a claim backed by nothing, a decision not yet made. `[UNTESTED]` marks a claim backed by nothing that ran. `[UNREPRODUCED]` marks a figure that cannot currently be re-measured, such as the v0.2 capability probe's six attacks, which were never enumerated and whose file is absent. The governing line is \"prose designs are hypotheses until code runs\": never report a benchmark you did not run or a test you did not see pass, and never present a re-derivation as a restoration.",
+    "a": "CLAUDE.md's rule: a claim backed by nothing gets `[OPEN]` or `[UNTESTED]`, and a figure that cannot currently be re-measured gets `[UNREPRODUCED]`. The spec's usage, which is a convention and not CLAUDE.md's definition, is that `[OPEN]` marks a decision or a design not yet made or settled and `[UNTESTED]` marks a claim nothing has run against. `[UNREPRODUCED]` appears on the §4 capability probe, the §6.2 ARC benchmark figures and the §9.2 compile-speed figure. The governing line is \"prose designs are hypotheses until code runs\": never report a benchmark you did not run or a test you did not see pass, and never present a re-derivation as a restoration.",
     "refs": [
-      "CLAUDE.md"
+      "CLAUDE.md",
+      "§4",
+      "§6.2",
+      "§9.2"
     ],
     "evidence": "spec-text"
   }

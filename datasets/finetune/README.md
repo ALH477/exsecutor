@@ -62,6 +62,7 @@ add your own (the content has no dependence on one).
 | `exsc-run` | compiled by `exsc`, assembled with `fasmg`, executed; exit status (or `abortus N` + SIGILL) and stdout matched what the case declared |
 | `exsc-diagnostic` | `exsc` rejected the program with **exactly** the declared set of codes (not merely containing them), and the corrected twin was accepted |
 | `exsc-check` | `exsc` accepted the program: it lexes, parses and type-checks. It was **not** executed |
+| `compiler-measured` | a statement about `exsc`'s behaviour that was observed by running it and that the spec does not make |
 | `spec-table` | read mechanically from a spec table by the generator |
 | `spec-text` | a statement the spec makes, cited by section. The spec is the source of truth and has been wrong before |
 | `editorial` | an author-supplied gloss. Not normative |

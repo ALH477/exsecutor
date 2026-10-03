@@ -2,7 +2,7 @@
 //! ask: Declare a function taking a raw pointer to a byte.
 //! expect: EXS-E0421
 //! refs: §4.6, §8.4
-//! explain: `*T` is a raw pointer and requires the `Crudum` capability, the one that stands for raw pointers, unchecked casts and manual lifetimes. The audit renders `Crudum` as `Crudum (⇒ ALL)` because a raw pointer can fabricate any other capability. Declare it in the row, or take a reference `&T` instead if no raw access is needed.
+//! explain: `*T` is a raw pointer and requires the `Crudum` capability, the one that stands for raw pointers, unchecked casts and manual lifetimes. §10.3's design renders `Crudum` as `Crudum (⇒ ALL)` on the reasoning that a raw pointer can fabricate any other capability (`[OPEN]`: the audit tool is a stub). Declare it in the row, or take a reference `&T` instead if no raw access is needed.
 
 publica functio f(p: *u8) -> u8 {
     redde 0;

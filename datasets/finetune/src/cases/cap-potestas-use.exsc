@@ -2,7 +2,7 @@
 //! ask: Name a set of capabilities once and require it in a function's row.
 //! expect: ok
 //! refs: §4.5
-//! explain: A `potestas` is a named capability set, and it can stand in the row: `poscit Hospes` requires everything `Hospes` lists. This is ergonomics only: the audit still reads the expanded set.
+//! explain: A `potestas` is a named capability set, and it can stand in the row: `poscit Hospes` requires everything `Hospes` lists. This is ergonomics only; the designed audit reads the expanded set (§10.3, `[OPEN]`: the audit tool is a stub).
 
 potestas Hospes = { alloc, ambitus }
 

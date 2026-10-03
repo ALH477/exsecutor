@@ -35,6 +35,8 @@
 #   exsc-diagnostic  exsc rejected the program with exactly the declared set
 #                    of EXS-E codes, and the fixed twin was accepted
 #   exsc-check       exsc accepted the program (type-checked; not executed)
+#   compiler-measured  a statement about exsc's behaviour observed by running
+#                    it, which the spec does not make
 #   spec-table       read mechanically from a spec table
 #   spec-text        a statement the spec makes, cited by section; the spec is
 #                    the source of truth and has been wrong before
@@ -43,8 +45,8 @@
 # records are [UNTESTED] against the checker (the lexicon pass is built and
 # not enabled, spec §3.3) and say so in their text.
 #
-# VERIFICATION-ONLY. Never on the build path (spec §18.1: fasmg alone builds
-# `exsc`). The outputs are committed like any other project file; CI or a
+# VERIFICATION-ONLY. Never on the build path (spec §18.1: fasmg plus the
+# vendored macro package builds `exsc`). The outputs are committed like any other project file; CI or a
 # human reruns `--check` and diffs.
 #
 # DETERMINISM (CLAUDE.md, §9.3). No clock, no hostname, no environment read
@@ -568,10 +570,15 @@ def lexicon_records(spec, kw_ed, qa, v):
         if rc == 0 or "EXS-E0220" not in got:
             die("reserved word %r as an identifier: expected EXS-E0220, exsc gave rc=%d %s" % (w, rc, got))
     ctx_ok = {}
-    for _, ws in contextual:
+    for label, ws in contextual:
         for w in ws:
             rc, got = as_identifier(v, w)
             ctx_ok[w] = (rc == 0 and not got)
+            if label.startswith(("`ego`", "`numeri`")):
+                # in no compiler table (the CST parses no `ego` block), so "accepted as a
+                # name" is true vacuously and is not offered as evidence
+                ctx_ok[w] = False
+                continue
             if not ctx_ok[w]:
                 sys.stderr.write("gen-finetune: note: contextual word %r is NOT accepted as an identifier "
                                  "(rc=%d %s); the claim is dropped from its record\n" % (w, rc, got))
@@ -614,7 +621,7 @@ def lexicon_records(spec, kw_ed, qa, v):
                                 w, label, e["role"], legal, e["latin"],
                                 " `[UNTESTED]`: the CST parses no `ego` block yet, so this word's contextual "
                                 "status in an `ego` file is the grammar's claim and nothing has measured it (§8.4)."
-                                if label.startswith("`ego`") else ""),
+                                if label.startswith(("`ego`", "`numeri`")) else ""),
                             "exsc-check" if ctx_ok[w] else "editorial", ["§8.4"], "keywords.json"))
     recs.append(rec("lex.ctx.principle", "lexicon", "Why are `versio`, `numeri` and `forma` treated so differently?",
                     "`forma` is one of the thirty reserved words, so it can never be an identifier. `versio` and "
@@ -629,12 +636,16 @@ def lexicon_records(spec, kw_ed, qa, v):
         recs.append(rec("lex.not.%s" % t, "lexicon", "Is `%s` a keyword in Exsecutor?" % t,
                         "No. `%s` is not an Exsecutor keyword, so it is an ordinary identifier: you may declare a "
                         "name spelled `%s`, and until you do, using it is `EXS-E0301` (name does not resolve). The "
-                        "reserved set is the thirty Latin words of §8.4 (plus the contextual words), and none of "
-                        "them is English apart from `dyn`. The Exsecutor spelling of the common words is: `if` -> "
+                        "reserved set is the thirty words of §8.4, Latin apart from `dyn`; a few contextual words "
+                        "(`lt le gt ge eq ne`, `abi`) are English abbreviations. In the keyword's own position the "
+                        "first diagnostic is usually `EXS-E0201`, not `EXS-E0301`: `if c {` is not parsed as a "
+                        "condition. The Exsecutor spelling of the common words is: `if` -> "
                         "`si`, `else if` -> `sin`, `else` -> `aliter`, `while` -> `dum` (with a `terminus` bound), "
                         "`for` -> `per` or `quisque`, `return` -> `redde`, `let`/`const` -> `firma`, `let mut` -> "
-                        "`mutabilis`, `fn` -> `functio`, `struct` -> `structura`. There is no boolean literal: a "
-                        "truth value is the one-bit type `u1`, written 1 and 0." % (t, t),
+                        "`mutabilis`, `fn` -> `functio`, `struct` -> `structura`. There is no boolean literal "
+                        "(measured with `exsc`: `redde true;` is `EXS-E0301`); a comparison yields the one-bit "
+                        "type `u1`, which the spec does not state outright, so treat `u1` as 1 and 0 by "
+                        "observation." % (t, t),
                         "spec-text", ["§8.4"], "spec §8.4"))
 
     for toks, meaning, first in ops:
@@ -656,18 +667,28 @@ def lexicon_records(spec, kw_ed, qa, v):
                         "`%s` is a capability atom (§4.6, §8.4 tier 3)%s. Capability atoms are identifiers in the "
                         "capability namespace, not reserved words. Capability types are unforgeable: no literal, no "
                         "cast, no default. The only root is the `Mundus` passed to `initium`; every other capability "
-                        "is derived from it explicitly (§4.1)." % (a, " — " + g if g else ""),
+                        "is to be derived from it explicitly (§4.1). `[OPEN]`: only `m.ambitus()` and "
+                        "`m.archivum()` are derivable today; the other atoms are declared and not yet "
+                        "derivable (§4.7)." % (a, " — " + g if g else ""),
                         "spec-table", ["§4.6", "§8.4"], "spec §4.6"))
     recs.append(rec("lex.atom.list", "lexicon", "List Exsecutor's capability atoms.",
                     "Eleven (§4.6): " + ", ".join("`%s`%s" % (a, " (%s)" % glosses[a] if glosses.get(a) else "")
-                                                  for a in atoms) + ". `alloc` appears in roughly 70% of non-kernel "
-                    "`poscit` clauses, so the audit view suppresses it by default (§10.3).",
+                                                  for a in atoms) + ". The spec says `alloc` appears in roughly 70% of "
+                    "non-kernel `poscit` clauses (`[UNTESTED]`, asserted without a measurement) and designs the "
+                    "audit view to suppress it by default (§4.6, §10.3; `[OPEN]` since `exsc ego` is a stub).",
                     "spec-table", ["§4.6"], "spec §4.6"))
 
+    # §13's closing paragraph: registered codes with no raise site, and the lexicon
+    # codes that exist behind a call the checker does not make.
+    no_raise = {"EXS-E0105", "EXS-E0332", "EXS-E0701"} | {c for c, _ in codes if c.startswith("EXS-E08")}
+    not_called = {"EXS-E0601", "EXS-E0602", "EXS-E0603", "EXS-E0610"}
     for code, meaning in codes:
+        live = (" `[OPEN]`: registered, with no raise site in the compiler today (§13)." if code in no_raise else
+                " `[OPEN]`: the lexicon pass raises it but the driver does not call that pass (§3.3, §13)."
+                if code in not_called else "")
         recs.append(rec("lex.err.%s.meaning" % code, "lexicon", "What does the diagnostic `%s` mean?" % code,
                         "`%s` means: %s. Codes are permanent and tools match codes, never English prose (§8.3); "
-                        "the wording of the message may change, the code never will." % (code, meaning),
+                        "the wording of the message may change, the code never will.%s" % (code, meaning, live),
                         "spec-table", ["§13", "§8.3"], "spec §13"))
     for code, meaning in codes:
         recs.append(rec("lex.err.%s.reverse" % code, "lexicon",
@@ -692,7 +713,8 @@ def lexicon_records(spec, kw_ed, qa, v):
                     "the `_` is decomposed, and the qualifier is a single word — a Latin ablative or a proper "
                     "noun — and is not checked. Composition depth is two affixes at most (§3.8). Keywords are "
                     "Latin for a different reason: ADR 0005 made the lexicon an identity commitment; §3 does not "
-                    "govern keywords.", "spec-text", ["§3.1", "§3.8", "§8.4"], "spec §3"))
+                    "govern keywords. `[OPEN]`: this rule is not enforced today, because the lexicon pass is "
+                    "built and not called by the driver (§3.3).", "spec-text", ["§3.1", "§3.8", "§8.4"], "spec §3"))
     recs.append(rec("lex.morph.stems", "lexicon", "Why do Latin roots in Exsecutor have two stems?",
                     "Latin verbs carry a present stem and a supine stem, and affixes attach to one or the other: "
                     "the agent of `leg-` is `lector`, not `lecttor`. Every root in the morpheme table therefore "

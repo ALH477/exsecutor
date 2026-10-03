@@ -697,14 +697,14 @@
       "english": "`pub` / `public` / `export`",
       "group": "declaration",
       "latin": "publicus, 'public'",
-      "role": "Marks a declaration as part of the module's interface. A `publica` function declares its `poscit` row explicitly (§4.1 rule 5), and public names must decompose under the lexicon (§3.1).",
+      "role": "Marks a declaration as part of the module's interface. A `publica` function declares its `poscit` row explicitly (§4.1 rule 5), and public names must decompose under the lexicon (§3.1). `[OPEN]`: the lexicon pass that would check that decomposition is built and not enabled (§3.3).",
       "word": "publica"
     },
     {
       "english": "`fn` / `function` / `def`",
       "group": "declaration",
       "latin": "functio, 'a performance, a carrying out'",
-      "role": "Declares a function. It also introduces function types, `functio(A) -> B poscit {R}`, and lambdas (§8.6).",
+      "role": "Declares a function. It also introduces function types, `functio(A) -> B poscit {R}`, and lambdas (§8.6); lambdas type-check and cannot be emitted yet `[OPEN]`.",
       "word": "functio"
     },
     {
@@ -795,14 +795,14 @@
       "english": "none; a placement suffix",
       "group": "value flow",
       "latin": "apud, 'at, beside'",
-      "role": "Suffix in the type grammar for placement, `acies<f32, 1024> apud machina` (§8.6 Types), where a value lives; device placement is designed in §5.5.",
+      "role": "Suffix in the type grammar for placement, `acies<f32, 1024> apud machina` (§8.6 Types), where a value lives; device placement itself is `[OPEN]` design (§5.5).",
       "word": "apud"
     },
     {
       "english": "none; a reference-counted reference",
       "group": "value flow",
       "latin": "referre, 'to carry back' (refero, 'I carry back')",
-      "role": "`refero<T>` is the non-atomic reference-counted reference type (§6.4). It cannot cross an `externus` boundary (`EXS-E0520`); `refero_communis<T>` is the atomic one and may. A bare `refero` with no `<T>` is `EXS-E0201`.",
+      "role": "`refero<T>` is the non-atomic reference-counted reference type (§6.4). It cannot cross an `externus` boundary (`EXS-E0520`); `refero_communis<T>` is the atomic one and may. A bare `refero` with no `<T>` is `EXS-E0201`. `[OPEN]`: only the type form exists; how a program constructs a `refero` is unspecified (§8.6).",
       "word": "refero"
     },
     {
@@ -830,7 +830,7 @@
       "english": "`while`",
       "group": "iteration",
       "latin": "dum, 'while, as long as'",
-      "role": "The sequential loop, written with a declared bound: `dum COND terminus N { ... }` (§8.5).",
+      "role": "The sequential loop. `terminus N` declares its bound, `dum COND terminus N { ... }` (§8.5). The grammar makes `terminus` optional, `exsc` accepts an unbounded `dum` today, and whether one stays admitted outside the `certus` profile is `[OPEN]` (§8.6).",
       "word": "dum"
     },
     {

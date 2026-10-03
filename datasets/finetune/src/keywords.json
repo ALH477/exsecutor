@@ -4,12 +4,12 @@
     "publica": {
       "latin": "publicus, 'public'",
       "english": "`pub` / `public` / `export`",
-      "role": "Marks a declaration as part of the module's interface. A `publica` function declares its `poscit` row explicitly (§4.1 rule 5), and public names must decompose under the lexicon (§3.1)."
+      "role": "Marks a declaration as part of the module's interface. A `publica` function declares its `poscit` row explicitly (§4.1 rule 5), and public names must decompose under the lexicon (§3.1). `[OPEN]`: the lexicon pass that would check that decomposition is built and not enabled (§3.3)."
     },
     "functio": {
       "latin": "functio, 'a performance, a carrying out'",
       "english": "`fn` / `function` / `def`",
-      "role": "Declares a function. It also introduces function types, `functio(A) -> B poscit {R}`, and lambdas (§8.6)."
+      "role": "Declares a function. It also introduces function types, `functio(A) -> B poscit {R}`, and lambdas (§8.6); lambdas type-check and cannot be emitted yet `[OPEN]`."
     },
     "structura": {
       "latin": "structura, 'a putting together'",
@@ -74,12 +74,12 @@
     "apud": {
       "latin": "apud, 'at, beside'",
       "english": "none; a placement suffix",
-      "role": "Suffix in the type grammar for placement, `acies<f32, 1024> apud machina` (§8.6 Types), where a value lives; device placement is designed in §5.5."
+      "role": "Suffix in the type grammar for placement, `acies<f32, 1024> apud machina` (§8.6 Types), where a value lives; device placement itself is `[OPEN]` design (§5.5)."
     },
     "refero": {
       "latin": "referre, 'to carry back' (refero, 'I carry back')",
       "english": "none; a reference-counted reference",
-      "role": "`refero<T>` is the non-atomic reference-counted reference type (§6.4). It cannot cross an `externus` boundary (`EXS-E0520`); `refero_communis<T>` is the atomic one and may. A bare `refero` with no `<T>` is `EXS-E0201`."
+      "role": "`refero<T>` is the non-atomic reference-counted reference type (§6.4). It cannot cross an `externus` boundary (`EXS-E0520`); `refero_communis<T>` is the atomic one and may. A bare `refero` with no `<T>` is `EXS-E0201`. `[OPEN]`: only the type form exists; how a program constructs a `refero` is unspecified (§8.6)."
     },
     "si": {
       "latin": "si, 'if'",
@@ -99,7 +99,7 @@
     "dum": {
       "latin": "dum, 'while, as long as'",
       "english": "`while`",
-      "role": "The sequential loop, written with a declared bound: `dum COND terminus N { ... }` (§8.5)."
+      "role": "The sequential loop. `terminus N` declares its bound, `dum COND terminus N { ... }` (§8.5). The grammar makes `terminus` optional, `exsc` accepts an unbounded `dum` today, and whether one stays admitted outside the `certus` profile is `[OPEN]` (§8.6)."
     },
     "per": {
       "latin": "per, 'through'",
@@ -171,7 +171,7 @@
     },
     "hospites": {
       "latin": "hospites, 'hosts'",
-      "role": "The list of host targets in an `ego` file, `hospites [ x86_64-linux, ... ]`; with an empty `potestates` it is a machine-checked claim a module runs on bare metal (§10.1)."
+      "role": "The list of host targets in an `ego` file, `hospites [ x86_64-linux, ... ]`; with an empty `potestates` it is a machine-checked claim a module runs on bare metal (§10.1). Per §10.1, with an empty `potestates` and `none-eabi` listed it is a machine-checked claim that a module runs on bare metal."
     },
     "acceleratores": {
       "latin": "acceleratores, 'accelerators'",
@@ -179,7 +179,7 @@
     },
     "potestates": {
       "latin": "potestates, 'powers' (plural of potestas)",
-      "role": "The capability set a module needs, in an `ego` file, `potestates { }` meaning it observes nothing; the audit computes the transitive closure from these (§10.1, §10.3)."
+      "role": "The capability set a module needs, in an `ego` file, `potestates { }` meaning it observes nothing. The audit is designed to compute the transitive closure from these (§10.3); `[OPEN]` `exsc ego` is a stub (§10.2)."
     },
     "numeri": {
       "latin": "numeri, 'numbers'",
@@ -306,7 +306,7 @@
     [
       "a < b",
       "lt",
-      "`<` and `>` only ever delimit generic arguments (§8.6 decision 6), so written `a < b` the compiler answers `EXS-E0201` and offers the edit `lt`. Comparison is non-associative: `a lt b lt c` is `EXS-E0201` too."
+      "`<` and `>` only ever delimit generic arguments (§8.6 decision 6), so written `a < b` the compiler answers `EXS-E0201` and suggests the edit `lt`. Comparison is non-associative: `a lt b lt c` is `EXS-E0201` too."
     ],
     [
       "a <= b",
@@ -316,7 +316,7 @@
     [
       "a > b",
       "gt",
-      "`>` is never an operator, only a generic-argument delimiter (§8.6 decision 6); the compiler offers the edit `gt`."
+      "`>` is never an operator, only a generic-argument delimiter (§8.6 decision 6). The compiler's note names the word `gt` but attaches no `gt` edit; §8.6 decision 6 specifies an edit only for `<`."
     ],
     [
       "a >= b",
@@ -391,7 +391,7 @@
     ],
     [
       "Can I coin an Exsecutor root by using a bare English word?",
-      "No. A bare English word is never admissible: that is not a coinage but a surrender, and it defeats §3 entirely (§3.9.2). The lowest rung is a marked loan with a Latin declension, recorded in the loan register.",
+      "No. A bare English word is never admissible: that is not a coinage but a surrender, and it defeats §3 entirely (§3.9.2). The lowest rung is a marked loan with a Latin declension, recorded in the loan register. `[UNTESTED]`: §3.9 is defined and has never been exercised.",
       [
         "§3.9.2",
         "§3.9.5"
@@ -399,14 +399,14 @@
     ],
     [
       "What must a root-coinage proposal for Exsecutor contain?",
-      "(§3.9.3) The concept and its exhaustion argument; the candidates considered and the ladder rung each sits on; the chosen root with both stems, present and supine, for verbal roots, since suffix contracts bind to stems; a collision check against every registered root, every reserved keyword and every module namespace (`norma` is both the standard-library namespace and the Latin for a vector norm, which is the class of collision to catch); and at least three derivations showing the root composes under §3.4 and §3.5.",
+      "(§3.9.3) The concept and its exhaustion argument; the candidates considered and the ladder rung each sits on; the chosen root with both stems, present and supine, for verbal roots, since suffix contracts bind to stems; a collision check against every registered root, every reserved keyword and every module namespace (`norma` is both the standard-library namespace and the Latin for a vector norm, which is the class of collision to catch); and at least three derivations showing the root composes under §3.4 and §3.5. `[UNTESTED]`: §3.9 is defined and has never been exercised.",
       [
         "§3.9.3"
       ]
     ],
     [
       "Can a registered Exsecutor root be renamed or reused?",
-      "No. A registered root is permanent: it may be deprecated, meaning discouraged but still valid and still compiling, but never reused for a different meaning. Public names are interfaces, and silently repointing a root changes what already-published code means. It is §8.3's discipline for error codes applied to morphemes. Registration amends `lexicon.norma`, whose content hash changes, so a coinage is visible to every dependent as a version bump (§3.9.4).",
+      "No. A registered root is permanent: it may be deprecated, meaning discouraged but still valid and still compiling, but never reused for a different meaning. Public names are interfaces, and silently repointing a root changes what already-published code means. It is §8.3's discipline for error codes applied to morphemes. Registration amends `lexicon.norma`, whose content hash changes, so a coinage is visible to every dependent as a version bump (§3.9.4). `[UNTESTED]`: §3.9 is defined and has never been exercised. `lexicon.norma` does not exist yet `[OPEN]`.",
       [
         "§3.9.4",
         "§8.3"
@@ -414,14 +414,14 @@
     ],
     [
       "What is the Exsecutor loan register?",
-      "A register carried with the morpheme table that records every rung-5 loan. The spec treats it as a running measurement of whether §3 scales: a loan count that stays small is evidence the derivational frame does real work, and one that climbs as the standard library grows is evidence it does not. The instruction in the spec is to report it, not to bury it (§3.9.5).",
+      "A register carried with the morpheme table that records every rung-5 loan. The spec treats it as a running measurement of whether §3 scales: a loan count that stays small is evidence the derivational frame does real work, and one that climbs as the standard library grows is evidence it does not. The instruction in the spec is to report it, not to bury it (§3.9.5). `[UNTESTED]`: §3.9 is defined and has never been exercised. The register does not exist yet `[OPEN]`.",
       [
         "§3.9.5"
       ]
     ],
     [
       "Can a domain such as linear algebra have its own Exsecutor lexicon?",
-      "Yes. `lexicon.norma` holds the core, and a specialised domain may carry its own separately hashed and separately depended-upon table, such as `lexicon.algebra` or `lexicon.rete`, so a program that never touches the domain does not inherit its vocabulary. Sub-lexicons obey §3.9 in full; they are not a relaxation (§3.9.6). `exsc lexicon` is the intended checker and is a stub today `[OPEN]` (§3.9.7).",
+      "Yes. `lexicon.norma` holds the core, and a specialised domain may carry its own separately hashed and separately depended-upon table, such as `lexicon.algebra` or `lexicon.rete`, so a program that never touches the domain does not inherit its vocabulary. Sub-lexicons obey §3.9 in full; they are not a relaxation (§3.9.6). `exsc lexicon` is the intended checker and is a stub today `[OPEN]` (§3.9.7). `[UNTESTED]`: §3.9 is defined and has never been exercised.",
       [
         "§3.9.6",
         "§3.9.7"

@@ -8,7 +8,7 @@
 //!   ```
 //! expect: ok
 //! refs: §5.4, §8.5
-//! explain: `while` becomes `dum`, and unlike C every `dum` carries a declared bound, `terminus N`; here 64 is enough for Euclid on 64-bit operands. `!=` is the word `ne`, `%` is `residuum`, and parameters are immutable, so `a` and `b` are copied into `mutabilis` locals before being reassigned.
+//! explain: `while` becomes `dum`, and `terminus N` declares the loop's bound; the grammar makes it optional and `exsc` accepts an unbounded `dum` today (whether that stays admitted outside `certus` is `[OPEN]`), but a declared bound turns a bug into an abort rather than a hang. Here 64 is enough for Euclid on 64-bit operands. `!=` is the word `ne`, `%` is `residuum`, and parameters are immutable, so `a` and `b` are copied into `mutabilis` locals before being reassigned.
 
 publica functio mcd(a: u64, b: u64) -> u64 {
     mutabilis x: u64 = a;
