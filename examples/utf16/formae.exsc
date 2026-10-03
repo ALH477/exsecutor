@@ -1,0 +1,282 @@
+// formae.exsc -- UTF-8 to UTF-16 from Table 3-7 transcribed row by row.
+//
+// METHOD. Unicode 17 section 3.9, Table 3-7 ("Well-Formed UTF-8 Byte
+// Sequences") has nine rows. Each row is one small function below, written as
+// the table writes it, with no shared classification of the lead byte:
+//
+//     row  scalar values         byte 1   byte 2   byte 3   byte 4   function
+//     1    U+0000..U+007F        00..7F                              ordo_1
+//     2    U+0080..U+07FF        C2..DF   80..BF                     ordo_2
+//     3    U+0800..U+0FFF        E0       A0..BF   80..BF            ordo_3
+//     4    U+1000..U+CFFF        E1..EC   80..BF   80..BF            ordo_4
+//     5    U+D000..U+D7FF        ED       80..9F   80..BF            ordo_5
+//     6    U+E000..U+FFFF        EE..EF   80..BF   80..BF            ordo_6
+//     7    U+10000..U+3FFFF      F0       90..BF   80..BF   80..BF   ordo_7
+//     8    U+40000..U+FFFFF      F1..F3   80..BF   80..BF   80..BF   ordo_8
+//     9    U+100000..U+10FFFF    F4       80..8F   80..BF   80..BF   ordo_9
+//
+// A row function looks at fons[i..n) and answers a Congruentia: `ate`, how many
+// bytes of the row it matched (0 if the lead is not this row's lead), and
+// `plena`, 1 if every byte of the row matched. The decoder tries rows 1..9 in
+// order and takes the first whose lead matched. Row leads are pairwise
+// disjoint, so at most one row ever answers ate > 0.
+//
+// WHERE THE MAXIMAL SUBPART COMES FROM. It is `ate` of that row, read
+// straight off the table. A row stops at the first byte outside its range, or
+// at the end of input, and the bytes it matched up to there are a prefix of the
+// row, i.e. the longest prefix of the remaining input that begins some
+// well-formed sequence. ate is at least 1 whenever the lead matched. A lead no
+// row accepts (80..C1, F5..FF) is a 1-byte subpart. The row functions never
+// read at or beyond n: each byte is tested only after i + k lt n.
+//
+// The scalar of a complete row is assembled by `valor` from the length alone
+// (lead payload 0x1F, 0x0F or 0x07 for length 2, 3, 4); it is never range
+// checked, because a complete row is already inside Table 3-7.
+//
+// NOT SHARED WITH RAMUS: no (needed, lo, hi) triple computed from the lead, no
+// loop over continuation bytes. Every irregular second-byte range appears as a
+// literal in its own row's function, and rows 4, 6, 8 (the "normal" rows) are
+// written out again rather than folded together, so a row can be checked
+// against the table by reading one function. The cost is nine near-duplicate
+// functions.
+
+structura Congruentia {
+    ate: mensura
+    plena: u8
+}
+
+// 1 when the byte at position p exists (p lt n) and lies in lo..hi.
+functio in_ordine(fons: acies<u8, 4096>, p: mensura, n: mensura, lo: u8, hi: u8) -> u8 {
+    si p ge n {
+        redde 0;
+    }
+    firma b: u8 = fons[p];
+    si b ge lo et b le hi {
+        redde 1;
+    }
+    redde 0;
+}
+
+// Row 1: U+0000..U+007F  00..7F
+functio ordo_1(fons: acies<u8, 4096>, i: mensura, n: mensura) -> Congruentia {
+    si in_ordine(fons, i, n, 0x00, 0x7F) eq 0 {
+        redde Congruentia { ate: 0, plena: 0 };
+    }
+    redde Congruentia { ate: 1, plena: 1 };
+}
+
+// Row 2: U+0080..U+07FF  C2..DF 80..BF
+functio ordo_2(fons: acies<u8, 4096>, i: mensura, n: mensura) -> Congruentia {
+    si in_ordine(fons, i, n, 0xC2, 0xDF) eq 0 {
+        redde Congruentia { ate: 0, plena: 0 };
+    }
+    si in_ordine(fons, i + 1, n, 0x80, 0xBF) eq 0 {
+        redde Congruentia { ate: 1, plena: 0 };
+    }
+    redde Congruentia { ate: 2, plena: 1 };
+}
+
+// Row 3: U+0800..U+0FFF  E0 A0..BF 80..BF
+functio ordo_3(fons: acies<u8, 4096>, i: mensura, n: mensura) -> Congruentia {
+    si in_ordine(fons, i, n, 0xE0, 0xE0) eq 0 {
+        redde Congruentia { ate: 0, plena: 0 };
+    }
+    si in_ordine(fons, i + 1, n, 0xA0, 0xBF) eq 0 {
+        redde Congruentia { ate: 1, plena: 0 };
+    }
+    si in_ordine(fons, i + 2, n, 0x80, 0xBF) eq 0 {
+        redde Congruentia { ate: 2, plena: 0 };
+    }
+    redde Congruentia { ate: 3, plena: 1 };
+}
+
+// Row 4: U+1000..U+CFFF  E1..EC 80..BF 80..BF
+functio ordo_4(fons: acies<u8, 4096>, i: mensura, n: mensura) -> Congruentia {
+    si in_ordine(fons, i, n, 0xE1, 0xEC) eq 0 {
+        redde Congruentia { ate: 0, plena: 0 };
+    }
+    si in_ordine(fons, i + 1, n, 0x80, 0xBF) eq 0 {
+        redde Congruentia { ate: 1, plena: 0 };
+    }
+    si in_ordine(fons, i + 2, n, 0x80, 0xBF) eq 0 {
+        redde Congruentia { ate: 2, plena: 0 };
+    }
+    redde Congruentia { ate: 3, plena: 1 };
+}
+
+// Row 5: U+D000..U+D7FF  ED 80..9F 80..BF
+functio ordo_5(fons: acies<u8, 4096>, i: mensura, n: mensura) -> Congruentia {
+    si in_ordine(fons, i, n, 0xED, 0xED) eq 0 {
+        redde Congruentia { ate: 0, plena: 0 };
+    }
+    si in_ordine(fons, i + 1, n, 0x80, 0x9F) eq 0 {
+        redde Congruentia { ate: 1, plena: 0 };
+    }
+    si in_ordine(fons, i + 2, n, 0x80, 0xBF) eq 0 {
+        redde Congruentia { ate: 2, plena: 0 };
+    }
+    redde Congruentia { ate: 3, plena: 1 };
+}
+
+// Row 6: U+E000..U+FFFF  EE..EF 80..BF 80..BF
+functio ordo_6(fons: acies<u8, 4096>, i: mensura, n: mensura) -> Congruentia {
+    si in_ordine(fons, i, n, 0xEE, 0xEF) eq 0 {
+        redde Congruentia { ate: 0, plena: 0 };
+    }
+    si in_ordine(fons, i + 1, n, 0x80, 0xBF) eq 0 {
+        redde Congruentia { ate: 1, plena: 0 };
+    }
+    si in_ordine(fons, i + 2, n, 0x80, 0xBF) eq 0 {
+        redde Congruentia { ate: 2, plena: 0 };
+    }
+    redde Congruentia { ate: 3, plena: 1 };
+}
+
+// Row 7: U+10000..U+3FFFF  F0 90..BF 80..BF 80..BF
+functio ordo_7(fons: acies<u8, 4096>, i: mensura, n: mensura) -> Congruentia {
+    si in_ordine(fons, i, n, 0xF0, 0xF0) eq 0 {
+        redde Congruentia { ate: 0, plena: 0 };
+    }
+    si in_ordine(fons, i + 1, n, 0x90, 0xBF) eq 0 {
+        redde Congruentia { ate: 1, plena: 0 };
+    }
+    si in_ordine(fons, i + 2, n, 0x80, 0xBF) eq 0 {
+        redde Congruentia { ate: 2, plena: 0 };
+    }
+    si in_ordine(fons, i + 3, n, 0x80, 0xBF) eq 0 {
+        redde Congruentia { ate: 3, plena: 0 };
+    }
+    redde Congruentia { ate: 4, plena: 1 };
+}
+
+// Row 8: U+40000..U+FFFFF  F1..F3 80..BF 80..BF 80..BF
+functio ordo_8(fons: acies<u8, 4096>, i: mensura, n: mensura) -> Congruentia {
+    si in_ordine(fons, i, n, 0xF1, 0xF3) eq 0 {
+        redde Congruentia { ate: 0, plena: 0 };
+    }
+    si in_ordine(fons, i + 1, n, 0x80, 0xBF) eq 0 {
+        redde Congruentia { ate: 1, plena: 0 };
+    }
+    si in_ordine(fons, i + 2, n, 0x80, 0xBF) eq 0 {
+        redde Congruentia { ate: 2, plena: 0 };
+    }
+    si in_ordine(fons, i + 3, n, 0x80, 0xBF) eq 0 {
+        redde Congruentia { ate: 3, plena: 0 };
+    }
+    redde Congruentia { ate: 4, plena: 1 };
+}
+
+// Row 9: U+100000..U+10FFFF  F4 80..8F 80..BF 80..BF
+functio ordo_9(fons: acies<u8, 4096>, i: mensura, n: mensura) -> Congruentia {
+    si in_ordine(fons, i, n, 0xF4, 0xF4) eq 0 {
+        redde Congruentia { ate: 0, plena: 0 };
+    }
+    si in_ordine(fons, i + 1, n, 0x80, 0x8F) eq 0 {
+        redde Congruentia { ate: 1, plena: 0 };
+    }
+    si in_ordine(fons, i + 2, n, 0x80, 0xBF) eq 0 {
+        redde Congruentia { ate: 2, plena: 0 };
+    }
+    si in_ordine(fons, i + 3, n, 0x80, 0xBF) eq 0 {
+        redde Congruentia { ate: 3, plena: 0 };
+    }
+    redde Congruentia { ate: 4, plena: 1 };
+}
+
+// Try the rows in table order; the first whose lead matched answers. All nine
+// leads are disjoint, so the order is for the reader, not for correctness.
+functio quaere_ordinem(fons: acies<u8, 4096>, i: mensura, n: mensura) -> Congruentia {
+    firma r1: Congruentia = ordo_1(fons, i, n);
+    si r1.ate gt 0 {
+        redde r1;
+    }
+    firma r2: Congruentia = ordo_2(fons, i, n);
+    si r2.ate gt 0 {
+        redde r2;
+    }
+    firma r3: Congruentia = ordo_3(fons, i, n);
+    si r3.ate gt 0 {
+        redde r3;
+    }
+    firma r4: Congruentia = ordo_4(fons, i, n);
+    si r4.ate gt 0 {
+        redde r4;
+    }
+    firma r5: Congruentia = ordo_5(fons, i, n);
+    si r5.ate gt 0 {
+        redde r5;
+    }
+    firma r6: Congruentia = ordo_6(fons, i, n);
+    si r6.ate gt 0 {
+        redde r6;
+    }
+    firma r7: Congruentia = ordo_7(fons, i, n);
+    si r7.ate gt 0 {
+        redde r7;
+    }
+    firma r8: Congruentia = ordo_8(fons, i, n);
+    si r8.ate gt 0 {
+        redde r8;
+    }
+    firma r9: Congruentia = ordo_9(fons, i, n);
+    si r9.ate gt 0 {
+        redde r9;
+    }
+    // No row accepts this lead: one ill-formed byte, never complete.
+    redde Congruentia { ate: 1, plena: 0 };
+}
+
+// The scalar of a complete row of length l >= 2 starting at i.
+functio valor(fons: acies<u8, 4096>, i: mensura, l: mensura) -> u32 {
+    mutabilis cp: u32 = 0;
+    si l eq 2 {
+        cp = (fons[i] atque 0x1F) sicut u32;
+    } sin l eq 3 {
+        cp = (fons[i] atque 0x0F) sicut u32;
+    } aliter {
+        cp = (fons[i] atque 0x07) sicut u32;
+    }
+    mutabilis k: mensura = 1;
+    dum k lt l {
+        cp = (cp sursum 6) sive ((fons[i + k] atque 0x3F) sicut u32);
+        k = k + 1;
+    }
+    redde cp;
+}
+
+functio scribe_scalarem(scopus: &mutabilis acies<u16, 4096>, j: mensura, cp: u32) -> mensura {
+    si cp lt 0x10000 {
+        (*scopus)[j] = cp sicut u16;
+        redde j + 1;
+    }
+    firma v: u32 = cp - 0x10000;
+    (*scopus)[j] = (0xD800 + (v deorsum 10)) sicut u16;
+    (*scopus)[j + 1] = (0xDC00 + (v atque 0x3FF)) sicut u16;
+    redde j + 2;
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    mutabilis i: mensura = 0;
+    mutabilis j: mensura = 0;
+    dum i lt n {
+        firma r: Congruentia = quaere_ordinem(fons, i, n);
+        si r.plena eq 1 {
+            si r.ate eq 1 {
+                (*scopus)[j] = fons[i] sicut u16;
+                j = j + 1;
+            } aliter {
+                j = scribe_scalarem(scopus, j, valor(fons, i, r.ate));
+            }
+            i = i + r.ate;
+        } aliter {
+            si modus eq modus_stricte {
+                redde Exitus { unitates: j, status: status_malformatum, positio: i };
+            }
+            (*scopus)[j] = 0xFFFD;
+            j = j + 1;
+            i = i + r.ate;
+        }
+    }
+    redde Exitus { unitates: j, status: status_bene, positio: 0 };
+}

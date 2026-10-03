@@ -1,0 +1,128 @@
+// tabulae.exsc -- UTF-8 to UTF-16 by table lookup: a 256-entry lead-byte class
+// table and four small per-class parameter tables.
+//
+// METHOD. `converte` builds, once, a 256-entry table `genus` mapping every byte
+// to a lead class, and four ten-entry tables indexed by that class:
+//
+//     class  bytes     meaning                          necesse infra supra larva
+//       0    80..C1 F5..FF  ill-formed lead                0    80   BF   00
+//       1    00..7F    ASCII                               0    80   BF   7F
+//       2    C2..DF    two-byte lead                       1    80   BF   1F
+//       3    E0        three-byte, 1st cont A0..BF         2    A0   BF   0F
+//       4    E1..EC    three-byte                          2    80   BF   0F
+//       5    ED        three-byte, 1st cont 80..9F         2    80   9F   0F
+//       6    EE..EF    three-byte                          2    80   BF   0F
+//       7    F0        four-byte, 1st cont 90..BF          3    90   BF   07
+//       8    F1..F3    four-byte                           3    80   BF   07
+//       9    F4        four-byte, 1st cont 80..8F          3    80   8F   07
+//
+// necesse = continuation bytes still needed, infra/supra = the allowed range
+// of the FIRST continuation (every later one is 80..BF), larva = the mask that
+// takes the payload bits out of the lead. The decode path indexes `genus` with
+// the lead byte and then reads everything from the four parameter tables; it
+// contains no comparison of the lead byte against a range. The tables are
+// locals of `converte` and are consumed there, so they are built once per call,
+// not once per byte.
+//
+// WHERE THE MAXIMAL SUBPART COMES FROM. `ate` counts the bytes consumed so far,
+// the lead included. When a continuation is outside [infra, supra] for the
+// first one and 80..BF for the rest -- or the input ends -- the bytes already
+// consumed are a well-formed prefix the next byte could not extend: one maximal
+// subpart, one U+FFFD. The failing byte is not consumed. Class 0 is a one-byte
+// subpart. Strict mode returns the offset of the subpart's first byte.
+//
+// WHAT IT DOES NOT SHARE WITH ramus. ramus decides the lead with a `si`/`sin`
+// chain of range tests and carries (need, lo, hi, mask) in that chain's arms.
+// Here those four values are data, found by one array lookup. The loop that
+// reads the continuations is the same shape as ramus's and so is the
+// surrogate-pair emitter `scribe_unitates`; the table is the difference.
+
+functio scribe_unitates(scopus: &mutabilis acies<u16, 4096>, j: mensura, cp: u32) -> mensura {
+    si cp lt 0x10000 {
+        (*scopus)[j] = cp sicut u16;
+        redde j + 1;
+    }
+    firma v: u32 = cp - 0x10000;
+    (*scopus)[j] = (0xD800 + (v deorsum 10)) sicut u16;
+    (*scopus)[j + 1] = (0xDC00 + (v atque 0x3FF)) sicut u16;
+    redde j + 2;
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    firma genus: acies<u8, 256> = [
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+        2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+        3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 6, 6,
+        7, 8, 8, 8, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    ];
+    firma necesse: acies<u8, 10> = [0, 0, 1, 2, 2, 2, 2, 3, 3, 3];
+    firma infra: acies<u8, 10> = [0x80, 0x80, 0x80, 0xA0, 0x80, 0x80, 0x80, 0x90, 0x80, 0x80];
+    firma supra: acies<u8, 10> = [0xBF, 0xBF, 0xBF, 0xBF, 0xBF, 0x9F, 0xBF, 0xBF, 0xBF, 0x8F];
+    firma larva: acies<u8, 10> = [0x00, 0x7F, 0x1F, 0x0F, 0x0F, 0x0F, 0x0F, 0x07, 0x07, 0x07];
+
+    mutabilis i: mensura = 0;
+    mutabilis j: mensura = 0;
+    dum i lt n {
+        firma b0: u8 = fons[i];
+        firma k: mensura = genus[b0 sicut mensura] sicut mensura;
+        si k eq 1 {
+            (*scopus)[j] = b0 sicut u16;
+            j = j + 1;
+            i = i + 1;
+            perge;
+        }
+
+        firma opus: mensura = necesse[k] sicut mensura;
+        mutabilis lo: u8 = infra[k];
+        mutabilis hi: u8 = supra[k];
+        mutabilis cp: u32 = (b0 atque larva[k]) sicut u32;
+
+        // consumed so far: the lead. class 0 is an ill-formed lead: one byte.
+        mutabilis ate: mensura = 1;
+        mutabilis bonum: u8 = 1;
+        si k eq 0 {
+            bonum = 0;
+        }
+        dum bonum eq 1 et ate le opus {
+            si i + ate ge n {
+                bonum = 0;
+            } aliter {
+                firma b: u8 = fons[i + ate];
+                si b lt lo vel b gt hi {
+                    bonum = 0;
+                } aliter {
+                    cp = (cp sursum 6) sive ((b atque 0x3F) sicut u32);
+                    lo = 0x80;
+                    hi = 0xBF;
+                    ate = ate + 1;
+                }
+            }
+        }
+
+        si bonum eq 1 {
+            j = scribe_unitates(scopus, j, cp);
+            i = i + ate;
+        } aliter {
+            si modus eq modus_stricte {
+                redde Exitus { unitates: j, status: status_malformatum, positio: i };
+            }
+            (*scopus)[j] = 0xFFFD;
+            j = j + 1;
+            i = i + ate;
+        }
+    }
+    redde Exitus { unitates: j, status: status_bene, positio: 0 };
+}
