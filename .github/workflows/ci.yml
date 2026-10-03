@@ -49,3 +49,16 @@ jobs:
 
       - name: tools/syscall-audit.sh --self-test
         run: nix develop --command tools/syscall-audit.sh --self-test
+
+  # Every file's copyright and licence is declared, in its own SPDX header or
+  # in REUSE.toml, with the licence text in LICENSES/.
+  reuse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # A venv: the runner's system Python refuses a plain pip install (PEP 668).
+      - name: reuse lint
+        run: |
+          python3 -m venv "$RUNNER_TEMP/reuse"
+          "$RUNNER_TEMP/reuse/bin/python" -m pip install --quiet reuse==6.2.0
+          "$RUNNER_TEMP/reuse/bin/reuse" lint
