@@ -409,6 +409,12 @@ class Tools:
             res.update(outcome="abort", abortus=int(m.group(1)))
         elif r.returncode == 132:
             res["outcome"] = "sigill"
+        elif r.returncode == 159:
+            res["outcome"] = "sigsys"
+        elif 128 < r.returncode < 160:
+            # The runner reports a fatal signal N as 128+N, and a program may
+            # also exit with that status itself; both readings are kept.
+            res.update(outcome="exit_or_signal", signal=r.returncode - 128)
         else:
             res["outcome"] = "exit"
         return res
@@ -427,6 +433,14 @@ def line_col_of_byte(source, off):
 def short(s, n=SNIPPET_MAX):
     s = (s or "").replace("\r", "\\r")
     return s if len(s) <= n else s[:n] + "..."
+
+
+def code_span(s):
+    """Quote text as a Markdown code span that survives backticks inside it."""
+    run = max((len(m) for m in re.findall(r"`+", s)), default=0)
+    fence = "`" * (run + 1)
+    pad = " " if s.startswith("`") or s.endswith("`") else ""
+    return fence + pad + s + pad + fence
 
 
 def codes_of(diags):
@@ -487,15 +501,15 @@ def feedback_for_check(ctx, source, check, edits):
         code = dg.get("code")
         out.append("")
         out.append("%d. %s: %s" % (i + 1, code, meaning(ctx, code)))
-        if dg.get("message") and dg.get("message") != ctx.codes.get(code):
+        if dg.get("message") and dg["message"] != (ctx.codes.get(code) or "").replace("`", ""):
             out.append("   exsc message: %s" % dg["message"])
         where = "   at line %s, column %s" % (dg.get("line"), dg.get("col"))
         if dg.get("snippet"):
-            where += ", on `%s`" % short(dg["snippet"])
+            where += ", on %s" % code_span(short(dg["snippet"]))
         out.append(where)
         ln = dg.get("line")
         if isinstance(ln, int) and 1 <= ln <= len(lines):
-            out.append("   line %d reads: `%s`" % (ln, short(lines[ln - 1].strip())))
+            out.append("   line %d reads: %s" % (ln, code_span(short(lines[ln - 1].strip()))))
         if dg.get("note"):
             out.append("   exsc note: %s" % dg["note"])
         e = edits[i] if i < len(edits) else None
@@ -534,6 +548,13 @@ def feedback_for_run(res, expect_exit, expect_stdout):
             res["abortus"]), None
     if o == "sigill":
         return pre + "It was built and run: killed by SIGILL (runner exit 132) with no `abortus` line.", None
+    if o == "sigsys":
+        return pre + ("It was built and run: killed by the sandbox for a system call outside its allowlist "
+                      "(SIGSYS, runner exit 159)."), None
+    if o == "exit_or_signal" and expect_exit != res["exit"]:
+        return pre + ("It was built and run: runner status %d, which is either exit status %d or fatal "
+                      "signal %d (the runner reports signal N as 128+N)." % (res["exit"], res["exit"],
+                                                                             res["signal"])), None
     facts = []
     if expect_exit is not None and res["exit"] != expect_exit:
         facts.append("it exited with status %d; the task expects exit status %d" % (res["exit"], expect_exit))

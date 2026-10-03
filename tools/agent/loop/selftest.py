@@ -42,6 +42,10 @@ class Fail(Exception):
     pass
 
 
+class Skip(Exception):
+    pass
+
+
 def need(cond, msg):
     if not cond:
         raise Fail(msg)
@@ -281,7 +285,31 @@ class T:
         os.chmod(bad, 0o700)
         r, recs, _ = self.loop_run("run:j", ["--run", "--runner", bad], "j")
         need(r.returncode == 4 and recs[-1]["verdict"] == "runner_failure", "exit %d" % r.returncode)
-        return "runner exit 125 -> verdict runner_failure, exit 4"
+        seen = []
+        for status, want in ((159, "SIGSYS, runner exit 159"), (139, "either exit status 139 or fatal signal 11")):
+            fake = os.path.join(self.box, "fake_%d.sh" % status)
+            with open(fake, "w", encoding="utf-8", newline="\n") as f:
+                f.write("#!/bin/sh\nexit %d\n" % status)
+            os.chmod(fake, 0o700)
+            r, recs, _ = self.loop_run("hello:j%d" % status, ["--run", "--runner", fake, "--max-iters", "1"],
+                                       "j%d" % status)
+            fb = recs[-2].get("feedback") or ""
+            need(r.returncode == 1 and want in fb, "status %d: exit %d, feedback %r" % (status, r.returncode, fb))
+            seen.append(str(status))
+        return "runner exit 125 -> runner_failure (exit 4); %s -> not converged, reported" % "/".join(seen)
+
+    def case_k_real_runner(self):
+        if not self.a.runner:
+            raise Skip("no --runner given (pass the sandbox runner to exercise it)")
+        r, recs, _ = self.loop_run("run:k", ["--run", "--runner", self.a.runner, "--expect-exit", "6"], "k",
+                                   task="Return gcd(48, 18) as the exit status.")
+        need(r.returncode == 0, "exit %d: %s" % (r.returncode, r.stdout + r.stderr))
+        its = [x for x in recs if x["kind"] == "iteration"]
+        need([x["run"]["outcome"] for x in its] == ["abort", "exit", "exit"], [x["run"] for x in its])
+        r2, recs2, _ = self.loop_run("hello:k", ["--run", "--runner", self.a.runner, "--expect-stdout",
+                                                 "Ave, mundus.\\n"], "k2")
+        need(r2.returncode == 0, "hello: exit %d" % r2.returncode)
+        return "%s: abortus 1 -> exit 5 -> exit 6; hello stdout matched" % os.path.basename(self.a.runner)
 
 
 def main():
@@ -290,20 +318,26 @@ def main():
     p.add_argument("--exsc", help="compiler (default: <repo>/build/exsc)")
     p.add_argument("--fasmg", help="assembler (default: $FASMG, else fasmg on PATH)")
     p.add_argument("--keep", action="store_true", help="keep the scratch directory")
+    p.add_argument("--runner", help="also run the --run cases through this (real) sandbox runner")
     a = p.parse_args()
     a.repo = os.path.abspath(a.repo)
+    if a.runner:
+        a.runner = os.path.abspath(a.runner)
     t = T(a)
     cases = [("cheatsheet", t.case_cheatsheet), ("a-converge", t.case_a_converge), ("b-never", t.case_b_never),
              ("c-stuck", t.case_c_stuck), ("d-backend", t.case_d_backend), ("e-hostile", t.case_e_hostile),
              ("f-run-expect-exit", t.case_f_run), ("g-run-expect-stdout", t.case_g_stdout),
              ("h-refusals", t.case_h_refusals), ("i-determinism", t.case_i_determinism),
-             ("j-runner-failure", t.case_j_runner_failure)]
-    failed = 0
+             ("j-runner-statuses", t.case_j_runner_failure), ("k-real-runner", t.case_k_real_runner)]
+    failed = skipped = 0
     try:
         for name, fn in cases:
             try:
                 msg = fn()
                 print("PASS  %-22s %s" % (name, msg))
+            except Skip as e:
+                print("SKIP  %-22s %s" % (name, e))
+                skipped += 1
             except Fail as e:
                 failed += 1
                 print("FAIL  %-22s %s" % (name, e))
@@ -313,7 +347,7 @@ def main():
             sys.stdout.flush()
     finally:
         t.close()
-    print("%d/%d passed" % (len(cases) - failed, len(cases)))
+    print("%d/%d passed, %d skipped" % (len(cases) - failed - skipped, len(cases), skipped))
     if a.keep:
         print("scratch kept: %s" % t.box)
     return 1 if failed else 0
