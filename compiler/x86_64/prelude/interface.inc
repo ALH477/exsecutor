@@ -108,6 +108,17 @@ EXS_IFACE_F_APERTUM	= 0x08		; [OPEN]: this row's surface spelling is
 ; PRELUDE type whose layout the prelude fixes, and the blob reads
 ; `descriptor` at +8. Stated once here; mirrors prelude.asm's
 ; EXS_SCRIPTOR_DESCRIPTOR.
+;
+; THE TWO FIELD ROWS BELOW (1 and 2) ARE LAYOUT FACTS, NOT MEMBERS. A source
+; program cannot name `s.a` or `s.descriptor`: `__chk_ty_pre_member` does not
+; answer them, so each is EXS-E0305, as for the ADR 0017 roots (R3) -- and so
+; is every other name that is not one of a prelude capability type's own rows,
+; even one a module declares an `interfacies` member for (`__chk_ty_member`
+; asks `__chk_ty_closed_recv`; nothing a program writes adds a member). It did
+; answer them once, and `s.a` then type-checked and killed the lowering with
+; SIGILL -- a prelude member carries `Member.d` == 0 and `__lwr_member_read`
+; has no case for a field (audit 2026-10-03, finding 5;
+; tests/unit/chk_directorium.asm rows 27-34).
 EXS_IFACE_SCRIPTOR_A		= 0	; mirrors prelude.asm EXS_SCRIPTOR_A
 EXS_IFACE_SCRIPTOR_DESCRIPTOR	= 8	; mirrors prelude.asm EXS_SCRIPTOR_DESCRIPTOR
 EXS_IFACE_SCRIPTOR_SIZE		= 16	; mirrors prelude.asm EXS_SCRIPTOR_SIZE
@@ -122,10 +133,11 @@ EXS_IFACE_SCRIPTOR_ALIGN	= 8
 ; `Scriptor`, byte for byte; mirrors prelude.asm's EXS_LECTOR_*.
 ;
 ; ITS FIELDS HAVE NO ROWS, and that is a decision. `Scriptor.a` and
-; `Scriptor.descriptor` are rows 1 and 2 because a member is resolved by
+; `Scriptor.descriptor` are rows 1 and 2 because a row is resolved by
 ; NAME through one pool (checker/types/prim.inc's `chk_ty_pre_names`), and a
-; second `a` in that pool would be unreachable behind the first. Nothing in
-; the language needs `l.descriptor`, the prelude reads these two fields
+; second `a` in that pool would be unreachable behind the first. (Neither
+; pair is a MEMBER of a source program any more; see `Scriptor` above.)
+; Nothing in the language needs `l.descriptor`, the prelude reads these two fields
 ; through the constants below, and the layout facts a consumer needs -- size
 ; and alignment -- are stated here. If `l.a` is ever wanted, the pool needs a
 ; (row, name) lookup rather than a name lookup; that is the edit, and it is

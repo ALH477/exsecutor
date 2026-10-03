@@ -392,6 +392,26 @@ compiler's nine, `read` included, and would not notice an ungated one.
 `Lector` has no field rows in `interface.inc`: members resolve by name
 through one pool, so a second `a` behind `Scriptor.a` would be unreachable;
 its mark is written down once, in `chk_row_pre_marks`.
+**A prelude capability type has only its own members** (audit 2026-10-03,
+finding 5). `Scriptor`'s two field rows stay in the table as layout facts --
+`chk_row_pre_marks`, `chk_ty_prelude_type`, the offset asserts -- but they are
+not members of a source program, and neither is any other name that a
+prelude capability receiver (`Scriptor`, `Lector`, the three ADR 0017 roots, a
+capability atom such as `Mundus`, or a reference to one) has no row for:
+`__chk_ty_member` asks `__chk_ty_closed_recv` once the prelude rows have
+answered, and a closed receiver is `EXS-E0305` for the read `s.a` and the call
+`s.a()` alike, as `d.a` is for a `Directorium` (ADR 0017 R3). It does NOT fall
+on to the impl scan or to pass 1's last-resort module-wide member hint: a
+module declaring `interfacies Gx { functio a(self: Scriptor) -> u8 }` would
+have `s.a()` bound to `Gx::a`, typed, and handed to a lowering that traps on
+it. The field reads used to type as well: a prelude member carries `Member.d`
+== 0 and `__lwr_member_read` `rassert`s on that. Either way `exsc` exited 132
+(SIGILL) on a well-formed program; the first fix, which only withdrew the
+field rows, moved the trap from `s.a` to `s.a()` rather than removing it (which
+`rassert` the call form hits was not isolated).
+`tests/unit/chk_directorium.asm` rows 27-34 pin the code;
+`tests/programs/scriptor_campus_occultus/`, `lector_campus_occultus/` and
+`scriptor_nomen_collidens/` pin `exsc`'s exit status on both backends.
 
 **Buffered standard streams (amended; `tests/unit/prelude_alveus_*.asm`).**
 As first built, `scribe_octeto` was one `write(2)` per byte and

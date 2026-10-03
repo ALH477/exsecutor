@@ -1,0 +1,5 @@
+# A prelude `Scriptor` field is not a member: EXS-E0305 at the checker,
+# exsc exits 1. Before the fix it exited 132 (SIGILL in the lowering) on both
+# backends. The source's header says why; the code is pinned by
+# tests/unit/chk_directorium.asm rows 27-30.
+TEST: exsc-exit=1

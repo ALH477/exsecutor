@@ -154,8 +154,19 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-193}"
 # is the documented trade (drift costs precision, not the guarantee); whoever
 # re-baselines the 18 directories nobody re-bumped for should do it as its own
 # change and say so, rather than have it ride along with a new fixture.
+# Programs 128 -> 130: scriptor_campus_occultus/ and lector_campus_occultus/,
+# audit 2026-10-03 finding 5 -- the first two directories since `contractio/`'s
+# lowering guard to carry `exsc-exit=` and so to RUN NOTHING: a prelude
+# capability field read is `EXS-E0305` and `exsc` exits 1, where it used to
+# exit 132 (SIGILL in the lowering). They add no differential build, so neither
+# DIFFERENTIAL_ floor moves; the differential phase still holds `--emitte c` to
+# the same exit status. Raised by exactly the two directories added.
+# Programs 130 -> 131: scriptor_nomen_collidens/, the same finding's second half
+# -- a `Scriptor` member that collides with an `interfacies` member the module
+# declares, which a fix that only dropped the field rows turned into exit 132.
+# Same shape (`exsc-exit=1`, no differential build), raised by exactly one.
 IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-78}"
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-128}"
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-131}"
 
 # The differential phase (run_differential_tests, below), which compiles the
 # C backend's emitted units and runs them against the same expectations the

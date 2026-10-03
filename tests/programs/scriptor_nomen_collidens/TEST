@@ -1,0 +1,6 @@
+# A prelude capability receiver's members are a closed set: `s.a`, `s.a()`,
+# `s.descriptor`, `s.descriptor()` are EXS-E0305 even when the module declares
+# interface members of those names. exsc exits 1; it exited 132 (SIGILL in the
+# lowering) on the call forms before the closed set. See the source's header and
+# tests/unit/chk_directorium.asm rows 31-34.
+TEST: exsc-exit=1
