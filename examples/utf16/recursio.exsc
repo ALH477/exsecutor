@@ -1,44 +1,57 @@
 // recursio.exsc -- UTF-8 to UTF-16 by RECURSION: one call per sequence.
 //
-// `gradus` decodes exactly one UTF-8 sequence (well-formed, or one maximal
-// ill-formed subpart), writes its unit(s), advances the cursor, and then CALLS
-// ITSELF for the rest of the input. There is no loop over the input anywhere in
-// this file. The only loop is the small one inside `gradus` that consumes the
-// continuation bytes of the single sequence in hand (at most three).
+// `gradus` handles exactly one UTF-8 sequence (well-formed, or one maximal
+// ill-formed subpart): it has `una_sequentia` decode it, writes the unit(s) it
+// made (or U+FFFD, or records the strict-mode error), advances the cursor, and
+// then CALLS ITSELF for the rest of the input. There is no loop over the input
+// anywhere in this file. The one loop is inside `una_sequentia`, which is not
+// recursive and consumes only the continuation bytes of the single sequence in
+// hand (at most three).
 //
 // Everything that survives from one call to the next lives in a `Cursor`,
 // passed down as `&mutabilis`: input position, output index, input length, the
-// mode, whether a strict-mode error stopped the run, and where. The recursion
-// ends when the input is exhausted or a strict error is recorded; `converte`
-// reads the verdict out of the cursor afterwards.
+// mode, and the offset of a strict-mode error. The recursion ends when the
+// input is exhausted (every call returns 0) or a strict error is found (that
+// call records the offset in the cursor and returns 1, and every caller passes
+// the 1 up); `converte` reads the verdict from the value it gets back.
 //
-// WHERE THE MAXIMAL SUBPART COMES FROM. A call counts the bytes of its own
+// WHERE THE MAXIMAL SUBPART COMES FROM. `una_sequentia` counts the bytes of its
 // sequence it has accepted (`ate`, lead included) while it walks the
-// continuation bytes. A continuation byte that is out of the range allowed for
-// its position, or the end of input, stops the walk; what has been accepted is
+// continuation bytes. A continuation byte out of the range allowed for its
+// position, or the end of input, stops the walk; what has been accepted is
 // then a well-formed prefix that the next byte may not extend, i.e. the maximal
 // subpart. The failing byte is NOT consumed: the recursive call starts there.
 // A lead that cannot begin any well-formed sequence (80..C1, F5..FF) accepts
 // one byte, itself.
 //
 // WHAT THIS DOES NOT SHARE WITH ramus. The lead byte is classified by a helper
-// that returns one packed word (continuations needed, first-continuation
-// bounds, payload mask, in 4 byte-wide fields) instead of ramus's inline
-// branch chain, and control flow is recursive where ramus's is `dum`. The
-// per-sequence continuation walk is the same idea as ramus's, as the contract
-// leaves little other choice. Table 3-7 is the same table.
+// that returns one packed word (continuations needed, the bounds of the first
+// continuation, the payload mask: four byte-wide fields) instead of ramus's
+// inline branch chain; the decoded sequence comes back as one packed word too;
+// and control flow is recursive where ramus's is `dum`. The continuation walk
+// is the same idea as ramus's. Table 3-7 is the same table.
 //
-// STACK. Depth equals the number of sequences, so up to 4096 frames. See the
-// measurement in the author's report; `gradus` keeps its own frame small by
-// moving the classifier and the unit writer into helpers that return before
-// the recursive call is made.
+// STACK. Depth equals the number of sequences, so up to 4096 frames (4096 ASCII
+// bytes, or 4096 ill-formed bytes in `modus_substitue`). exsc gives every
+// temporary its own stack slot, so a frame is as big as its function has
+// temporaries, and the first version of this file, with the whole decode inline
+// in `gradus`, had a 1168-byte frame (1184 with saved rbp and return address):
+// 4096 ASCII bytes needed more than 4608 KB of stack and ran in 5120 KB. The
+// file as it stands keeps the classifier, the continuation walk and the unit
+// writer in helpers that return before the recursive call, and `gradus` is left
+// with `sub rsp, 400` (416 bytes per level with rbp and the return address).
+// Measured, by bisecting `ulimit -s` on the built ELF: 4096 ASCII bytes need
+// 1696 KB, 4096 bytes of 0xFF in `modus_substitue` need 1696 KB, against 28 KB
+// for ramus on the same input, so about 417 bytes per level. The default
+// limit is 8192 KB; under 1696 KB the same ELF dies with SIGSEGV at depth
+// 4096. No per-chunk fallback was needed. A target with a smaller stack than
+// that would need one, and none was tried here.
 
 structura Cursor {
     i: mensura
     j: mensura
     n: mensura
     modus: u8
-    malum: u8
     ubi: mensura
 }
 
@@ -137,7 +150,6 @@ functio gradus(fons: acies<u8, 4096>, scopus: &mutabilis acies<u16, 4096>,
     si (r atque 1) eq 1 {
         (*c).j = scribe(scopus, (*c).j, r deorsum 8);
     } sin (*c).modus eq modus_stricte {
-        (*c).malum = 1;
         (*c).ubi = i;
         redde 1;
     } aliter {
@@ -150,9 +162,9 @@ functio gradus(fons: acies<u8, 4096>, scopus: &mutabilis acies<u16, 4096>,
 
 publica functio converte(fons: acies<u8, 4096>, n: mensura,
                          scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
-    mutabilis c: Cursor = Cursor { i: 0, j: 0, n: n, modus: modus, malum: 0, ubi: 0 };
-    gradus(fons, scopus, c);
-    si c.malum eq 1 {
+    mutabilis c: Cursor = Cursor { i: 0, j: 0, n: n, modus: modus, ubi: 0 };
+    firma r: u8 = gradus(fons, scopus, c);
+    si r eq 1 {
         redde Exitus { unitates: c.j, status: status_malformatum, positio: c.ubi };
     }
     redde Exitus { unitates: c.j, status: status_bene, positio: 0 };

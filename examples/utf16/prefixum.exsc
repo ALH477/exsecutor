@@ -1,0 +1,153 @@
+// prefixum.exsc -- UTF-8 to UTF-16 by counting the leading ones of the lead byte,
+// then judging the second byte by the NUMERIC value of its payload.
+//
+// METHOD. The sequence length comes from the number of leading one bits of the
+// lead byte, counted by a small shift loop (`unciae`): no table, no range
+// chain on the lead.
+//
+//     leading ones   meaning
+//     0              ASCII, one byte
+//     1              10xxxxxx, a stray continuation byte: ill-formed, 1 byte
+//     2, 3, 4        a sequence of that many bytes
+//     5 .. 8         F8..FF, never a lead: ill-formed, 1 byte
+//
+// A continuation byte anywhere is likewise "exactly one leading one" -- the
+// same counter, not a mask. C0 and C1 count as 2 ones and F5..F7 as 4, so the
+// count alone lets them through; they are refused by the numeric rule below
+// rather than by naming them.
+//
+// Once b1 is known to be a continuation byte, the validity of the lead and b1
+// TOGETHER (overlong, surrogate, above U+10FFFF) is decided by the numeric
+// value of their combined payload, the top bits of the scalar:
+//
+//     L = 2   payload of b0, (b0 & 0x1F), must be >= 2        (C0, C1 give 0, 1)
+//     L = 3   p = ((b0 & 0x0F) << 6) | (b1 & 0x3F) is scalar >> 6, and
+//             must be >= 0x20 (scalar >= 0x800: no overlong) and must not be
+//             in 0x360..0x37F (U+D800..U+DFFF: no surrogate)
+//     L = 4   p = ((b0 & 0x07) << 6) | (b1 & 0x3F) is scalar >> 12, and
+//             must be in 0x10..0x10F (U+10000..U+10FFFF)
+//
+// Bytes 2 and 3 of a 3- or 4-byte sequence just need to be continuations.
+//
+// WHERE THE MAXIMAL SUBPART COMES FROM. `ate` counts the bytes consumed, lead
+// included. The prefix test is applied the moment b1 is a continuation: if it
+// fails, the lead is not the start of any well-formed sequence with this b1,
+// so the subpart is the lead alone (ate = 1). This is exactly the standard's
+// answer, because for every lead the admissible second bytes are those whose
+// payload passes the numeric rule (E0 needs b1 >= A0, ED needs b1 <= 9F, F0
+// needs b1 >= 90, F4 needs b1 <= 8F, and C0, C1, F5..F7 admit none). If b1
+// passes, ate = 2 and each further continuation extends it; a byte that is not
+// a continuation, or the end of input, stops the sequence with ate bytes as
+// the subpart. fons is read at i + k only after i + k lt n.
+//
+// NOT SHARED WITH RAMUS: no branch chain naming E0, ED, F0, F4 or the other
+// leads, no per-lead (lo, hi) bounds on the second byte. The second byte's
+// legality is arithmetic on a payload, not a comparison against a range
+// chosen by the lead.
+
+// Number of leading one bits of b (0..8), by shifting b left until the top bit
+// clears.
+functio unciae(b: u8) -> u8 {
+    mutabilis c: u8 = 0;
+    mutabilis m: u8 = b;
+    dum c lt 8 et (m atque 0x80) ne 0 {
+        c = c + 1;
+        m = m sursum 1;
+    }
+    redde c;
+}
+
+// 1 when the lead b0 (announcing l bytes) may be followed by the continuation
+// byte b1: the numeric payload rule. l is 2, 3 or 4.
+functio carga_bona(l: u8, b0: u8, b1: u8) -> u8 {
+    firma s: u32 = (b1 atque 0x3F) sicut u32;
+    si l eq 2 {
+        si (b0 atque 0x1F) ge 2 {
+            redde 1;
+        }
+        redde 0;
+    }
+    si l eq 3 {
+        firma p3: u32 = (((b0 atque 0x0F) sicut u32) sursum 6) sive s;
+        si p3 ge 0x20 et (p3 lt 0x360 vel p3 gt 0x37F) {
+            redde 1;
+        }
+        redde 0;
+    }
+    firma p4: u32 = (((b0 atque 0x07) sicut u32) sursum 6) sive s;
+    si p4 ge 0x10 et p4 le 0x10F {
+        redde 1;
+    }
+    redde 0;
+}
+
+functio scribe_scalarem(scopus: &mutabilis acies<u16, 4096>, j: mensura, cp: u32) -> mensura {
+    si cp lt 0x10000 {
+        (*scopus)[j] = cp sicut u16;
+        redde j + 1;
+    }
+    firma v: u32 = cp - 0x10000;
+    (*scopus)[j] = (0xD800 + (v deorsum 10)) sicut u16;
+    (*scopus)[j + 1] = (0xDC00 + (v atque 0x3FF)) sicut u16;
+    redde j + 2;
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    mutabilis i: mensura = 0;
+    mutabilis j: mensura = 0;
+    dum i lt n {
+        firma b0: u8 = fons[i];
+        firma l: u8 = unciae(b0);
+        si l eq 0 {
+            (*scopus)[j] = b0 sicut u16;
+            j = j + 1;
+            i = i + 1;
+            perge;
+        }
+
+        // l = 1 (stray continuation) and l >= 5 are not leads: opus 0. Otherwise
+        // the lead wants l - 1 continuations. `ate` counts bytes consumed so far.
+        mutabilis opus: mensura = 0;
+        si l ge 2 et l le 4 {
+            opus = (l - 1) sicut mensura;
+        }
+        mutabilis ate: mensura = 1;
+        mutabilis bonum: u8 = 1;
+        mutabilis cp: u32 = 0;
+        si opus eq 0 {
+            bonum = 0;
+        } aliter {
+            // payload bits of the lead: shift its l leading ones out (the next bit is 0)
+            cp = ((b0 sursum l) deorsum l) sicut u32;
+        }
+        dum bonum eq 1 et ate le opus {
+            si i + ate ge n {
+                bonum = 0;
+            } aliter {
+                firma b: u8 = fons[i + ate];
+                si unciae(b) ne 1 {
+                    bonum = 0;
+                } sin ate eq 1 et carga_bona(l, b0, b) eq 0 {
+                    bonum = 0;
+                } aliter {
+                    cp = (cp sursum 6) sive ((b atque 0x3F) sicut u32);
+                    ate = ate + 1;
+                }
+            }
+        }
+
+        si bonum eq 1 {
+            j = scribe_scalarem(scopus, j, cp);
+            i = i + ate;
+        } aliter {
+            si modus eq modus_stricte {
+                redde Exitus { unitates: j, status: status_malformatum, positio: i };
+            }
+            (*scopus)[j] = 0xFFFD;
+            j = j + 1;
+            i = i + ate;
+        }
+    }
+    redde Exitus { unitates: j, status: status_bene, positio: 0 };
+}

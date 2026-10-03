@@ -130,6 +130,24 @@ def curated():
     return out
 
 
+def position_sweeps():
+    """EVERY byte value at EACH position after a prefix that is mid-sequence.
+
+    Added after an author mutated a decoder's 256-entry byte-class table and
+    found the fixture did not notice entry 0xFA: no record had 0xFA after a
+    lead, and only 42 of the 256 values ever appeared as a second byte after
+    C2/E1/F1. A table-driven decoder has 256 places to be wrong, and a fixture
+    that visits 42 of them cannot see the rest. The prefixes are the lead bytes
+    and valid partial sequences where each position's allowed range differs.
+    """
+    prefixes = (
+        [b'\xc2', b'\xe0', b'\xe1', b'\xed', b'\xee', b'\xf0', b'\xf1', b'\xf4'] +
+        [b'\xe0\xa0', b'\xe1\x80', b'\xed\x9f', b'\xee\x80', b'\xf0\x90',
+         b'\xf1\x80', b'\xf4\x8f'] +
+        [b'\xf0\x90\x80', b'\xf1\x80\x80', b'\xf4\x8f\xbf'])
+    return [p + bytes([b]) for p in prefixes for b in range(256)]
+
+
 def capacity():
     """Records that press on the 4096-byte limit and on output length = input."""
     return [
@@ -207,7 +225,7 @@ def with_modes(strings):
 
 
 def fixture():
-    return with_modes(curated() + capacity() + fuzz(0x5EED16, 700))
+    return with_modes(curated() + position_sweeps() + capacity() + fuzz(0x5EED16, 700))
 
 
 # ---------------------------------------------------------------- deep tier

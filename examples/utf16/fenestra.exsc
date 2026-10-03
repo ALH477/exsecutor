@@ -38,26 +38,38 @@
 // ((w & 0x0F000000) >> 12) | ((w & 0x003F0000) >> 10) | ((w & 0x00003F00) >> 8).
 //
 // WHERE THE MAXIMAL SUBPART COMES FROM. Only on the ill-formed path, only in
-// modus_substitue, by testing SUCCESSIVELY SHORTER PREFIXES OF THE WINDOW. The
-// lead alone fixes the form length l (2, 3 or 4) by its own mask: 0xE0000000 =
-// 0xC0000000, 0xF0000000 = 0xE0000000, 0xF8000000 = 0xF0000000; any other lead
-// (0x80..0xBF, 0xF8..0xFF) has no form and is a 1-byte subpart. For k = l down
-// to 2 the first k bytes pass if (lead mask | continuation masks of bytes
-// 1..k-1) equals (lead value | 0x80 in those bytes) AND the value field above
-// holds; the first k that passes is the subpart length, and if none passes the
-// lead stands alone (length 1: that is also the answer for C0, C1, F5..F7,
-// whose lead is not a prefix of anything). The continuation masks for k = 2,
-// 3, 4 are 0x00C00000, 0x00C0C000, 0x00C0C0C0 with values 0x00800000,
-// 0x00808000, 0x00808080. k = l is the complete form, so an overlong or
-// surrogate that passes its masks but fails its value field (E0 80 80,
-// ED A0 80) falls through k = 3, 2 and ends at 1; F0 90 80 cut by the end of
-// input fails k = 4 on the zero padding and ends at 3. Every field tested lies
-// in b0 and b1, so the value test is the same for every k >= 2.
+// modus_substitue, by testing SUCCESSIVELY SHORTER PREFIXES OF THE WINDOW.
+//
+// A lead that announces a 2-byte form (C0..DF) is a 1-byte subpart whatever
+// follows: the only prefix of a 2-byte form longer than its lead is the whole
+// form, and the whole form has just failed on the decode path. Any other lead
+// that matches no form (80..BF, F8..FF) is a 1-byte subpart too.
+//
+// A lead announcing a 3- or 4-byte form (its own mask: 0xF0000000 =
+// 0xE0000000 for 3, 0xF8000000 = 0xF0000000 for 4) has failed the whole form
+// on the decode path, so the descent starts one byte short of it, k = l - 1,
+// and runs down to k = 2. The first k bytes pass if (the lead's mask OR the
+// continuation masks of bytes 1..k-1) equals (the lead's value OR 0x80 in
+// those bytes) AND the value field above holds; the first k that passes is the
+// subpart, and if none does the lead stands alone (length 1: also the answer
+// for E0 80, ED A0, F0 80, F4 90 and F5..F7, whose lead is not a prefix of
+// anything with that second byte). The continuation masks for k = 2, 3 are
+// 0x00C00000, 0x00C0C000 with values 0x00800000, 0x00808000 (k = 4 is the
+// whole 4-byte form and never tested here). So E0 80 80 (full form passes its
+// masks, fails its value field) tests k = 2, fails on the same value field,
+// and ends at 1; F0 90 80 cut by the end of input fails the whole form on the
+// zero padding, passes k = 3, and ends at 3. Every field tested lies in b0 and
+// b1, so the value test is the same for every k >= 2, and none of the tests
+// can read past the window.
 //
 // NOT SHARED WITH RAMUS: no per-byte range comparison on the decode path, no
 // classification of the lead into a (needed, lo, hi) triple, no loop over
-// continuation bytes. Ramus asks "is this byte in range" once per byte; this
-// asks "does this word match" once per sequence.
+// continuation bytes while decoding. Ramus asks "is this byte in range" once
+// per byte; this asks "does this word match" once per sequence. The one loop
+// over bytes is the packing loop, which only guards i + k lt n and compares
+// nothing; the other loop is the prefix descent, which runs only on ill-formed
+// input in modus_substitue and tests masks, not bytes. The price is a window
+// packed at every position, ASCII included.
 
 // Pack fons[i .. i+4) into a window; bytes at or beyond n are 0.
 functio fenestra_ex(fons: acies<u8, 4096>, i: mensura, n: mensura) -> u32 {
@@ -97,11 +109,9 @@ functio campi_boni(w: u32, l: mensura) -> u8 {
     redde 0;
 }
 
-// The form length announced by the lead's own bits, 0 if it announces none.
+// The length of the 3- or 4-byte form the lead announces by its own bits, 0
+// for any other lead (a 2-byte lead needs no prefix test: see the header).
 functio forma_ducis(w: u32) -> mensura {
-    si (w atque 0xE0000000) eq 0xC0000000 {
-        redde 2;
-    }
     si (w atque 0xF0000000) eq 0xE0000000 {
         redde 3;
     }
@@ -111,11 +121,8 @@ functio forma_ducis(w: u32) -> mensura {
     redde 0;
 }
 
-// The lead's mask and value for a form of length l.
+// The lead's mask and value for a form of length l (3 or 4).
 functio masca_ducis(l: mensura) -> u32 {
-    si l eq 2 {
-        redde 0xE0000000;
-    }
     si l eq 3 {
         redde 0xF0000000;
     }
@@ -123,38 +130,29 @@ functio masca_ducis(l: mensura) -> u32 {
 }
 
 functio nota_ducis(l: mensura) -> u32 {
-    si l eq 2 {
-        redde 0xC0000000;
-    }
     si l eq 3 {
         redde 0xE0000000;
     }
     redde 0xF0000000;
 }
 
-// The continuation masks and values for bytes 1..k-1 (k = 2, 3 or 4 bytes).
+// The continuation masks and values for bytes 1..k-1 (k = 2 or 3 bytes).
 functio masca_sequentium(k: mensura) -> u32 {
     si k eq 2 {
         redde 0x00C00000;
     }
-    si k eq 3 {
-        redde 0x00C0C000;
-    }
-    redde 0x00C0C0C0;
+    redde 0x00C0C000;
 }
 
 functio nota_sequentium(k: mensura) -> u32 {
     si k eq 2 {
         redde 0x00800000;
     }
-    si k eq 3 {
-        redde 0x00808000;
-    }
-    redde 0x00808080;
+    redde 0x00808000;
 }
 
-// 1 when the first k bytes of w (2 <= k <= l) are a well-formed prefix of an
-// l-byte form: masked equality on exactly those bytes, then the value fields.
+// 1 when the first k bytes of w (k = 2 or 3, k < l) are a well-formed prefix of
+// an l-byte form: masked equality on exactly those bytes, then the value fields.
 functio praefixum_congruit(w: u32, l: mensura, k: mensura) -> u8 {
     firma masca: u32 = masca_ducis(l) sive masca_sequentium(k);
     firma nota: u32 = nota_ducis(l) sive nota_sequentium(k);
@@ -164,11 +162,15 @@ functio praefixum_congruit(w: u32, l: mensura, k: mensura) -> u8 {
     redde 0;
 }
 
-// The maximal subpart at an ill-formed position: the longest prefix of the
-// window that passes, trying l, l-1, ... 2, else the lead alone.
+// The maximal subpart at an ill-formed position whose whole form has already
+// failed: the longest proper prefix of the window that passes, trying l - 1,
+// ..., 2, else the lead alone.
 functio longitudo_subpartis(w: u32) -> mensura {
     firma l: mensura = forma_ducis(w);
-    mutabilis k: mensura = l;
+    si l eq 0 {
+        redde 1;
+    }
+    mutabilis k: mensura = l - 1;
     dum k ge 2 {
         si praefixum_congruit(w, l, k) eq 1 {
             redde k;

@@ -1,0 +1,299 @@
+// fluxus_quattuor.exsc -- UTF-8 to UTF-16 as a four-stage COMBINATIONAL
+// lockstep pipeline, with the policy pulled out into a stage of its own.
+//
+// METHOD. One input byte per tick goes through four stages, each a function:
+//
+//   stage 1  classis            byte -> class code (Table 3-7's byte ranges).
+//                               Stateless.
+//   stage 2  assemblator        class + byte + the byte's offset + Assemblatio
+//                               -> Eventus: ev_exspecta, ev_scalaris (cp), or
+//                               ev_malum (subpart length, offset of its first
+//                               byte). It NEVER FAILS and has no `modus`
+//                               parameter: it cannot tell the two modes apart.
+//   stage 3  repara             the policy, and the only function that reads
+//                               `modus`. Stateless. Strict turns an ev_malum
+//                               into ev_halt (same length and offset);
+//                               substitue turns it into ev_scalaris U+FFFD.
+//                               Everything else passes through unchanged.
+//   stage 4  scriptor_unitatum  ev_scalaris + Scriptio (write cursor) -> one or
+//                               two UTF-16 units. It does not know ev_malum or
+//                               ev_halt exist; it ignores anything that is not
+//                               a scalar.
+//
+// The loop in `converte` is the clock and also the one place that sees a halt:
+// it returns at the first ev_halt, with that event's offset as `positio`.
+//
+// COMBINATIONAL, NOT REGISTERED, and why. A byte goes through all four stages
+// inside its tick, so the loop can decide "offer this byte again" with the
+// index it already owns, with no hold wire and no stall; and a strict halt is
+// an immediate return because nothing is in flight to drain. The stall and the
+// drain are what fluxus_registratus is about, and repeating them here would
+// make this file about them too. This file is about where the policy lives, and
+// combinational keeps that the only thing that varies. I wrote no registered
+// four-stage version and measured nothing about one.
+//
+// THE TICK LOOP AND THE RE-PRESENTED BYTE. Tick i < n offers byte i; tick n is
+// the flush tick, where the loop supplies the class cl_finis (no byte exists
+// to classify) so a pending sequence closes as one subpart. When a byte breaks
+// a pending sequence stage 2 emits ev_malum for the bytes it held and resets to
+// idle. The event carries no "re-present" flag: an Ill is its length and its
+// start and nothing else. The loop derives it: a subpart that ENDS exactly at
+// the current byte (exordium + longitudo = i) cannot have contained it, so the
+// byte was refused and i does not advance; the next tick offers the same byte
+// to a stage 2 that is idle. An ill-formed lead is consumed (exordium = i, so
+// the end is i + 1), and the flush tick never repeats. Measured on 543,648
+// inputs: ticks = n + r + 1, r the number of re-presented bytes.
+//
+// WHERE THE MAXIMAL SUBPART COMES FROM. Stage 2's `ate` counts the bytes
+// assembled so far, lead included; when a byte is refused or the flush tick
+// arrives those bytes ARE the subpart (a well-formed prefix the refused byte may
+// not extend). A continuation is accepted only if its class bit is set in
+// `permissum` (Table 3-7 as a bit mask over the three continuation classes:
+// after E0 only A0..BF, after ED only 80..9F, after F0 90..BF, after F4
+// 80..8F, otherwise 80..BF; then back to all three). `exordium` is the offset
+// saved when the lead arrived.
+//
+// NOT SHARED WITH ramus. No loop over fons[i + ate] and no lo/hi comparison
+// for continuations; fons is read once per tick and never looked ahead. The
+// decoder state persists in a struct across ticks, the policy is a function
+// rather than a branch at the failure site, and events are values passed
+// between functions. Shared because it is the standard: Table 3-7 and the
+// surrogate arithmetic.
+
+// ---- stage 1 vocabulary: the class of a byte -------------------------------
+
+firma cl_ascii: u8 = 0;
+firma cl_cont_a: u8 = 1;
+firma cl_cont_b: u8 = 2;
+firma cl_cont_c: u8 = 3;
+firma cl_malus: u8 = 4;
+firma cl_duo: u8 = 5;
+firma cl_e0: u8 = 6;
+firma cl_tres: u8 = 7;
+firma cl_ed: u8 = 8;
+firma cl_f0: u8 = 9;
+firma cl_quattuor: u8 = 10;
+firma cl_f4: u8 = 11;
+firma cl_finis: u8 = 12;
+
+// ---- events ------------------------------------------------------------------
+//
+// stage 2 emits exspecta, scalaris or malum; stage 3 turns malum into
+// scalaris or halt and passes the others through; stage 4 consumes scalaris.
+
+firma ev_exspecta: u8 = 0;
+firma ev_scalaris: u8 = 1;
+firma ev_malum: u8 = 2;
+firma ev_halt: u8 = 3;
+
+// Bit k of a `permissum` mask says: a byte of class k may be the next
+// continuation. Classes 1, 2, 3 are the three continuation ranges.
+firma perm_omnes: u32 = 14;
+firma perm_e0: u32 = 8;
+firma perm_ed: u32 = 6;
+firma perm_f0: u32 = 12;
+firma perm_f4: u32 = 2;
+
+// cp is meaningful for scalaris; longitudo and exordium for malum and halt
+// (the subpart's length and the offset of its first byte).
+structura Eventus {
+    genus: u8
+    cp: u32
+    longitudo: mensura
+    exordium: mensura
+}
+
+structura Assemblatio {
+    cp: u32
+    opus: mensura
+    ate: mensura
+    permissum: u32
+    exordium: mensura
+}
+
+structura Scriptio {
+    j: mensura
+}
+
+functio fac_eventum(genus: u8, cp: u32, longitudo: mensura, exordium: mensura) -> Eventus {
+    redde Eventus { genus: genus, cp: cp, longitudo: longitudo, exordium: exordium };
+}
+
+// STAGE 1. A byte in, a class out.
+functio classis(b: u8) -> u8 {
+    si b lt 0x80 {
+        redde cl_ascii;
+    }
+    si b lt 0x90 {
+        redde cl_cont_a;
+    }
+    si b lt 0xA0 {
+        redde cl_cont_b;
+    }
+    si b lt 0xC0 {
+        redde cl_cont_c;
+    }
+    si b lt 0xC2 {
+        redde cl_malus;
+    }
+    si b lt 0xE0 {
+        redde cl_duo;
+    }
+    si b eq 0xE0 {
+        redde cl_e0;
+    }
+    si b eq 0xED {
+        redde cl_ed;
+    }
+    si b lt 0xF0 {
+        redde cl_tres;
+    }
+    si b eq 0xF0 {
+        redde cl_f0;
+    }
+    si b lt 0xF4 {
+        redde cl_quattuor;
+    }
+    si b eq 0xF4 {
+        redde cl_f4;
+    }
+    redde cl_malus;
+}
+
+// STAGE 2. Class + byte + the byte's offset + its own state in, one event
+// out. It never fails and knows nothing about modes: a refused byte or an
+// ill-formed lead is a malum event, and what to do about it is not its call.
+functio assemblator(cl: u8, b: u8, pos: mensura, st: &mutabilis Assemblatio) -> Eventus {
+    si (*st).opus gt 0 {
+        firma l: mensura = (*st).ate;
+        firma ex: mensura = (*st).exordium;
+        si cl eq cl_finis {
+            (*st).opus = 0;
+            (*st).ate = 0;
+            redde fac_eventum(ev_malum, 0, l, ex);
+        }
+        si cl ge cl_cont_a et cl le cl_cont_c et (((*st).permissum deorsum (cl sicut u32)) atque 1) eq 1 {
+            (*st).cp = ((*st).cp sursum 6) sive (b atque 0x3F) sicut u32;
+            (*st).opus = (*st).opus - 1;
+            (*st).ate = (*st).ate + 1;
+            (*st).permissum = perm_omnes;
+            si (*st).opus eq 0 {
+                firma cp: u32 = (*st).cp;
+                (*st).ate = 0;
+                redde fac_eventum(ev_scalaris, cp, 0, 0);
+            }
+            redde fac_eventum(ev_exspecta, 0, 0, 0);
+        }
+        (*st).opus = 0;
+        (*st).ate = 0;
+        redde fac_eventum(ev_malum, 0, l, ex);
+    }
+
+    si cl eq cl_finis {
+        redde fac_eventum(ev_exspecta, 0, 0, 0);
+    }
+    si cl eq cl_ascii {
+        redde fac_eventum(ev_scalaris, b sicut u32, 0, 0);
+    }
+
+    mutabilis opus: mensura = 0;
+    mutabilis masca: u8 = 0;
+    mutabilis perm: u32 = perm_omnes;
+    si cl eq cl_duo {
+        opus = 1;
+        masca = 0x1F;
+    } sin cl eq cl_e0 {
+        opus = 2;
+        masca = 0x0F;
+        perm = perm_e0;
+    } sin cl eq cl_ed {
+        opus = 2;
+        masca = 0x0F;
+        perm = perm_ed;
+    } sin cl eq cl_tres {
+        opus = 2;
+        masca = 0x0F;
+    } sin cl eq cl_f0 {
+        opus = 3;
+        masca = 0x07;
+        perm = perm_f0;
+    } sin cl eq cl_f4 {
+        opus = 3;
+        masca = 0x07;
+        perm = perm_f4;
+    } sin cl eq cl_quattuor {
+        opus = 3;
+        masca = 0x07;
+    }
+    si opus eq 0 {
+        redde fac_eventum(ev_malum, 0, 1, pos);
+    }
+    (*st).opus = opus;
+    (*st).ate = 1;
+    (*st).cp = (b atque masca) sicut u32;
+    (*st).permissum = perm;
+    (*st).exordium = pos;
+    redde fac_eventum(ev_exspecta, 0, 0, 0);
+}
+
+// STAGE 3. The policy, and the only place the mode is looked at. Strict turns
+// a malum into a halt; substitue turns it into the scalar U+FFFD. Everything
+// else passes through.
+functio repara(ev: Eventus, modus: u8) -> Eventus {
+    si ev.genus ne ev_malum {
+        redde ev;
+    }
+    si modus eq modus_stricte {
+        redde fac_eventum(ev_halt, 0, ev.longitudo, ev.exordium);
+    }
+    redde fac_eventum(ev_scalaris, 0xFFFD, ev.longitudo, ev.exordium);
+}
+
+// STAGE 4. A scalar event in, one or two UTF-16 units out, at the write cursor.
+functio scriptor_unitatum(ev: Eventus, st: &mutabilis Scriptio, scopus: &mutabilis acies<u16, 4096>) {
+    si ev.genus ne ev_scalaris {
+        redde;
+    }
+    si ev.cp lt 0x10000 {
+        (*scopus)[(*st).j] = ev.cp sicut u16;
+        (*st).j = (*st).j + 1;
+    } aliter {
+        firma v: u32 = ev.cp - 0x10000;
+        (*scopus)[(*st).j] = (0xD800 + (v deorsum 10)) sicut u16;
+        (*scopus)[(*st).j + 1] = (0xDC00 + (v atque 0x3FF)) sicut u16;
+        (*st).j = (*st).j + 2;
+    }
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    mutabilis asm: Assemblatio = Assemblatio { cp: 0, opus: 0, ate: 0, permissum: perm_omnes, exordium: 0 };
+    mutabilis scr: Scriptio = Scriptio { j: 0 };
+    mutabilis i: mensura = 0;
+    // Tick i < n offers byte i. Tick n is the flush tick: no byte, class cl_finis.
+    dum i le n {
+        mutabilis b: u8 = 0;
+        mutabilis cl: u8 = cl_finis;
+        si i lt n {
+            b = fons[i];
+            cl = classis(b);
+        }
+        firma e2: Eventus = assemblator(cl, b, i, asm);
+        firma e3: Eventus = repara(e2, modus);
+        si e3.genus eq ev_halt {
+            redde Exitus { unitates: scr.j, status: status_malformatum, positio: e3.exordium };
+        }
+        scriptor_unitatum(e3, scr, scopus);
+        // A malum whose subpart ends exactly at this byte refused the byte:
+        // it is offered again, to a stage 2 that is now idle. The flush tick
+        // has no byte to offer again.
+        mutabilis repete: u8 = 0;
+        si i lt n et e2.genus eq ev_malum et e2.exordium + e2.longitudo eq i {
+            repete = 1;
+        }
+        si repete eq 0 {
+            i = i + 1;
+        }
+    }
+    redde Exitus { unitates: scr.j, status: status_bene, positio: 0 };
+}

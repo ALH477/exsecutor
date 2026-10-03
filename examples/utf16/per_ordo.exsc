@@ -1,0 +1,130 @@
+// per_ordo.exsc -- UTF-8 to UTF-16 by loops that say what they are: `per`,
+// `rumpe` and `perge`, under one outer `dum`.
+//
+// THE METHOD. This decoder never names Table 3-7's four irregular second-byte
+// ranges (E0 A0..BF, ED 80..9F, F0 90..BF, F4 80..8F). It derives them:
+//
+//   1. The sequence length `lon` is the number of leading one bits of the lead
+//      byte, counted by a `per` loop over the bits, most significant first,
+//      that `rumpe`s at the first zero. 2, 3 and 4 are leads; 1 (80..BF) and
+//      5..8 (F8..FF) are not leads at all.
+//   2. The lead's payload is its low 7-lon bits, a mask built from `lon`.
+//   3. After the lead, and after EVERY continuation byte, the scalar so far is
+//      tested numerically for whether any completion could still be
+//      well-formed. With `r` continuation bytes still to come, a partial value
+//      `p` stands for the interval of final scalars [p << 6r, (p << 6r) + 2^6r
+//      - 1]. The prefix may go on iff that interval still reaches the smallest
+//      scalar a `lon`-byte form may encode (0x80, 0x800, 0x10000: this is what
+//      refuses overlong forms), does not start above U+10FFFF, and does not lie
+//      wholly inside U+D800..U+DFFF. That is "the start of some well-formed
+//      sequence" taken literally. So E0 80 fails at its second byte (interval
+//      0..0x3F never reaches 0x800), ED A0 fails there (D800..D83F is all
+//      surrogate), F4 90 fails (starts at 0x110000), and C0, C1 and F5..F7 fail
+//      at the lead itself: three comparisons, no per-lead arm.
+//   4. Continuation bytes are consumed by `per k in 1..lon` (`lon` a mensura).
+//      A byte that is not 10xxxxxx, a prefix that fails the test, or the end of
+//      input does `rumpe`. The bytes accepted up to then are the MAXIMAL
+//      SUBPART in `modus_substitue`: the longest prefix that was still the
+//      start of a well-formed sequence. The byte that failed is not consumed;
+//      it starts whatever comes next. In `modus_stricte` the subpart's first
+//      byte is the `positio`.
+//   5. ASCII takes a `perge` fast path.
+//
+// WHAT THIS DOES NOT SHARE WITH ramus. No branch chain on the lead byte, no
+// second-byte range arms, no per-lead payload constants. What it does share:
+// the shape of the output side (a scalar is one unit or a surrogate pair), and
+// the rule that a failing byte is not consumed.
+
+// Could a well-formed sequence of `lon` bytes still begin with the bits now
+// held in `p`, with `r` continuation bytes still to come? 1 yes, 0 no.
+functio plausibile(p: u32, r: mensura, lon: mensura) -> u8 {
+    firma sh: u32 = (6 * r) sicut u32;
+    firma lo: u32 = p sursum sh;
+    firma hi: u32 = lo sive ((1 sursum sh) - 1);
+    mutabilis minimum: u32 = 0x10000;
+    si lon eq 2 {
+        minimum = 0x80;
+    } sin lon eq 3 {
+        minimum = 0x800;
+    }
+    si hi lt minimum {
+        redde 0;
+    }
+    si lo gt 0x10FFFF {
+        redde 0;
+    }
+    si lo ge 0xD800 et hi le 0xDFFF {
+        redde 0;
+    }
+    redde 1;
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    mutabilis i: mensura = 0;
+    mutabilis j: mensura = 0;
+    dum i lt n {
+        firma b0: u8 = fons[i];
+        si b0 lt 0x80 {
+            (*scopus)[j] = b0 sicut u16;
+            j = j + 1;
+            i = i + 1;
+            perge;
+        }
+
+        // lon = number of leading one bits of b0 (at least 1, since b0 >= 0x80).
+        mutabilis lon: mensura = 0;
+        per s in 0..8 {
+            si (((b0 sicut u32) deorsum ((7 - s) sicut u32)) atque 1) eq 0 {
+                rumpe;
+            }
+            lon = lon + 1;
+        }
+
+        mutabilis ate: mensura = 1;
+        mutabilis cp: u32 = 0;
+        mutabilis vivit: u8 = 0;
+        si lon ge 2 et lon le 4 {
+            cp = (b0 sicut u32) atque ((1 sursum ((7 - lon) sicut u32)) - 1);
+            vivit = plausibile(cp, lon - 1, lon);
+        }
+        si vivit eq 1 {
+            per k in 1..lon {
+                si i + k ge n {
+                    rumpe;
+                }
+                firma b: u8 = fons[i + k];
+                si (b atque 0xC0) ne 0x80 {
+                    rumpe;
+                }
+                firma q: u32 = (cp sursum 6) sive ((b atque 0x3F) sicut u32);
+                si plausibile(q, (lon - 1) - k, lon) eq 0 {
+                    rumpe;
+                }
+                cp = q;
+                ate = ate + 1;
+            }
+        }
+
+        si vivit eq 1 et ate eq lon {
+            si cp lt 0x10000 {
+                (*scopus)[j] = cp sicut u16;
+                j = j + 1;
+            } aliter {
+                (*scopus)[j] = (0xD7C0 + (cp deorsum 10)) sicut u16;
+                (*scopus)[j + 1] = (0xDC00 + (cp atque 0x3FF)) sicut u16;
+                j = j + 2;
+            }
+            i = i + ate;
+            perge;
+        }
+
+        si modus eq modus_stricte {
+            redde Exitus { unitates: j, status: status_malformatum, positio: i };
+        }
+        (*scopus)[j] = 0xFFFD;
+        j = j + 1;
+        i = i + ate;
+    }
+    redde Exitus { unitates: j, status: status_bene, positio: 0 };
+}

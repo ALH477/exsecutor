@@ -1,0 +1,200 @@
+// fila.exsc -- UTF-8 to UTF-16 as a PRODUCER and a CONSUMER in lockstep, with a
+// 4-slot ring FIFO between them.
+//
+// The PRODUCER decodes the next UTF-8 sequence from `fons` into one ITEM and
+// pushes it. The CONSUMER pops one item and encodes it into `scopus`. A tick is
+// one step of each, in that order, and the loop runs ticks until the input is
+// exhausted AND the FIFO is empty. The only data that flows from the producer to
+// the consumer is the ring's items.
+//
+// ITEM ENCODING, one u32. Bit 31 is the error flag.
+//   bit 31 clear: a scalar value; bits 0..30 are the scalar (at most 0x10FFFF).
+//   bit 31 set:   an ill-formed subpart; bits 0..30 are the byte offset of its
+//                 first byte (at most 4095).
+// The producer does not know the mode and always makes the same item. The
+// CONSUMER applies the policy: an error item is U+FFFD in `modus_substitue`,
+// and in `modus_stricte` it ends the run and its offset becomes `positio`.
+//
+// THE RING. `Fila` holds acies<u32, 4>, `caput` (the oldest item), `cauda`
+// (where the next goes), `numerus` (how many are held); both indices wrap with
+// `residuum 4`. The producer only acts when `numerus` is below 4, the
+// consumer only when it is above 0.
+//
+// RATES. The consumer acts on odd ticks only, the producer on every tick. That
+// is a deliberate choice: with both at one item per tick the ring never holds
+// more than one item, so "full", "empty" and the wrap-around would be code the
+// corpus cannot reach. At 2:1 the ring fills after a few items and the producer
+// is held off, which is what a bounded FIFO is for. Measured with a throwaway
+// copy that counted (not part of this file): on 4096 ASCII bytes the ring
+// peaked at 4 items and the producer was held off on 4089 ticks; the same
+// peak of 4 was reached on 1024 four-byte sequences and on 100 bytes of 0xFF.
+//
+// STRICT MODE AND ORDER. Items are popped in the order they were pushed, so
+// every item decoded BEFORE an error item is popped, and written, before the
+// error item is reached; the consumer ends the run only when it pops the error
+// item itself. Items the producer queued behind the error are dropped unread.
+// `positio` is the offset the producer put in the item, absolute because the
+// producer indexes the whole input.
+//
+// WHERE THE MAXIMAL SUBPART COMES FROM. In the producer, as in every sequential
+// decoder: the bytes of the sequence accepted so far, lead included, are a
+// well-formed prefix, and the byte that was refused (or the end of input) was
+// not allowed to extend it. That prefix is one error item; the producer
+// resumes at the refused byte.
+//
+// WHAT THIS DOES NOT SHARE WITH ramus. The control flow and the data flow (two
+// stages and a queue, the policy applied in the second stage, not at the point
+// of detection). The producer's lead classification and Table 3-7 bounds are
+// ramus's plain chain; the novelty here is the dataflow, not the decoder.
+
+firma bit_error: u32 = 0x80000000;
+
+structura Fila {
+    res: acies<u32, 4>
+    caput: mensura
+    cauda: mensura
+    numerus: mensura
+    i: mensura
+    n: mensura
+    j: mensura
+    modus: u8
+    ubi: mensura
+}
+
+// Push. The producer has checked that there is room.
+functio pone(f: &mutabilis Fila, item: u32) {
+    (*f).res[(*f).cauda] = item;
+    (*f).cauda = ((*f).cauda + 1) residuum 4;
+    (*f).numerus = (*f).numerus + 1;
+}
+
+// Pop the oldest item. The caller has checked numerus > 0.
+functio tolle(f: &mutabilis Fila) -> u32 {
+    firma item: u32 = (*f).res[(*f).caput];
+    (*f).caput = ((*f).caput + 1) residuum 4;
+    (*f).numerus = (*f).numerus - 1;
+    redde item;
+}
+
+// PRODUCER: decode the sequence at f.i into one item and push it, if input
+// remains and the ring has room; otherwise do nothing this tick. The room is
+// checked before decoding, so a decoded item is never left without a slot.
+functio producit(fons: acies<u8, 4096>, f: &mutabilis Fila) {
+    firma i: mensura = (*f).i;
+    firma n: mensura = (*f).n;
+    si i ge n vel (*f).numerus ge 4 {
+        redde;
+    }
+    firma b0: u8 = fons[i];
+    si b0 lt 0x80 {
+        (*f).i = i + 1;
+        pone(f, b0 sicut u32);
+        redde;
+    }
+
+    mutabilis opus: mensura = 0;
+    mutabilis lo: u8 = 0x80;
+    mutabilis hi: u8 = 0xBF;
+    mutabilis cp: u32 = 0;
+    si b0 ge 0xC2 et b0 le 0xDF {
+        opus = 1;
+        cp = (b0 atque 0x1F) sicut u32;
+    } sin b0 eq 0xE0 {
+        opus = 2;
+        lo = 0xA0;
+        cp = (b0 atque 0x0F) sicut u32;
+    } sin b0 eq 0xED {
+        opus = 2;
+        hi = 0x9F;
+        cp = (b0 atque 0x0F) sicut u32;
+    } sin b0 ge 0xE1 et b0 le 0xEF {
+        opus = 2;
+        cp = (b0 atque 0x0F) sicut u32;
+    } sin b0 eq 0xF0 {
+        opus = 3;
+        lo = 0x90;
+        cp = (b0 atque 0x07) sicut u32;
+    } sin b0 eq 0xF4 {
+        opus = 3;
+        hi = 0x8F;
+        cp = (b0 atque 0x07) sicut u32;
+    } sin b0 ge 0xF1 et b0 le 0xF3 {
+        opus = 3;
+        cp = (b0 atque 0x07) sicut u32;
+    }
+
+    // bytes of this sequence taken so far, the lead included
+    mutabilis ate: mensura = 1;
+    mutabilis bonum: u8 = 0;
+    si opus gt 0 {
+        bonum = 1;
+    }
+    dum bonum eq 1 et ate le opus {
+        si i + ate ge n {
+            bonum = 0;
+        } aliter {
+            firma b: u8 = fons[i + ate];
+            si b lt lo vel b gt hi {
+                bonum = 0;
+            } aliter {
+                cp = (cp sursum 6) sive ((b atque 0x3F) sicut u32);
+                lo = 0x80;
+                hi = 0xBF;
+                ate = ate + 1;
+            }
+        }
+    }
+
+    (*f).i = i + ate;
+    si bonum eq 1 {
+        pone(f, cp);
+        redde;
+    }
+    pone(f, bit_error sive (i sicut u32));
+}
+
+// CONSUMER: pop one item and encode it. Returns 1 if the run must stop (a
+// strict-mode error item was popped).
+functio consumit(scopus: &mutabilis acies<u16, 4096>, f: &mutabilis Fila) -> u8 {
+    firma item: u32 = tolle(f);
+    si (item atque bit_error) ne 0 {
+        si (*f).modus eq modus_stricte {
+            (*f).ubi = (item atque 0x7FFFFFFF) sicut mensura;
+            redde 1;
+        }
+        (*scopus)[(*f).j] = 0xFFFD;
+        (*f).j = (*f).j + 1;
+        redde 0;
+    }
+    si item lt 0x10000 {
+        (*scopus)[(*f).j] = item sicut u16;
+        (*f).j = (*f).j + 1;
+        redde 0;
+    }
+    firma v: u32 = item - 0x10000;
+    (*scopus)[(*f).j] = (0xD800 + (v deorsum 10)) sicut u16;
+    (*scopus)[(*f).j + 1] = (0xDC00 + (v atque 0x3FF)) sicut u16;
+    (*f).j = (*f).j + 2;
+    redde 0;
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    mutabilis f: Fila = Fila {
+        res: [0; 4], caput: 0, cauda: 0, numerus: 0, i: 0, n: n, j: 0,
+        modus: modus, ubi: 0
+    };
+    mutabilis tick: mensura = 0;
+    mutabilis halt: u8 = 0;
+    dum (f.i lt n vel f.numerus gt 0) et halt eq 0 {
+        producit(fons, f);
+        si (tick residuum 2) eq 1 et f.numerus gt 0 {
+            halt = consumit(scopus, f);
+        }
+        tick = tick + 1;
+    }
+    si halt eq 1 {
+        redde Exitus { unitates: f.j, status: status_malformatum, positio: f.ubi };
+    }
+    redde Exitus { unitates: f.j, status: status_bene, positio: 0 };
+}

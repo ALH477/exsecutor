@@ -1,0 +1,149 @@
+// directum.exsc -- UTF-8 to UTF-16 that never forms a 4-byte scalar.
+//
+// METHOD. A sequence is first checked (below), then its UTF-16 unit or units are
+// computed DIRECTLY from the bytes, by masks and shifts in 16 bits. No 21-bit
+// code point exists anywhere in this file, and the 0x10000 offset of the
+// surrogate formula is folded into a constant. With cK the K-th byte of the
+// sequence widened to u16:
+//
+//   1 byte    unit = c0
+//   2 bytes   unit = ((c0 & 0x1F) << 6) | (c1 & 0x3F)
+//   3 bytes   unit = ((c0 & 0x0F) << 12) | ((c1 & 0x3F) << 6) | (c2 & 0x3F)
+//   4 bytes   high = 0xD7C0 + (((c0 & 0x07) << 8) | ((c1 & 0x3F) << 2) | ((c2 >> 4) & 0x03))
+//             low  = 0xDC00 + (((c2 & 0x0F) << 6) | (c3 & 0x3F))
+//
+// WHY 0xD7C0. The surrogate algorithm is high = 0xD800 + (v >> 10) with
+// v = cp - 0x10000. Since 0x10000 = 0x40 << 10, and cp >= 0x10000, v >> 10 is
+// (cp >> 10) - 0x40 exactly (no borrow reaches the low ten bits, which 0x10000
+// has clear). So high = 0xD800 - 0x40 + (cp >> 10) = 0xD7C0 + (cp >> 10). With
+// cp = (c0&7)<<18 | (c1&3F)<<12 | (c2&3F)<<6 | (c3&3F), cp >> 10 is
+// (c0&7)<<8 | (c1&3F)<<2 | (c2&3F)>>4, and for a continuation byte (c2&3F)>>4 is
+// (c2>>4)&3. For the low unit, v & 0x3FF = cp & 0x3FF for the same reason, and
+// cp & 0x3FF = (c2&0x0F)<<6 | (c3&0x3F). Both sums fit in u16 for every
+// well-formed lead: the largest high is 0xD7C0 + 0x43F = 0xDBFF, the largest
+// low 0xDC00 + 0x3FF = 0xDFFF. (That is a paper argument; what ran is the
+// matrix.)
+//
+// THE CHECK. `secunda_licet` is the whole of Table 3-7 in one small function: a
+// byte is a continuation when `(b atque 0xC0) eq 0x80`, and the four irregular
+// leads add a numeric bound on the second byte (E0 >= A0, ED <= 9F, F0 >= 90,
+// F4 <= 8F). `praefixum` applies it, and a plain continuation test to the later
+// bytes, and returns how many bytes of the sequence it accepted.
+//
+// WHERE THE MAXIMAL SUBPART COMES FROM. `praefixum` returns k, the bytes
+// accepted, lead included. A sequence is well formed exactly when k reaches the
+// lead's length; otherwise the k bytes accepted are a well-formed prefix that the
+// next byte may not extend, which is the maximal subpart, and the loop skips
+// them. A byte that cannot lead (80..C1, F5..FF) is a subpart of one byte.
+//
+// WHAT IS DELIBERATELY NOT SHARED WITH ramus. Ramus accumulates the scalar one
+// continuation at a time (`cp = (cp sursum 6) sive ...`) and hands it to a
+// function that splits it into surrogates. Here the decode is a fixed expression
+// per length, run only after the check has passed, and the surrogate halves are
+// each a single expression over the raw bytes. This library has not been timed.
+
+// May b1 follow lead b0 as its SECOND byte? 1 yes, 0 no. Table 3-7.
+functio secunda_licet(b0: u8, b1: u8) -> u8 {
+    si (b1 atque 0xC0) ne 0x80 {
+        redde 0;
+    }
+    si b0 eq 0xE0 et b1 lt 0xA0 {
+        redde 0;
+    }
+    si b0 eq 0xED et b1 gt 0x9F {
+        redde 0;
+    }
+    si b0 eq 0xF0 et b1 lt 0x90 {
+        redde 0;
+    }
+    si b0 eq 0xF4 et b1 gt 0x8F {
+        redde 0;
+    }
+    redde 1;
+}
+
+// Bytes of the sequence at fons[i] that are a well-formed prefix, lead included,
+// for a lead that needs `opus` continuations: 1..opus+1. opus + 1 means the
+// sequence is complete and well formed.
+functio praefixum(fons: acies<u8, 4096>, i: mensura, n: mensura, opus: mensura) -> mensura {
+    firma b0: u8 = fons[i];
+    mutabilis k: mensura = 1;
+    dum k le opus {
+        si i + k ge n {
+            rumpe;
+        }
+        firma b: u8 = fons[i + k];
+        si k eq 1 {
+            si secunda_licet(b0, b) eq 0 {
+                rumpe;
+            }
+        } aliter {
+            si (b atque 0xC0) ne 0x80 {
+                rumpe;
+            }
+        }
+        k = k + 1;
+    }
+    redde k;
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    mutabilis i: mensura = 0;
+    mutabilis j: mensura = 0;
+    dum i lt n {
+        firma b0: u8 = fons[i];
+        si b0 lt 0x80 {
+            (*scopus)[j] = b0 sicut u16;
+            j = j + 1;
+            i = i + 1;
+            perge;
+        }
+
+        // opus: continuations the lead needs; 0 for a byte that cannot lead.
+        mutabilis opus: mensura = 0;
+        si b0 ge 0xC2 et b0 le 0xDF {
+            opus = 1;
+        } sin b0 ge 0xE0 et b0 le 0xEF {
+            opus = 2;
+        } sin b0 ge 0xF0 et b0 le 0xF4 {
+            opus = 3;
+        }
+
+        mutabilis ate: mensura = 1;
+        si opus ne 0 {
+            ate = praefixum(fons, i, n, opus);
+        }
+
+        si opus eq 0 vel ate le opus {
+            // ill-formed: the ate bytes accepted are the maximal subpart
+            si modus eq modus_stricte {
+                redde Exitus { unitates: j, status: status_malformatum, positio: i };
+            }
+            (*scopus)[j] = 0xFFFD;
+            j = j + 1;
+            i = i + ate;
+            perge;
+        }
+
+        // well formed, opus + 1 bytes: units straight from the bytes
+        firma c0: u16 = b0 sicut u16;
+        firma c1: u16 = fons[i + 1] sicut u16;
+        si opus eq 1 {
+            (*scopus)[j] = ((c0 atque 0x1F) sursum 6) sive (c1 atque 0x3F);
+            j = j + 1;
+        } sin opus eq 2 {
+            firma c2: u16 = fons[i + 2] sicut u16;
+            (*scopus)[j] = ((c0 atque 0x0F) sursum 12) sive ((c1 atque 0x3F) sursum 6) sive (c2 atque 0x3F);
+            j = j + 1;
+        } aliter {
+            firma c2: u16 = fons[i + 2] sicut u16;
+            firma c3: u16 = fons[i + 3] sicut u16;
+            (*scopus)[j] = 0xD7C0 + (((c0 atque 0x07) sursum 8) sive ((c1 atque 0x3F) sursum 2) sive ((c2 deorsum 4) atque 0x03));
+            (*scopus)[j + 1] = 0xDC00 + (((c2 atque 0x0F) sursum 6) sive (c3 atque 0x3F));
+            j = j + 2;
+        }
+        i = i + opus + 1;
+    }
+    redde Exitus { unitates: j, status: status_bene, positio: 0 };
+}

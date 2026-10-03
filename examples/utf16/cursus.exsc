@@ -136,7 +136,11 @@ functio converte_cursum(fons: acies<u8, 4096>, i: mensura, fin: mensura,
 }
 
 // Length in bytes of the maximal subpart that begins at fons[p], p lt n, where
-// no well-formed sequence begins. At least 1.
+// no well-formed sequence begins. At least 1. `opus` (the continuations the lead
+// promises) bounds the walk by the lead's own length; at an ill-formed position
+// the walk fails before reaching that bound, so the bound never binds there (the
+// mutation run found `opus` mutants that no input can tell apart, which is that
+// fact seen from outside).
 functio longitudo_erroris(fons: acies<u8, 4096>, p: mensura, n: mensura) -> mensura {
     firma b0: u8 = fons[p];
     si b0 lt 0xC2 vel b0 gt 0xF4 {
