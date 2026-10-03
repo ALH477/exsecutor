@@ -1,0 +1,3 @@
+# adapters, length reports, generations: run outputs, never committed
+out/
+__pycache__/

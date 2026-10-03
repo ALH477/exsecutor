@@ -66,6 +66,7 @@ def parse_args(argv=None):
     ap.add_argument("--seed", type=int, default=42, help="default: %(default)s (greedy decoding does not sample; "
                                                          "the seed only pins anything stochastic left)")
     ap.add_argument("--limit", type=int, default=None, help="only the first N prompts (smoke tests)")
+    ap.add_argument("--cpu", action="store_true", help="ignore any GPU and run on the CPU")
     ap.add_argument("--trust-remote-code", action="store_true")
     return ap.parse_args(argv)
 
@@ -174,7 +175,7 @@ def main(argv=None):
         return 0
 
     tok = AutoTokenizer.from_pretrained(model_id, trust_remote_code=args.trust_remote_code)
-    on_gpu = torch.cuda.is_available()
+    on_gpu = torch.cuda.is_available() and not args.cpu
     dtype, dtype_name = tq.pick_dtype(torch, cdt, on_gpu)
     margs = argparse.Namespace(model=model_id, quant=quant, trust_remote_code=args.trust_remote_code)
     model = tq.load_base(margs, torch, transformers, dtype, on_gpu)

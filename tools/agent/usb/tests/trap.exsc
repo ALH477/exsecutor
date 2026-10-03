@@ -1,0 +1,2 @@
+// selftest: u8 overflow (100 + 200) is a runtime abort: `abortus 1`, SIGILL.
+functio addit(a: u8) -> u8 { redde a + 200; } publica functio initium(m: Mundus) -> u8 { redde addit(100); }
