@@ -1,0 +1,198 @@
+// cursus.exsc -- UTF-8 to UTF-16 by alternating a VALID RUN with an ERROR.
+//
+// METHOD. Three functions that do not call each other's decode code:
+//
+//   proba            a pure validator. proba(fons, i, n) returns the length of the
+//                    longest strictly well-formed UTF-8 run starting at i. It
+//                    reads bytes and writes nothing. Its range tests are
+//                    single unsigned compares after a WRAPPING subtraction
+//                    (`(b -% lo) lt width`), which is one test where ramus
+//                    writes two (`b lt lo vel b gt hi`).
+//   converte_cursum  a TRUSTING converter. It is given [i, fin) and no check of
+//                    any kind: it classifies the lead byte by thresholds
+//                    (< 0x80, < 0xE0, < 0xF0, else) and decodes in bulk. It is
+//                    correct only because proba already accepted every byte it
+//                    is handed; handed anything else it would write garbage and
+//                    read past the end. It never looks at n.
+//   longitudo_erroris  the length of the maximal subpart at an ill-formed
+//                    position (see below).
+//
+// converte then loops: run = proba; convert exactly the run; if input remains,
+// the byte at the end of the run begins an ill-formed subpart -- proba stopped
+// there because no well-formed sequence starts there. Strict mode returns
+// status_malformatum with positio there. Substitue writes one U+FFFD and skips
+// longitudo_erroris bytes, then asks proba again.
+//
+// WHERE THE MAXIMAL SUBPART COMES FROM. longitudo_erroris starts from the lead
+// byte: 80..C1 and F5..FF are ill-formed leads, a subpart of one byte. Otherwise
+// it walks the continuations the lead promises, with Table 3-7's second-byte
+// range for that lead (E0 A0..BF, ED 80..9F, F0 90..BF, F4 80..8F, else 80..BF)
+// and 80..BF after, and returns the number of bytes it got through. The byte that
+// fails, or the end of input, is not part of the subpart.
+//
+// WHAT IS DELIBERATELY NOT SHARED WITH ramus. Ramus decodes and validates in one
+// pass, one byte at a time, and the bytes it consumed while validating are the
+// bytes it decoded. Here validation and decoding are two separate scans of the
+// same bytes, so every byte of a valid run is read twice, and the decoder holds
+// no range constant at all. The cost of that is the point of the design; this
+// library has not been timed.
+//
+// MEASURED (matrix.py, this file): see the report that accompanied it; nothing
+// is claimed here that the matrix did not print.
+
+// Length of the longest well-formed run at fons[i..n). Pure.
+functio proba(fons: acies<u8, 4096>, i: mensura, n: mensura) -> mensura {
+    mutabilis p: mensura = i;
+    dum p lt n {
+        firma b0: u8 = fons[p];
+        // longa: the length of the well-formed sequence that starts at p, or 0.
+        mutabilis longa: mensura = 0;
+        si b0 lt 0x80 {
+            longa = 1;
+        } sin b0 ge 0xC2 et b0 le 0xDF {
+            si p + 1 lt n et (fons[p + 1] -% 0x80) lt 0x40 {
+                longa = 2;
+            }
+        } sin b0 ge 0xE0 et b0 le 0xEF {
+            si p + 2 lt n {
+                // d is the second byte measured from the floor of its range, w
+                // the width of that range: b1 is allowed exactly when d lt w.
+                firma b1: u8 = fons[p + 1];
+                mutabilis d: u8 = b1 -% 0x80;
+                mutabilis w: u8 = 0x40;
+                si b0 eq 0xE0 {
+                    d = b1 -% 0xA0;
+                    w = 0x20;
+                } sin b0 eq 0xED {
+                    w = 0x20;
+                }
+                si d lt w et (fons[p + 2] -% 0x80) lt 0x40 {
+                    longa = 3;
+                }
+            }
+        } sin b0 ge 0xF0 et b0 le 0xF4 {
+            si p + 3 lt n {
+                firma b1: u8 = fons[p + 1];
+                mutabilis d: u8 = b1 -% 0x80;
+                mutabilis w: u8 = 0x40;
+                si b0 eq 0xF0 {
+                    d = b1 -% 0x90;
+                    w = 0x30;
+                } sin b0 eq 0xF4 {
+                    w = 0x10;
+                }
+                si d lt w et (fons[p + 2] -% 0x80) lt 0x40 et (fons[p + 3] -% 0x80) lt 0x40 {
+                    longa = 4;
+                }
+            }
+        }
+        si longa eq 0 {
+            rumpe;
+        }
+        p = p + longa;
+    }
+    redde p - i;
+}
+
+// Convert fons[i..fin) to scopus starting at unit j; return the next unit index.
+// TRUSTS that [i, fin) is a concatenation of well-formed sequences (proba's
+// answer). No test of any continuation byte, no bound on fin beyond the loop.
+functio converte_cursum(fons: acies<u8, 4096>, i: mensura, fin: mensura,
+                        scopus: &mutabilis acies<u16, 4096>, j: mensura) -> mensura {
+    mutabilis p: mensura = i;
+    mutabilis q: mensura = j;
+    dum p lt fin {
+        firma b0: u8 = fons[p];
+        si b0 lt 0x80 {
+            (*scopus)[q] = b0 sicut u16;
+            p = p + 1;
+            q = q + 1;
+        } sin b0 lt 0xE0 {
+            firma a: u16 = ((b0 atque 0x1F) sicut u16) sursum 6;
+            firma b: u16 = (fons[p + 1] atque 0x3F) sicut u16;
+            (*scopus)[q] = a sive b;
+            p = p + 2;
+            q = q + 1;
+        } sin b0 lt 0xF0 {
+            firma a: u16 = ((b0 atque 0x0F) sicut u16) sursum 12;
+            firma b: u16 = ((fons[p + 1] atque 0x3F) sicut u16) sursum 6;
+            firma c: u16 = (fons[p + 2] atque 0x3F) sicut u16;
+            (*scopus)[q] = (a sive b) sive c;
+            p = p + 3;
+            q = q + 1;
+        } aliter {
+            firma a: u32 = ((b0 atque 0x07) sicut u32) sursum 18;
+            firma b: u32 = ((fons[p + 1] atque 0x3F) sicut u32) sursum 12;
+            firma c: u32 = ((fons[p + 2] atque 0x3F) sicut u32) sursum 6;
+            firma d: u32 = (fons[p + 3] atque 0x3F) sicut u32;
+            firma v: u32 = (((a sive b) sive c) sive d) - 0x10000;
+            (*scopus)[q] = (0xD800 + (v deorsum 10)) sicut u16;
+            (*scopus)[q + 1] = (0xDC00 + (v atque 0x3FF)) sicut u16;
+            p = p + 4;
+            q = q + 2;
+        }
+    }
+    redde q;
+}
+
+// Length in bytes of the maximal subpart that begins at fons[p], p lt n, where
+// no well-formed sequence begins. At least 1.
+functio longitudo_erroris(fons: acies<u8, 4096>, p: mensura, n: mensura) -> mensura {
+    firma b0: u8 = fons[p];
+    si b0 lt 0xC2 vel b0 gt 0xF4 {
+        redde 1;
+    }
+    mutabilis opus: mensura = 3;
+    mutabilis lo: u8 = 0x80;
+    mutabilis hi: u8 = 0xBF;
+    si b0 lt 0xE0 {
+        opus = 1;
+    } sin b0 lt 0xF0 {
+        opus = 2;
+        si b0 eq 0xE0 {
+            lo = 0xA0;
+        } sin b0 eq 0xED {
+            hi = 0x9F;
+        }
+    } sin b0 eq 0xF0 {
+        lo = 0x90;
+    } sin b0 eq 0xF4 {
+        hi = 0x8F;
+    }
+    mutabilis k: mensura = 1;
+    dum k le opus {
+        si p + k ge n {
+            rumpe;
+        }
+        firma b: u8 = fons[p + k];
+        si b lt lo vel b gt hi {
+            rumpe;
+        }
+        lo = 0x80;
+        hi = 0xBF;
+        k = k + 1;
+    }
+    redde k;
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    mutabilis i: mensura = 0;
+    mutabilis j: mensura = 0;
+    dum i lt n {
+        firma run: mensura = proba(fons, i, n);
+        j = converte_cursum(fons, i, i + run, scopus, j);
+        i = i + run;
+        si i ge n {
+            rumpe;
+        }
+        // fons[i] begins an ill-formed subpart: proba stopped here.
+        si modus eq modus_stricte {
+            redde Exitus { unitates: j, status: status_malformatum, positio: i };
+        }
+        (*scopus)[j] = 0xFFFD;
+        j = j + 1;
+        i = i + longitudo_erroris(fons, i, n);
+    }
+    redde Exitus { unitates: j, status: status_bene, positio: 0 };
+}

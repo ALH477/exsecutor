@@ -1,0 +1,159 @@
+// recursio.exsc -- UTF-8 to UTF-16 by RECURSION: one call per sequence.
+//
+// `gradus` decodes exactly one UTF-8 sequence (well-formed, or one maximal
+// ill-formed subpart), writes its unit(s), advances the cursor, and then CALLS
+// ITSELF for the rest of the input. There is no loop over the input anywhere in
+// this file. The only loop is the small one inside `gradus` that consumes the
+// continuation bytes of the single sequence in hand (at most three).
+//
+// Everything that survives from one call to the next lives in a `Cursor`,
+// passed down as `&mutabilis`: input position, output index, input length, the
+// mode, whether a strict-mode error stopped the run, and where. The recursion
+// ends when the input is exhausted or a strict error is recorded; `converte`
+// reads the verdict out of the cursor afterwards.
+//
+// WHERE THE MAXIMAL SUBPART COMES FROM. A call counts the bytes of its own
+// sequence it has accepted (`ate`, lead included) while it walks the
+// continuation bytes. A continuation byte that is out of the range allowed for
+// its position, or the end of input, stops the walk; what has been accepted is
+// then a well-formed prefix that the next byte may not extend, i.e. the maximal
+// subpart. The failing byte is NOT consumed: the recursive call starts there.
+// A lead that cannot begin any well-formed sequence (80..C1, F5..FF) accepts
+// one byte, itself.
+//
+// WHAT THIS DOES NOT SHARE WITH ramus. The lead byte is classified by a helper
+// that returns one packed word (continuations needed, first-continuation
+// bounds, payload mask, in 4 byte-wide fields) instead of ramus's inline
+// branch chain, and control flow is recursive where ramus's is `dum`. The
+// per-sequence continuation walk is the same idea as ramus's, as the contract
+// leaves little other choice. Table 3-7 is the same table.
+//
+// STACK. Depth equals the number of sequences, so up to 4096 frames. See the
+// measurement in the author's report; `gradus` keeps its own frame small by
+// moving the classifier and the unit writer into helpers that return before
+// the recursive call is made.
+
+structura Cursor {
+    i: mensura
+    j: mensura
+    n: mensura
+    modus: u8
+    malum: u8
+    ubi: mensura
+}
+
+// Lead byte -> packed word: bits 0..7 the continuations still needed (0 for
+// an ill-formed lead), bits 8..15 the lowest allowed first continuation, bits
+// 16..23 the highest, bits 24..31 the mask that takes the payload from the lead.
+functio classis(b0: u8) -> u32 {
+    si b0 ge 0xC2 et b0 le 0xDF {
+        redde 0x1FBF8001;
+    }
+    si b0 eq 0xE0 {
+        redde 0x0FBFA002;
+    }
+    si b0 eq 0xED {
+        redde 0x0F9F8002;
+    }
+    si b0 ge 0xE1 et b0 le 0xEF {
+        redde 0x0FBF8002;
+    }
+    si b0 eq 0xF0 {
+        redde 0x07BF9003;
+    }
+    si b0 eq 0xF4 {
+        redde 0x078F8003;
+    }
+    si b0 ge 0xF1 et b0 le 0xF3 {
+        redde 0x07BF8003;
+    }
+    redde 0;
+}
+
+functio scribe(scopus: &mutabilis acies<u16, 4096>, j: mensura, cp: u32) -> mensura {
+    si cp lt 0x10000 {
+        (*scopus)[j] = cp sicut u16;
+        redde j + 1;
+    }
+    firma v: u32 = cp - 0x10000;
+    (*scopus)[j] = (0xD800 + (v deorsum 10)) sicut u16;
+    (*scopus)[j + 1] = (0xDC00 + (v atque 0x3FF)) sicut u16;
+    redde j + 2;
+}
+
+// The sequence at fons[i], decoded without recursion. Answers one word:
+// bit 0 set if it was well-formed, bits 1..3 the bytes it covers (for an
+// ill-formed one, the maximal subpart), bits 8.. the scalar (well-formed only).
+// This is the one loop of the file: it consumes THIS sequence's continuation
+// bytes, never more than three.
+functio una_sequentia(fons: acies<u8, 4096>, i: mensura, n: mensura) -> u32 {
+    firma b0: u8 = fons[i];
+    si b0 lt 0x80 {
+        redde ((b0 sicut u32) sursum 8) sive 3;
+    }
+    firma k: u32 = classis(b0);
+    firma opus: mensura = (k atque 0xFF) sicut mensura;
+    mutabilis lo: u8 = ((k deorsum 8) atque 0xFF) sicut u8;
+    mutabilis hi: u8 = ((k deorsum 16) atque 0xFF) sicut u8;
+    mutabilis cp: u32 = (b0 sicut u32) atque (k deorsum 24);
+
+    // `ate`: bytes of this sequence accepted so far, the lead included.
+    mutabilis ate: mensura = 1;
+    mutabilis bonum: u8 = 1;
+    si opus eq 0 {
+        bonum = 0;
+    }
+    dum bonum eq 1 et ate le opus {
+        si i + ate ge n {
+            bonum = 0;
+        } aliter {
+            firma b: u8 = fons[i + ate];
+            si b lt lo vel b gt hi {
+                bonum = 0;
+            } aliter {
+                cp = (cp sursum 6) sive ((b atque 0x3F) sicut u32);
+                lo = 0x80;
+                hi = 0xBF;
+                ate = ate + 1;
+            }
+        }
+    }
+    firma tegit: u32 = (ate sicut u32) sursum 1;
+    si bonum eq 1 {
+        redde (cp sursum 8) sive tegit sive 1;
+    }
+    redde tegit;
+}
+
+// One sequence, then the rest. Returns when the input is used up or a strict
+// error has been recorded in the cursor.
+functio gradus(fons: acies<u8, 4096>, scopus: &mutabilis acies<u16, 4096>,
+               c: &mutabilis Cursor) -> u8 {
+    firma i: mensura = (*c).i;
+    si i ge (*c).n {
+        redde 0;
+    }
+    firma r: u32 = una_sequentia(fons, i, (*c).n);
+    si (r atque 1) eq 1 {
+        (*c).j = scribe(scopus, (*c).j, r deorsum 8);
+    } sin (*c).modus eq modus_stricte {
+        (*c).malum = 1;
+        (*c).ubi = i;
+        redde 1;
+    } aliter {
+        (*scopus)[(*c).j] = 0xFFFD;
+        (*c).j = (*c).j + 1;
+    }
+    (*c).i = i + (((r deorsum 1) atque 7) sicut mensura);
+    redde gradus(fons, scopus, c);
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    mutabilis c: Cursor = Cursor { i: 0, j: 0, n: n, modus: modus, malum: 0, ubi: 0 };
+    gradus(fons, scopus, c);
+    si c.malum eq 1 {
+        redde Exitus { unitates: c.j, status: status_malformatum, positio: c.ubi };
+    }
+    redde Exitus { unitates: c.j, status: status_bene, positio: 0 };
+}
