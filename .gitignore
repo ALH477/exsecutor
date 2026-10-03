@@ -20,3 +20,7 @@ result-*
 # header note); TrvthNvke itself now writes to .trvthnvke/receipt.json.
 .trvthnvke/receipt.json
 .truthgate/receipt.json
+
+# Claude Code / Workflow worktree-isolation checkouts: transient linked git
+# worktrees for parallel agents, never committed.
+.claude/worktrees/
