@@ -637,6 +637,7 @@ proc __chk_ty_expect, chkt_wX, chkt_nX, chkt_tX
 	mov	rdi, rbx
 	mov	rsi, r12
 	mov	rdx, [chkt_tX]
+	xor	rcx, rcx			; a bare literal: not negated
 	call	__chk_ty_fits
 	test	eax, eax
 	jz	.nofit
@@ -811,9 +812,55 @@ proc __chk_ty_expect, chkt_wX, chkt_nX, chkt_tX
 	mov	rdi, rbx
 	mov	rsi, r12
 	call	__chk_ty_node
-	mov	ecx, [rax + AstNode.a]
+	movzx	ecx, word [rax + AstNode.aux]	; the unary operator
+	mov	edx, [rax + AstNode.a]		; the operand
+	mov	[chkt_bX], rdx
+	cmp	ecx, AST_U_NEG
+	jne	.un_prop
+	; `-<operand>`: if the operand is an INT literal, its VALUE is negated,
+	; so the signed range it must fit admits `2^(w-1)` (i8::MIN) and refuses
+	; a bare positive of that magnitude -- `__chk_ty_fits`'s `neg` argument.
+	; Anything else (a non-literal, a float literal) falls through to the
+	; ordinary propagation, where the sign makes no difference to the check.
 	mov	rdi, rbx
-	mov	rsi, rcx
+	mov	rsi, [chkt_bX]
+	call	__chk_ty_node
+	movzx	ecx, word [rax + AstNode.kind]
+	cmp	ecx, AST_LIT
+	jne	.un_prop
+	movzx	ecx, word [rax + AstNode.aux]
+	cmp	ecx, AST_LIT_INT
+	jne	.un_prop
+	mov	rdi, rbx
+	mov	rsi, [chkt_bX]
+	mov	rdx, [chkt_tX]
+	mov	rcx, 1				; negated
+	call	__chk_ty_fits
+	test	eax, eax
+	jz	.un_nofit
+	mov	rdi, rbx
+	mov	rsi, [chkt_bX]
+	mov	rdx, [chkt_tX]
+	call	__chk_ty_setty			; type the operand literal
+	mov	rax, [chkt_tX]
+	jmp	.set
+  .un_nofit:
+	mov	rdi, rbx
+	mov	rsi, 308
+	mov	rdx, [chkt_bX]
+	call	__chk_ty_raise
+	mov	rdi, rbx
+	call	__chk_ty_err
+	mov	r13, rax
+	mov	rdi, rbx
+	mov	rsi, [chkt_bX]
+	mov	rdx, r13
+	call	__chk_ty_setty
+	mov	rax, r13
+	jmp	.set
+  .un_prop:
+	mov	rdi, rbx
+	mov	rsi, [chkt_bX]
 	mov	rdx, [chkt_tX]
 	call	__chk_ty_expect
 	mov	rax, [chkt_tX]
@@ -864,7 +911,18 @@ endp
 ;     the value still vanished (`1e-338` as f64): a precision hole, not
 ;     a value. A literal that IS zero (`0.0`, `0e-3`) packs M = 0 and is
 ;     legal; a SUBNORMAL is legal too -- it kept a bit (5e-324 -> 1).
-proc __chk_ty_fits, chkt_wG, chkt_nG, chkt_tG
+; `chkt_negG` != 0 means the literal is the operand of a unary minus, so its
+; value is NEGATED (`.un` in `__chk_ty_expect`). For a signed type that moves
+; the admitted bound from `[0, 2^(w-1))` to `[0, 2^(w-1)]`: `-128: i8` is
+; i8::MIN and fits, while a bare `128: i8` or `2147483648: i32` is OUT of
+; range and is now `EXS-E0308` -- the signed path used to admit the magnitude
+; `2^(w-1)` either way (a "known approximation"), so `i64 = 2^63` type-checked
+; and the emitter's canonical iconst then reinterpreted the pattern as
+; i64::MIN and RAN, a silent wrong value. The negated MIN still type-checks;
+; whether the LOWERING can emit it for a sub-64 width is a separate, unfixed
+; limitation (it lowers `-e` as `0 - e`, and `iconst iN 2^(w-1)` is not
+; canonical) recorded in `docs/design/lowering.md`.
+proc __chk_ty_fits, chkt_wG, chkt_nG, chkt_tG, chkt_negG
 	uses	rbx, r12, r13, r14
 	locals
 		slot chkt_sG, dq
@@ -995,19 +1053,29 @@ proc __chk_ty_fits, chkt_wG, chkt_nG, chkt_tG
 	jb	.yes
 	jmp	.no
   .signed:
-	; signed: value < 2^(width-1). A negation is a `Unary` above the
-	; literal, so the magnitude is what is checked here and `-128: i8` is
-	; admitted by the same bound as `127: i8` -- a known, recorded
-	; approximation of spec §5.2's range.
-	cmp	r14, 64
-	jae	.yes
+	; signed: a POSITIVE literal is in `[0, 2^(w-1))` (max `2^(w-1) - 1`); a
+	; NEGATED one (`chkt_negG` != 0) is in `[0, 2^(w-1)]`, so i8::MIN = -128
+	; fits and a bare `128: i8` does not. The magnitude is what reaches here
+	; (the sign is the `Unary` above the literal, spec §5.2), so the sign
+	; decides which bound, not which comparison value.
+	;
+	; NO `cmp w, 64 / jae .yes` SHORTCUT HERE, unlike the unsigned path above:
+	; a signed type's bound is `2^(w-1)`, so `w-1` is at most 63 and `shl` is
+	; always well-defined. The shortcut WOULD be a bug -- it admitted every
+	; 64-bit pattern as an `i64`, so `i64 = 2^63` (and up to 2^64-1) type-
+	; checked and then ran as a reinterpreted i64::MIN. The unsigned path
+	; keeps the shortcut because there `2^w` with `w = 64` is the `shl` that
+	; is a no-op on x86, and every 64-bit value genuinely is a `u64`.
 	mov	rcx, r14
 	dec	rcx
 	mov	rdx, 1
-	shl	rdx, cl
+	shl	rdx, cl				; 2^(w-1)
 	cmp	rax, rdx
-	ja	.no
-	jmp	.yes
+	jb	.yes				; value < 2^(w-1): fits either way
+	ja	.no				; value > 2^(w-1): never
+	cmp	qword [chkt_negG], 0		; value == 2^(w-1): only if negated
+	jne	.yes
+	jmp	.no
   .yes:
 	mov	eax, 1
 	return

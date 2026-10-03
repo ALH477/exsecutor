@@ -2013,6 +2013,20 @@ proc __bfc_emit_fconv, ctx, module, func, instid
 	mov	rsi, [func]
 	mov	edx, [instid]
 	call	__bfc_emit_result
+	; NORMALISE TO THE DESTINATION WIDTH, exactly as the reference backend's
+	; `.ftoinorm` does (`backend_fasmg/emit.inc`, "then the integer canonical
+	; normalisation"). C's `(int64_t)` / `(uint64_t)` conversion is a 64-bit
+	; value; for an `iN`/`uN` with N < 64 the low-N canonical form is NOT that
+	; value when the float is out of `[0, 2^N)` / `[-2^(N-1), 2^(N-1))` --
+	; `inf sicut i32` converts to INT64_MIN, whose low 32 bits are 0, while
+	; the un-normalised 64-bit INT64_MIN compares as negative. Without this
+	; wrap the two backends DIVERGED on that program (ref said n==0, C said
+	; n<0), violating §9.2's "identical observable results". At N >= 64 both
+	; halves emit nothing (the pair's own rule), so i64/u64 text is unchanged.
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	edx, [tyv]
+	call	__bfc_norm_open
 	mov	rdi, [module]
 	mov	esi, [tyv]
 	call	__bfc_ty_signed
@@ -2026,6 +2040,10 @@ proc __bfc_emit_fconv, ctx, module, func, instid
 	mov	rdi, [ctx]
 	mov	esi, [av]
 	call	__bfc_emit_v
+	mov	rdi, [ctx]
+	mov	rsi, [module]
+	mov	edx, [tyv]
+	call	__bfc_norm_close
 	mov	rdi, [ctx]
 	call	__bfc_semi
 	return

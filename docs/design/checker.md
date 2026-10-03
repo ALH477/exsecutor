@@ -360,7 +360,18 @@ The probe's `sub_atoms_of` is an over-approximation not adopted (finding
   accepted; spec §14 entry 24);
 - at every impl method: its effective row ⊆ its own row
   (`bad_impl_exceeds_own_mark.exsc`, `EXS-E0421`), and a member-level
-  `poscit` ⊆ the trait member's;
+  `poscit` ⊆ **the trait member's** — the corresponding member looked up BY
+  NAME, never the `ceiling` union of the bullet above. Until 2026-10-03 the
+  implementation tested the member against that union, so on a trait with
+  more than one member, member *b*'s declared atom covered an impl of member
+  *a* that drew it: `interfacies Duo { a poscit alloc; b poscit rete }` with
+  an impl `a poscit rete` was accepted, and a `<T: Duo>` calling `v.a`
+  (which attributes only `a`'s `{alloc}`) then laundered `rete` undeclared —
+  spec §4.4's generic hole, reopened for multi-member traits. The
+  single-member fixtures could not see it because there the union and the
+  member's own row are the same set. Fixed in `__chk_row_e0510`
+  (`__chk_row_memrow` does the by-name lookup); pinned by
+  `tests/unit/chk_row_e0510_permember.asm`, which fails if the union is used;
 - at `e sicut dyn I poscit {P}`: mark(impl of `I` for `e`'s type) ⊆ `P`;
   when `e`'s type is a `param` bound to `I`, `ceiling(I) ⊆ P`
   (`bad_dyn_launder_via_generic.exsc` — rejected at the cast, no

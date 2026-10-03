@@ -413,6 +413,23 @@ segment readable
 	db '}', 10
   FX_B03_LEN = $ - fx_b03
 
+  ; b04 -- the target IS an interface, but the SOURCE type does not implement
+  ; it: `EXS-E0511` (checker.md class N). sig.inc's E0511 covers only a `dyn`
+  ; over a NON-interface; this is the sibling the E0510 pass used to skip with
+  ; "class N, not ours", leaving `s sicut dyn Foo` with no `interfacies Foo in
+  ; S` accepted silently.
+  fx_b04:
+	db 'interfacies Foo {', 10
+	db '    functio bar(s: Foo, n: mensura) -> mensura', 10
+	db '}', 10
+	db 10
+	db 'structura S { valor: mensura }', 10
+	db 10
+	db 'publica functio muta(s: S) -> dyn Foo {', 10
+	db '    redde s sicut dyn Foo;', 10
+	db '}', 10
+  FX_B04_LEN = $ - fx_b04
+
   fx_tab:
 	; the code SET is exactly {EXS-E0510}: at the impl head (§4.4's
 	; ceiling) and at the cast. Three diagnostics before this commit
@@ -431,6 +448,9 @@ segment readable
 	dd 1, 305, 118, 0, 0, 0
 	dq fx_b03, FX_B03_LEN
 	dd 1, 305, 148, 0, 0, 0
+	; a `dyn` over an interface the source does not implement: EXS-E0511
+	dq fx_b04, FX_B04_LEN
+	dd 1, 511, 150, 0, 0, 0
   FX_NROWS = ($ - fx_tab) / FX_ROW
   ; a row of the wrong width would shift every row after it
   assert ($ - fx_tab) mod FX_ROW = 0

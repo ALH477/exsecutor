@@ -497,11 +497,17 @@ t[0];                      // EXS-E0311: textus has no integer index
 ```
 
 `[OPEN]` Of the four method calls above, `t.octeti().numerus()` types and
-runs; `scalares()` and `grapha()` are prelude rows, but `numerus` is one row
-that takes `octeti` only (`checker/types/prim.inc`'s `.fn_numerus`), so the
-second and third lines draw `EXS-E0305` today. One prelude row is one `fn`
-type and a concrete receiver is compared by identity; a `numerus` per view
-is owed.
+runs; the second and third lines draw `EXS-E0305` today, but **at
+`t.scalares` / `t.grapha`, not at `numerus`** — measured 2026-10-03. The
+earlier wording here said `scalares()` and `grapha()` are prelude rows and
+the `EXS-E0305` was `numerus` refusing a non-`octeti` receiver; neither half
+holds. `checker/types/prim.inc`'s `.views` arm has a row only for `textus`
+(`plica_unicode`/`plica_sermone`/`octeti`) and for `octeti` (`numerus`), and
+sends an `AST_TY_SCALARES` or `AST_TY_GRAPHA` receiver straight to `.no`, so
+`t.scalares()` is itself `EXS-E0305` and `numerus` is never reached. What is
+owed is a `scalares`/`grapha` view with its own `octeti`-shaped row and a
+`numerus` per view — one prelude row is one `fn` type and a concrete receiver
+is compared by identity.
 
 UTF-8 storage. **`textus` is a value: a two-word view — pointer and byte length — over storage it does not own**, and may not outlive that storage's arena. O(1) slicing forces a view, and `saluta`'s empty row forces a literal that allocates nothing (`docs/design/runtime.md` §2.3). Slicing by byte offset, O(1), returns `eventus<textus, erratum>` (§11's spelling; the checker refuses the bare `eventus` as `EXS-E0304` since it counts generic arguments at both ends), never panics. `octeti`, `scalares`, `grapha` are distinct types, not coercing views. Grapheme segmentation ships in the standard library.
 
@@ -963,6 +969,24 @@ scales.
   `tests/ir/trap_add_u4.ir` and its siblings, and in source
   (`tests/programs/angusta/`: `+% -% +| +` and comparisons on
   `u8 u16 u32 i8`).
+- **A value of `iN` is an integer in [−2^(N−1), 2^(N−1)), and a literal's
+  sign decides which end it may reach.** A bare integer literal is
+  non-negative (§8.6: `-` is a `Unary`, not part of the literal), so a
+  *positive* `iN` literal is in `[0, 2^(N−1))` — `128: i8` and
+  `2147483648: i32` are `EXS-E0308`, as `256: u8` is — while the SAME
+  magnitude under a unary minus is `iN`::MIN and fits: `-128: i8`,
+  `-2147483648: i32`. The checker admitted the magnitude `2^(N−1)`
+  regardless of sign until 2026-10-03, a "known approximation" that let a
+  bare `i64 = 2^63` type-check and then, because every 64-bit pattern is a
+  canonical `iconst`, RUN as a reinterpreted i64::MIN — a silent wrong value,
+  not a diagnostic. The rule is now sign-aware (`checker/types/types.inc`,
+  `__chk_ty_fits`'s `neg` argument and the `.un` arm of `__chk_ty_expect`;
+  `tests/unit/chk_ty_hexlit.asm`'s signed-boundary rows). `[OPEN]`: the
+  *lowering* still cannot emit a sub-64 `iN`::MIN — `-e` lowers as `0 − e`
+  and `iconst iN 2^(N−1)` is not canonical (`docs/design/ssa-ir.md` §2.2), so
+  `-128: i8` type-checks and then fails at emit; the fold of `−`<literal> into
+  one canonical constant is the fix and is not yet made
+  (`docs/design/lowering.md`).
 - **`sicut` between integer types is total and never traps.** Widening
   is §5.2's explicit sentence: a `uN` is zero-extended, an `iN`
   sign-extended, **by the source's sign**. The two other cases were not
@@ -2108,7 +2132,14 @@ Terminals are §8.4's tokens; `IDENT` `INT` `STRING` are the lexer's classes.
     Cmp           ::= Range [CmpOp Range]
     CmpOp         ::= 'lt' | 'le' | 'gt' | 'ge' | 'eq' | 'ne'
     Range         ::= Xor ['..' Xor]
-    Xor           ::= Shift ('aut' Shift)*                   (* tests/unit/cst_shift_xor.asm *)
+    Xor           ::= Shift (BitWord Shift)*                 (* level 5b (CST_XOR_EXPR); tests/unit/cst_shift_xor.asm, cst_bitand_or.asm *)
+    BitWord       ::= 'aut' | 'atque' | 'sive'               (* xor / bitwise-and / bitwise-or; ALL BitWords in one
+                                                      unparenthesised chain must be the SAME word -- mixing them,
+                                                      as in `a atque b sive c`, is EXS-E0201, because C's `& ^ |`
+                                                      precedence is a documented bug source (parse.inc, "one
+                                                      level-5b word per unparenthesised chain"). This production
+                                                      formerly listed only `aut`; `atque`/`sive` were parsed, typed,
+                                                      lowered and run but absent from this BNF *)
     Shift         ::= Add [ShiftOp Add]                      (* non-associative; same fixture *)
     ShiftOp       ::= 'sursum' | 'deorsum'
     Add           ::= Mul (('+' | '+%' | '+|' | '-' | '-%' | '-|') Mul)*

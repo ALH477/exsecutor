@@ -56,6 +56,19 @@
 ;	0x1g                  -> u8    EXS-E0308         (not a hex digit)
 ;	0X1                   -> u8    EXS-E0308         (one spelling of the prefix)
 ;	211                   -> u8    accepted, 211     (decimal is unchanged)
+;	2147483648            -> i32   EXS-E0308         (2^31: not a positive i32)
+;	-2147483648           -> i32   accepted, 2^31    (i32::MIN; konst = magnitude)
+;	9223372036854775808   -> i64   EXS-E0308         (2^63: not a positive i64)
+;	-9223372036854775808  -> i64   accepted, 2^63    (i64::MIN; konst = magnitude)
+;
+; The last four are the signed-boundary rows, and they pin the fix for the
+; defect where `__chk_ty_fits`'s `.signed` admitted the magnitude `2^(w-1)`
+; regardless of sign: a bare `i64 = 2^63` then type-checked and RAN as a
+; reinterpreted i64::MIN (a silent wrong value), and for a sub-64 width the
+; emitter's canonical-iconst refusal turned it into an internal error instead
+; of a diagnostic. The negated rows prove MIN is still admitted -- the sign,
+; not a looser constant, is what the check now reads. See `__chk_ty_fits`'s
+; `neg` argument and the `.un` arm of `__chk_ty_expect`.
 ;
 ; Exit 0 = every row held; 10+N = row N's diagnostic count; 40+N = row N's
 ; value; 99 = setup.
@@ -331,6 +344,17 @@ segment readable
   fx_u64_LEN = $ - fx_u64
   fx_d211:	db 'publica functio f() -> u8 {', 10, '    redde 211;', 10, '}', 10
   fx_d211_LEN = $ - fx_d211
+  ; signed boundary (checker.inc's `__chk_ty_fits` `.signed`, its `neg`
+  ; argument): a POSITIVE literal of magnitude 2^(w-1) is OUT of range for
+  ; `iN`; the same magnitude under a unary minus is `iN`::MIN and fits.
+  fx_i32p:	db 'publica functio f() -> i32 {', 10, '    redde 7;', 10, '}', 10
+  fx_i32p_LEN = $ - fx_i32p
+  fx_i32n:	db 'publica functio f() -> i32 {', 10, '    redde -7;', 10, '}', 10
+  fx_i32n_LEN = $ - fx_i32n
+  fx_i64p:	db 'publica functio f() -> i64 {', 10, '    redde 7;', 10, '}', 10
+  fx_i64p_LEN = $ - fx_i64p
+  fx_i64n:	db 'publica functio f() -> i64 {', 10, '    redde -7;', 10, '}', 10
+  fx_i64n_LEN = $ - fx_i64n
 
   macro fx_hex name, text
 	name: db text
@@ -346,6 +370,8 @@ segment readable
   fx_hex fx_h08, '0x'
   fx_hex fx_h09, '0x1g'
   fx_hex fx_h10, '0X1'
+  fx_hex fx_ovf32, '2147483648'		; 2^31
+  fx_hex fx_ovf64, '9223372036854775808'	; 2^63
 
   ; dq source, its length, hex text, and then (as dd) its length and the
   ; expected diagnostic count, then dq the expected `konst`
@@ -369,6 +395,12 @@ segment readable
 	fx_row fx_u8,   fx_h09, 1, 0
 	fx_row fx_u8,   fx_h10, 1, 0
 	fx_row fx_d211, fx_nohex, 0, 211
+	; signed boundary: a bare positive 2^(w-1) is EXS-E0308, the same
+	; magnitude negated is iN::MIN and fits (konst keeps the magnitude).
+	fx_row fx_i32p, fx_ovf32, 1, 0
+	fx_row fx_i32n, fx_ovf32, 0, 0x80000000
+	fx_row fx_i64p, fx_ovf64, 1, 0
+	fx_row fx_i64n, fx_ovf64, 0, 0x8000000000000000
   FX_NROWS = ($ - fx_tab) / FX_ROW
 
 segment readable writeable
