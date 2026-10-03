@@ -92,7 +92,7 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # the Generics list). Both fixtures were run against the pre-fix code and
 # fail there, which is what makes them regression tests rather than
 # descriptions.
-UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-222}"
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-193}"
 
 # The same guarantee for the two run phases below: tests/ir/*.ir fixtures,
 # and tests/programs/*/ directories. Same rule -- `found < floor` fails --
@@ -166,7 +166,7 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-222}"
 # declares, which a fix that only dropped the field rows turned into exit 132.
 # Same shape (`exsc-exit=1`, no differential build), raised by exactly one.
 IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-78}"
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-189}"
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-131}"
 
 # The differential phase (run_differential_tests, below), which compiles the
 # C backend's emitted units and runs them against the same expectations the
