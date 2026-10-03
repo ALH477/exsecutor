@@ -309,9 +309,6 @@ def helper(opts, data, fds, st_w):
     try:
         os.setsid()
         sc("prctl(PR_SET_PDEATHSIG)", SYS_prctl, PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0)
-        if os.environ.get("EXSC_SANDBOX_TEST_FAIL") == "unshare":
-            # Test hook. It can only make the runner FAIL; it cannot weaken it.
-            raise OSError(errno.EPERM, "unshare: forced failure (EXSC_SANDBOX_TEST_FAIL=unshare)")
         uid, gid = os.geteuid(), os.getegid()
         sc("unshare(user,mount,pid,net,ipc,uts,cgroup)", SYS_unshare,
            CLONE_NEWUSER | CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWNET
