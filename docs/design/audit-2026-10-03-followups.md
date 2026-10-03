@@ -23,7 +23,7 @@ this prose.
 
 ## Resolved
 
-### 1. [MEDIUM] `sub P = e` provided `P` to a draw in its own scope — checker was not the TCB authority (`53d3bd1`)
+### 1. (MEDIUM) `sub P = e` provided `P` to a draw in its own scope — checker was not the TCB authority (`53d3bd1`)
 
 ```exsecutor
 functio getatom() -> archivum poscit archivum { redde archivum; }
@@ -54,7 +54,7 @@ non-SIGILL case — D2 now holds at equality, not one-sided over-acceptance.
 Adversary verdict: **CONFIRMED** (regression and sibling/earlier over-accept
 both closed; no over-rejection across 78 programs; no new crash).
 
-### 2. [MEDIUM] Sub-64 `iN::MIN` could not be emitted (`c238a2c`)
+### 2. (MEDIUM) Sub-64 `iN::MIN` could not be emitted (`c238a2c`)
 
 ```exsecutor
 firma a: i8 = -128;                    // was: emitter refused iconst i8 128
@@ -69,7 +69,7 @@ still lowers as `0 - x`). Regression `tests/programs/integri_minimi` constructs
 i8/i16/i32/i64 MIN and agrees across the reference and C backends. `lowering.md`
 (`Unary -`) and spec §5.4 updated; the `[OPEN]` notes resolved.
 
-### 3. [LOW] A `typus` alias of a capability atom missed `EXS-E0422` (`70bc067`)
+### 3. (LOW) A `typus` alias of a capability atom missed `EXS-E0422` (`70bc067`)
 
 ```exsecutor
 typus Amb = ambitus;
@@ -87,7 +87,7 @@ diverge at any depth. Adversary verdict: **CONFIRMED** (an earlier 32-hop
 bound was itself walked past at depth 33 — INSUFFICIENT — and closed; depth
 33/40/300/2000, cycles one `EXS-E0303`, no over-fire, no over-rejection).
 
-### 4. [LOW] `EXS-E0342` over-rejected a `rumpe` of an inner loop under `contrahe` (`3fc9e03`)
+### 4. (LOW) `EXS-E0342` over-rejected a `rumpe` of an inner loop under `contrahe` (`3fc9e03`)
 
 ```exsecutor
 quisque i in 0..4 contrahe acc: + {
@@ -105,7 +105,7 @@ accepted and runs; a `rumpe` of the reduction loop itself, and a reduction
 nested in a plain loop, stay `EXS-E0342`. Spec §5.4/§13 narrowed to match the
 rationale (text narrowed, code moved to match; the number is permanent).
 
-### 5. [LOW] A prelude `Scriptor`/`Lector` capability-field member SIGILLed the compiler (`165e7a4`)
+### 5. (LOW) A prelude `Scriptor`/`Lector` capability-field member SIGILLed the compiler (`165e7a4`)
 
 ```exsecutor
 firma s = Scriptor.ad_exitum(m.ambitus());
@@ -124,7 +124,7 @@ verdict: **CONFIRMED** (a first attempt dropped only the field rows, which let
 REGRESSED — and the closed-set guard closed it; real prelude methods still
 compile byte-identically, even under a module redeclaring all their names).
 
-### 6. [LOW] `poscit {}` is cited by spec §4.1 rule 6 but did not parse (`be90dcd`)
+### 6. (LOW) `poscit {}` is cited by spec §4.1 rule 6 but did not parse (`be90dcd`)
 
 Rule 6 named `poscit {}` as the explicitly-empty declared row, but `DeclRow`
 had no brace form, so it was `EXS-E0201` — a private function could not declare
@@ -181,7 +181,7 @@ generics × dispatch × closure surface.
     user struct, and an `eventus<Scriptor, erratum>` receiver with a colliding
     member, both trap. Restricting the hint for all receivers is a wider
     checker change than finding 5 took.
-  Recommended: give each a `[UNIMPLEMENTED]`→diagnostic refusal; never a SIGILL.
+  Recommended: give each a an unimplemented-feature→diagnostic refusal; never a SIGILL.
 - **Capacity / depth `rassert`s SIGILL on large or awkward modules:** a module
   with ≥~2500 chained (or ≥~4000 unchained) `typus` declarations, or ~5000
   plain functions; and pass 2's `CHK_TY_DEPTH_MAX` (~32) on a *reverse-ordered*
