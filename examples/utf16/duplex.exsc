@@ -1,0 +1,273 @@
+// duplex.exsc -- UTF-8 to UTF-16 by two DISSIMILAR decoders in lockstep, with a
+// comparator between them.
+//
+// The shape is the safety-critical dual-channel one. At EVERY step -- every
+// byte position the loop lands on, ASCII included -- both decoders look at the
+// same position and each returns a `Visum`: (genus: scalar or ill-formed,
+// longitudo: bytes consumed, valor: the scalar, or 0 when ill-formed). A
+// comparator checks the two Visa are identical, field for field. Equal: the
+// shared result is acted on. Different: `converte` returns at once,
+//
+//     Exitus { unitates: <units written so far>, status: status_discrepantia,
+//              positio: <byte offset of the step> }
+//
+// and writes nothing further. Neither decoder is ever skipped: B runs even
+// when A succeeds, so a defect confined to ONE decoder reaches the comparator
+// on any input that exercises it. There is no fault-injection switch in this
+// file; a healthy build never returns status_discrepantia, which is what the
+// corpus is there to show.
+//
+// THE TWO CHANNELS (they share no code and no table):
+//
+//   A  `visum_a`   A branch chain on the lead byte, unrolled one arm per
+//                  sequence length, no loop. Table 3-7's four irregular
+//                  second-byte ranges are written out as bounds (E0 A0..BF,
+//                  ED 80..9F, F0 90..BF, F4 80..8F); the value is assembled by
+//                  explicit shifts for that length.
+//
+//   B  `visum_b`   A byte-class table plus a state-transition table: a DFA.
+//                  256 bytes fall into 12 classes, 8 states say what the next
+//                  byte must be, a 9th value is "reject". The lead's payload
+//                  mask comes from a third small table and the value is
+//                  accumulated 6 bits at a time. No byte range appears in B's
+//                  code at all -- they live only in the two tables.
+//
+// WHERE THE MAXIMAL SUBPART COMES FROM, in each. Both rely on the same fact
+// (a prefix that was well-formed so far is the maximal subpart; the byte that
+// broke it is not consumed and begins whatever comes next) but reach it
+// differently. A returns the number of bytes it had already accepted at each
+// early `redde` (1 for the lead, 2 after one good continuation, ...). B counts
+// the transitions it took before the table said reject, or the input ended;
+// k = 0 means the lead itself was rejected (a stray 80..BF, C0, C1, F5..FF),
+// which is a one-byte subpart. The comparator then insists they agree on the
+// length, so a wrong length in either shows up as a discrepancy, not as a
+// silently wrong U+FFFD count.
+//
+// WHAT IS NOT REDUNDANT, said plainly. The step loop, the comparator, the
+// UTF-16 writer (`inscribe`), the Visum record and its two genus constants are
+// ONE copy each, shared by both channels: a defect there is common to both and
+// no comparator can see it. Only decoding is duplicated. The comparator also
+// holds each decoder to the "valor is 0 when ill-formed" rule, which ramus
+// never needed to state.
+//
+// WHAT IS NOT SHARED WITH ramus. ramus classifies the lead in one chain and
+// then runs ONE generic continuation loop with mutable lo/hi bounds; this
+// file has neither that loop nor that bound-carrying shape. A is unrolled and
+// loop-free; B is table-driven. The writer uses the (0xD7C0 + (v >> 10)) form
+// of the high surrogate where ramus subtracts 0x10000 first.
+
+structura Visum {
+    genus: u8
+    longitudo: u8
+    valor: u32
+}
+
+firma genus_scalaris: u8 = 0;
+firma genus_malum: u8 = 1;
+
+// ---------------------------------------------------------------- channel A
+
+functio visum_a(fons: acies<u8, 4096>, n: mensura, i: mensura) -> Visum {
+    firma b0: u32 = fons[i] sicut u32;
+    si b0 lt 0x80 {
+        redde Visum { genus: genus_scalaris, longitudo: 1, valor: b0 };
+    }
+    si b0 ge 0xC2 et b0 le 0xDF {
+        si i + 1 ge n {
+            redde Visum { genus: genus_malum, longitudo: 1, valor: 0 };
+        }
+        firma b1: u32 = fons[i + 1] sicut u32;
+        si b1 lt 0x80 vel b1 gt 0xBF {
+            redde Visum { genus: genus_malum, longitudo: 1, valor: 0 };
+        }
+        redde Visum { genus: genus_scalaris, longitudo: 2,
+                      valor: ((b0 atque 0x1F) sursum 6) sive (b1 atque 0x3F) };
+    }
+    si b0 ge 0xE0 et b0 le 0xEF {
+        mutabilis lo: u32 = 0x80;
+        mutabilis hi: u32 = 0xBF;
+        si b0 eq 0xE0 {
+            lo = 0xA0;
+        } sin b0 eq 0xED {
+            hi = 0x9F;
+        }
+        si i + 1 ge n {
+            redde Visum { genus: genus_malum, longitudo: 1, valor: 0 };
+        }
+        firma b1: u32 = fons[i + 1] sicut u32;
+        si b1 lt lo vel b1 gt hi {
+            redde Visum { genus: genus_malum, longitudo: 1, valor: 0 };
+        }
+        si i + 2 ge n {
+            redde Visum { genus: genus_malum, longitudo: 2, valor: 0 };
+        }
+        firma b2: u32 = fons[i + 2] sicut u32;
+        si b2 lt 0x80 vel b2 gt 0xBF {
+            redde Visum { genus: genus_malum, longitudo: 2, valor: 0 };
+        }
+        redde Visum { genus: genus_scalaris, longitudo: 3,
+                      valor: (((b0 atque 0x0F) sursum 12) sive ((b1 atque 0x3F) sursum 6))
+                             sive (b2 atque 0x3F) };
+    }
+    si b0 ge 0xF0 et b0 le 0xF4 {
+        mutabilis lo: u32 = 0x80;
+        mutabilis hi: u32 = 0xBF;
+        si b0 eq 0xF0 {
+            lo = 0x90;
+        } sin b0 eq 0xF4 {
+            hi = 0x8F;
+        }
+        si i + 1 ge n {
+            redde Visum { genus: genus_malum, longitudo: 1, valor: 0 };
+        }
+        firma b1: u32 = fons[i + 1] sicut u32;
+        si b1 lt lo vel b1 gt hi {
+            redde Visum { genus: genus_malum, longitudo: 1, valor: 0 };
+        }
+        si i + 2 ge n {
+            redde Visum { genus: genus_malum, longitudo: 2, valor: 0 };
+        }
+        firma b2: u32 = fons[i + 2] sicut u32;
+        si b2 lt 0x80 vel b2 gt 0xBF {
+            redde Visum { genus: genus_malum, longitudo: 2, valor: 0 };
+        }
+        si i + 3 ge n {
+            redde Visum { genus: genus_malum, longitudo: 3, valor: 0 };
+        }
+        firma b3: u32 = fons[i + 3] sicut u32;
+        si b3 lt 0x80 vel b3 gt 0xBF {
+            redde Visum { genus: genus_malum, longitudo: 3, valor: 0 };
+        }
+        redde Visum { genus: genus_scalaris, longitudo: 4,
+                      valor: (((b0 atque 0x07) sursum 18) sive ((b1 atque 0x3F) sursum 12))
+                             sive (((b2 atque 0x3F) sursum 6) sive (b3 atque 0x3F)) };
+    }
+    // 80..C1 and F5..FF: no well-formed sequence starts here.
+    redde Visum { genus: genus_malum, longitudo: 1, valor: 0 };
+}
+
+// ---------------------------------------------------------------- channel B
+
+// `classes` maps a byte to one of 12 classes:
+//   0 00..7F   1 80..8F   2 90..9F   3 A0..BF   4 C0 C1 F5..FF (never valid)
+//   5 C2..DF   6 E0   7 E1..EC EE EF   8 ED   9 F0   10 F1..F3   11 F4
+// `tabula` holds, from index 0, 8 rows of 12: row s, column c is the state
+// after reading a byte of class c in state s, 8 meaning reject. States:
+//   0 at a lead (also: sequence complete)   1 one 80..BF to go
+//   2 two to go, any 80..BF                 3 after E0: A0..BF, then state 1
+//   4 after ED: 80..9F, then state 1        5 after F0: 90..BF, then state 2
+//   6 after F4: 80..8F, then state 2        7 after F1..F3: 80..BF, then state 2
+// and from index 96, one entry per class: the payload mask for a lead of it.
+functio visum_b(fons: acies<u8, 4096>, n: mensura, i: mensura,
+                classes: acies<u8, 256>, tabula: acies<u8, 108>) -> Visum {
+    mutabilis s: mensura = 0;
+    mutabilis k: mensura = 0;
+    mutabilis v: u32 = 0;
+    dum i + k lt n {
+        firma b: u8 = fons[i + k];
+        firma c: mensura = classes[b sicut mensura] sicut mensura;
+        firma t: mensura = tabula[s * 12 + c] sicut mensura;
+        si t eq 8 {
+            rumpe;
+        }
+        si s eq 0 {
+            v = (b sicut u32) atque (tabula[96 + c] sicut u32);
+        } aliter {
+            v = (v sursum 6) sive ((b sicut u32) atque 0x3F);
+        }
+        k = k + 1;
+        s = t;
+        si s eq 0 {
+            redde Visum { genus: genus_scalaris, longitudo: k sicut u8, valor: v };
+        }
+    }
+    si k eq 0 {
+        redde Visum { genus: genus_malum, longitudo: 1, valor: 0 };
+    }
+    redde Visum { genus: genus_malum, longitudo: k sicut u8, valor: 0 };
+}
+
+// --------------------------------------------------------------- comparator
+
+// 1 if the two results are identical in every field, else 0. One test per
+// field, so a field a decoder gets wrong is its own early exit.
+functio congruunt(x: Visum, y: Visum) -> u8 {
+    si x.genus ne y.genus {
+        redde 0;
+    }
+    si x.longitudo ne y.longitudo {
+        redde 0;
+    }
+    si x.valor ne y.valor {
+        redde 0;
+    }
+    redde 1;
+}
+
+// ------------------------------------------------------------------- writer
+
+functio inscribe(scopus: &mutabilis acies<u16, 4096>, j: mensura, v: u32) -> mensura {
+    si v lt 0x10000 {
+        (*scopus)[j] = v sicut u16;
+        redde j + 1;
+    }
+    (*scopus)[j] = (0xD7C0 + (v deorsum 10)) sicut u16;
+    (*scopus)[j + 1] = (0xDC00 + (v atque 0x3FF)) sicut u16;
+    redde j + 2;
+}
+
+publica functio converte(fons: acies<u8, 4096>, n: mensura,
+                         scopus: &mutabilis acies<u16, 4096>, modus: u8) -> Exitus {
+    // Channel B's tables, built once per call and handed down read-only. The
+    // class table is 16 rows of 16: the row is the high nibble of the byte.
+    firma classes: acies<u8, 256> = [
+         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+         0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+         1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
+         2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
+         3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,
+         3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,
+         4,  4,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,
+         5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,
+         6,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  8,  7,  7,
+         9, 10, 10, 10, 11,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4
+    ];
+    firma tabula: acies<u8, 108> = [
+        0, 8, 8, 8, 8, 1, 3, 2, 4, 5, 7, 6,
+        8, 0, 0, 0, 8, 8, 8, 8, 8, 8, 8, 8,
+        8, 1, 1, 1, 8, 8, 8, 8, 8, 8, 8, 8,
+        8, 8, 8, 1, 8, 8, 8, 8, 8, 8, 8, 8,
+        8, 1, 1, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+        8, 8, 2, 2, 8, 8, 8, 8, 8, 8, 8, 8,
+        8, 2, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
+        8, 2, 2, 2, 8, 8, 8, 8, 8, 8, 8, 8,
+        0x7F, 0, 0, 0, 0, 0x1F, 0x0F, 0x0F, 0x0F, 0x07, 0x07, 0x07
+    ];
+
+    mutabilis i: mensura = 0;
+    mutabilis j: mensura = 0;
+    dum i lt n {
+        firma ra: Visum = visum_a(fons, n, i);
+        firma rb: Visum = visum_b(fons, n, i, classes, tabula);
+        si congruunt(ra, rb) eq 0 {
+            redde Exitus { unitates: j, status: status_discrepantia, positio: i };
+        }
+        si ra.genus eq genus_scalaris {
+            j = inscribe(scopus, j, ra.valor);
+        } aliter {
+            si modus eq modus_stricte {
+                redde Exitus { unitates: j, status: status_malformatum, positio: i };
+            }
+            (*scopus)[j] = 0xFFFD;
+            j = j + 1;
+        }
+        i = i + (ra.longitudo sicut mensura);
+    }
+    redde Exitus { unitates: j, status: status_bene, positio: 0 };
+}
