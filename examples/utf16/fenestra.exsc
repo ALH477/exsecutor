@@ -56,8 +56,12 @@
 //
 // NOT SHARED WITH RAMUS: no per-byte range comparison on the decode path, no
 // classification of the lead into a (needed, lo, hi) triple, no loop over
-// continuation bytes. Ramus asks "is this byte in range" once per byte; this
-// asks "does this word match" once per sequence.
+// continuation bytes while decoding. Ramus asks "is this byte in range" once
+// per byte; this asks "does this word match" once per sequence. The one loop
+// over bytes is the packing loop, which only guards i + k lt n and compares
+// nothing; the other loop is the prefix descent, which runs only on ill-formed
+// input in modus_substitue and tests masks, not bytes. The price is a window
+// packed at every position, ASCII included.
 
 // Pack fons[i .. i+4) into a window; bytes at or beyond n are 0.
 functio fenestra_ex(fons: acies<u8, 4096>, i: mensura, n: mensura) -> u32 {

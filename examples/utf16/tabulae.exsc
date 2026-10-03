@@ -20,9 +20,13 @@
 // of the FIRST continuation (every later one is 80..BF), larva = the mask that
 // takes the payload bits out of the lead. The decode path indexes `genus` with
 // the lead byte and then reads everything from the four parameter tables; it
-// contains no comparison of the lead byte against a range. The tables are
-// locals of `converte` and are consumed there, so they are built once per call,
-// not once per byte.
+// contains no comparison of the lead byte against a range, and ASCII has no
+// branch of its own (necesse 0, mask 7F). The only test on the class itself is
+// "is it 0". The tables are locals of `converte` and are consumed there rather
+// than passed to a helper -- the four parameter tables and `genus` would not fit
+// a helper's six parameters -- so they are built once per call, not once per
+// byte. The infra/supra entries of classes 0 and 1 are placeholders: nothing
+// reads them.
 //
 // WHERE THE MAXIMAL SUBPART COMES FROM. `ate` counts the bytes consumed so far,
 // the lead included. When a continuation is outside [infra, supra] for the
@@ -78,19 +82,14 @@ publica functio converte(fons: acies<u8, 4096>, n: mensura,
     dum i lt n {
         firma b0: u8 = fons[i];
         firma k: mensura = genus[b0 sicut mensura] sicut mensura;
-        si k eq 1 {
-            (*scopus)[j] = b0 sicut u16;
-            j = j + 1;
-            i = i + 1;
-            perge;
-        }
-
         firma opus: mensura = necesse[k] sicut mensura;
         mutabilis lo: u8 = infra[k];
         mutabilis hi: u8 = supra[k];
         mutabilis cp: u32 = (b0 atque larva[k]) sicut u32;
 
         // consumed so far: the lead. class 0 is an ill-formed lead: one byte.
+        // ASCII (class 1) is not special: it needs no continuation, so the loop
+        // below does not run and the lead's payload, masked by larva, is the scalar.
         mutabilis ate: mensura = 1;
         mutabilis bonum: u8 = 1;
         si k eq 0 {
