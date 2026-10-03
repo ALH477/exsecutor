@@ -1,0 +1,30 @@
+# tools/finetune/train/requirements-rocm.txt
+#
+# Install torch FIRST, from PyTorch's ROCm index (it is not on PyPI as a ROCm
+# build; plain `pip install torch` from PyPI gives a CUDA build):
+#
+#   pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/rocm7.14
+#
+# then:  pip install -r requirements-rocm.txt
+#
+# Where these pins come from (looked up 2026-10-03):
+#   torch 2.14.1 / rocm7.14 index: pytorch/pytorch.github.io, branch `site`,
+#     published_versions.json (latest_stable = 2.14.1, Linux pip ROCm command
+#     uses .../whl/rocm7.14); pytorch/pytorch RELEASE.md lists ROCm 7.14 as the
+#     stable ROCm for 2.14. The ROCm wheel itself was NOT installed here
+#     (download.pytorch.org is blocked from the sandbox): [UNTESTED].
+#   everything below: the latest release on PyPI that day, and the exact set
+#     the CPU smoke test ran with (torch 2.14.1 from PyPI, CPU, no GPU).
+#   bitsandbytes 0.50.2: its PyPI manylinux x86_64 wheel ships
+#     libbitsandbytes_rocm64/70/71/714/715/72.so, and its README (PyPI page)
+#     lists AMD RDNA gfx101X/103X/110X/115X/120X as supported for QLoRA 4-bit
+#     on Linux. That it loads the rocm714 build under torch+rocm7.14 on your
+#     card is [UNTESTED]; check_env.py tests exactly that.
+transformers==5.18.0
+peft==0.21.2
+accelerate==1.15.0
+bitsandbytes==0.50.2
+safetensors==0.8.0
+tokenizers==0.23.2
+huggingface_hub==1.33.0
+Jinja2==3.1.6

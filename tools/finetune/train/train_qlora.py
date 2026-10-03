@@ -121,6 +121,7 @@ def parse_args(argv=None):
                     help="tokenize, print the length report, write it to --out, and exit (no model load)")
     ap.add_argument("--show-example", type=int, default=0,
                     help="index of the train record whose masking is printed (default: %(default)s; -1: none)")
+    ap.add_argument("--cpu", action="store_true", help="ignore any GPU and run on the CPU (SETUP.md fallback b)")
     ap.add_argument("--trust-remote-code", action="store_true", help="passed to from_pretrained (off by default)")
     return ap.parse_args(argv)
 
@@ -429,7 +430,7 @@ def main(argv=None):
         die("no training records left after dropping over-length ones")
 
     # 2. model
-    on_gpu = torch.cuda.is_available()
+    on_gpu = torch.cuda.is_available() and not args.cpu
     dtype, dtype_name = pick_dtype(torch, args.compute_dtype, on_gpu)
     device_desc = "cpu"
     if on_gpu:
@@ -523,6 +524,10 @@ def main(argv=None):
             "--compute-dtype bf16 or fp32, or lower --lr" % (len(bad), len(losses)), code=3)
 
     # 3. adapter only, plus the record of how it was made
+    try:
+        os.rmdir(targs.output_dir)  # save_strategy="no": nothing should be in it
+    except OSError:
+        pass
     model.save_pretrained(args.out)
     run_config = {
         "args": vars(args),
