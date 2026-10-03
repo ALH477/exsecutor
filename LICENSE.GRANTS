@@ -1,0 +1,38 @@
+Exsecutor -- additional licence grants
+
+Copyright (C) 2026 DeMoD LLC.
+
+Exsecutor is licensed under the GNU General Public License, version 3 or
+(at your option) any later version (LICENSE), with the additional
+permissions in LICENSE.EXCEPTION. This file records further permissions that
+DeMoD LLC, the copyright holder, gives for particular files. Each one adds to
+those licences; none takes anything away.
+
+
+GRANT 1: the custos gate and its DeModFrame codec, LGPL-3.0-only
+-----------------------------------------------------------------
+
+DeMoD LLC additionally licenses each file listed below, and every earlier
+version of it published in this repository, under the GNU Lesser General
+Public License, version 3 only (LGPL-3.0-only). A recipient may use a listed
+file under LGPL-3.0-only or under GPL-3.0-or-later, as they choose.
+
+  tests/conformance/entry23_demodframe_golden_vectors.exsc
+  tests/conformance/entry23/codex.exsc
+  examples/custos/custos.exsc
+
+The grant covers works compiled from the listed files, including the C that
+`exsc --emitte c` emits from them, so far as those works are based on the
+listed files. What the compiler itself contributes to compiled output is
+covered separately, by Exception A in LICENSE.EXCEPTION.
+
+Why: DeMoD's dcf-ws-bridge and demod-remote-bridge link custos.gen.c, the C
+that exsc emits from these three files, and ship it under LGPL-3.0-only
+(github.com/ALH477/DeMoD, web/bridge/custos/PROVENANCE.md). Exception A
+releases compiled output from the licence of the compiler, not from the
+licence of the program compiled; this grant supplies the second permission.
+Punctim's exsecutor/ directory carries copies of the codec under the same
+terms, granted in each copy's header.
+
+Every other file in this repository keeps the terms in LICENSE and
+LICENSE.EXCEPTION, and no other file is relicensed by implication.
