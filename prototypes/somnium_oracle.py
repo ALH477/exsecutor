@@ -26,7 +26,8 @@
 #   4 bytes  "SOM1"
 #   1 byte   somnium: 0 plasma, 1 ignis, 2 vita, 3 pluvia, 4 stellae,
 #            5 cuniculus, 6 abyssus, 7 titulus, 8 signum (followed by the
-#            44,801-byte EXSG model tests/data/signaculum_mesh.bin)
+#            44,801-byte EXSG model tests/data/signaculum_mesh.bin),
+#            9 fulmen, 10 cruor
 #   4 bytes  praetermitte, u32 little-endian: frames rendered, not written
 #   4 bytes  tabulae,      u32 little-endian: frames written
 #   4 bytes  semen,        u32 little-endian: the only entropy; 0 -> 0x9E3779B9
@@ -822,6 +823,137 @@ def signum_pinge(fb, sx, sy, sz, exsg, x, t, ph):
     return x
 
 
+# ---- fulmen ------------------------------------------------------------------
+
+def fulmen_pinge(fb, t, semen):
+    s = SINUS
+    pa = octo(semen)
+    # t>>2 holds a pose for 4 frames at 20 fps: under 3 large flashes/s, and
+    # there is no full-frame sheet lightning. Photosensitive-safe on purpose.
+    tardus = t >> 2
+    radius = 8
+    for y in range(ALTITUDO):
+        for x in range(LATITUDO):
+            k = (y * LATITUDO + x) * 3
+            caelum = s[octo(y + tardus + pa)] >> 5
+            fb[k] = caelum >> 1
+            fb[k + 1] = 0
+            fb[k + 2] = octo(caelum + 4)
+    for b in range(3):
+        xg = semen
+        xg = alea(xg ^ ((tardus * (b + 3) + pa) & M32))
+        bx = octo(xg >> 24)
+        if bx < 8:
+            bx = 8
+        if bx > 151:
+            bx = 151
+        ramus = 28 + (octo(xg >> 16) >> 2)
+        if ramus > 80:
+            ramus = 80
+        xf = 1
+        rx = bx
+        for y in range(ALTITUDO):
+            xg = alea(xg)
+            d = xg >> 29
+            if d > 3:
+                bx = bx + (d - 3)
+            if d < 4:
+                recede = 3 - d
+                if bx > recede:
+                    bx = bx - recede
+            if bx > 159:
+                bx = 159
+            if bx < 1:
+                bx = 1
+            if y == ramus:
+                xf = alea(xg ^ 0xA53A5A5A)
+                rx = bx
+            if y > ramus:
+                xf = alea(xf)
+                df = xf >> 29
+                if df > 3:
+                    rx = rx + (df - 3) + 1
+                if df < 4:
+                    recede = 4 - df
+                    if rx > recede:
+                        rx = rx - recede
+                if rx > 159:
+                    rx = 159
+                if rx < 1:
+                    rx = 1
+            for p in range(2):
+                cx = bx
+                pingere = 1
+                if p == 1:
+                    pingere = 0
+                    if y >= ramus:
+                        pingere = 1
+                        cx = rx
+                if pingere == 1:
+                    for x in range(LATITUDO):
+                        dist = distantia(x, cx)
+                        if dist < radius:
+                            k = (y * LATITUDO + x) * 3
+                            if dist == 0:
+                                fb[k] = 255
+                                fb[k + 1] = 255
+                                fb[k + 2] = 255
+                            if dist == 1:
+                                fb[k] = 255
+                                fb[k + 1] = 230
+                                fb[k + 2] = 140
+                            if dist > 1:
+                                additamentum = (radius - dist) * 28
+                                r = fb[k] + additamentum
+                                g = fb[k + 1] + (additamentum >> 1)
+                                fb[k] = 255 if r > 255 else r
+                                fb[k + 1] = 255 if g > 255 else g
+            if y >= 92:
+                for x in range(LATITUDO):
+                    dist = distantia(x, bx)
+                    if dist < 14:
+                        k = (y * LATITUDO + x) * 3
+                        additamentum = (14 - dist) * 12
+                        r = fb[k] + additamentum
+                        g = fb[k + 1] + (additamentum >> 2)
+                        fb[k] = 255 if r > 255 else r
+                        fb[k + 1] = 255 if g > 255 else g
+    return semen
+
+
+# ---- cruor -------------------------------------------------------------------
+
+def cruor_pinge(fb, t, semen):
+    s = SINUS
+    pa = octo(semen)
+    pb = octo(semen >> 8)
+    for y in range(ALTITUDO):
+        for x in range(LATITUDO):
+            k = (y * LATITUDO + x) * 3
+            caput = s[octo(x * 3 + pa + t)] >> 2
+            longitudo = 20 + (s[octo(x + pb)] >> 4)
+            if y >= 90:
+                h = s[octo(x + t + y)] >> 2
+                fb[k] = octo(80 + (h >> 1))
+                fb[k + 1] = 0
+                fb[k + 2] = h >> 3
+            if y < 90:
+                r, g, b = 4, 0, 2
+                if y >= caput:
+                    along = y - caput
+                    if along < longitudo:
+                        cadit = 255 - along * 6
+                        if cadit < 40:
+                            cadit = 40
+                        r = cadit
+                        g = along >> 2
+                        b = 0
+                fb[k] = r
+                fb[k + 1] = g
+                fb[k + 2] = b
+    return semen
+
+
 # ---- the engine ----------------------------------------------------------------
 
 MODELUM = "tests/data/signaculum_mesh.bin"
@@ -839,7 +971,7 @@ def machina(req, out):
     if len(req) < 17 or req[:4] != b"SOM1":
         return 1
     somnium, praetermitte, tabulae, semen = struct.unpack("<BIII", req[4:17])
-    if somnium > 8:
+    if somnium > 10:
         return 1
     # Somnium 8 carries the 3D engine's EXSG model after the request;
     # every other somnium's request is exactly 17 bytes.
@@ -901,6 +1033,12 @@ def machina(req, out):
             else:
                 x = stellae_pinge(fb, sx, sy, sz, x, f)
             phasis = octo(phasis + 1)
+        if somnium == 9:
+            if f >= praetermitte:
+                fulmen_pinge(fb, f, semen)
+        if somnium == 10:
+            if f >= praetermitte:
+                cruor_pinge(fb, f, semen)
         if f >= praetermitte:
             out.write(bytes(fb))
     return 0

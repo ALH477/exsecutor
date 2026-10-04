@@ -1,0 +1,50 @@
+// examples/somnium/cruor.exsc
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 The Exsecutor authors.
+// ---------------------------------------------------------------------------
+// Somnium 10: gore. Vertical drips whose heads sit on the sine table, a
+// black field, and a shallow pool along the bottom edge. Not pluvia: no
+// glyphs, no lattice, just fall and gather. Stateless in (t, semen).
+// ---------------------------------------------------------------------------
+
+publica functio cruor_pinge(fb: &mutabilis acies<u8, 48000>, t: mensura, semen: u32) -> u32 {
+    firma s: acies<u8, 256> = sinus();
+    firma pa: mensura = octo(semen sicut mensura);
+    firma pb: mensura = octo((semen deorsum 8) sicut mensura);
+
+    per y in 0..100 {
+        firma linea: mensura = y * 160;
+        per x in 0..160 {
+            firma k: mensura = (linea + x) * 3;
+            firma caput: mensura = (s[octo(x * 3 + pa + t)] sicut mensura) deorsum 2;
+            firma longitudo: mensura = 20 + ((s[octo(x + pb)] sicut mensura) deorsum 4);
+            si y ge 90 {
+                firma h: mensura = (s[octo(x + t + y)] sicut mensura) deorsum 2;
+                (*fb)[k] = (80 + (h deorsum 1)) sicut u8;
+                (*fb)[k + 1] = 0;
+                (*fb)[k + 2] = (h deorsum 3) sicut u8;
+            }
+            si y lt 90 {
+                mutabilis r: mensura = 4;
+                mutabilis g: mensura = 0;
+                mutabilis b: mensura = 2;
+                si y ge caput {
+                    firma lapsus: mensura = y - caput;
+                    si lapsus lt longitudo {
+                        mutabilis cadit: mensura = 255 - lapsus * 6;
+                        si cadit lt 40 {
+                            cadit = 40;
+                        }
+                        r = cadit;
+                        g = lapsus deorsum 2;
+                        b = 0;
+                    }
+                }
+                (*fb)[k] = r sicut u8;
+                (*fb)[k + 1] = g sicut u8;
+                (*fb)[k + 2] = b sicut u8;
+            }
+        }
+    }
+    redde semen;
+}
