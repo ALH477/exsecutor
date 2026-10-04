@@ -42,10 +42,12 @@ sources=(
   examples/somnium/titulus.exsc
   examples/signaculum/forma.exsc
   examples/somnium/signum.exsc
+  examples/somnium/fulmen.exsc
+  examples/somnium/cruor.exsc
   examples/somnium/machina.exsc
 )
 
-nomina=(plasma ignis vita pluvia stellae cuniculus abyssus titulus signum)
+nomina=(plasma ignis vita pluvia stellae cuniculus abyssus titulus signum fulmen cruor)
 # Frames per run. abyssus and signum are the two expensive somnia (a 275-
 # iteration Mandelbrot budget and a 512x512 rasterisation respectively), so
 # they get fewer -- the figure reported is per frame either way.

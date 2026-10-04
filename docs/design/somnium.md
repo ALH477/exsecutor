@@ -42,7 +42,7 @@ the session is idle.
 
 ## 1. What it is
 
-One program, `somnium`, holding nine effects ("somnia"):
+One program, `somnium`, holding eleven effects ("somnia"):
 
 | id | name | what | state across frames |
 |---|---|---|---|
@@ -55,6 +55,8 @@ One program, `somnium`, holding nine effects ("somnia"):
 | 6 | `abyssus` | Mandelbrot deep zoom into the Seahorse Valley, f64, 720-frame cycle | a phase counter |
 | 7 | `titulus` | the title card: rain flies into **OLIGARCHY**, then **EXSECVTOR PINXIT** and **PVNCTIM CECINIT** type in; 400-frame cycle | a phase counter and the frame (trails) |
 | 8 | `signum` | the Exsecutor logo turning in the starfield, **rendered by `examples/signaculum/forma.exsc`, unmodified** | the stars, the model, the engine's 512² frame and z-buffer |
+| 9 | `fulmen` | five lightning bolts on a night sky, white core and cyan sheath | none |
+| 10 | `cruor` | gore drips gathering in a pool along the bottom edge | none |
 
 It reads one request on stdin and writes frames on stdout: **raw rgb24,
 160 × 100, row-major, no header, 48,000 bytes a frame.** The host tells its
@@ -195,7 +197,7 @@ That is also the order in which `flake.nix` compiles `packages.somnium` and
 | `somnium_titulus` | title, frame 228 | the font, the locked word, the shimmer, one inscription whole and one half typed |
 | `somnium_titulus_volatus` | title, frame 62 | the blocks in flight: the five-round seeding, the easing |
 | `somnium_signum` | logo, frame 20, + model | `signum_rota`, the engine, the box filter over the stars, the captions |
-| `somnium_ignotum` | somnium 9 | refused, exit 1, no output |
+| `somnium_ignotum` | somnium 11 | refused, exit 1, no output |
 | `somnium_brevis`, `_longa`, `_magia` | 16 bytes, 18 bytes, `"SOM2"` | refused |
 | `somnium_signum_brevis`, `_magia` | model one byte short; model magic `EXSH` | refused |
 

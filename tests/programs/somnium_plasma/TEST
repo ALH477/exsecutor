@@ -9,4 +9,4 @@
 # operation order. All-integer, so there is no rounding mode to agree on: a
 # differing byte means one side changed a formula or the order of its draws.
 # (No stdout= on purpose: expected.out IS the reference.)
-TEST: expect-exit=0 sources=examples/somnium/somnium.exsc,examples/somnium/plasma.exsc,examples/somnium/ignis.exsc,examples/somnium/vita.exsc,examples/somnium/pluvia.exsc,examples/somnium/stellae.exsc,examples/somnium/cuniculus.exsc,examples/somnium/abyssus.exsc,examples/somnium/titulus.exsc,examples/signaculum/forma.exsc,examples/somnium/signum.exsc,examples/somnium/machina.exsc stdin=tests/data/somnium_plasma.bin
+TEST: expect-exit=0 sources=examples/somnium/somnium.exsc,examples/somnium/plasma.exsc,examples/somnium/ignis.exsc,examples/somnium/vita.exsc,examples/somnium/pluvia.exsc,examples/somnium/stellae.exsc,examples/somnium/cuniculus.exsc,examples/somnium/abyssus.exsc,examples/somnium/titulus.exsc,examples/signaculum/forma.exsc,examples/somnium/signum.exsc,examples/somnium/fulmen.exsc,examples/somnium/cruor.exsc,examples/somnium/machina.exsc stdin=tests/data/somnium_plasma.bin

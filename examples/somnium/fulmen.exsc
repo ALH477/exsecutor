@@ -1,0 +1,157 @@
+// examples/somnium/fulmen.exsc
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 The Exsecutor authors.
+// ---------------------------------------------------------------------------
+// Somnium 9: lightning. Three trunks, each forking once, stepped by
+// xorshift32 so the path is jagged rather than a sine wobble. Core is
+// white, then gold, then a yellow glow. No sheet lightning and no
+// full-frame flash: time for the path is `t deorsum 2` (a pose holds
+// four frames at 20 fps). A strike bloom sits on the bottom rows.
+// Stateless in (t, semen): `praetermitte` is free.
+// ---------------------------------------------------------------------------
+
+publica functio fulmen_pinge(fb: &mutabilis acies<u8, 48000>, t: mensura, semen: u32) -> u32 {
+    firma s: acies<u8, 256> = sinus();
+    firma pa: mensura = octo(semen sicut mensura);
+    firma tardus: mensura = t deorsum 2;
+    firma radius: mensura = 8;
+
+    per y in 0..100 {
+        firma linea: mensura = y * 160;
+        per x in 0..160 {
+            firma k: mensura = (linea + x) * 3;
+            firma caelum: mensura = (s[octo(y + tardus + pa)] sicut mensura) deorsum 5;
+            (*fb)[k] = (caelum deorsum 1) sicut u8;
+            (*fb)[k + 1] = 0;
+            (*fb)[k + 2] = (caelum + 4) sicut u8;
+        }
+    }
+
+    per b in 0..3 {
+        mutabilis xg: u32 = semen;
+        xg = alea(xg aut ((tardus * (b + 3) + pa) sicut u32));
+        mutabilis bx: mensura = octo((xg deorsum 24) sicut mensura);
+        si bx lt 8 {
+            bx = 8;
+        }
+        si bx gt 151 {
+            bx = 151;
+        }
+        mutabilis ramus: mensura = 28 + (octo((xg deorsum 16) sicut mensura) deorsum 2);
+        si ramus gt 80 {
+            ramus = 80;
+        }
+        mutabilis xf: u32 = 1;
+        mutabilis rx: mensura = bx;
+        per y in 0..100 {
+            xg = alea(xg);
+            firma d: mensura = (xg deorsum 29) sicut mensura;
+            si d gt 3 {
+                bx = bx + (d - 3);
+            }
+            si d lt 4 {
+                firma recede: mensura = 3 - d;
+                si bx gt recede {
+                    bx = bx - recede;
+                }
+            }
+            si bx gt 159 {
+                bx = 159;
+            }
+            si bx lt 1 {
+                bx = 1;
+            }
+            si y eq ramus {
+                xf = alea(xg aut 0xA53A5A5A);
+                rx = bx;
+            }
+            si y gt ramus {
+                xf = alea(xf);
+                firma df: mensura = (xf deorsum 29) sicut mensura;
+                si df gt 3 {
+                    rx = rx + (df - 3) + 1;
+                }
+                si df lt 4 {
+                    firma recede: mensura = 4 - df;
+                    si rx gt recede {
+                        rx = rx - recede;
+                    }
+                }
+                si rx gt 159 {
+                    rx = 159;
+                }
+                si rx lt 1 {
+                    rx = 1;
+                }
+            }
+            per p in 0..2 {
+                mutabilis cx: mensura = bx;
+                mutabilis pingere: mensura = 1;
+                si p eq 1 {
+                    pingere = 0;
+                    si y ge ramus {
+                        pingere = 1;
+                        cx = rx;
+                    }
+                }
+                si pingere eq 1 {
+                    firma linea: mensura = y * 160;
+                    per x in 0..160 {
+                        firma dist: mensura = distantia(x, cx);
+                        si dist lt radius {
+                            firma k: mensura = (linea + x) * 3;
+                            si dist eq 0 {
+                                (*fb)[k] = 255;
+                                (*fb)[k + 1] = 255;
+                                (*fb)[k + 2] = 255;
+                            }
+                            si dist eq 1 {
+                                (*fb)[k] = 255;
+                                (*fb)[k + 1] = 230;
+                                (*fb)[k + 2] = 140;
+                            }
+                            si dist gt 1 {
+                                firma additamentum: mensura = (radius - dist) * 28;
+                                firma r: mensura = (*fb)[k] sicut mensura + additamentum;
+                                firma g: mensura = (*fb)[k + 1] sicut mensura + (additamentum deorsum 1);
+                                mutabilis rr: mensura = r;
+                                si r gt 255 {
+                                    rr = 255;
+                                }
+                                mutabilis gg: mensura = g;
+                                si g gt 255 {
+                                    gg = 255;
+                                }
+                                (*fb)[k] = rr sicut u8;
+                                (*fb)[k + 1] = gg sicut u8;
+                            }
+                        }
+                    }
+                }
+            }
+            si y ge 92 {
+                firma linea: mensura = y * 160;
+                per x in 0..160 {
+                    firma dist: mensura = distantia(x, bx);
+                    si dist lt 14 {
+                        firma k: mensura = (linea + x) * 3;
+                        firma additamentum: mensura = (14 - dist) * 12;
+                        firma r: mensura = (*fb)[k] sicut mensura + additamentum;
+                        firma g: mensura = (*fb)[k + 1] sicut mensura + (additamentum deorsum 2);
+                        mutabilis rr: mensura = r;
+                        si r gt 255 {
+                            rr = 255;
+                        }
+                        mutabilis gg: mensura = g;
+                        si g gt 255 {
+                            gg = 255;
+                        }
+                        (*fb)[k] = rr sicut u8;
+                        (*fb)[k + 1] = gg sicut u8;
+                    }
+                }
+            }
+        }
+    }
+    redde semen;
+}
