@@ -168,7 +168,9 @@ override.
 | lambda literal | none | — |
 
 `RowItem ::= CapAtom | 'sicut' IDENT` in both forms; `poscit {}` in a type is
-an explicit empty row; a bare `poscit` with no item is an error. Generics:
+an explicit empty row, and since 2026-10-03 so is `poscit {}` on a declaration
+(the one braced `DeclRow`, `'poscit' '{' '}'`; spec §8.6); a bare `poscit` with
+no item is an error. Generics:
 `sicut f` names a *parameter*, so `functio ap<T>(f: T) -> R poscit sicut f`
 needs no new syntax; spec §7.1's dictionary-layout question is semantic and
 untouched by the grammar.

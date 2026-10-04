@@ -1,0 +1,34 @@
+// Audit 2026-10-03 finding 5, second half: a `Scriptor` member that collides
+// with a name the module declares.
+//
+// A prelude capability-bearing receiver -- `Scriptor` here -- has its own
+// prelude rows for members and nothing else. `a` and `descriptor` are its
+// FIELDS, not rows, so `s.a` and `s.a()` are `EXS-E0305`; and so they must stay
+// when the module happens to declare an `interfacies` member of the same name,
+// as `Gx` does below. The checker's last-resort lookup -- pass 1's unique
+// module-wide member of a name -- used to bind them to `Gx::a` and
+// `Gx::descriptor` once the field rows were taken out of `Scriptor`'s lookup:
+// the CALL form then typed and reached a lowering that trapped on it: `exsc`
+// died on SIGILL, exit 132, where the field rows had given a clean refusal.
+// (The READ form was a stray exit 4 from the emitter, never a diagnostic.) A
+// fix that only removes rows reintroduces exactly that; a CLOSED SET for the
+// receiver does not.
+//
+// `exsc-exit=1` is a diagnostic's exit status and 132 is the trap; the code is
+// pinned one layer down, tests/unit/chk_directorium.asm rows 31-34. The
+// differential phase holds `--emitte c` to the same status.
+
+interfacies Gx {
+    functio a(self: Scriptor) -> u8
+    functio descriptor(self: Scriptor) -> u8
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma a = m.ambitus();
+    firma s = Scriptor.ad_exitum(a);
+    firma x = s.a;
+    firma y = s.descriptor;
+    firma c = s.a();
+    firma d = s.descriptor();
+    redde 0;
+}

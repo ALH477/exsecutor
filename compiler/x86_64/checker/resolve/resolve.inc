@@ -374,6 +374,8 @@ chk_lit_initium	db 'initium'
 CHK_LIT_INITIUM_LEN = $ - chk_lit_initium
 chk_lit_poscit	db ' poscit '
 CHK_LIT_POSCIT_LEN = $ - chk_lit_poscit
+chk_lit_poscit_bare	db 'poscit '
+CHK_LIT_POSCIT_BARE_LEN = $ - chk_lit_poscit_bare
 chk_lit_comma	db ', '
 CHK_LIT_COMMA_LEN = $ - chk_lit_comma
 ; `mutabilis` is 9 bytes and a module-level `Binding` node's span starts at it
@@ -1502,16 +1504,132 @@ proc __chk_atom_decl, chk_c, chk_ord
 	return
 endp
 
-; __chk_type_atom(chk_c, chk_n) -> rax = the spec §4.6 ordinal named by type
-; node `chk_n`, or 0. A capability-typed thing is written `m: Mundus` /
-; `sock: rete` (spec §4.3), which parses as `TyPath -> Path -> Seg`; nothing
-; else in §8.6 can name an atom in type position.
-proc __chk_type_atom, chk_c, chk_n
-	uses	rbx, r12
+; __chk_typus_binds(chk_c, chk_d, chk_nm) -> eax = 1 if `typus` declaration
+; `chk_d` declares a generic parameter named `chk_nm`, else 0. A generic
+; parameter is visible over its own `typus`'s right-hand side and shadows a
+; module-scope name there (this file's `.tydecl` arm), which is what
+; `__chk_type_atom`'s alias walk has to honour when it resolves that
+; right-hand side by NAME. `GenParam.a` is the name's interner id and
+; `Generics` is a counted list (`Generics.a` = the `extra` offset, `.b` = the
+; count -- `__chk_ty_ngen`'s reading of it).
+proc __chk_typus_binds, chk_c, chk_d, chk_nm
+	uses	rbx, r12, r13, r14
 	locals
 	endl
 	mov	rbx, [chk_c]
+	mov	rdi, [rbx + ChkCtx.tree]
+	mov	rsi, [chk_d]
+	call	ast_decl_at
+	mov	ecx, [rax + AstDecl.node]
+	test	ecx, ecx
+	jz	.no
+	mov	rdi, [rbx + ChkCtx.tree]
+	mov	rsi, rcx
+	call	ast_node_at
+	mov	ecx, [rax + AstNode.c]	; `Typus.c`: the `Generics`, or 0
+	test	ecx, ecx
+	jz	.no
+	mov	rdi, [rbx + ChkCtx.tree]
+	mov	rsi, rcx
+	call	ast_node_at
+	mov	r12d, [rax + AstNode.a]
+	mov	r13d, [rax + AstNode.b]
+	xor	r14, r14
+  .next:
+	cmp	r14, r13
+	jae	.no
+	mov	rdi, [rbx + ChkCtx.tree]
+	lea	rsi, [r12 + r14]
+	call	ast_extra_at
+	mov	rdi, [rbx + ChkCtx.tree]
+	mov	rsi, rax
+	call	ast_node_at
+	mov	ecx, [rax + AstNode.a]
+	cmp	rcx, [chk_nm]
+	je	.yes
+	inc	r14
+	jmp	.next
+  .yes:
+	mov	eax, 1
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
+; __chk_type_atom(chk_c, chk_n) -> rax = the spec §4.6 ordinal named by type
+; node `chk_n`, or 0. A capability-typed thing is written `m: Mundus` /
+; `sock: rete` (spec §4.3), which parses as `TyPath -> Path -> Seg`; nothing
+; else in §8.6 can name an atom in type position -- EXCEPT THROUGH A `typus`
+; ALIAS, which checker.md section 2.2 makes TRANSPARENT: `typus Amb = ambitus;`
+; makes `a: Amb` an `ambitus` exactly as `a: ambitus` is.
+;
+; WHY THE ALIAS IS FOLLOWED HERE. Pass 2 already resolves it (`__chk_ty_typus`
+; interns the alias's right-hand side, so `Amb` is `AST_TY_CAP` over `ambitus`
+; in every judgement it makes: the `EXS-E0303` provider test, a call's
+; argument, a method receiver). This routine is pass 1's own, SYNTACTIC reading
+; of the same fact, and it is what registers a parameter as the PROVIDER of its
+; atom -- so before it followed aliases the two passes disagreed about one
+; parameter. Measured: `typus Amb = ambitus; functio f(a: Amb) -> u8 poscit
+; alloc { sub ambitus = a; }` was accepted where `a: ambitus` is `EXS-E0422`
+; (the double-bind is `__chk_cap_bind_root`'s lookup, and an unregistered
+; parameter gives it nothing to find), and `a: Amb` followed by a draw of
+; `ambitus` was `EXS-E0421` where `a: ambitus` is a provider. Not an authority
+; escape in either direction -- the parameter holds the atom visibly under both
+; spellings -- but one fact answered two ways by two passes is the shape the
+; reviewed escapes in ADR 0017 took, so the aliases are canonicalized here
+; rather than the two cases patched.
+;
+; THE WALK. The written type's `Seg` is read through its resolved `d`, which
+; the `.param` arm's walk of the type has just set, so a generic parameter or a
+; local that shadows the alias's name is honoured (`functio f<Amb>(a: Amb)`
+; names the generic parameter, not the alias; `Seg.d` may also be a TAGGED
+; prelude row, bit 31, which is not an `Ast.decls` index and is never a
+; `typus`). From there each hop is a `typus` declaration's right-hand side
+; (`Typus.a`), read by NAME because that alias may be written AFTER the
+; function and has not been walked yet (nothing here may depend on item
+; order): an atom's name ends the walk with its ordinal; any other name is the
+; MODULE table's, except that a generic parameter of the alias being followed
+; shadows it (`typus Id<T> = T;`, which names `T`, not a module `typus T`).
+; Generic arguments are ignored on purpose: the types pass instantiates no
+; alias (`__chk_ty_decl_inst`'s header), so `typus Amb<T> = ambitus;` is an
+; `ambitus` for every `Amb<X>` and this routine must say so too. Anything that
+; is not a plain one-segment `TyPath` ends the walk with 0, which is exactly
+; what the pre-alias routine answered for it.
+;
+; THE WALK HAS NO DEPTH LIMIT OF ITS OWN, and that is the invariant, not an
+; omission. Pass 2 resolves a legal alias chain of ANY length (it marks each
+; `typus` BUSY then DONE and never counts hops: `__chk_ty_typus`), so a pass-1
+; walk that gave up at a fixed depth -- it first did, at 32 -- answers "not a
+; provider" for a chain pass 2 answers "ambitus" for, one hop past whatever
+; constant was chosen: `typus A1 = ambitus; ... typus A33 = A32;` with `a: A33`
+; escaped EXS-E0422 and drew a spurious EXS-E0421, measured. The only way this
+; walk can fail to end is a CYCLE, and a cycle is bounded without a constant:
+; a chain of DISTINCT `typus` declarations has at most `ast_decl_count` links,
+; so more hops than declarations means one repeated. That repeat is `typus A =
+; B; typus B = A;` -- pass 2's own BUSY mark reports it ONCE as `EXS-E0303`
+; (class C, "alias cycle") at the declaration that closed it -- and the walk's
+; answer for it is 0, because a cycle names no atom. That 0 is not silent: the
+; program is rejected by pass 2, and `tests/unit/chk_e0422_alias.asm` asserts
+; exactly one E0303 for a self-alias, a three-cycle and a generic cycle. No code
+; is raised here, because a second E0303 for one cycle would be a second
+; diagnostic for one fact (spec 8.3).
+
+proc __chk_type_atom, chk_c, chk_n
+	uses	rbx, r12, r13, r14
+	locals
+		slot	chk_nm, dq
+		slot	chk_hp, dq
+		slot	chk_ct, dq
+	endl
+	mov	rbx, [chk_c]
 	mov	r12, [chk_n]
+	xor	r13, r13		; the `typus` being followed; 0 = none yet
+	mov	qword [chk_hp], 0
+	mov	rdi, [rbx + ChkCtx.tree]
+	call	ast_decl_count
+	mov	[chk_ct], rax		; no chain of distinct declarations is longer
+  .again:
 	test	r12, r12
 	jz	.none
 	mov	rdi, [rbx + ChkCtx.tree]
@@ -1526,16 +1644,61 @@ proc __chk_type_atom, chk_c, chk_n
 	call	__chk_seg0
 	cmp	rdx, 1
 	jne	.none			; `a.b` names no atom
-	mov	r12, rax
+	mov	r14, rax		; the `Seg`
 	mov	rdi, rbx
-	mov	rsi, r12
+	mov	rsi, r14
 	call	__chk_seg_name
+	mov	[chk_nm], rax
 	mov	rdi, [rbx + ChkCtx.tree]
 	mov	rsi, rax
 	call	ast_cap_of_name
-	return
+	test	rax, rax
+	jnz	.out			; an atom's own name: the ordinal
+	test	r13, r13
+	jnz	.byname
+	; the type as WRITTEN: the walk that preceded this call resolved it
+	mov	rdi, [rbx + ChkCtx.tree]
+	mov	rsi, r14
+	call	ast_node_at
+	mov	eax, [rax + AstNode.d]
+	jmp	.decl
+  .byname:
+	mov	rdi, rbx
+	mov	rsi, r13
+	mov	rdx, [chk_nm]
+	call	__chk_typus_binds
+	test	eax, eax
+	jnz	.none			; the alias's own generic parameter
+	mov	rdi, rbx
+	mov	rsi, [chk_nm]
+	call	__chk_mod_lookup
+  .decl:
+	test	rax, rax
+	jz	.none
+	mov	r13, rax
+	cmp	r13, [chk_ct]
+	ja	.none			; a tagged prelude row is not an index
+	mov	rdi, [rbx + ChkCtx.tree]
+	mov	rsi, r13
+	call	ast_decl_at
+	movzx	ecx, byte [rax + AstDecl.kind]
+	cmp	ecx, AST_D_TYPUS
+	jne	.none
+	mov	ecx, [rax + AstDecl.node]
+	test	ecx, ecx
+	jz	.none
+	mov	rdi, [rbx + ChkCtx.tree]
+	mov	rsi, rcx
+	call	ast_node_at
+	mov	r12d, [rax + AstNode.a]	; `Typus.a`: the aliased type, or a `SumBody`
+	inc	qword [chk_hp]
+	mov	rax, [chk_hp]
+	cmp	rax, [chk_ct]
+	ja	.none			; more hops than declarations: a cycle (pass 2's E0303)
+	jmp	.again
   .none:
 	xor	eax, eax
+  .out:
 	return
 endp
 
@@ -2235,12 +2398,15 @@ endp
 
 ; __chk_fix_e0421(chk_c, chk_dg, chk_ord) -- §8.3 promises `E0421` a fix and
 ; `diag/fix.inc`'s header names it: "the insertion of the missing atom into the
-; enclosing declaration's row". Two shapes, both one insertion:
+; enclosing declaration's row". Three shapes, each ONE edit:
 ;
 ;   - the enclosing `Sig` already has a `DeclRow`  ->  `, atom` at its end;
 ;   - it has none                                  ->  ` poscit atom` at the end
 ;     of the signature, which spec §8.6 puts exactly there ("bare row after
-;     `-> Type` or `)`").
+;     `-> Type` or `)`");
+;   - its row is the explicit empty one, `poscit {}` -> the whole row replaced
+;     by `poscit atom` (a REPLACE, not an insertion: `, atom` after `}` would
+;     not parse).
 ;
 ; With no enclosing signature at all -- a draw at module level -- there is
 ; nothing to insert into and the diagnostic carries no fix. That is the one case
@@ -2281,12 +2447,37 @@ proc __chk_fix_e0421, chk_c, chk_dg, chk_ord
 	mov	rsi, [chk_row]
 	call	ast_node_at
 	mov	r14, rax
+	cmp	dword [r14 + AstNode.b], 0	; the row's item count
+	je	.emptyrow
 	mov	rdi, rbx
 	lea	rsi, [chk_lit_comma]
 	mov	rdx, CHK_LIT_COMMA_LEN
 	mov	rcx, r13
 	call	__chk_fix_text
 	jmp	.place
+  .emptyrow:
+	; THE EXPLICIT EMPTY ROW, `poscit {}` (spec §4.1 rule 6, §8.6). It is a
+	; `Row` node with no items, so ", atom" at its end would write
+	; `poscit {}, atom` -- source that does not parse, offered as a
+	; machine-applicable fix. The one edit that is right is to replace the
+	; whole row, braces included, with `poscit atom`; replacing the row's span
+	; rather than inserting between the braces is what makes it independent
+	; of whatever sits inside them (`{ }`, a comment).
+	mov	rdi, rbx
+	lea	rsi, [chk_lit_poscit_bare]
+	mov	rdx, CHK_LIT_POSCIT_BARE_LEN
+	mov	rcx, r13
+	call	__chk_fix_text
+	mov	[r12 + ChkDiag.ftxt], rax
+	mov	[r12 + ChkDiag.ftxtn], rdx
+	mov	dword [r12 + ChkDiag.fkind], DIAG_FIX_REPLACE
+	mov	ecx, [r14 + AstNode.span.file_id]
+	mov	[r12 + ChkDiag.fx.file_id], ecx
+	mov	ecx, [r14 + AstNode.span.start]
+	mov	[r12 + ChkDiag.fx.start], ecx
+	mov	ecx, [r14 + AstNode.span.len]
+	mov	[r12 + ChkDiag.fx.len], ecx
+	jmp	.out
   .norow:
 	mov	rdi, rbx
 	lea	rsi, [chk_lit_poscit]

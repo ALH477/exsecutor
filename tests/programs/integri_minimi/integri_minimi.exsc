@@ -1,0 +1,55 @@
+// integri_minimi.exsc -- iN::MIN from a decimal literal, at every width.
+//
+// Each `minN()` returns the signed minimum of its width, written as the
+// negated decimal magnitude 2^(w-1): -128, -32768, -2147483648 and
+// -9223372036854775808. The checker admits a negated 2^(w-1) as iN::MIN
+// (spec 5.4, __chk_ty_fits's `neg` argument), and `__lwr_unary` now FOLDS
+// `-`<integer literal> into one canonical `iconst iN` of the two's-complement
+// value -- so i8::MIN emits (it is `iconst i8 -128`, not the non-canonical
+// `iconst i8 128` the old `0 - V` lowering tried and the emitter refused),
+// and i64::MIN emits WITHOUT the `0 - i64::MIN` subtraction that overflowed
+// and TRAPPED. See docs/design/lowering.md's `Unary -` row and spec 5.4.
+//
+// `initium` PROVES each value equals its width's MIN by the bit pattern:
+// iN::MIN cast to uN is exactly 2^(w-1) (only the top bit set), which is a
+// valid unsigned literal. It returns the COUNT of correct values -- 4 when
+// all four fold correctly. A trap would abort with SIGILL instead of
+// returning; a wrong fold would return a smaller count. Expect exit 4.
+//
+//    min8()  sicut u8   128
+//    min16() sicut u16  32768
+//    min32() sicut u32  2147483648
+//    min64() sicut u64  9223372036854775808
+
+functio min8() -> i8 {
+    redde -128;
+}
+
+functio min16() -> i16 {
+    redde -32768;
+}
+
+functio min32() -> i32 {
+    redde -2147483648;
+}
+
+functio min64() -> i64 {
+    redde -9223372036854775808;
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    mutabilis n: u8 = 0;
+    si (min8() sicut u8) eq 128 {
+        n = n +% 1;
+    }
+    si (min16() sicut u16) eq 32768 {
+        n = n +% 1;
+    }
+    si (min32() sicut u32) eq 2147483648 {
+        n = n +% 1;
+    }
+    si (min64() sicut u64) eq 9223372036854775808 {
+        n = n +% 1;
+    }
+    redde n;
+}

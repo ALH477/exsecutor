@@ -1,0 +1,5 @@
+# contractio_rumpe_interior.exsc's header derives the 18. A `rumpe` that leaves
+# an INNER `per` inside a `contrahe` body is accepted (spec §8.5, narrowed
+# 2026-10-03); the same `rumpe` as a direct child of the reduction is
+# EXS-E0342 (tests/unit/chk_ty_contrahe.asm).
+TEST: expect-exit=18
