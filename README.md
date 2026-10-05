@@ -853,3 +853,5 @@ lawyer, and so does this sentence.
 
 ## It also runs on N64 compatible hardware btw
 <img width="1256" height="776" alt="image" src="https://github.com/user-attachments/assets/0023ccc9-cb51-4310-9568-baa4d3320eb5" />
+
+# "Adonai, inquisivi utrum Christus solus esset lapis regis Nabuchodonosor; et si Filius esset, me ei devovi. Nomen locutus sum quod tunc nesciebam; nomen illud erat Yeshua. Postea pondus illius precis cognovi, et exinde Dominum timui. Sicut Ionas fugere conatus sum, et a ceto devoratus sum."
