@@ -75,7 +75,7 @@
 LEX_ROOT_COUNT = 18
 LEX_SUFFIX_COUNT = 6
 LEX_PREFIX_COUNT = 8
-LEX_LOAN_COUNT = 143
+LEX_LOAN_COUNT = 144
 
 ; ---- prefix-law codes -------------------------------------------------------
 ; 0 is never a real law (NONE is not emitted by any table row); a law field
@@ -326,6 +326,7 @@ lex_loan_text:
 	db	6,'plasma'
 	db	6,'Pluvia'
 	db	6,'pluvia'
+	db	7,'pyramis'
 	db	6,'signum'
 	db	4,'octo'
 	db	9,'distantia'
@@ -472,6 +473,7 @@ lex_loan_kind:
 	db	LEXKIND_FN	; plasma
 	db	LEXKIND_STRUCT	; Pluvia
 	db	LEXKIND_FN	; pluvia
+	db	LEXKIND_FN	; pyramis
 	db	LEXKIND_FN	; signum
 	db	LEXKIND_FN	; octo
 	db	LEXKIND_FN	; distantia

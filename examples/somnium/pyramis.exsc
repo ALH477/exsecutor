@@ -1,0 +1,451 @@
+// examples/somnium/pyramis.exsc
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 The Exsecutor authors.
+// ---------------------------------------------------------------------------
+// Somnium 11: a Sierpinski tetrahedron, a white beam in, a seven-band
+// rainbow out. Direct 160x100 raster, not signaculum. Rotation time is
+// `t deorsum 2` so a pose holds four frames; no sheet flash.
+// ---------------------------------------------------------------------------
+
+functio pyramis_sx(x: f64, z: f64) -> i64 {
+    mutabilis d: f64 = z + 3.0;
+    si d lt 0.2 {
+        d = 0.2;
+    }
+    redde (80.0 + 70.0 * x / d) sicut i64;
+}
+
+functio pyramis_sy(y: f64, z: f64) -> i64 {
+    mutabilis d: f64 = z + 3.0;
+    si d lt 0.2 {
+        d = 0.2;
+    }
+    redde (72.0 - 70.0 * y / d) sicut i64;
+}
+
+publica functio pyramis_pinge(fb: &mutabilis acies<u8, 48000>, t: mensura, semen: u32) -> u32 {
+    firma s: acies<u8, 256> = sinus();
+    firma pa: mensura = octo(semen sicut mensura);
+    firma tardus: mensura = t deorsum 2;
+    firma q: mensura = octo(tardus + pa);
+    firma sin_i: i64 = s[q] sicut i64;
+    firma cos_i: i64 = s[octo(q + 64)] sicut i64;
+    firma sn: f64 = (sin_i sicut f64 - 127.5) / 127.5;
+    firma cs: f64 = (cos_i sicut f64 - 127.5) / 127.5;
+
+    per y in 0..100 {
+        firma linea: mensura = y * 160;
+        per x in 0..160 {
+            firma k: mensura = (linea + x) * 3;
+            firma caelum: mensura = (s[octo(y + tardus + pa)] sicut mensura) deorsum 5;
+            (*fb)[k] = (caelum deorsum 1) sicut u8;
+            (*fb)[k + 1] = 0;
+            (*fb)[k + 2] = (caelum + 4) sicut u8;
+        }
+    }
+
+    mutabilis ax: acies<f64, 256> = [0.0; 256];
+    mutabilis ay: acies<f64, 256> = [0.0; 256];
+    mutabilis az: acies<f64, 256> = [0.0; 256];
+    mutabilis bx: acies<f64, 256> = [0.0; 256];
+    mutabilis by: acies<f64, 256> = [0.0; 256];
+    mutabilis bz: acies<f64, 256> = [0.0; 256];
+
+    ax[0] = 0.0;
+    ay[0] = 1.0;
+    az[0] = 0.0;
+    ax[1] = 0.866025403784;
+    ay[1] = 0.0 - 0.5;
+    az[1] = 0.0;
+    ax[2] = 0.0 - 0.866025403784;
+    ay[2] = 0.0 - 0.5;
+    az[2] = 0.0;
+    ax[3] = 0.0;
+    ay[3] = 0.0 - 0.5;
+    az[3] = 0.866025403784;
+
+    per i in 0..4 {
+        firma x: f64 = ax[i];
+        firma z: f64 = az[i];
+        ax[i] = cs * x + sn * z;
+        az[i] = 0.0 - sn * x + cs * z;
+    }
+    firma rx0: f64 = ax[0];
+    firma ry0: f64 = ay[0];
+    firma rz0: f64 = az[0];
+    firma rx1: f64 = ax[1];
+    firma ry1: f64 = ay[1];
+    firma rz1: f64 = az[1];
+    firma rx2: f64 = ax[2];
+    firma ry2: f64 = ay[2];
+    firma rz2: f64 = az[2];
+    firma rx3: f64 = ax[3];
+    firma ry3: f64 = ay[3];
+    firma rz3: f64 = az[3];
+
+    mutabilis n_tets: mensura = 1;
+    per gradus in 0..3 {
+        mutabilis out: mensura = 0;
+        per tet in 0..n_tets {
+            firma ia: mensura = tet * 4;
+            firma a0: f64 = ax[ia];
+            firma a1: f64 = ay[ia];
+            firma a2: f64 = az[ia];
+            firma b0: f64 = ax[ia + 1];
+            firma b1: f64 = ay[ia + 1];
+            firma b2: f64 = az[ia + 1];
+            firma c0: f64 = ax[ia + 2];
+            firma c1: f64 = ay[ia + 2];
+            firma c2: f64 = az[ia + 2];
+            firma d0: f64 = ax[ia + 3];
+            firma d1: f64 = ay[ia + 3];
+            firma d2: f64 = az[ia + 3];
+            firma ab0: f64 = (a0 + b0) * 0.5;
+            firma ab1: f64 = (a1 + b1) * 0.5;
+            firma ab2: f64 = (a2 + b2) * 0.5;
+            firma ac0: f64 = (a0 + c0) * 0.5;
+            firma ac1: f64 = (a1 + c1) * 0.5;
+            firma ac2: f64 = (a2 + c2) * 0.5;
+            firma ad0: f64 = (a0 + d0) * 0.5;
+            firma ad1: f64 = (a1 + d1) * 0.5;
+            firma ad2: f64 = (a2 + d2) * 0.5;
+            firma bc0: f64 = (b0 + c0) * 0.5;
+            firma bc1: f64 = (b1 + c1) * 0.5;
+            firma bc2: f64 = (b2 + c2) * 0.5;
+            firma bd0: f64 = (b0 + d0) * 0.5;
+            firma bd1: f64 = (b1 + d1) * 0.5;
+            firma bd2: f64 = (b2 + d2) * 0.5;
+            firma cd0: f64 = (c0 + d0) * 0.5;
+            firma cd1: f64 = (c1 + d1) * 0.5;
+            firma cd2: f64 = (c2 + d2) * 0.5;
+            // four child tets into bx
+            firma o: mensura = out * 4;
+            bx[o] = a0;
+            by[o] = a1;
+            bz[o] = a2;
+            bx[o + 1] = ab0;
+            by[o + 1] = ab1;
+            bz[o + 1] = ab2;
+            bx[o + 2] = ac0;
+            by[o + 2] = ac1;
+            bz[o + 2] = ac2;
+            bx[o + 3] = ad0;
+            by[o + 3] = ad1;
+            bz[o + 3] = ad2;
+            bx[o + 4] = b0;
+            by[o + 4] = b1;
+            bz[o + 4] = b2;
+            bx[o + 5] = ab0;
+            by[o + 5] = ab1;
+            bz[o + 5] = ab2;
+            bx[o + 6] = bc0;
+            by[o + 6] = bc1;
+            bz[o + 6] = bc2;
+            bx[o + 7] = bd0;
+            by[o + 7] = bd1;
+            bz[o + 7] = bd2;
+            bx[o + 8] = c0;
+            by[o + 8] = c1;
+            bz[o + 8] = c2;
+            bx[o + 9] = ac0;
+            by[o + 9] = ac1;
+            bz[o + 9] = ac2;
+            bx[o + 10] = bc0;
+            by[o + 10] = bc1;
+            bz[o + 10] = bc2;
+            bx[o + 11] = cd0;
+            by[o + 11] = cd1;
+            bz[o + 11] = cd2;
+            bx[o + 12] = d0;
+            by[o + 12] = d1;
+            bz[o + 12] = d2;
+            bx[o + 13] = ad0;
+            by[o + 13] = ad1;
+            bz[o + 13] = ad2;
+            bx[o + 14] = bd0;
+            by[o + 14] = bd1;
+            bz[o + 14] = bd2;
+            bx[o + 15] = cd0;
+            by[o + 15] = cd1;
+            bz[o + 15] = cd2;
+            out = out + 4;
+        }
+        per i in 0..256 {
+            ax[i] = bx[i];
+            ay[i] = by[i];
+            az[i] = bz[i];
+        }
+        n_tets = out;
+    }
+
+    per i in 0..64 {
+        per j in 0..63 {
+            firma ja: mensura = j * 4;
+            firma jb: mensura = ja + 4;
+            firma zj: f64 = az[ja] + az[ja + 1] + az[ja + 2] + az[ja + 3];
+            firma zn: f64 = az[jb] + az[jb + 1] + az[jb + 2] + az[jb + 3];
+            si zj lt zn {
+                per v in 0..4 {
+                    firma tx: f64 = ax[ja + v];
+                    firma ty: f64 = ay[ja + v];
+                    firma tz: f64 = az[ja + v];
+                    ax[ja + v] = ax[jb + v];
+                    ay[ja + v] = ay[jb + v];
+                    az[ja + v] = az[jb + v];
+                    ax[jb + v] = tx;
+                    ay[jb + v] = ty;
+                    az[jb + v] = tz;
+                }
+            }
+        }
+    }
+
+    per tet in 0..64 {
+        firma ia: mensura = tet * 4;
+        per face in 0..4 {
+            mutabilis i0: mensura = ia;
+            mutabilis i1: mensura = ia + 1;
+            mutabilis i2: mensura = ia + 2;
+            si face eq 1 {
+                i2 = ia + 3;
+            }
+            si face eq 2 {
+                i1 = ia + 2;
+                i2 = ia + 3;
+            }
+            si face eq 3 {
+                i0 = ia + 1;
+                i1 = ia + 2;
+                i2 = ia + 3;
+            }
+            firma p0x: f64 = ax[i0];
+            firma p0y: f64 = ay[i0];
+            firma p0z: f64 = az[i0];
+            firma p1x: f64 = ax[i1];
+            firma p1y: f64 = ay[i1];
+            firma p1z: f64 = az[i1];
+            firma p2x: f64 = ax[i2];
+            firma p2y: f64 = ay[i2];
+            firma p2z: f64 = az[i2];
+            firma ux: f64 = p1x - p0x;
+            firma uy: f64 = p1y - p0y;
+            firma uz: f64 = p1z - p0z;
+            firma vx: f64 = p2x - p0x;
+            firma vy: f64 = p2y - p0y;
+            firma vz: f64 = p2z - p0z;
+            firma nx: f64 = uy * vz - uz * vy;
+            firma ny: f64 = uz * vx - ux * vz;
+            firma nz: f64 = ux * vy - uy * vx;
+            si nx * p0x + ny * p0y + nz * (p0z + 3.0) lt 0.0 {
+                mutabilis ndot: f64 = nx * (0.0 - 1.0) + ny * 1.0 + nz * (0.0 - 1.0);
+                si ndot lt 0.0 {
+                    ndot = 0.0;
+                }
+                firma n8: mensura = ((ndot * 64.0) sicut i64) sicut mensura;
+                mutabilis cr: i64 = 90 + ((n8 deorsum 2) sicut i64);
+                mutabilis cg: i64 = 78 + ((n8 deorsum 2) sicut i64);
+                mutabilis cb: i64 = 55 + ((n8 deorsum 3) sicut i64);
+                si cr gt 255 {
+                    cr = 255;
+                }
+                si cg gt 255 {
+                    cg = 255;
+                }
+                si cb gt 255 {
+                    cb = 255;
+                }
+                firma qa: i64 = pyramis_sx(p0x, p0z);
+                firma ra: i64 = pyramis_sy(p0y, p0z);
+                firma qb: i64 = pyramis_sx(p1x, p1z);
+                firma rb: i64 = pyramis_sy(p1y, p1z);
+                firma qc: i64 = pyramis_sx(p2x, p2z);
+                firma rc: i64 = pyramis_sy(p2y, p2z);
+                mutabilis minx: i64 = qa;
+                si qb lt minx {
+                    minx = qb;
+                }
+                si qc lt minx {
+                    minx = qc;
+                }
+                mutabilis maxx: i64 = qa;
+                si qb gt maxx {
+                    maxx = qb;
+                }
+                si qc gt maxx {
+                    maxx = qc;
+                }
+                mutabilis miny: i64 = ra;
+                si rb lt miny {
+                    miny = rb;
+                }
+                si rc lt miny {
+                    miny = rc;
+                }
+                mutabilis maxy: i64 = ra;
+                si rb gt maxy {
+                    maxy = rb;
+                }
+                si rc gt maxy {
+                    maxy = rc;
+                }
+                si minx lt 0 {
+                    minx = 0;
+                }
+                si maxx gt 159 {
+                    maxx = 159;
+                }
+                si miny lt 0 {
+                    miny = 0;
+                }
+                si maxy gt 99 {
+                    maxy = 99;
+                }
+                firma den: i64 = (rb - rc) * (qa - qc) + (qc - qb) * (ra - rc);
+                si den ne 0 {
+                    si minx lt (maxx + 1) {
+                        si miny lt (maxy + 1) {
+                            firma x0: mensura = minx sicut mensura;
+                            firma x1: mensura = (maxx + 1) sicut mensura;
+                            firma y0: mensura = miny sicut mensura;
+                            firma y1: mensura = (maxy + 1) sicut mensura;
+                            per yy in y0..y1 {
+                                per xx in x0..x1 {
+                                    firma w0: i64 = (rb - rc) * (xx sicut i64 - qc) + (qc - qb) * (yy sicut i64 - rc);
+                                    firma w1: i64 = (rc - ra) * (xx sicut i64 - qc) + (qa - qc) * (yy sicut i64 - rc);
+                                    firma w2: i64 = den - w0 - w1;
+                                    mutabilis intus: mensura = 0;
+                                    si den gt 0 {
+                                        si w0 ge 0 {
+                                            si w1 ge 0 {
+                                                si w2 ge 0 {
+                                                    intus = 1;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    si den lt 0 {
+                                        si w0 lt 1 {
+                                            si w1 lt 1 {
+                                                si w2 lt 1 {
+                                                    intus = 1;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    si intus eq 1 {
+                                        firma k: mensura = (yy * 160 + xx) * 3;
+                                        (*fb)[k] = cr sicut u8;
+                                        (*fb)[k + 1] = cg sicut u8;
+                                        (*fb)[k + 2] = cb sicut u8;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    firma cx: f64 = (rx0 + rx1 + rx2 + rx3) / 4.0;
+    firma cy: f64 = (ry0 + ry1 + ry2 + ry3) / 4.0;
+    firma cz: f64 = (rz0 + rz1 + rz2 + rz3) / 4.0;
+    firma pinx: f64 = cs * (0.0 - 1.6) + sn * 0.2;
+    firma piny: f64 = 0.9;
+    firma pinz: f64 = 0.0 - sn * (0.0 - 1.6) + cs * 0.2;
+    per band in 0..8 {
+        mutabilis p0x: f64 = pinx;
+        mutabilis p0y: f64 = piny;
+        mutabilis p0z: f64 = pinz;
+        mutabilis p1x: f64 = cx;
+        mutabilis p1y: f64 = cy;
+        mutabilis p1z: f64 = cz;
+        mutabilis cr: i64 = 255;
+        mutabilis cg: i64 = 255;
+        mutabilis cb: i64 = 255;
+        mutabilis half: f64 = 2.0;
+        si band gt 0 {
+            firma k: f64 = (band sicut f64) - 1.0;
+            firma oy: f64 = 0.0 - 0.2 + 0.12 * (k - 3.0);
+            p0x = cx;
+            p0y = cy;
+            p0z = cz;
+            p1x = cs * 0.2 + sn * 1.8;
+            p1y = oy;
+            p1z = 0.0 - sn * 0.2 + cs * 1.8;
+            half = 1.0;
+            si band eq 1 {
+                cr = 220;
+                cg = 30;
+                cb = 30;
+            }
+            si band eq 2 {
+                cr = 220;
+                cg = 110;
+                cb = 20;
+            }
+            si band eq 3 {
+                cr = 220;
+                cg = 200;
+                cb = 30;
+            }
+            si band eq 4 {
+                cr = 40;
+                cg = 180;
+                cb = 50;
+            }
+            si band eq 5 {
+                cr = 40;
+                cg = 90;
+                cb = 210;
+            }
+            si band eq 6 {
+                cr = 70;
+                cg = 40;
+                cb = 160;
+            }
+            si band eq 7 {
+                cr = 140;
+                cg = 40;
+                cb = 180;
+            }
+        }
+        firma x0: i64 = pyramis_sx(p0x, p0z);
+        firma y0: i64 = pyramis_sy(p0y, p0z);
+        firma x1: i64 = pyramis_sx(p1x, p1z);
+        firma y1: i64 = pyramis_sy(p1y, p1z);
+        firma vx: f64 = (x1 - x0) sicut f64;
+        firma vy: f64 = (y1 - y0) sicut f64;
+        firma den: f64 = vx * vx + vy * vy;
+        firma hs: f64 = half * half;
+        per yy in 0..100 {
+            per xx in 0..160 {
+                firma wx: f64 = (xx sicut i64 - x0) sicut f64;
+                firma wy: f64 = (yy sicut i64 - y0) sicut f64;
+                mutabilis tseg: f64 = 0.0;
+                si den gt 0.0 {
+                    tseg = (wx * vx + wy * vy) / den;
+                }
+                si tseg lt 0.0 {
+                    tseg = 0.0;
+                }
+                si tseg gt 1.0 {
+                    tseg = 1.0;
+                }
+                firma dx: f64 = (xx sicut i64) sicut f64 - ((x0 sicut f64) + tseg * vx);
+                firma dy: f64 = (yy sicut i64) sicut f64 - ((y0 sicut f64) + tseg * vy);
+                mutabilis in_tubo: mensura = 1;
+                si dx * dx + dy * dy gt hs {
+                    in_tubo = 0;
+                }
+                si in_tubo eq 1 {
+                    firma k: mensura = (yy * 160 + xx) * 3;
+                    (*fb)[k] = cr sicut u8;
+                    (*fb)[k + 1] = cg sicut u8;
+                    (*fb)[k + 2] = cb sicut u8;
+                }
+            }
+        }
+    }
+    redde semen;
+}
