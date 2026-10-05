@@ -27,7 +27,7 @@
 #   1 byte   somnium: 0 plasma, 1 ignis, 2 vita, 3 pluvia, 4 stellae,
 #            5 cuniculus, 6 abyssus, 7 titulus, 8 signum (followed by the
 #            44,801-byte EXSG model tests/data/signaculum_mesh.bin),
-#            9 fulmen, 10 cruor
+#            9 fulmen, 10 cruor, 11 pyramis
 #   4 bytes  praetermitte, u32 little-endian: frames rendered, not written
 #   4 bytes  tabulae,      u32 little-endian: frames written
 #   4 bytes  semen,        u32 little-endian: the only entropy; 0 -> 0x9E3779B9
@@ -954,6 +954,148 @@ def cruor_pinge(fb, t, semen):
     return semen
 
 
+# ---- pyramis -----------------------------------------------------------------
+
+def pyramis_rotate(x, y, z, cs, sn):
+    return (cs * x + sn * z, y, -sn * x + cs * z)
+
+
+def pyramis_project(x, y, z):
+    d = z + 3.0
+    if d < 0.2:
+        d = 0.2
+    sx = int(80.0 + 70.0 * x / d)
+    sy = int(72.0 - 70.0 * y / d)
+    return sx, sy
+
+
+def pyramis_triangulum(fb, ax, ay, bx, by, cx, cy, r, g, b):
+    minx = max(0, min(ax, bx, cx))
+    maxx = min(LATITUDO - 1, max(ax, bx, cx))
+    miny = max(0, min(ay, by, cy))
+    maxy = min(ALTITUDO - 1, max(ay, by, cy))
+    den = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+    if den == 0:
+        return
+    for y in range(miny, maxy + 1):
+        for x in range(minx, maxx + 1):
+            w0 = (by - cy) * (x - cx) + (cx - bx) * (y - cy)
+            w1 = (cy - ay) * (x - cx) + (ax - cx) * (y - cy)
+            w2 = den - w0 - w1
+            if (w0 >= 0 and w1 >= 0 and w2 >= 0 and den > 0) or (
+                w0 <= 0 and w1 <= 0 and w2 <= 0 and den < 0
+            ):
+                k = (y * LATITUDO + x) * 3
+                fb[k], fb[k + 1], fb[k + 2] = r, g, b
+
+
+def pyramis_mid(a, b):
+    return ((a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5, (a[2] + b[2]) * 0.5)
+
+
+def pyramis_face(fb, a, b, c):
+    ux, uy, uz = b[0] - a[0], b[1] - a[1], b[2] - a[2]
+    vx, vy, vz = c[0] - a[0], c[1] - a[1], c[2] - a[2]
+    nx = uy * vz - uz * vy
+    ny = uz * vx - ux * vz
+    nz = ux * vy - uy * vx
+    if nx * a[0] + ny * a[1] + nz * (a[2] + 3.0) >= 0:
+        return
+    ndot = nx * -1.0 + ny * 1.0 + nz * -1.0
+    if ndot < 0.0:
+        ndot = 0.0
+    n8 = int(ndot * 64.0)
+    r = 90 + (n8 >> 2)
+    g = 78 + (n8 >> 2)
+    bl = 55 + (n8 >> 3)
+    if r > 255:
+        r = 255
+    if g > 255:
+        g = 255
+    if bl > 255:
+        bl = 255
+    pa_ = pyramis_project(*a)
+    pb_ = pyramis_project(*b)
+    pc_ = pyramis_project(*c)
+    pyramis_triangulum(fb, pa_[0], pa_[1], pb_[0], pb_[1], pc_[0], pc_[1], r, g, bl)
+
+
+def pyramis_tube(fb, p0, p1, rgb, half):
+    x0, y0 = pyramis_project(*p0)
+    x1, y1 = pyramis_project(*p1)
+    vx, vy = x1 - x0, y1 - y0
+    den = vx * vx + vy * vy
+    hs = half * half
+    for y in range(ALTITUDO):
+        for x in range(LATITUDO):
+            wx, wy = x - x0, y - y0
+            tseg = 0.0 if den == 0 else (wx * vx + wy * vy) / den
+            if tseg < 0.0:
+                tseg = 0.0
+            if tseg > 1.0:
+                tseg = 1.0
+            dx = x - (x0 + tseg * vx)
+            dy = y - (y0 + tseg * vy)
+            if dx * dx + dy * dy <= hs:
+                k = (y * LATITUDO + x) * 3
+                fb[k], fb[k + 1], fb[k + 2] = rgb
+
+
+def pyramis_pinge(fb, t, semen):
+    s = SINUS
+    pa = octo(semen)
+    tardus = t >> 2
+    q = octo(tardus + pa)
+    sn = (s[q] - 127.5) / 127.5
+    cs = (s[octo(q + 64)] - 127.5) / 127.5
+    for y in range(ALTITUDO):
+        for x in range(LATITUDO):
+            k = (y * LATITUDO + x) * 3
+            caelum = s[octo(y + tardus + pa)] >> 5
+            fb[k] = caelum >> 1
+            fb[k + 1] = 0
+            fb[k + 2] = octo(caelum + 4)
+    V = [
+        (0.0, 1.0, 0.0),
+        (0.866025403784, -0.5, 0.0),
+        (-0.866025403784, -0.5, 0.0),
+        (0.0, -0.5, 0.866025403784),
+    ]
+    R = [pyramis_rotate(x, y, z, cs, sn) for (x, y, z) in V]
+    tets = [tuple(R)]
+    for _pass in range(3):
+        nxt = []
+        for a, b, c, d in tets:
+            ab = pyramis_mid(a, b)
+            ac = pyramis_mid(a, c)
+            ad = pyramis_mid(a, d)
+            bc = pyramis_mid(b, c)
+            bd = pyramis_mid(b, d)
+            cd = pyramis_mid(c, d)
+            nxt.append((a, ab, ac, ad))
+            nxt.append((b, ab, bc, bd))
+            nxt.append((c, ac, bc, cd))
+            nxt.append((d, ad, bd, cd))
+        tets = nxt
+    tets.sort(key=lambda tet: (tet[0][2] + tet[1][2] + tet[2][2] + tet[3][2]), reverse=True)
+    for a, b, c, d in tets:
+        pyramis_face(fb, a, b, c)
+        pyramis_face(fb, a, b, d)
+        pyramis_face(fb, a, c, d)
+        pyramis_face(fb, b, c, d)
+    C = tuple(sum(R[i][j] for i in range(4)) / 4.0 for j in range(3))
+    pin = pyramis_rotate(-1.6, 0.9, 0.2, cs, sn)
+    pyramis_tube(fb, pin, C, (255, 255, 255), 2)
+    rainbow = [
+        (220, 30, 30), (220, 110, 20), (220, 200, 30),
+        (40, 180, 50), (40, 90, 210), (70, 40, 160), (140, 40, 180),
+    ]
+    for k, col in enumerate(rainbow):
+        po = pyramis_rotate(0.2, -0.2 + 0.12 * (k - 3), 1.8, cs, sn)
+        pyramis_tube(fb, C, po, col, 1)
+    return semen
+
+
 # ---- the engine ----------------------------------------------------------------
 
 MODELUM = "tests/data/signaculum_mesh.bin"
@@ -971,7 +1113,7 @@ def machina(req, out):
     if len(req) < 17 or req[:4] != b"SOM1":
         return 1
     somnium, praetermitte, tabulae, semen = struct.unpack("<BIII", req[4:17])
-    if somnium > 10:
+    if somnium > 11:
         return 1
     # Somnium 8 carries the 3D engine's EXSG model after the request;
     # every other somnium's request is exactly 17 bytes.
@@ -1039,6 +1181,9 @@ def machina(req, out):
         if somnium == 10:
             if f >= praetermitte:
                 cruor_pinge(fb, f, semen)
+        if somnium == 11:
+            if f >= praetermitte:
+                pyramis_pinge(fb, f, semen)
         if f >= praetermitte:
             out.write(bytes(fb))
     return 0

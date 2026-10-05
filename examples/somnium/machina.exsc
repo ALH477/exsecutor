@@ -14,7 +14,7 @@
 //   0..4    "SOM1"                 magic and version
 //   4       somnium                0 plasma, 1 ignis, 2 vita, 3 pluvia,
 //                                  4 stellae, 5 cuniculus, 6 abyssus,
-//                                  7 titulus, 8 signum, 9 fulmen, 10 cruor
+//                                  7 titulus, 8 signum, 9 fulmen, 10 cruor, 11 pyramis
 //   5..9    praetermitte, u32 LE   frames advanced but not written
 //   9..13   tabulae, u32 LE        frames written
 //   13..17  semen, u32 LE          the only entropy; 0 means 0x9E3779B9
@@ -75,7 +75,7 @@ functio machina(l: Lector, s: Scriptor) -> u8 {
     si r[2] ne 0x4D { redde 1; }    // M
     si r[3] ne 0x31 { redde 1; }    // 1
     firma somnium: u8 = r[4];
-    si somnium gt 10 {
+    si somnium gt 11 {
         redde 1;
     }
     mutabilis exsg: acies<u8, 44801> = [0; 44801];
@@ -198,6 +198,11 @@ functio machina(l: Lector, s: Scriptor) -> u8 {
         si somnium eq 10 {
             si f ge praetermitte {
                 x = cruor_pinge(fb, f, semen);
+            }
+        }
+        si somnium eq 11 {
+            si f ge praetermitte {
+                x = pyramis_pinge(fb, f, semen);
             }
         }
         si f ge praetermitte {
