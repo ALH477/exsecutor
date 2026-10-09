@@ -250,8 +250,8 @@ for ln in (3, 32):
     for pos in range(ln):
         for v in range(256):
             add("nomen", base[:pos] + bytes([v]) + base[pos + 1:])
-HOMOGLYPHS = ["аdmin", "аdmin".encode("utf-16-le").decode("utf-16-le"), "ａdmin", "ad​min", "admin‮",
-              "١٢٣", "alicé", "名前です", "ñandú", "ééé", "ⅠⅡⅢ",
+HOMOGLYPHS = ["аdmin", "аdmin".encode("utf-16-le").decode("utf-16-le"), "ａdmin", "ad\u200bmin", "admin\u202e",
+              "١٢٣", "alice\u0301", "名前です", "ñandú", "ééé", "ⅠⅡⅢ",
               "a\u0000b", "ab\n", "ab\r\n", " ab", "a b", "a.b", "a@b", "a/b", "a\\b", "a'b", 'a"b', "a;b", "a`b",
               "$(id)", "../..", "-", "--", "---", "___", "AAA", "000", "adm", "ad", "a", "SELECT", "root", "x" * 32,
               "x" * 33, "x" * 31 + "é"]
