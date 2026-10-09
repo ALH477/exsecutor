@@ -58,5 +58,9 @@ admitted text is answered (verdict 2) before any byte is read.
   linked here (the only consumer is a C host, `dcf-gate` in DCF-WatchDawg, which
   vendors the emitted C).
 - The value of a 20-digit integer is not range-checked (see above).
-- `[OPEN]` whether the `tutela` setjmp guard (`examples/abortus/`) is safe to
-  use from several threads; this unit does not need it, because it does not trap.
+- The `tutela` setjmp guard (`examples/abortus/`) keeps its chain in
+  `_Thread_local` storage (`tutela.c`, `summa` and `profunditas`), and
+  `examples/abortus/proba_c.sh` includes eight threads trapping concurrently.
+  This unit does not need the guard, because it does not trap (the no-trap
+  sweep in `proba.py` is the evidence), and its only consumer, the `dcf-gate`
+  CLI, is single-threaded and exits on a trap.

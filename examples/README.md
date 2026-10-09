@@ -103,6 +103,29 @@ Exsecutor source, ten programs, all compiled and run by `tests/run.sh`:
   is run by its own `proba_c.sh`, not by `tests/run.sh`. The differential
   certification against plugind and the Nix mirror is the consumer's, in
   Oligarchy.
+- **`dcf_net_gate/`, `dcfid_gate/`, `dcfs_gate/`, `watchdawg_gate/`, four
+  gates for DCF's own services** — for DCF-ID (a Rust identity and billing
+  service), DCF-WatchDawg (a shell daemon that runs as root and turns DCF-ID's
+  `users.last_ip` column into nftables rules) and dcf-serializer (the C frame
+  library). Each is pure and total, so a trap, which ends the host process,
+  is not reachable from any input the sweeps tried. `dcf_net_gate` is the one
+  shared definition of a canonical IPv4 address, a port and a sync interval:
+  the watchdog's bash used to accept `1.2.3.08`, which nft refuses, and
+  `010.2.3.4`, which nft reads as `8.2.3.4`. `dcfid_gate` judges usernames,
+  bearer-secret shapes, checkout cents and the shape of a `Stripe-Signature`
+  header (the HMAC stays in the Rust crates). `dcfs_gate` judges a
+  serializer frame's header, its CRC-32 and its payload grammar for frames of
+  up to 65557 bytes, and runs beside the C reader's own validator: a frame is
+  admitted only if both agree. `watchdawg_gate` judges the numeric tokens the
+  telemetry script writes into JSON. Each is run by its own `proba_c.sh`
+  (emission twice byte-identical, gcc and clang under UBSan plus an ASan
+  build, an oracle corpus, mutants that must build and then fail, the rule-6
+  capability checks, the Rust face), not by `tests/run.sh`; each gate's own
+  README says what ran and what did not. The consumers vendor the emitted C
+  with a `PROVENANCE.md` and a check that re-emits and compares; what they ran
+  is in their own repositories. The sources are GPL-3.0-or-later and no
+  `LICENSE.GRANTS` entry covers them yet, so the vendored C in those three
+  repositories carries a licence status of "pending owner decision".
 - **`tempus/`, the time register** — one DeModFrame carrying a node's held
   time onto the Punctim wire, and the read of one that arrives. Built as one
   unit with §14 entry 23's fixture and codex, so the frame declaration is
