@@ -60,8 +60,16 @@ a zero-padded buffer of that size. A length past the capacity is answered
 
 - No consumer is wired to it by this directory. DCF-ID and DCF-WatchDawg each
   vendor the C this emits; their own repositories say what they ran.
-- `[UNTESTED]` against `nft` itself: that nft accepts everything this admits
-  and rejects `1.2.3.08` is argued from libc's `inet_pton` and nft's lexer, not
-  measured here (no `CAP_NET_ADMIN` check was made).
-- `[OPEN]` whether the `tutela` setjmp guard (`examples/abortus/`) is safe to
-  use from several threads; this unit does not need it, because it does not trap.
+- Against `nft` itself, this directory measured nothing. DCF-WatchDawg did,
+  with nft 1.0.9 in a throwaway network namespace (`unshare -n`): nft rejects
+  `1.2.3.08`, and one rejected element rolls back the whole `nft -f -` batch;
+  it accepts `1.2.3.4 ` with a trailing space; and it reads `010.2.3.4` as
+  `8.2.3.4` (octal), which is why leading zeros are refused here. Those
+  measurements are in that repository's `tests/t_nft_facts.sh`, not re-run
+  from this directory.
+- The `tutela` setjmp guard (`examples/abortus/`) keeps its chain in
+  `_Thread_local` storage (`tutela.c`, the `summa` and `profunditas`
+  variables), and `examples/abortus/proba_c.sh` includes eight threads
+  trapping concurrently; it passed in this tree when this note was written.
+  This unit does not need the guard, because it does not trap: the no-trap
+  sweep in `proba.py` is the evidence for that, not the guard.
