@@ -110,10 +110,15 @@ about 2m15s):
   `EXS-E0421`, and a `Scriptor` parameter breaks both headers;
 - the Rust face: the generated extern block links the unit and answers.
 
+One further run of `proba.py --cases 800000 --seed 99` (1,138,203 cases, gcc -O2 host):
+0 disagreements, every verdict 0..15 reached.
+
 Separately, in the `dcf-serializer` repository (`gate/dcfs_gate_diff_test.c`),
 this unit's C emission is compared against the C reference implementation on
 **358,132 frames** of up to 65557 bytes (deterministic generator, structured
-families plus 250,000 mutated random frames) with **0 disagreements**, and 12
+families plus 250,000 mutated random frames) with **0 disagreements** -- and,
+with five other seeds of 1,500,000 random cases each, about 9.6 M more frames, still
+0 -- and 12
 mutants of this source were each noticed by that comparison except one (the
 string cap at 65537, which is equivalent there because only admit/refuse is
 compared -- `proba.py` compares exact verdicts and does catch it). That
