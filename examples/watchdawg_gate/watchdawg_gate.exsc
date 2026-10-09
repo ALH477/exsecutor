@@ -1,0 +1,92 @@
+// examples/watchdawg_gate/watchdawg_gate.exsc -- the two number spellings that
+// DCF-WatchDawg's telemetry script pastes UNQUOTED into status.json. Pure: no
+// `poscit`, no capability parameter (spec §4.1 rule 6), no allocation, no I/O,
+// and written so that nothing a caller can pass traps (a trap ends the host
+// process; `exsrt_abortus` does not return).
+//
+// Why this exists. dcf-telemetry.sh runs as root and writes a JSON document
+// into a web-served volume. The load average, memory percentage, byte counters
+// and uptime come from /proc, /sys and the output of `free`, `ip` and `nft`;
+// they are interpolated into number positions, where JSON has no quotes to
+// contain them. A reading such as `0.42,"injected":true` is itself valid JSON
+// and adds a field; `007` or `nan` makes the document invalid. The script now
+// asks this unit before it writes anything into a number position, and
+// publishes 0 instead when the answer is not 0.
+//
+// Fixed buffers: an integer is read from acies<u8, 20> and a load average from
+// acies<u8, 16>. A length past the longest admitted text is answered before any
+// byte is read; the C ABI makes every acies a pointer whose full declared size
+// must be readable, so a host copies its input into a zero-padded buffer of
+// exactly that size.
+//
+// Verdict tables (0 always means admitted; otherwise the FIRST failing check):
+//
+//   admitte_numerum (a non-negative integer, JSON's own grammar: 0 or [1-9][0-9]*)
+//     0  admitted: 1..20 ASCII digits, no leading zero unless the text is "0"
+//     1  empty
+//     2  longer than 20 bytes
+//     3  a byte outside [0-9]
+//     4  a leading zero in a text of two or more digits
+//
+//   admitte_onus (a load average as /proc/loadavg writes it: "0.42", "12.5", "3")
+//     0  admitted: an integer part (0 or [1-9][0-9]{0,5}), then optionally a
+//        '.' and 1..6 digits
+//     1  empty
+//     2  longer than 13 bytes
+//     3  a byte outside [0-9.]
+//     4  no digit before the '.'
+//     5  a leading zero in an integer part of two or more digits
+//     6  an integer part of more than six digits
+//     7  the '.' is not followed by 1..6 digits: a trailing dot, a second dot,
+//        or more than six digits after it
+
+publica functio admitte_numerum(b: acies<u8, 20>, n: mensura) -> u8 {
+    si n eq 0 { redde 1; }
+    si n gt 20 { redde 2; }
+    per i in 0..n {
+        firma c = b[i];
+        si c lt 0x30 { redde 3; }
+        si c gt 0x39 { redde 3; }
+    }
+    si n gt 1 {
+        si b[0] eq 0x30 { redde 4; }
+    }
+    redde 0;
+}
+
+publica functio admitte_onus(b: acies<u8, 16>, n: mensura) -> u8 {
+    si n eq 0 { redde 1; }
+    si n gt 13 { redde 2; }
+    mutabilis integri: u8 = 0;
+    mutabilis fracti: u8 = 0;
+    mutabilis punctum: u8 = 0;
+    mutabilis initium: u8 = 0;
+    per i in 0..n {
+        firma c = b[i];
+        si c eq 0x2e {
+            si punctum eq 1 { redde 7; }
+            si integri eq 0 { redde 4; }
+            punctum = 1;
+        } aliter {
+            si c lt 0x30 { redde 3; }
+            si c gt 0x39 { redde 3; }
+            si punctum eq 0 {
+                si integri eq 0 {
+                    initium = 0;
+                    si c eq 0x30 { initium = 1; }
+                } aliter {
+                    si initium eq 1 { redde 5; }
+                }
+                si integri ge 6 { redde 6; }
+                integri = integri + 1;
+            } aliter {
+                si fracti ge 6 { redde 7; }
+                fracti = fracti + 1;
+            }
+        }
+    }
+    si punctum eq 1 {
+        si fracti eq 0 { redde 7; }
+    }
+    redde 0;
+}
