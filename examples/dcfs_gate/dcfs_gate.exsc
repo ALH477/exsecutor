@@ -1,0 +1,309 @@
+// examples/dcfs_gate/dcfs_gate.exsc -- the admission gate for DCF serializer
+// frames ("DCFS", dcf-serializer). Pure: no `poscit`, no capability parameter
+// (spec §4.1 rule 6), no allocation, no I/O, no recursion, and written so that
+// nothing a caller can pass traps (a trap ends the host process;
+// `exsrt_abortus` does not return).
+//
+// Why this exists. dcf-serializer is the wire layer of a UDP path whose frames
+// are produced by remote peers. Its C reader is strict by default and
+// memory-safe on its own (that is fixed in C, unconditionally). This unit is a
+// SECOND, independent statement of the same frame policy -- header, CRC-32 and
+// the payload grammar -- in a language whose trap-free subset can be checked, so
+// that a frame is admitted only when two implementations written from the same
+// grammar agree. The host compares them frame by frame; a disagreement rejects
+// the frame and is counted.
+//
+// Two entry points, because a host rarely holds a whole frame:
+//
+//   admitte_caput(h, n)    h = the first 17 bytes, n = the TOTAL number of bytes
+//                          available for this frame (any value up to 2^64-1).
+//                          Header policy only. This is all that can be said
+//                          about a frame too large to copy.
+//   admitte_corpus(b, n)   b = a whole frame of at most 65557 bytes
+//                          (17 header + 65536 payload + 4 CRC), n its length.
+//                          Header policy, CRC-32, and the whole payload.
+//
+// Fixed buffers. The C ABI makes every acies a pointer whose full declared size
+// must be readable, so a host copies its input into a zero-padded buffer of
+// exactly that size. An `n` past the capacity is answered before any byte is
+// read; nothing here reads b[i] for i >= n, so the padding is never consulted.
+//
+// ---------------------------------------------------------------- the grammar
+//
+// frame   := header payload crc
+// header  := magic(4, 0x44434653 big-endian) version(2, major byte == 5)
+//            msg_type(2) flags(1) payload_len(4, big-endian) sequence(4)
+// flags   : only STREAMING 0x04, FINAL 0x08, PRIORITY 0x10 may be set. COMPRESSED
+//           0x01, ENCRYPTED 0x02, NO_CRC 0x20, the reserved 0x40 and EXTENDED
+//           0x80 are all refused: a frame without a checksum is not admitted
+//           by this gate.
+// the whole frame is exactly 17 + payload_len + 4 bytes; payload_len <= 16 MiB
+// crc     := CRC-32 (IEEE 802.3, reflected, polynomial 0xEDB88320, init and
+//            final xor 0xFFFFFFFF) of header payload, big-endian
+// payload := value*                      (consumes exactly payload_len bytes)
+// value   := tag body
+//   0x00 NULL                            no body
+//   0x01 BOOL 0x02 U8 0x03 I8            1 byte
+//   0x04 U16 0x05 I16                    2 bytes
+//   0x06 U32 0x07 I32 0x0A F32           4 bytes
+//   0x08 U64 0x09 I64 0x0B F64
+//   0x30 TIMESTAMP 0x31 DURATION         8 bytes
+//   0x13 UUID                            16 bytes
+//   0x10 VARINT   LEB128: 1..10 bytes, the 10th byte is 0 or 1, and a varint of
+//                 2 or more bytes does not end in 0x00 (canonical form)
+//   0x11 STRING   u32 len <= 65536, then len bytes of UTF-8 (RFC 3629: no
+//                 overlong form, no surrogate, nothing above U+10FFFF, no
+//                 sequence cut short); NUL is allowed
+//   0x12 BYTES    u32 len, then len bytes
+//   0x20 ARRAY    elem_type u8, u32 count <= 1048576 and <= the payload bytes
+//                 left, then `count` values
+//   0x21 MAP      key_type u8, val_type u8, u32 count <= 1048576 and
+//                 2*count <= the payload bytes left, then 2*count values
+//   0x22 STRUCT   u16 type_id, then fields until the end marker. A field is
+//                 u16 id, u8 type, value; the end marker is id 0 with type 0.
+//   any other tag (TUPLE, OPTIONAL, ENUM, EXTENSION, unassigned): refused
+// Containers nest at most 32 deep. The walk keeps its own stack in two small
+// arrays: no recursion, one step per byte consumed or frame closed.
+//
+// ---------------------------------------------------------------- verdicts
+//
+// 0 always means admitted; a non-zero verdict is the FIRST failing check in
+// the order below.
+//
+//   admitte_caput
+//     1  fewer than 17 bytes available
+//     2  magic is not 0x44434653
+//     3  major version byte is not 5
+//     4  a flag bit outside STREAMING|FINAL|PRIORITY is set
+//     5  payload_len above 16 MiB (16777216)
+//     6  n is not exactly 17 + payload_len + 4
+//
+//   admitte_corpus: 1..6 are admitte_caput's, then
+//     7  n above 65557 (this gate's capacity; use admitte_caput for such frames)
+//     8  CRC-32 mismatch
+//     9  unsupported or unassigned tag
+//    10  a value, a header or a field header runs past the end of the payload
+//    11  containers nested deeper than 32
+//    12  array or map count above 1048576, or more elements than bytes remain
+//    13  string longer than 65536 bytes
+//    14  string is not valid UTF-8
+//    15  varint is not canonical, has a 10th byte above 1, or is unterminated
+//    99  internal step bound exhausted (not reachable; kept so the loop is total)
+
+// ---------------------------------------------------------------- the header
+
+publica functio admitte_caput(h: acies<u8, 17>, n: mensura) -> u8 {
+    si n lt 17 { redde 1; }
+    firma magia: u32 = (((h[0] sicut u32) sursum 24) sive ((h[1] sicut u32) sursum 16))
+                       sive (((h[2] sicut u32) sursum 8) sive (h[3] sicut u32));
+    si magia ne 0x44434653 { redde 2; }
+    si h[4] ne 5 { redde 3; }
+    si (h[8] atque 0xe3) ne 0 { redde 4; }
+    firma pondus: u32 = (((h[9] sicut u32) sursum 24) sive ((h[10] sicut u32) sursum 16))
+                        sive (((h[11] sicut u32) sursum 8) sive (h[12] sicut u32));
+    si pondus gt 16777216 { redde 5; }
+    si n ne ((pondus sicut mensura) + 21) { redde 6; }
+    redde 0;
+}
+
+// ---------------------------------------------------------------- helpers
+
+// b[i..i+4) as a big-endian u32. Total: an i that would read past the buffer
+// answers 0 (no caller passes one; the check keeps this function trap-free by
+// itself).
+functio dcfs_lege32(b: acies<u8, 65557>, i: mensura) -> u32 {
+    si i gt 65553 { redde 0; }
+    redde (((b[i] sicut u32) sursum 24) sive ((b[i + 1] sicut u32) sursum 16))
+          sive (((b[i + 2] sicut u32) sursum 8) sive (b[i + 3] sicut u32));
+}
+
+// CRC-32 (IEEE 802.3, reflected, polynomial 0xEDB88320) of b[0..fin), bit by
+// bit: no table, so no module-level array. fin is at most 65553 here.
+functio dcfs_crc(b: acies<u8, 65557>, fin: mensura) -> u32 {
+    si fin gt 65557 { redde 0; }
+    mutabilis crc: u32 = 0xFFFFFFFF;
+    per i in 0..fin {
+        crc = crc aut (b[i] sicut u32);
+        per k in 0..8 {
+            firma imus: u32 = crc atque 1;
+            crc = crc deorsum 1;
+            si imus eq 1 { crc = crc aut 0xEDB88320; }
+        }
+    }
+    redde crc aut 0xFFFFFFFF;
+}
+
+// ---------------------------------------------------------------- the frame
+
+publica functio admitte_corpus(b: acies<u8, 65557>, n: mensura) -> u8 {
+    // the header, by the header policy (it is total in n)
+    mutabilis h: acies<u8, 17> = [0; 17];
+    per i in 0..17 { h[i] = b[i]; }
+    firma caput: u8 = admitte_caput(h, n);
+    si caput ne 0 { redde caput; }
+    si n gt 65557 { redde 7; }
+
+    // caput admitted n == 17 + payload_len + 4, so n >= 21 and n <= 65557
+    firma pondus: mensura = n - 21;
+    firma finis: mensura = 17 + pondus;
+    si dcfs_crc(b, finis) ne dcfs_lege32(b, finis) { redde 8; }
+
+    // the payload: b[17..finis)
+    mutabilis sk: acies<u8, 33> = [0; 33];     // frame kind: 1 sequence, 2 struct
+    mutabilis sr: acies<u32, 33> = [0; 33];    // sequence: values still to read
+    mutabilis alt: mensura = 0;                // open containers
+    mutabilis pos: mensura = 17;
+    firma limes: mensura = (pondus * 2) + 2;
+    per gradus in 0..limes {
+        // what comes next?
+        si alt eq 0 {
+            si pos eq finis { redde 0; }
+        } aliter {
+            si sk[alt - 1] eq 2 {
+                si (finis - pos) lt 3 { redde 10; }
+                firma fid: u16 = ((b[pos] sicut u16) sursum 8) sive (b[pos + 1] sicut u16);
+                firma fty: u8 = b[pos + 2];
+                pos = pos + 3;
+                si fid eq 0 {
+                    si fty eq 0 {
+                        alt = alt - 1;
+                        perge;
+                    }
+                }
+            } aliter {
+                si sr[alt - 1] eq 0 {
+                    alt = alt - 1;
+                    perge;
+                }
+                sr[alt - 1] = sr[alt - 1] - 1;
+            }
+        }
+
+        // one value
+        si pos ge finis { redde 10; }
+        firma tag: u8 = b[pos];
+        pos = pos + 1;
+        mutabilis fixum: mensura = 0;
+        mutabilis notum: u8 = 0;
+        si tag eq 0x00 { notum = 1; }
+        si tag ge 0x01 { si tag le 0x03 { notum = 1; fixum = 1; } }
+        si tag ge 0x04 { si tag le 0x05 { notum = 1; fixum = 2; } }
+        si tag ge 0x06 { si tag le 0x07 { notum = 1; fixum = 4; } }
+        si tag eq 0x0a { notum = 1; fixum = 4; }
+        si tag ge 0x08 { si tag le 0x09 { notum = 1; fixum = 8; } }
+        si tag eq 0x0b { notum = 1; fixum = 8; }
+        si tag ge 0x30 { si tag le 0x31 { notum = 1; fixum = 8; } }
+        si tag eq 0x13 { notum = 1; fixum = 16; }
+        si notum eq 1 {
+            si (finis - pos) lt fixum { redde 10; }
+            pos = pos + fixum;
+        }
+
+        // varint
+        si tag eq 0x10 {
+            notum = 1;
+            mutabilis numerus: u8 = 0;
+            mutabilis ultimus: u8 = 0;
+            mutabilis clausus: u8 = 0;
+            per k in 0..10 {
+                si clausus eq 0 {
+                    si pos ge finis { redde 10; }
+                    ultimus = b[pos];
+                    pos = pos + 1;
+                    numerus = numerus + 1;
+                    si numerus eq 10 { si ultimus gt 1 { redde 15; } }
+                    si (ultimus atque 0x80) eq 0 { clausus = 1; }
+                }
+            }
+            si clausus eq 0 { redde 15; }
+            si numerus ge 2 { si ultimus eq 0 { redde 15; } }
+        }
+
+        // string, bytes
+        si tag ge 0x11 {
+            si tag le 0x12 {
+                notum = 1;
+                si (finis - pos) lt 4 { redde 10; }
+                firma longitudo: u32 = dcfs_lege32(b, pos);
+                pos = pos + 4;
+                si tag eq 0x11 { si longitudo gt 65536 { redde 13; } }
+                firma lon: mensura = longitudo sicut mensura;
+                si lon gt (finis - pos) { redde 10; }
+                si tag eq 0x11 {
+                    mutabilis resid: u8 = 0;         // continuation bytes still owed
+                    mutabilis imum: u8 = 0x80;       // range of the next continuation byte
+                    mutabilis summum: u8 = 0xbf;
+                    per k in 0..lon {
+                        firma c: u8 = b[pos + k];
+                        si resid eq 0 {
+                            si c ge 0x80 {
+                                si c lt 0xc2 { redde 14; }
+                                si c ge 0xf5 { redde 14; }
+                                imum = 0x80;
+                                summum = 0xbf;
+                                si c le 0xdf { resid = 1; }
+                                si c ge 0xe0 { si c le 0xef { resid = 2; } }
+                                si c ge 0xf0 { resid = 3; }
+                                si c eq 0xe0 { imum = 0xa0; }
+                                si c eq 0xed { summum = 0x9f; }
+                                si c eq 0xf0 { imum = 0x90; }
+                                si c eq 0xf4 { summum = 0x8f; }
+                            }
+                        } aliter {
+                            si c lt imum { redde 14; }
+                            si c gt summum { redde 14; }
+                            resid = resid - 1;
+                            imum = 0x80;
+                            summum = 0xbf;
+                        }
+                    }
+                    si resid ne 0 { redde 14; }
+                }
+                pos = pos + lon;
+            }
+        }
+
+        // array
+        si tag eq 0x20 {
+            notum = 1;
+            si (finis - pos) lt 5 { redde 10; }
+            firma numerus: u32 = dcfs_lege32(b, pos + 1);
+            pos = pos + 5;
+            si numerus gt 1048576 { redde 12; }
+            si (numerus sicut mensura) gt (finis - pos) { redde 12; }
+            si alt ge 32 { redde 11; }
+            sk[alt] = 1;
+            sr[alt] = numerus;
+            alt = alt + 1;
+        }
+
+        // map
+        si tag eq 0x21 {
+            notum = 1;
+            si (finis - pos) lt 6 { redde 10; }
+            firma numerus: u32 = dcfs_lege32(b, pos + 2);
+            pos = pos + 6;
+            si numerus gt 1048576 { redde 12; }
+            firma duplum: u32 = numerus * 2;
+            si (duplum sicut mensura) gt (finis - pos) { redde 12; }
+            si alt ge 32 { redde 11; }
+            sk[alt] = 1;
+            sr[alt] = duplum;
+            alt = alt + 1;
+        }
+
+        // struct
+        si tag eq 0x22 {
+            notum = 1;
+            si (finis - pos) lt 2 { redde 10; }
+            pos = pos + 2;
+            si alt ge 32 { redde 11; }
+            sk[alt] = 2;
+            sr[alt] = 0;
+            alt = alt + 1;
+        }
+
+        si notum eq 0 { redde 9; }
+    }
+    redde 99;
+}
