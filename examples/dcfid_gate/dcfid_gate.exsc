@@ -1,0 +1,205 @@
+// examples/dcfid_gate/dcfid_gate.exsc -- the untrusted-text facts that DCF-ID
+// (a Rust identity and billing service) checks at its edges, stated once.
+// Pure: no `poscit`, no capability parameter (spec §4.1 rule 6), no
+// allocation, no I/O, and written so that nothing a caller can pass traps (a
+// trap ends the host process; `exsrt_abortus` does not return).
+//
+// Why this exists. DCF-ID takes text from strangers -- a username, a session
+// cookie, an access token, the Stripe-Signature header, an amount -- and puts
+// it in SQL parameters, Redis keys, log lines and, via `users.last_ip`, a
+// root daemon's firewall batch. Rust's own checks were per-call-site and
+// Unicode-aware (`char::is_alphanumeric` admits Cyrillic and Arabic-Indic
+// digits, so `admin` and a look-alike are two accounts). One definition, here,
+// ASCII only; the Rust side calls it before the text reaches anything else.
+//
+// Fixed buffers: a username is read from acies<u8, 32>, a session id or an
+// access token from acies<u8, 64>, a Stripe-Signature header from
+// acies<u8, 512>. A length past the capacity is answered before any byte is
+// read. The C ABI makes every acies a pointer whose full declared size must
+// be readable, so a host copies its input into a zero-padded buffer of exactly
+// that size. The amount is a plain u64 of cents: no buffer.
+//
+// Verdict tables (0 always means admitted; any other number is the FIRST
+// check that failed, in the order written):
+//
+//   admitte_nomen (a username: 3..=32 bytes of [A-Za-z0-9_-])
+//     0  admitted
+//     1  empty
+//     2  longer than 32 bytes
+//     3  shorter than 3 bytes
+//     4  a byte outside [A-Za-z0-9_-] (every byte >= 0x80, NUL and '\n' too)
+//
+//   admitte_signum (a bearer secret; genus picks which)
+//     genus 0 = a session id, exactly 64 bytes of [A-Za-z0-9]
+//     genus 1 = an access token or OAuth state, exactly 32 bytes of [A-Za-z0-9]
+//     0  admitted
+//     1  genus is neither 0 nor 1 (answered before the length is looked at)
+//     2  the length is not the genus' length (empty and over-long included)
+//     3  a byte outside [A-Za-z0-9]
+//
+//   admitte_summam (an amount in US cents: 250..=10000, i.e. $2.50..=$100)
+//     0  admitted
+//     1  below 250
+//     2  above 10000
+//
+//   admitte_formam_signaturae (the SHAPE of a Stripe-Signature header, and
+//     nothing but the shape: the Rust side parses the values after this
+//     admits it, and the HMAC decides whether they are true). Items are
+//     separated by ',' with no spaces. An item is one of
+//         t=<1..12 ASCII digits>
+//         v1=<exactly 64 lowercase hex digits>
+//         v0=<exactly 64 lowercase hex digits>    (Stripe's test-mode scheme,
+//                                                  admitted and ignored)
+//     at most 8 items, exactly one t, at least one v1, no other byte.
+//     0  admitted
+//     1  empty
+//     2  longer than 512 bytes
+//     3  an item that does not begin t=, v1= or v0= (an empty item, i.e. a
+//        leading, trailing or doubled ',', and a header that stops inside a
+//        prefix, are this)
+//     4  a t payload that is empty, longer than 12 digits, or not all digits
+//     5  a v payload that is not exactly 64 bytes of [0-9a-f]
+//     6  a ninth item (a ',' after the eighth item)
+//     7  a second t
+//     8  no t
+//     9  no v1 (a header of t and v0 only)
+//     Items are examined left to right and each is judged in full before the
+//     next; 6 fires on the eighth ','; 7 fires at the '=' of the second t,
+//     before its payload is read; 8 and 9 are the end-of-input checks.
+
+// ------------------------------------------------------------------ username
+
+publica functio admitte_nomen(b: acies<u8, 32>, n: mensura) -> u8 {
+    si n eq 0 { redde 1; }
+    si n gt 32 { redde 2; }
+    si n lt 3 { redde 3; }
+    per i in 0..n {
+        firma c = b[i];
+        mutabilis licet: u8 = 0;
+        si c ge 0x30 { si c le 0x39 { licet = 1; } }
+        si c ge 0x41 { si c le 0x5a { licet = 1; } }
+        si c ge 0x61 { si c le 0x7a { licet = 1; } }
+        si c eq 0x5f { licet = 1; }
+        si c eq 0x2d { licet = 1; }
+        si licet eq 0 { redde 4; }
+    }
+    redde 0;
+}
+
+// -------------------------------------------- a session id or an access token
+
+publica functio admitte_signum(b: acies<u8, 64>, n: mensura, genus: u8) -> u8 {
+    mutabilis longitudo: mensura = 0;
+    si genus eq 0 {
+        longitudo = 64;
+    } sin genus eq 1 {
+        longitudo = 32;
+    } aliter {
+        redde 1;
+    }
+    si n ne longitudo { redde 2; }
+    per i in 0..n {
+        firma c = b[i];
+        mutabilis licet: u8 = 0;
+        si c ge 0x30 { si c le 0x39 { licet = 1; } }
+        si c ge 0x41 { si c le 0x5a { licet = 1; } }
+        si c ge 0x61 { si c le 0x7a { licet = 1; } }
+        si licet eq 0 { redde 3; }
+    }
+    redde 0;
+}
+
+// ------------------------------------------------------------------- amount
+
+publica functio admitte_summam(c: u64) -> u8 {
+    si c lt 250 { redde 1; }
+    si c gt 10000 { redde 2; }
+    redde 0;
+}
+
+// ------------------------------------------------ the Stripe-Signature shape
+
+// States of the scan: 0 at the start of an item, 1 after 't', 2 after 'v',
+// 3 after v1 / v0 (waiting for '='), 4 inside a t payload, 5 inside a v
+// payload. `genus` says which v: 1 for v1, 2 for v0. Every counter is bounded
+// by a check that returns before it can pass its limit (cnt <= 64, commas
+// <= 8, ts <= 1, vs <= 8), so no addition here can overflow.
+publica functio admitte_formam_signaturae(b: acies<u8, 512>, n: mensura) -> u8 {
+    si n eq 0 { redde 1; }
+    si n gt 512 { redde 2; }
+    mutabilis status: u8 = 0;
+    mutabilis genus: u8 = 0;
+    mutabilis cnt: u8 = 0;
+    mutabilis commata: u8 = 0;
+    mutabilis ts: u8 = 0;
+    mutabilis vs: u8 = 0;
+    per i in 0..n {
+        firma c = b[i];
+        si status eq 0 {
+            si c eq 0x74 {
+                status = 1;
+            } sin c eq 0x76 {
+                status = 2;
+            } aliter {
+                redde 3;
+            }
+        } sin status eq 1 {
+            si c ne 0x3d { redde 3; }
+            si ts ge 1 { redde 7; }
+            ts = ts + 1;
+            status = 4;
+            cnt = 0;
+        } sin status eq 2 {
+            si c eq 0x31 {
+                genus = 1;
+            } sin c eq 0x30 {
+                genus = 2;
+            } aliter {
+                redde 3;
+            }
+            status = 3;
+        } sin status eq 3 {
+            si c ne 0x3d { redde 3; }
+            status = 5;
+            cnt = 0;
+        } sin status eq 4 {
+            si c eq 0x2c {
+                si cnt eq 0 { redde 4; }
+                commata = commata + 1;
+                si commata ge 8 { redde 6; }
+                status = 0;
+            } aliter {
+                si c lt 0x30 { redde 4; }
+                si c gt 0x39 { redde 4; }
+                si cnt ge 12 { redde 4; }
+                cnt = cnt + 1;
+            }
+        } aliter {
+            si c eq 0x2c {
+                si cnt ne 64 { redde 5; }
+                si genus eq 1 { vs = vs + 1; }
+                commata = commata + 1;
+                si commata ge 8 { redde 6; }
+                status = 0;
+            } aliter {
+                mutabilis hex: u8 = 0;
+                si c ge 0x30 { si c le 0x39 { hex = 1; } }
+                si c ge 0x61 { si c le 0x66 { hex = 1; } }
+                si hex eq 0 { redde 5; }
+                si cnt ge 64 { redde 5; }
+                cnt = cnt + 1;
+            }
+        }
+    }
+    si status eq 4 {
+        si cnt eq 0 { redde 4; }
+    } sin status eq 5 {
+        si cnt ne 64 { redde 5; }
+        si genus eq 1 { vs = vs + 1; }
+    } aliter {
+        redde 3;
+    }
+    si ts eq 0 { redde 8; }
+    si vs eq 0 { redde 9; }
+    redde 0;
+}
