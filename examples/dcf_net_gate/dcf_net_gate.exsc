@@ -1,0 +1,155 @@
+// examples/dcf_net_gate/dcf_net_gate.exsc -- the network-text facts that DCF-ID
+// (a Rust service) and DCF-WatchDawg (a root shell daemon) must agree on,
+// stated once. Pure: no `poscit`, no capability parameter (spec §4.1 rule 6),
+// no allocation, no I/O, and written so that nothing a caller can pass traps
+// (a trap ends the host process; `exsrt_abortus` does not return).
+//
+// Why this exists. DCF-ID records a client address in `users.last_ip`; the
+// watchdog, which runs as root, interpolates that column into an `nft -f -`
+// batch. nft joins its argument words and parses the whole string, so a
+// spelling that is not exactly an IPv4 address is either a rejected batch
+// (every user's whitelist stops updating) or, in an argv position, syntax.
+// The two programs used to disagree about what an address is: the shell
+// accepted `1.2.3.08` (bash arithmetic on `08` errors, and an error is read
+// as "not greater than 255"), libc and nft refuse it. One definition, here.
+//
+// Fixed buffers: an address is read from acies<u8, 16> (15 bytes is the
+// longest dotted quad), a port or an interval from acies<u8, 8>. A length past
+// the capacity is answered before any byte is read. The C ABI makes every
+// acies a pointer whose full declared size must be readable, so a host copies
+// its input into a zero-padded buffer of exactly that size.
+//
+// Verdict tables (0 always means admitted):
+//
+//   admitte_ipv4 (a dotted quad, canonical form only)
+//     0  admitted
+//     1  empty
+//     2  longer than 15 bytes
+//     3  a byte outside [0-9.]
+//     4  not four octets: a leading, trailing or doubled '.', too few or too many
+//     5  an octet of more than three digits
+//     6  a leading zero in an octet of two or more digits
+//     7  an octet above 255
+//
+//   ordo_ipv4 (what an admitted address is; 255 if it is not admitted)
+//     0 global unicast        4 multicast 224.0.0.0/4
+//     1 "this network" 0/8    5 reserved 240.0.0.0/4, broadcast included
+//     2 loopback 127/8        6 private 10/8, 172.16/12, 192.168/16
+//     3 link-local 169.254/16 7 shared address space 100.64/10
+//
+//   admitte_portum (a UDP/TCP port, 1..=65535) and
+//   admitte_intervallum (a sync interval in seconds, 1..=3600)
+//     0  admitted
+//     1  empty
+//     2  longer than 5 bytes
+//     3  a byte outside [0-9]
+//     4  a leading zero
+//     5  zero, or above the maximum
+
+// ---------------------------------------------------------------- the address
+
+publica functio admitte_ipv4(b: acies<u8, 16>, n: mensura) -> u8 {
+    si n eq 0 { redde 1; }
+    si n gt 15 { redde 2; }
+    mutabilis puncta: u8 = 0;
+    mutabilis digiti: u8 = 0;
+    mutabilis valor: u32 = 0;
+    mutabilis initium: u8 = 0;
+    per i in 0..n {
+        firma c = b[i];
+        si c eq 0x2e {
+            si digiti eq 0 { redde 4; }
+            si puncta ge 3 { redde 4; }
+            puncta = puncta + 1;
+            digiti = 0;
+            valor = 0;
+            initium = 0;
+        } aliter {
+            si c lt 0x30 { redde 3; }
+            si c gt 0x39 { redde 3; }
+            si digiti ge 3 { redde 5; }
+            si digiti eq 0 {
+                initium = 0;
+                si c eq 0x30 { initium = 1; }
+            } aliter {
+                si initium eq 1 { redde 6; }
+            }
+            valor = (valor * 10) + ((c sicut u32) - 0x30);
+            si valor gt 255 { redde 7; }
+            digiti = digiti + 1;
+        }
+    }
+    si puncta ne 3 { redde 4; }
+    si digiti eq 0 { redde 4; }
+    redde 0;
+}
+
+// The k-th octet (k in 0..4) of an address `admitte_ipv4` admitted. Anything
+// else, including an out-of-range k, answers 0.
+functio octetus(b: acies<u8, 16>, n: mensura, k: u8) -> u32 {
+    mutabilis idx: u8 = 0;
+    mutabilis valor: u32 = 0;
+    per i in 0..n {
+        firma c = b[i];
+        si c eq 0x2e {
+            idx = idx + 1;
+        } aliter {
+            si idx eq k {
+                si c ge 0x30 {
+                    si c le 0x39 {
+                        valor = (valor * 10) + ((c sicut u32) - 0x30);
+                    }
+                }
+            }
+        }
+        si idx gt k { redde valor; }
+    }
+    redde valor;
+}
+
+publica functio ordo_ipv4(b: acies<u8, 16>, n: mensura) -> u8 {
+    si admitte_ipv4(b, n) ne 0 { redde 255; }
+    firma a = octetus(b, n, 0);
+    firma s = octetus(b, n, 1);
+    si a eq 0 { redde 1; }
+    si a eq 127 { redde 2; }
+    si a eq 10 { redde 6; }
+    si a eq 169 { si s eq 254 { redde 3; } }
+    si a eq 172 { si s ge 16 { si s le 31 { redde 6; } } }
+    si a eq 192 { si s eq 168 { redde 6; } }
+    si a eq 100 { si s ge 64 { si s le 127 { redde 7; } } }
+    si a ge 240 { redde 5; }
+    si a ge 224 { redde 4; }
+    redde 0;
+}
+
+// ------------------------------------------------- a decimal number, bounded
+
+// b[0..n) is 1..=5 ASCII digits with no leading zero and a value in
+// 1..=maximum. The value is accumulated in a u32 only after the length is
+// known to be at most five digits (99999), so nothing here can overflow.
+functio numerus_iudica(b: acies<u8, 8>, n: mensura, maximum: u32) -> u8 {
+    si n eq 0 { redde 1; }
+    si n gt 5 { redde 2; }
+    mutabilis valor: u32 = 0;
+    per i in 0..n {
+        firma c = b[i];
+        si c lt 0x30 { redde 3; }
+        si c gt 0x39 { redde 3; }
+        valor = (valor * 10) + ((c sicut u32) - 0x30);
+    }
+    si b[0] eq 0x30 {
+        si n gt 1 { redde 4; }
+    }
+    si valor eq 0 { redde 5; }
+    si valor gt maximum { redde 5; }
+    redde 0;
+}
+
+publica functio admitte_portum(b: acies<u8, 8>, n: mensura) -> u8 {
+    redde numerus_iudica(b, n, 65535);
+}
+
+publica functio admitte_intervallum(b: acies<u8, 8>, n: mensura) -> u8 {
+    redde numerus_iudica(b, n, 3600);
+}
