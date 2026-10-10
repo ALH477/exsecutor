@@ -2015,31 +2015,40 @@ proc __bfc_emit_fconv, ctx, module, func, instid
 	call	__bfc_emit_result
 	; NORMALISE TO THE DESTINATION WIDTH, exactly as the reference backend's
 	; `.ftoinorm` does (`backend_fasmg/emit.inc`, "then the integer canonical
-	; normalisation"). C's `(int64_t)` / `(uint64_t)` conversion is a 64-bit
-	; value; for an `iN`/`uN` with N < 64 the low-N canonical form is NOT that
-	; value when the float is out of `[0, 2^N)` / `[-2^(N-1), 2^(N-1))` --
-	; `inf sicut i32` converts to INT64_MIN, whose low 32 bits are 0, while
-	; the un-normalised 64-bit INT64_MIN compares as negative. Without this
-	; wrap the two backends DIVERGED on that program (ref said n==0, C said
-	; n<0), violating §9.2's "identical observable results". At N >= 64 both
-	; halves emit nothing (the pair's own rule), so i64/u64 text is unchanged.
+	; normalisation"). The conversion itself goes through the prologue's
+	; `exsi_ftoi_d`/`exsi_ftoi_f`, NOT C's `(int64_t)`/`(uint64_t)` cast:
+	; C11 leaves a float->integer conversion whose value does not fit
+	; UNDEFINED, so under the harness's `-fsanitize=undefined` a NaN or
+	; out-of-range source ABORTS at the cast (float-cast-overflow) before
+	; this normalisation can run. The reference's cvttsd2si is total --
+	; its integer-indefinite value, INT64_MIN -- and the prologue helper
+	; reproduces that exactly, so the two backends agree on every input.
+	; For an `iN`/`uN` with N < 64 the low-N canonical form is NOT the
+	; 64-bit value when the float is out of `[0, 2^N)` /
+	; `[-2^(N-1), 2^(N-1))` -- `inf sicut i32` converts to INT64_MIN,
+	; whose low 32 bits are 0, while the un-normalised 64-bit INT64_MIN
+	; compares as negative. Without this wrap the two backends DIVERGED
+	; on that program (ref said n==0, C said n<0), violating §9.2's
+	; "identical observable results". At N >= 64 both halves emit nothing
+	; (the pair's own rule), so i64/u64 text is unchanged.
 	mov	rdi, [ctx]
 	mov	rsi, [module]
 	mov	edx, [tyv]
 	call	__bfc_norm_open
-	mov	rdi, [module]
-	mov	esi, [tyv]
-	call	__bfc_ty_signed
-	test	eax, eax
-	jnz	.ft_s
-	__bfc_emtxt "(uint64_t)"
+	; Pick the helper by the SOURCE width: f64 -> exsi_ftoi_d, f32 ->
+	; exsi_ftoi_f. Both return the 64-bit carrier; the norm wrap trims.
+	mov	edx, [stk]
+	cmp	edx, BFA_TK_F64
+	jne	.ft_srcf32
+	__bfc_emtxt "exsi_ftoi_d("
 	jmp	.ft_op
-  .ft_s:
-	__bfc_emtxt "(uint64_t)(int64_t)"
+  .ft_srcf32:
+	__bfc_emtxt "exsi_ftoi_f("
   .ft_op:
 	mov	rdi, [ctx]
 	mov	esi, [av]
 	call	__bfc_emit_v
+	__bfc_emtxt ")"
 	mov	rdi, [ctx]
 	mov	rsi, [module]
 	mov	edx, [tyv]

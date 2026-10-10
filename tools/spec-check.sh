@@ -111,8 +111,12 @@ check_citations() {
 
   # Every tracked text file except the spec itself (which legitimately refers
   # to its own sections) and vendor/ (third-party, not ours to cite).
+  # .claude/ is excluded too: .claude/worktrees/ holds transient agent
+  # checkouts of older commits whose spec files cite sections that no longer
+  # exist -- they are not this tree's prose and must not fail its check.
   cited="$(cd "$REPO_ROOT" && grep -rhoE '§[0-9]+(\.[0-9]+)*' \
              --exclude-dir=.git --exclude-dir=vendor --exclude-dir=build \
+             --exclude-dir=.claude \
              --exclude='exsecutor-spec-v0.4.md' . 2>/dev/null \
            | sed 's/§//' | sort -u || true)"
 
@@ -128,6 +132,7 @@ check_citations() {
       echo "           §$d  cited in:"
       (cd "$REPO_ROOT" && grep -rlE "§$d([^0-9.]|\$)" \
          --exclude-dir=.git --exclude-dir=vendor --exclude-dir=build \
+         --exclude-dir=.claude \
          --exclude='exsecutor-spec-v0.4.md' . 2>/dev/null | sed 's/^/             /') || true
     done
   else
