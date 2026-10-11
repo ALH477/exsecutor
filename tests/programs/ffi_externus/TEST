@@ -1,0 +1,27 @@
+# K2 item 5: `externus` live against a C ABI. The program calls a foreign
+# C function (triplicare, u64 -> u64) declared with the spec §5.3 closed
+# ABI spelling `sysv_amd64`, and returns 42 only if the call round-trips:
+# 14 in, 42 out. The reference backend meets this directive (assembled
+# with a fasmg shim defining `bfausr_triplicare`, exit 42); the C
+# backend meets it four ways (gcc/clang x -O0/-O2 under UBSan, linked
+# against tests/c/ffi/host.c, exit 42). Both are measured by
+# tests/c/ffi/run.sh.
+#
+# The differential phase does NOT pick this directory up: it links every
+# eligible program against tests/c/exsrt_shim.c, which deliberately does
+# not define `triplicare` (a missing routine is a loud link failure, the
+# shim's documented design). Declaring c-differentia=prelude-beyond-shim
+# names that exclusion by the closed reason the differential phase
+# already accepts; the real measurement is tests/c/ffi/run.sh, which
+# links the unit against tests/c/ffi/host.c under gcc/clang at -O0/-O2
+# under UBSan AND assembles the reference backend with a fasmg shim
+# defining `bfausr_triplicare`. Both backends exit 42.
+# The reference build needs the externus definition injected (the emitter
+# does not define foreign symbols -- the host does, same as the C side).
+# run_program_tests assembles the raw output, which fasmg refuses with
+# "symbol 'bfausr_triplicare' is undefined". The reference's real gate is
+# tests/c/ffi/run.sh, which injects the shim; this directive pins the
+# reference's expected exit for the harness, and the fixture is excluded
+# from the reference's assemble-and-run lane by declaring the missing
+# piece by name.
+TEST: expect-exit=42 externus-host=tests/c/ffi/host.asm c-differentia=prelude-beyond-shim

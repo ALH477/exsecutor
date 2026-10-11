@@ -1,0 +1,37 @@
+// K2 item 5: `externus` exercised end to end against a live C ABI.
+//
+// The only other `externus` in the tree is a REJECTION fixture
+// (tests/conformance/entry13_*: `refero<T>` cannot cross the boundary,
+// EXS-E0520). This is the first program that CALLS through one: a pure
+// C function `triplicare` (u64 -> u64, defined in tests/c/ffi/host.c),
+// declared here with the spec §5.3 closed ABI spelling `sysv_amd64`.
+//
+// The exit status is 42: initium calls the foreign function, checks the
+// result, and returns 42 only if the C ABI carried the value both ways.
+// A wrong calling convention (wrong register, wrong width, wrong sign
+// extension) gives 1 instead. Both backends must agree: the reference
+// backend emits `call bfausr_triplicare` (Plain SysV AMD64, hand-rolled
+// prologue) and the C backend emits `triplicare(v2)` against the same C
+// prototype the host compiles with.
+//
+// The differential phase's four builds (gcc/clang x -O0/-O2, UBSan)
+// link this unit against tests/c/ffi/host.c in place of the generic
+// shim, because the shim does not define `triplicare` (its documented
+// design: a missing routine is a loud link failure). tests/c/ffi/run.sh
+// is the standalone gate; tests/run.sh's differential phase would need
+// a per-fixture host= to pick it up, which does not exist yet -- this
+// directory is the fixture, the standalone script is the measurement,
+// and wiring the host= into the differential loop is the follow-up.
+
+externus("C", abi: sysv_amd64) {
+    functio triplicare(x: u64) -> u64
+}
+
+publica functio initium(m: Mundus) -> u8 {
+    firma r = triplicare(14);
+    si r eq 42 {
+        redde 42;
+    } aliter {
+        redde 1;
+    }
+}
