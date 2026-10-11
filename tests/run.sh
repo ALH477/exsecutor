@@ -96,7 +96,7 @@ AUDIT="$REPO_ROOT/tools/syscall-audit.sh"
 # the left of `sicut`. Same rule as the two above -- it was run against the
 # pre-fix checker and exits 12 there (row 2: `7 sicut f32` raised nothing),
 # so it is a regression test and not a description.
-UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-194}"
+UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-225}"
 
 # The same guarantee for the two run phases below: tests/ir/*.ir fixtures,
 # and tests/programs/*/ directories. Same rule -- `found < floor` fails --
@@ -170,7 +170,7 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-194}"
 # declares, which a fix that only dropped the field rows turned into exit 132.
 # Same shape (`exsc-exit=1`, no differential build), raised by exactly one.
 IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-78}"
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-131}"
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-192}"
 
 # The differential phase (run_differential_tests, below), which compiles the
 # C backend's emitted units and runs them against the same expectations the
@@ -260,15 +260,15 @@ DIFFERENTIAL_BUILD_FLOOR="${DIFFERENTIAL_BUILD_FLOOR:-236}"
 #     leave a hole in these numbers, it leaves a FAILING check -- which is
 #     what the phase reported the moment the lowering landed, and is why this
 #     floor moves in that commit and not a later one.
-DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-59}"
-DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-236}"
+DIFFERENTIAL_PROGRAM_FLOOR="${DIFFERENTIAL_PROGRAM_FLOOR:-119}"
+DIFFERENTIAL_PROGRAM_BUILD_FLOOR="${DIFFERENTIAL_PROGRAM_BUILD_FLOOR:-476}"
 # DISTINCT program UNITS whose generated header (`--emitte h`,
 # c-backend.md D9) compiles, force-included, against the unit it describes
 # under gcc and clang. Counted once per distinct unit, not per directory:
 # directories sharing a `sources=` share one unit and one face. Set to the
 # count measured when the face landed: 45, 2026-10-02; it moves with
 # the eligible corpus, in the commit that moves it.
-DIFFERENTIAL_FACE_FLOOR="${DIFFERENTIAL_FACE_FLOOR:-45}"
+DIFFERENTIAL_FACE_FLOOR="${DIFFERENTIAL_FACE_FLOOR:-83}"
 
 # The cross phase's own floor, deliberately NOT folded into the differential
 # numbers above: a cross-compiled, emulated run of a 32-bit-`mensura` unit is
@@ -303,7 +303,7 @@ DIFFERENTIAL_FACE_FLOOR="${DIFFERENTIAL_FACE_FLOOR:-45}"
 # re-baseline, which is the drift this tree's convention licenses -- a floor
 # rises when someone raises it, never automatically. Whoever re-baselines the
 # two nobody bumped for should do it as its own change and say so.
-CROSS_PROGRAM_FLOOR="${CROSS_PROGRAM_FLOOR:-13}"
+CROSS_PROGRAM_FLOOR="${CROSS_PROGRAM_FLOOR:-17}"
 
 # The device phase's floor (Stage 6 G2): programs carrying `device=amdgcn`,
 # each built as one translation unit with tests/c/exsrt_shim_amdgpu.c and
