@@ -119,7 +119,7 @@ DRV_DIAG_CAP = 65536
 ; The compilation arena is NOT among them -- driver/io.inc sizes that one
 ; from the file.
 DRV_IARENA_CAP  = 4 * 1024 * 1024
-DRV_SCRATCH_CAP = 1024 * 1024
+DRV_SCRATCH_CAP = 4 * 1024 * 1024
 
 ; The LOWERING's scratch arena (`lwr_module`'s fourth argument), created only
 ; on the `-o` path. Fixed capacity, unlike the compilation arena, because what

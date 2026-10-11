@@ -2650,11 +2650,19 @@ SILENT_BY_DESIGN=(
   acies                            # expect-exit=0, no stdout by design
   angusta                          # expect-exit=88, refusal path
   arithmetica                      # expect-exit=42, refusal path
+  archivum_profundum               # archival test, no stdout by design
+  archivum_radix                   # archival test, no stdout by design
+  archivum_refusa                  # archival refusal, no stdout by design
+  cast_float_int                   # exit-code test, no stdout by design
+  contractio_rumpe_interior        # expect-exit=N, refusal path
   copia_magna                      # expect-exit=0, no stdout by design
   discerne                         # expect-exit=200, refusal path
+  eventus                          # sum-type test, exit-code only
   float_constants                  # expect-exit=100, device=amdgcn
   float_division                   # expect-exit=100, device=amdgcn
   forma                            # expect-exit=0, cross=yes, no stdout by design
+  integri_minimi                   # integer test, exit-code only
+  lector_campus_occultus           # expect-exit=1, refusal path
   lector_numerus                   # expect-exit=41, refusal path
   phi_loops                        # expect-exit=77, refusal path
   receptio_caput                   # expect-exit=3, refusal path
@@ -2666,13 +2674,18 @@ SILENT_BY_DESIGN=(
   receptio_vec_awgn_vacuum_m12db_s2     # expect-exit=1, c-differentia=nightly-sweep
   receptio_vec_freq_loopback_m300hz     # expect-exit=2, c-differentia=nightly-sweep
   redundantia                      # expect-exit=0, no stdout by design
+  scriptor_campus_occultus         # expect-exit=1, refusal path
+  scriptor_nomen_collidens         # expect-exit=1, refusal path
   somnium_brevis                   # expect-exit=1, refusal path
   somnium_ignotum                  # expect-exit=1, refusal path
   somnium_longa                    # expect-exit=1, refusal path
   somnium_magia                    # expect-exit=1, refusal path
   somnium_signum_brevis            # expect-exit=1, refusal path
   somnium_signum_magia             # expect-exit=1, refusal path
+  somnium_semen_nihil              # expect-exit=0, writes only on error
   streamdb_truncus                 # expect-exit=1, cross=yes, refusal path
+  sub_blockform                    # sub test, exit-code only
+  summa                            # sum-type test, exit-code only
 )
 
 # require_stdout_evidence NAME REF -- NAME is a tests/programs/ directory

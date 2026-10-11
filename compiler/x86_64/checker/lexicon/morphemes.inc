@@ -75,7 +75,7 @@
 LEX_ROOT_COUNT = 18
 LEX_SUFFIX_COUNT = 6
 LEX_PREFIX_COUNT = 8
-LEX_LOAN_COUNT = 159
+LEX_LOAN_COUNT = 161
 
 ; ---- prefix-law codes -------------------------------------------------------
 ; 0 is never a real law (NONE is not emitted by any table row); a law field
@@ -380,6 +380,8 @@ lex_loan_text:
 	db	6,'accipe'
 	db	8,'converte'
 	db	6,'Exitus'
+	db	5,'prima'
+	db	7,'quiesce'
 	db	9,'normaliza'
 	db	7,'corrige'
 	db	7,'combina'
@@ -542,6 +544,8 @@ lex_loan_kind:
 	db	LEXKIND_FN	; accipe
 	db	LEXKIND_FN	; converte
 	db	LEXKIND_STRUCT	; Exitus
+	db	LEXKIND_FN	; prima
+	db	LEXKIND_FN	; quiesce
 	db	LEXKIND_FN	; normaliza
 	db	LEXKIND_FN	; corrige
 	db	LEXKIND_FN	; combina
