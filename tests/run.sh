@@ -183,7 +183,12 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-227}"
 IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-78}"
 # 192 -> 194 on 2026-10-10: radix_quadrata/ (exit=100, §5.4's square root)
 # and somnium_edictum/ (exit=0, 96000 bytes of scrolling type) added.
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-194}"
+# 194 -> 195 on 2026-10-11: ffi_externus/ (K2 item 5: the first live
+# `externus` call, exit=42) added. It declares c-differentia=prelude-beyond-shim
+# because the differential phase links against tests/c/exsrt_shim.c, which
+# deliberately does not define the foreign `triplicare`; tests/c/ffi/run.sh
+# is its gate. Declared-ineligible does NOT raise DIFFERENTIAL_PROGRAM_FLOOR.
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-195}"
 
 # The differential phase (run_differential_tests, below), which compiles the
 # C backend's emitted units and runs them against the same expectations the
@@ -1666,6 +1671,7 @@ parse_run_keys() {
   # the reference's own key applies". A default of "0" would silently claim
   # parity with success even where emit-exit= says the reference refuses.
   k_c_emit_exit=""; k_c_exsc_exit=""; k_c_differentia=""; k_cross=""; k_device=""
+  k_externus_host=""
   k_radix=""; CHECK_RADIX=""; CHECK_POTESTATES="Mundus,ambitus"
   local kv
   for kv in "$@"; do
@@ -1686,6 +1692,7 @@ parse_run_keys() {
       # inside it, and parse_run_keys still fails on an unknown key.
       c-emit-exit=*) k_c_emit_exit="${kv#c-emit-exit=}" ;;
       c-exsc-exit=*) k_c_exsc_exit="${kv#c-exsc-exit=}" ;;
+      externus-host=*) k_externus_host="${kv#externus-host=}" ;;
       # INELIGIBILITY FOR THE DIFFERENTIAL PHASE, declared here and nowhere
       # else. A tests/programs/ directory WITHOUT this key is eligible, and
       # its four C builds must agree with the reference; with it, the
@@ -2681,6 +2688,7 @@ SILENT_BY_DESIGN=(
   copia_magna                      # expect-exit=0, no stdout by design
   discerne                         # expect-exit=200, refusal path
   eventus                          # sum-type test, exit-code only
+  ffi_externus                     # expect-exit=42, FFI round-trip, no stdout by design
   float_constants                  # expect-exit=100, device=amdgcn
   float_division                   # expect-exit=100, device=amdgcn
   forma                            # expect-exit=0, cross=yes, no stdout by design
@@ -2866,7 +2874,54 @@ run_program_tests() {
       bad "$name: exsc exit=$crc"
       sed 's/^/         /' "$w.exsclog"; continue
     fi
-    if "$FASMG" "$w.asm" "$w.bin" >"$w.asmlog" 2>&1; then
+    # A program with `externus` declarations does not assemble bare: the
+    # emitted asm calls `bfausr_<name>` for each foreign function, and
+    # the definition is the HOST's job (same as the C side, where the
+    # host defines the extern prototype). The harness's lane is therefore
+    # `externus-host=PATH` (repo-relative): a fasmg SOURCE defining each
+    # `bfausr_<name>` the program calls, injected into the executable
+    # segment before the emitted text. A program with externus and no
+    # externus-host= fails here by name -- a missing definition must be
+    # a loud failure, not a silently different program (the shim's own
+    # documented design, applied to the reference lane).
+    if [[ -n "$k_externus_host" ]]; then
+      local host_src="$REPO_ROOT/$k_externus_host"
+      if [[ ! -f "$host_src" ]]; then
+        bad "$name: externus-host=$k_externus_host does not exist"
+        continue
+      fi
+      # The emitted file is self-contained (its own include/format/entry/
+      # segment, capability constants, MXCSR image, prelude blob) but does
+      # NOT define the externus -- the host does. The working mechanism is
+      # INJECTION, not wrapping: the host's CODE (comment lines stripped)
+      # goes right after the emitted file's own `segment readable
+      # executable` line, inside the same segment. A wrapper that opens
+      # the format first collides with the emitted file's own directives
+      # (measured: ELFCLASS64 undefined, twice, two wrapper shapes tried).
+      if ! python3 - "$w.asm" "$host_src" "$w.linked.asm" <<'PYINJ'
+import sys
+emitted, host, dst = sys.argv[1], sys.argv[2], sys.argv[3]
+s = open(emitted).read()
+marker = "segment readable executable\n"
+if s.count(marker) != 1:
+    sys.exit("expected exactly one 'segment readable executable' line in the emitted asm")
+host_code = "\n".join(
+    l for l in open(host).read().split("\n") if not l.strip().startswith(";")
+)
+open(dst, "w").write(s.replace(marker, marker + "\n" + host_code + "\n"))
+PYINJ
+      then
+        bad "$name: could not inject the externus host into the emitted asm"
+        continue
+      fi
+      if "$FASMG" "$w.linked.asm" "$w.bin" >"$w.asmlog" 2>&1; then
+        chmod +x "$w.bin"
+        ok "$name: compiles and assembles with externus host (${#srcs[@]} source(s))"
+      else
+        bad "$name: fasmg cannot assemble exsc's output with the externus host"
+        sed 's/^/         /' "$w.asmlog"; continue
+      fi
+    elif "$FASMG" "$w.asm" "$w.bin" >"$w.asmlog" 2>&1; then
       chmod +x "$w.bin"
       ok "$name: compiles and assembles (${#srcs[@]} source(s))"
     else

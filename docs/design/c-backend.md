@@ -1880,6 +1880,8 @@ Numbered; each names the document and the sentence.
 | D7, section 6 | C3 (host), C4 (target) | **host half done**: the reader's certificate, identical under both backends on four containers × four toolchains (section 6.7). The N64 gates are C4's |
 | D1's whole-program mode | — | `[OPEN]`, not scheduled |
 | D9 the face | 2026-10-02 | **done**: `tests/unit/bfc_face.asm`, `bfc_face_ambigua.asm`, `bfc_face_vector.asm`; `tests/run.sh`'s face rows over `tests/c/facies/`; the two examples' `proba_c.sh` |
+| `externus` against a live C ABI (K2 item 5) | 2026-10-11 | **done**: `tests/programs/ffi_externus/` (exit 42 iff `triplicare(14) == 42` through the SysV AMD64 ABI); `tests/c/ffi/run.sh` builds the C backend four ways (gcc/clang × -O0/-O2, UBSan, linked against `tests/c/ffi/host.c`) and the reference backend (fasmg, `bfausr_triplicare` shim injected into the executable segment) — all five exit 42. The fixture declares `c-differentia=prelude-beyond-shim` (the differential phase's shim deliberately does not define the foreign symbol). |
+| `EXS_FRAME_LIMIT` in every unit (K2 item 2, the constant half) | 2026-10-11 | **done**: every `--emitte c` unit carries `#ifndef EXS_FRAME_LIMIT` / `#define EXS_FRAME_LIMIT 4096`, emitted unconditionally after the prologue blob (program_c.inc `__bfc_frame_guard`); inert without a consuming `-fstack-usage` check; `tests/k2_kbuild.sh` enforces the bound itself (48 B max frame measured). The emitter-side frame analysis remains `[OPEN]` — the bound is enforced by the consuming build, not by exsc |
 
 ## 10. Open questions the implementer must answer first
 
