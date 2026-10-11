@@ -128,40 +128,6 @@ void *memset(void *d, int c, usize n)
 }
 
 
-/* exsrt_scriptor_scribe_octetos -- bulk write (spec §4.6). */
-uint64_t exsrt_scriptor_scribe_octetos(unsigned char *sp, unsigned char *b,
-                                        uint64_t n)
-{
-    ExsScriptor s;
-    uint64_t done = 0;
-    memcpy(&s, sp, sizeof s);
-    while (done < n) {
-        ssize_t w = write(s.descriptor, b + done, (size_t)(n - done));
-        if (w > 0) { done += (uint64_t)w; continue; }
-        if (w == 0) continue;
-        if (errno == EINTR) continue;
-        break;
-    }
-    return done;
-}
-
-/* exsrt_lector_lege_octetos -- bulk read (spec §4.6). */
-uint64_t exsrt_lector_lege_octetos(unsigned char *lp, unsigned char *b,
-                                    uint64_t n)
-{
-    ExsLector l;
-    uint64_t done = 0;
-    memcpy(&l, lp, sizeof l);
-    while (done < n) {
-        ssize_t r = read(l.descriptor, b + done, (size_t)(n - done));
-        if (r > 0) { done += (uint64_t)r; continue; }
-        if (r == 0) break;
-        if (errno == EINTR) continue;
-        break;
-    }
-    return done;
-}
-
 /* ---- the trap hook ----------------------------------------------------- */
 _Noreturn void exsrt_abortus(unsigned kind);
 _Noreturn void exsrt_abortus(unsigned kind)
@@ -190,6 +156,41 @@ static unsigned char g_ambitus[AMB_SIZE];
 
 static void put32(unsigned char *p, int32_t v) { memcpy(p, &v, 4); }
 static int32_t get32(const unsigned char *p) { int32_t v; memcpy(&v, p, 4); return v; }
+
+/* exsrt_scriptor_scribe_octetos -- bulk write (spec §4.6). Freestanding:
+ * direct syscall, no libc, like every other function in this file. */
+uint64_t exsrt_scriptor_scribe_octetos(unsigned char *sp, unsigned char *b,
+                                        uint64_t n)
+{
+    long fd = get32(sp + SCR_DESCRIPTOR);
+    uint64_t done = 0;
+    while (done < n) {
+        long w = sys3(SYS_write, fd, (long)(usize)(b + done),
+                      (long)(n - done));
+        if (w > 0) { done += (uint64_t)w; continue; }
+        if (w == 0) continue;
+        if (w == -4) continue;                  /* -EINTR */
+        break;
+    }
+    return done;
+}
+
+/* exsrt_lector_lege_octetos -- bulk read (spec §4.6). Freestanding. */
+uint64_t exsrt_lector_lege_octetos(unsigned char *lp, unsigned char *b,
+                                    uint64_t n)
+{
+    long fd = get32(lp + SCR_DESCRIPTOR);
+    uint64_t done = 0;
+    while (done < n) {
+        long r = sys3(SYS_read, fd, (long)(usize)(b + done),
+                      (long)(n - done));
+        if (r > 0) { done += (uint64_t)r; continue; }
+        if (r == 0) break;                      /* end of input */
+        if (r == -4) continue;                  /* -EINTR */
+        break;
+    }
+    return done;
+}
 
 /* exsrt_mundus_ambitus(m: ptr) -> ptr. argc/argv/envp are a pinned empty
  * vector, as in exsrt_shim.c: deterministic, and nothing in the corpus

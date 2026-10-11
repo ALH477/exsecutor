@@ -38,9 +38,10 @@
 ;   3  DRV_EXIT_HOST   a syscall failed, or output could not be rendered
 ;   4  DRV_EXIT_TODO   the requested work is not implemented
 ;
-; NINE OF §12's TEN SUBCOMMANDS ARE REFUSALS, and the loop below walks
+; EIGHT OF §12's TEN SUBCOMMANDS ARE REFUSALS, and the loop below walks
 ; `drv_cmd_tab` rather than a copy of the list, so adding a subcommand to §12
 ; without deciding what it does fails here rather than exiting 0 in silence.
+; aedifica compiles; ego writes a generated ego file (since 2026-10-11).
 ;
 ; WHAT IS NOT HERE, and why. Exit 0 and exit 1 need a source file on disk, and
 ; a fixture that opens one has to know where it is -- tests/run.sh does not
@@ -53,7 +54,7 @@
 ; Exit 0 = every check passed. Otherwise:
 ;   50  argc < 2 (no subcommand) did not give DRV_EXIT_USAGE
 ;   51  an unknown subcommand did not give DRV_EXIT_USAGE
-;   52  one of §12's nine unimplemented subcommands did not give
+;   52  one of §12's eight unimplemented subcommands did not give
 ;       DRV_EXIT_TODO -- its index is added
 ;   70  a missing --hospes did not give DRV_EXIT_USAGE (§9.5)
 ;   71  an unreadable SOURCE did not give DRV_EXIT_HOST
@@ -92,13 +93,15 @@ segment readable executable
 	cmp	eax, DRV_EXIT_USAGE
 	jne	.f51
 
-	; ---- 52: the nine refusals, walked off drv_cmd_tab ------------------
+	; ---- 52: the eight refusals, walked off drv_cmd_tab ------------------
 	xor	rbx, rbx
   .cmdloop:
 	cmp	rbx, DRV_CMD_COUNT
 	jge	.cmddone
 	cmp	rbx, DRV_CMD_AEDIFICA
-	je	.cmdnext		; the one that does something
+	je	.cmdnext		; the one that compiles
+	cmp	rbx, DRV_CMD_EGO
+	je	.cmdnext		; the one that writes an ego file
 	mov	rax, [drv_cmd_tab + rbx*8]
 	mov	[ds_av2 + 8], rax
 	mov	rdi, 2
