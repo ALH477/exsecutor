@@ -374,6 +374,7 @@
         "examples/somnium/fulmen.exsc"
         "examples/somnium/cruor.exsc"
         "examples/somnium/pyramis.exsc"
+        "examples/somnium/edictum.exsc"
         "examples/somnium/machina.exsc"
       ];
       somniumModel = ''

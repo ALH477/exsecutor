@@ -27,7 +27,7 @@
 #   1 byte   somnium: 0 plasma, 1 ignis, 2 vita, 3 pluvia, 4 stellae,
 #            5 cuniculus, 6 abyssus, 7 titulus, 8 signum (followed by the
 #            44,801-byte EXSG model tests/data/signaculum_mesh.bin),
-#            9 fulmen, 10 cruor, 11 pyramis
+#            9 fulmen, 10 cruor, 11 pyramis, 12 edictum
 #   4 bytes  praetermitte, u32 little-endian: frames rendered, not written
 #   4 bytes  tabulae,      u32 little-endian: frames written
 #   4 bytes  semen,        u32 little-endian: the only entropy; 0 -> 0x9E3779B9
@@ -1096,6 +1096,86 @@ def pyramis_pinge(fb, t, semen):
     return semen
 
 
+# ---- edictum -----------------------------------------------------------------
+# 5x7, bit 4 leftmost, same shift as littera_lucet. Glyphs
+# " ABCDEHIKLMNOSTUVWX" -- not formae(); W/D/B/K/U would change titulus.
+
+EDICTUM_FORMA = [
+    0, 0, 0, 0, 0, 0, 0,
+    14, 17, 17, 31, 17, 17, 17,
+    30, 17, 17, 30, 17, 17, 30,
+    14, 17, 16, 16, 16, 17, 14,
+    30, 17, 17, 17, 17, 17, 30,
+    31, 16, 16, 30, 16, 16, 31,
+    17, 17, 17, 31, 17, 17, 17,
+    14, 4, 4, 4, 4, 4, 14,
+    17, 18, 20, 24, 20, 18, 17,
+    16, 16, 16, 16, 16, 16, 31,
+    17, 27, 21, 21, 17, 17, 17,
+    17, 25, 21, 19, 17, 17, 17,
+    14, 17, 17, 17, 17, 17, 14,
+    15, 16, 16, 14, 1, 1, 30,
+    31, 4, 4, 4, 4, 4, 4,
+    17, 17, 17, 17, 17, 17, 14,
+    17, 17, 17, 17, 17, 10, 4,
+    17, 17, 17, 21, 21, 21, 10,
+    17, 17, 10, 4, 10, 17, 17,
+]
+
+EDICTUM_VERSUS = [
+    [7, 0, 6, 1, 14, 5, 0, 17, 7, 11, 4, 12, 17, 13],  # I HATE WINDOWS
+    [7, 0, 6, 1, 14, 5, 0, 10, 1, 3],  # I HATE MAC
+    [7, 0, 9, 12, 16, 5, 0, 9, 7, 11, 15, 18],  # I LOVE LINUX
+    [2, 13, 4, 0, 7, 13, 0, 12, 8],  # BSD IS OK
+]
+
+EDICTUM_COLOR = [
+    (200, 40, 40),
+    (180, 80, 40),
+    (40, 220, 80),
+    (120, 140, 180),
+]
+
+
+def edictum_lucet(g, r, c):
+    v = EDICTUM_FORMA[g * 7 + r]
+    n = octo(3 + c)
+    return ((v << n) & 255) >> 7
+
+
+def edictum_pinge(fb, t, semen):
+    s = SINUS
+    pa = octo(semen)
+    tardus = t >> 1
+    for y in range(ALTITUDO):
+        for x in range(LATITUDO):
+            k = (y * LATITUDO + x) * 3
+            caelum = s[octo(y + (tardus >> 1) + pa)] >> 5
+            fb[k] = caelum >> 1
+            fb[k + 1] = 0
+            fb[k + 2] = octo(caelum + 4)
+    ys = [16, 38, 60, 82]
+    phases = [0, 48, 96, 144]
+    for linea in range(4):
+        cr, cg, cb = EDICTUM_COLOR[linea]
+        ox = octo(256 - octo(tardus + phases[linea] + pa))
+        vs = EDICTUM_VERSUS[linea]
+        base_y = ys[linea]
+        for n, g in enumerate(vs):
+            for rr in range(7):
+                for cc in range(5):
+                    if edictum_lucet(g, rr, cc) != 1:
+                        continue
+                    for dy in range(2):
+                        for dx in range(2):
+                            px = ox + n * 12 + cc * 2 + dx
+                            py = base_y + rr * 2 + dy
+                            if px < LATITUDO and py < ALTITUDO:
+                                k = (py * LATITUDO + px) * 3
+                                fb[k], fb[k + 1], fb[k + 2] = cr, cg, cb
+    return semen
+
+
 # ---- the engine ----------------------------------------------------------------
 
 MODELUM = "tests/data/signaculum_mesh.bin"
@@ -1113,7 +1193,7 @@ def machina(req, out):
     if len(req) < 17 or req[:4] != b"SOM1":
         return 1
     somnium, praetermitte, tabulae, semen = struct.unpack("<BIII", req[4:17])
-    if somnium > 11:
+    if somnium > 12:
         return 1
     # Somnium 8 carries the 3D engine's EXSG model after the request;
     # every other somnium's request is exactly 17 bytes.
@@ -1184,6 +1264,9 @@ def machina(req, out):
         if somnium == 11:
             if f >= praetermitte:
                 pyramis_pinge(fb, f, semen)
+        if somnium == 12:
+            if f >= praetermitte:
+                edictum_pinge(fb, f, semen)
         if f >= praetermitte:
             out.write(bytes(fb))
     return 0

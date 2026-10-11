@@ -75,7 +75,7 @@
 LEX_ROOT_COUNT = 18
 LEX_SUFFIX_COUNT = 6
 LEX_PREFIX_COUNT = 8
-LEX_LOAN_COUNT = 161
+LEX_LOAN_COUNT = 162
 
 ; ---- prefix-law codes -------------------------------------------------------
 ; 0 is never a real law (NONE is not emitted by any table row); a law field
@@ -337,6 +337,7 @@ lex_loan_text:
 	db	7,'abyssus'
 	db	5,'cruor'
 	db	9,'cuniculus'
+	db	7,'edictum'
 	db	6,'fulmen'
 	db	5,'ignis'
 	db	6,'plasma'
@@ -501,6 +502,7 @@ lex_loan_kind:
 	db	LEXKIND_FN	; abyssus
 	db	LEXKIND_FN	; cruor
 	db	LEXKIND_FN	; cuniculus
+	db	LEXKIND_FN	; edictum
 	db	LEXKIND_FN	; fulmen
 	db	LEXKIND_FN	; ignis
 	db	LEXKIND_FN	; plasma

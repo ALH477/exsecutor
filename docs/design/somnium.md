@@ -42,7 +42,7 @@ the session is idle.
 
 ## 1. What it is
 
-One program, `somnium`, holding twelve effects ("somnia"):
+One program, `somnium`, holding thirteen effects ("somnia"):
 
 | id | name | what | state across frames |
 |---|---|---|---|
@@ -58,6 +58,7 @@ One program, `somnium`, holding twelve effects ("somnia"):
 | 9 | `fulmen` | five lightning bolts on a night sky, white core and cyan sheath | none |
 | 10 | `cruor` | gore drips gathering in a pool along the bottom edge | none |
 | 11 | `pyramis` | Sierpinski tetrahedron, white beam in, seven-band rainbow out | none |
+| 12 | `edictum` | scrolling type: I HATE WINDOWS, I HATE MAC, I LOVE LINUX, BSD IS OK | none |
 
 It reads one request on stdin and writes frames on stdout: **raw rgb24,
 160 × 100, row-major, no header, 48,000 bytes a frame.** The host tells its
@@ -198,7 +199,7 @@ That is also the order in which `flake.nix` compiles `packages.somnium` and
 | `somnium_titulus` | title, frame 228 | the font, the locked word, the shimmer, one inscription whole and one half typed |
 | `somnium_titulus_volatus` | title, frame 62 | the blocks in flight: the five-round seeding, the easing |
 | `somnium_signum` | logo, frame 20, + model | `signum_rota`, the engine, the box filter over the stars, the captions |
-| `somnium_ignotum` | somnium 12 | refused, exit 1, no output |
+| `somnium_ignotum` | somnium 13 | refused, exit 1, no output |
 | `somnium_brevis`, `_longa`, `_magia` | 16 bytes, 18 bytes, `"SOM2"` | refused |
 | `somnium_signum_brevis`, `_magia` | model one byte short; model magic `EXSH` | refused |
 

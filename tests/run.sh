@@ -181,7 +181,9 @@ UNIT_FIXTURE_FLOOR="${UNIT_FIXTURE_FLOOR:-227}"
 # declares, which a fix that only dropped the field rows turned into exit 132.
 # Same shape (`exsc-exit=1`, no differential build), raised by exactly one.
 IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-78}"
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-192}"
+# 192 -> 194 on 2026-10-10: radix_quadrata/ (exit=100, §5.4's square root)
+# and somnium_edictum/ (exit=0, 96000 bytes of scrolling type) added.
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-194}"
 
 # The differential phase (run_differential_tests, below), which compiles the
 # C backend's emitted units and runs them against the same expectations the
