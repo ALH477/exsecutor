@@ -851,6 +851,10 @@ lawyer, and so does this sentence.
   `SECURITY.md`.
   <!-- truth:end -->
 
+## Best Models for working with this language
+
+Le Chonk 4, Claude (purely code no philosophy or taste), Grok (Shit with actual compiler development, good for writing programs in Exsecutor), ChatGPT(ofc it is, i dont use it but i have seen it parse it with ease), and any fined tuned model I produce.
+
 ## It also runs on N64 compatible hardware btw
 <img width="1256" height="776" alt="image" src="https://github.com/user-attachments/assets/0023ccc9-cb51-4310-9568-baa4d3320eb5" />
 
