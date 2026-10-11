@@ -77,6 +77,42 @@ BFC_HOSPES_X86_64   = 1		; x86_64-linux
 BFC_HOSPES_RISCV64  = 2		; riscv64-linux
 BFC_HOSPES_MIPS64   = 3		; mips64-none-o64 -- parsed, refused in C1
 
+; ---- the frame-size guard constant, emitted into every unit ---------------
+; K2 item 2. A kernel task gets 16 KB with a guard page, and the emitter
+; has no frame-size analysis -- value semantics plus reference counting,
+; with no borrow checker, is what drives frames this large, and it is
+; structural, not an oversight (a kernel build's same defect is a
+; guard-page double fault). The bound cannot be a compile error at the
+; EXSC level; what CAN be compiled in is the LIMIT ITSELF, so the
+; consuming build's own check has a named, overridable constant to hold
+; its -fstack-usage report against:
+;
+;   - the unit defines EXS_FRAME_LIMIT (default 4096, one quarter of the
+;     16 KB kernel stack) unless the integrator pre-defines it;
+;   - the integrator compiles with -fstack-usage and fails the build
+;     when the .su report names a frame at or above the limit (the
+;     kernel-side gate is tests/k2_kbuild.sh in this tree, and
+;     exsecutor-for-linux's tests/kbuild-shape.sh mirrors it);
+;   - the constant is inert in builds that do not check it: it is one
+;     #ifndef/#define pair, no code, no behaviour change.
+;
+; What this is NOT: an emitter-side frame bound. The emitter has no
+; frame-size analysis, and adding one is a compiler change, not a
+; prologue line. The constant makes the consuming build's check
+; possible and named; it does not make the check happen by itself.
+	jmp	__bfc_frame_guard_end
+__bfc_frame_guard:
+	db 10
+	db '/* K2 item 2: the frame-size limit for consuming builds. A kernel', 10
+	db ' * task gets 16 KB with a guard page; the default limit is one quarter', 10
+	db ' * of that. Compile with -fstack-usage and fail the build when the', 10
+	db ' * .su report names a function at or above this limit. Inert without', 10
+	db ' * the check: one #ifndef/#define pair, no code, no behaviour change. */', 10
+	db '#ifndef EXS_FRAME_LIMIT', 10
+	db '#define EXS_FRAME_LIMIT 4096', 10
+	db '#endif', 10
+__bfc_frame_guard_end:
+
 ; ---- the -fno-math-errno guard, emitted only for a module that roots --------
 	jmp	__bfc_sqrt_guard_end
 __bfc_sqrt_guard:
@@ -451,7 +487,19 @@ proc bfc_emit_unit, module, arena, hospes
 	mov	rdx, __bfc_prologue_end - __bfc_prologue
 	call	__bfa_out_bytes
 
-	; ---- 1b. the -fno-math-errno guard, ONLY if this module roots ---------
+	; ---- 1b. the frame-size guard, into every unit ---------------------
+	; Unconditional (unlike the sqrt guard): the bound is a property of
+	; the CONSUMING build, and the guard is inert without -fstack-usage,
+	; so emitting it everywhere costs nothing and forgetting it nowhere.
+	; It sits AFTER the prologue blob (which ends with the includes and
+	; the EXS_NEED_FLOAT gate) and BEFORE the hospes assert, so the
+	; unit's structure stays: define, prologue, guards, hospes, globals.
+	mov	rdi, [ctx]
+	lea	rsi, [__bfc_frame_guard]
+	mov	rdx, __bfc_frame_guard_end - __bfc_frame_guard
+	call	__bfa_out_bytes
+
+	; ---- 2. the -fno-math-errno guard, ONLY if this module roots ---------
 	; Emitted per MODULE, not in the prologue blob, and that distinction is
 	; the point: the prologue's text is a function of exsc's own bytes
 	; (c-backend.md D5) and every module gets it verbatim, so a requirement

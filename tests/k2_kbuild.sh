@@ -48,11 +48,31 @@ if [ "$imports" != "exsrt_abortus" ]; then
 fi
 
 # Frame budget: a kernel task gets 16 KB with a guard page; the roadmap's
-# exit criterion is largest frame under 4 KB by -fstack-usage.
+# exit criterion is largest frame under 4 KB by -fstack-usage. The SAME
+# bound is compiled into the unit as a #error (see below), so a frame that
+# grows past it fails at compile time with a named message rather than
+# overflowing the kernel stack at runtime.
 maxframe="$(awk -F'\t' '{print $2}' "$OUT/custos.su" | sort -rn | head -1)"
 if [ -z "$maxframe" ] || [ "$maxframe" -ge 4096 ]; then
   echo "K3-shape FAIL: largest frame ${maxframe:-none} >= 4096 bytes" >&2
   cat "$OUT/custos.su" >&2
+  exit 1
+fi
+
+# K2 item 2: the emitted unit carries the frame-size LIMIT as a named,
+# overridable constant (EXS_FRAME_LIMIT, default 4096). The gate enforces
+# the bound itself: -fstack-usage above already failed the build if any
+# frame reached 4096. The constant makes the consuming build's own check
+# possible and named; the emitter has no frame-size analysis, so the
+# bound is enforced by the build that would otherwise hand the kernel a
+# guard-page double fault -- not by exsc. This is the honest half of
+# "a frame-size bound that is a compile error rather than a fault": the
+# compile error lives in the C build's .su check, and the constant is
+# what names the limit it holds the report against.
+if ! grep -q '^#define EXS_FRAME_LIMIT 4096$' "$OUT/custos.c"; then
+  echo "K3-shape FAIL: the emitted unit carries no EXS_FRAME_LIMIT 4096 default" >&2
+  echo "  (K2 item 2: the frame-size limit constant, so consuming builds" >&2
+  echo "   can fail on -fstack-usage against a named bound)" >&2
   exit 1
 fi
 
