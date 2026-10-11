@@ -75,7 +75,7 @@
 LEX_ROOT_COUNT = 18
 LEX_SUFFIX_COUNT = 6
 LEX_PREFIX_COUNT = 8
-LEX_LOAN_COUNT = 141
+LEX_LOAN_COUNT = 156
 
 ; ---- prefix-law codes -------------------------------------------------------
 ; 0 is never a real law (NONE is not emitted by any table row); a law field
@@ -246,6 +246,17 @@ lex_prefix_law:
 ; that derives with the wrong kind (lector as functio) is EXS-E0602 and
 ; never reaches this table.
 lex_loan_text:
+	db	5,'imple'
+	db	9,'circuitus'
+	db	8,'profunda'
+	db	9,'magnitudo'
+	db	7,'octalis'
+	db	6,'saltus'
+	db	5,'nomen'
+	db	5,'caput'
+	db	7,'Sarcina'
+	db	11,'redundantia'
+	db	7,'admitte'
 	db	7,'auditus'
 	db	7,'Auditum'
 	db	6,'Status'
@@ -253,7 +264,6 @@ lex_loan_text:
 	db	5,'melos'
 	db	8,'Exemplum'
 	db	5,'Caput'
-	db	5,'caput'
 	db	5,'sinus'
 	db	6,'phasis'
 	db	4,'sona'
@@ -264,7 +274,6 @@ lex_loan_text:
 	db	10,'synchronia'
 	db	5,'tonus'
 	db	10,'DeModFrame'
-	db	11,'redundantia'
 	db	6,'tabula'
 	db	8,'signatum'
 	db	3,'vis'
@@ -316,6 +325,13 @@ lex_loan_text:
 	db	4,'alea'
 	db	5,'summa'
 	db	6,'scribe'
+	db	7,'titulus'
+	db	6,'subest'
+	db	6,'tangit'
+	db	10,'variabilis'
+	db	6,'ancora'
+	db	10,'involucrum'
+	db	2,'wx'
 	db	6,'saluta'
 	db	10,'signaculum'
 	db	7,'abyssus'
@@ -330,12 +346,10 @@ lex_loan_text:
 	db	9,'reciproca'
 	db	9,'tangentes'
 	db	6,'formae'
-	db	5,'nomen'
 	db	5,'pinge'
 	db	7,'littera'
 	db	7,'Stellae'
 	db	7,'stellae'
-	db	7,'titulus'
 	db	4,'vita'
 	db	8,'Indicium'
 	db	8,'Recordum'
@@ -361,6 +375,8 @@ lex_loan_text:
 	db	5,'signa'
 	db	5,'vitia'
 	db	6,'accipe'
+	db	8,'converte'
+	db	6,'Exitus'
 	db	9,'normaliza'
 	db	7,'corrige'
 	db	7,'combina'
@@ -383,13 +399,23 @@ lex_loan_text:
 	db	5,'total'
 	db	5,'mixta'
 	db	3,'Par'
-	db	5,'imple'
 	db	4,'orna'
 	db	3,'Tab'
 	db	3,'fac'
 LEX_LOAN_TEXT_LEN = $ - lex_loan_text
 
 lex_loan_kind:
+	db	LEXKIND_FN	; imple
+	db	LEXKIND_FN	; circuitus
+	db	LEXKIND_FN	; profunda
+	db	LEXKIND_FN	; magnitudo
+	db	LEXKIND_FN	; octalis
+	db	LEXKIND_FN	; saltus
+	db	LEXKIND_FN	; nomen
+	db	LEXKIND_FN	; caput
+	db	LEXKIND_STRUCT	; Sarcina
+	db	LEXKIND_FN	; redundantia
+	db	LEXKIND_FN	; admitte
 	db	LEXKIND_FN	; auditus
 	db	LEXKIND_STRUCT	; Auditum
 	db	LEXKIND_STRUCT	; Status
@@ -397,7 +423,6 @@ lex_loan_kind:
 	db	LEXKIND_FN	; melos
 	db	LEXKIND_STRUCT	; Exemplum
 	db	LEXKIND_STRUCT	; Caput
-	db	LEXKIND_FN	; caput
 	db	LEXKIND_FN	; sinus
 	db	LEXKIND_FN	; phasis
 	db	LEXKIND_FN	; sona
@@ -408,7 +433,6 @@ lex_loan_kind:
 	db	LEXKIND_FN	; synchronia
 	db	LEXKIND_FN	; tonus
 	db	LEXKIND_STRUCT	; DeModFrame
-	db	LEXKIND_FN	; redundantia
 	db	LEXKIND_FN	; tabula
 	db	LEXKIND_FN	; signatum
 	db	LEXKIND_FN	; vis
@@ -460,6 +484,13 @@ lex_loan_kind:
 	db	LEXKIND_FN	; alea
 	db	LEXKIND_FN	; summa
 	db	LEXKIND_FN	; scribe
+	db	LEXKIND_FN	; titulus
+	db	LEXKIND_FN	; subest
+	db	LEXKIND_FN	; tangit
+	db	LEXKIND_FN	; variabilis
+	db	LEXKIND_FN	; ancora
+	db	LEXKIND_FN	; involucrum
+	db	LEXKIND_FN	; wx
 	db	LEXKIND_FN	; saluta
 	db	LEXKIND_FN	; signaculum
 	db	LEXKIND_FN	; abyssus
@@ -474,12 +505,10 @@ lex_loan_kind:
 	db	LEXKIND_FN	; reciproca
 	db	LEXKIND_FN	; tangentes
 	db	LEXKIND_FN	; formae
-	db	LEXKIND_FN	; nomen
 	db	LEXKIND_FN	; pinge
 	db	LEXKIND_FN	; littera
 	db	LEXKIND_STRUCT	; Stellae
 	db	LEXKIND_FN	; stellae
-	db	LEXKIND_FN	; titulus
 	db	LEXKIND_FN	; vita
 	db	LEXKIND_STRUCT	; Indicium
 	db	LEXKIND_STRUCT	; Recordum
@@ -505,6 +534,8 @@ lex_loan_kind:
 	db	LEXKIND_FN	; signa
 	db	LEXKIND_FN	; vitia
 	db	LEXKIND_FN	; accipe
+	db	LEXKIND_FN	; converte
+	db	LEXKIND_STRUCT	; Exitus
 	db	LEXKIND_FN	; normaliza
 	db	LEXKIND_FN	; corrige
 	db	LEXKIND_FN	; combina
@@ -527,7 +558,6 @@ lex_loan_kind:
 	db	LEXKIND_FN	; total
 	db	LEXKIND_FN	; mixta
 	db	LEXKIND_STRUCT	; Par
-	db	LEXKIND_FN	; imple
 	db	LEXKIND_FN	; orna
 	db	LEXKIND_STRUCT	; Tab
 	db	LEXKIND_FN	; fac
