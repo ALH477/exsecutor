@@ -951,6 +951,705 @@ proc __lwr_declare_fn, lwrsp, lwrn
 	return
 endp
 
+; ============================================================================
+; module-level aggregate constants (K2 item 4)
+; ============================================================================
+;
+; Spec section 8.6 decision 5 says "module `firma` is a constant" and the
+; lowering has honoured it for `Lit` initializers only: any other module-level
+; initializer is `[OPEN]` and `__lwr_module_const` traps at the use. A
+; module-scope ARRAY literal type-checks and then traps in the lowering —
+; which is precisely the shape of a static table, and the shape a kernel
+; evaluator wants (a decision table as `data`, not a function that builds it
+; on the stack).
+;
+; THIS PASS CLOSES THAT HOLE FOR CONSTANT AGGREGATES. A module-level `firma`
+; whose initializer is an `ArrayLit`/`ArrayRep` of integer literals, or a
+; `StructLit` whose every field initializer is a whole-byte integer literal,
+; is materialized ONCE as a `data` global in a pre-pass before pass B. A
+; `Path` to it in expression position resolves to a `gaddr` of that global
+; (the aggregate already travels as a `ptr`; `lwr_expr_agg`'s `.path` arm
+; hands back whatever `__lwr_path` returns, and a `gaddr` value IS a `ptr`).
+; Both backends already emit `gaddr` and `data` globals (the reference's
+; `bfausr_gN` in `segment readable`; the C backend's `exsi_gN` as
+; `static const`), so no emitter change is needed — the lowering simply
+; produces IR the emitters already accept.
+;
+; WHAT IS A CONSTANT AGGREGATE (the gate, `__lwr_agg_is_const`):
+;   - `ArrayLit`: every element an `AST_LIT` of class INT (not FLOAT, not
+;     STRING). The element type must be an integer (`AST_TY_INT`); the
+;     checker has already typed the literal against the array's element
+;     type, so the `konst` is at the right width.
+;   - `ArrayRep`: the one element an INT `AST_LIT`.
+;   - `StructLit`: every field initializer an INT `AST_LIT` whose declared
+;     type is `AST_TY_INT` at a whole-byte width (>= 8 bits, a multiple of 8).
+;     A `u4` field's value does not occupy whole bytes and is NOT a byte
+;     source; a float field's `konst` is the checker's decimal pair until
+;     `__chk_ty_fits` overwrites it, and taking bytes off the tree is right
+;     for ints and wrong for floats. Both keep the trap.
+;   - Anything else — a `Path` to another constant, a call, a nested
+;     aggregate, a `textus` literal — is NOT a constant aggregate and keeps
+;     the `[OPEN]` trap in `__lwr_module_const`.
+;
+; THE BYTE IMAGE (the writer, `__lwr_agg_bytes`):
+;   - Array element i: `konst` in the element type's two's-complement image,
+;     `nativus` order (no field -- spec 5.2 D2), at byte offset i * elt_size.
+;   - Array repeat: the same value at every offset.
+;   - Struct field f: `konst` at `AstLayout.off`, in the field's
+;     `AstLayout.order`, width/8 bytes. Unnamed fields are zero (the checker
+;     requires every field, so this is defensive).
+; The konst is a 64-bit value; the writer takes width/8 bytes of it, so a
+; u64 element's full image lands and a u8 element's low byte lands.
+;
+; WHY NO EMITTER CHANGE. `gaddr N` and `data $N` are already emitted by both
+; backends (the reference's `lea rax, [bfausr_gN]`; the C backend's
+; `(unsigned char *)(uintptr_t)exsi_gN`). The globals list is emitted in id
+; order by both backends' program printers, so the pre-pass appending globals
+; BEFORE any function-body walk keeps the printed order deterministic:
+; aggregate-constant globals first (in module item order), then any
+; string-literal globals the bodies create (in walk order). The reference
+; backend's segment layout is `segment readable` for globals, which is
+; exactly where a constant table belongs; a `store` through a `gaddr` is a
+; wrong program in both backends and the C side's `const` says so out loud.
+;
+; THE CONSUMER. A module-level aggregate constant is read-only: nothing in
+; the language can take its address for writing (a `firma` is not a
+; `mutabilis`, and the checker's `AST_F_MEMRES` path is for locals). The
+; `Path`-to-global lowering returns the `gaddr` value, and `lwr_expr_agg`
+; hands it back as the aggregate's `ptr` — reads go through `load`/`index`,
+; which is what a stack-built temporary served too. The one observable
+; difference is the VALUE'S IDENTITY: two reads of the constant share storage
+; instead of copying. Nothing in the language can observe that (no `&` of a
+; `firma`, no aliasing through it), and the differential phase's three
+; observables (stdout bytes, exit status, trap-or-not) are unchanged.
+
+; __lwr_agg_is_const(st, lwrinit) -> eax = 1 if aggregate initializer
+; `lwrinit` is a constant aggregate per the gate above.
+proc __lwr_agg_is_const, lwrsp, lwrinit
+	uses	rbx, r12, r13, r14
+	locals
+		endl
+	mov	rbx, [lwrsp]
+	mov	rdi, rbx
+	mov	esi, [lwrinit]
+	call	__lwr_nkind
+	cmp	eax, AST_ARRAYLIT
+	je	.arraylit
+	cmp	eax, AST_ARRAYREP
+	je	.arrayrep
+	cmp	eax, AST_STRUCTLIT
+	je	.structlit
+	xor	eax, eax
+	return
+  .arraylit:
+	mov	rdi, rbx
+	mov	esi, [lwrinit]
+	call	__lwr_node
+	rassert	rax ne 0
+	mov	r12d, [rax + AstNode.a]		; element list offset
+	mov	r13d, [rax + AstNode.b]		; element count
+	xor	r14d, r14d
+  .alit:
+	cmp	r14d, r13d
+	jge	.yes
+	mov	rdi, rbx
+	mov	esi, r12d
+	mov	edx, r14d
+	call	__lwr_listat
+	mov	rdi, rbx
+	mov	esi, eax
+	call	__lwr_nkind
+	cmp	eax, AST_LIT
+	jne	.no
+	mov	rdi, rbx
+	mov	esi, r12d
+	mov	edx, r14d
+	call	__lwr_listat
+	mov	rdi, rbx
+	mov	esi, eax
+	call	__lwr_node
+	rassert	rax ne 0
+	movzx	eax, word [rax + AstNode.aux]
+	cmp	eax, AST_LIT_FLOAT
+	je	.no
+	cmp	eax, AST_LIT_STRING
+	je	.no
+	inc	r14d
+	jmp	.alit
+  .arrayrep:
+	mov	rdi, rbx
+	mov	esi, [lwrinit]
+	call	__lwr_node
+	rassert	rax ne 0
+	mov	r12d, [rax + AstNode.a]		; the element node
+	mov	rdi, rbx
+	mov	esi, r12d
+	call	__lwr_nkind
+	cmp	eax, AST_LIT
+	jne	.no
+	mov	rdi, rbx
+	mov	esi, r12d
+	call	__lwr_node
+	rassert	rax ne 0
+	movzx	eax, word [rax + AstNode.aux]
+	cmp	eax, AST_LIT_FLOAT
+	je	.no
+	cmp	eax, AST_LIT_STRING
+	je	.no
+	jmp	.yes
+  .structlit:
+	mov	rdi, rbx
+	mov	esi, [lwrinit]
+	call	__lwr_node
+	rassert	rax ne 0
+	mov	r12d, [rax + AstNode.b]		; FieldInit list offset
+	mov	r13d, [rax + AstNode.c]		; count
+	xor	r14d, r14d
+  .sit:
+	cmp	r14d, r13d
+	jge	.yes
+	mov	rdi, rbx
+	mov	esi, r12d
+	mov	edx, r14d
+	call	__lwr_listat
+	mov	rdi, rbx
+	mov	esi, eax
+	call	__lwr_node
+	rassert	rax ne 0
+	mov	r12d, [rax + AstNode.b]		; the initialiser node (reuse r12)
+	mov	rdi, rbx
+	mov	esi, r12d
+	call	__lwr_nkind
+	cmp	eax, AST_LIT
+	jne	.no
+	mov	rdi, rbx
+	mov	esi, r12d
+	call	__lwr_nty
+	mov	rdi, rbx
+	mov	esi, eax
+	call	lwr_ty_kind
+	cmp	eax, AST_TY_INT
+	jne	.no
+	mov	rdi, rbx
+	mov	esi, r12d
+	call	__lwr_nty
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, eax
+	call	ast_type_at
+	mov	eax, [rax + AstType.width]
+	cmp	eax, 8
+	jl	.no				; sub-byte: not a byte source
+	test	eax, 7
+	jnz	.no				; not whole bytes
+	mov	rdi, rbx
+	mov	esi, r12d
+	call	__lwr_node
+	movzx	eax, word [rax + AstNode.aux]
+	cmp	eax, AST_LIT_FLOAT
+	je	.no
+	cmp	eax, AST_LIT_STRING
+	je	.no
+	inc	r14d
+	jmp	.sit
+  .yes:
+	mov	eax, 1
+	return
+  .no:
+	xor	eax, eax
+	return
+endp
+
+; __lwr_emit_const_bytes(st, lwrval, lwrnbytes, lwrdst, lwrord) -- write
+; `lwrnbytes` bytes of the two's-complement image of the 64-bit value
+; `lwrval` into `lwrdst`, in byte order `lwrord` (BFA_ORDER_*). The value is
+; the literal's `konst`; only the low `lwrnbytes` bytes are written, in the
+; requested order. `lwrord` NATIVUS is little-endian on this host (x86-64,
+; and the reference backend is x86-64 only), MAIOR is big-endian, MINOR is
+; little-endian.
+proc __lwr_emit_const_bytes, lwrsp, lwrval, lwrnbytes, lwrdst, lwrord
+	uses	rbx, r12
+	locals
+		endl
+	mov	rbx, [lwrsp]
+	mov	r12, [lwrdst]
+	mov	rdi, [lwrval]
+	mov	eax, [lwrord]
+	cmp	eax, BFA_ORDER_MAIOR
+	je	.be
+	; nativus/minor: little-endian -- byte i is bits 8i..8i+7
+	xor	eax, eax			; byte index
+  .leloop:
+	cmp	eax, [lwrnbytes]
+	jge	.done
+	mov	rdx, rdi
+	mov	cl, al
+	shr	rdx, cl
+	shl	rdx, 56
+	shr	rdx, 56			; isolate byte eax of rdi (little-endian)
+	mov	r8, r12
+	add	r8, rax
+	mov	[r8], dl
+	inc	eax
+	jmp	.leloop
+  .be:
+	; big-endian: byte 0 is the MOST significant of the written bytes
+	mov	eax, [lwrnbytes]
+  .beloop:
+	dec	eax
+	cmp	eax, 0
+	jl	.done
+	mov	rdx, rdi
+	mov	cl, al
+	shr	rdx, cl
+	shl	rdx, 56
+	shr	rdx, 56
+	mov	r8, r12
+	mov	r9d, [lwrnbytes]
+	sub	r9d, eax
+	dec	r9d				; destination index
+	add	r8, r9
+	mov	[r8], dl
+	cmp	eax, 0
+	jne	.beloop
+  .done:
+	return
+endp
+
+; __lwr_agg_bytes(st, lwrinit, lwrty, lwrbuf) -> rax = the byte count written
+; into `lwrbuf` (an `iar`-arena buffer of at least the type's size). Emits no
+; IR; only reads the AST.
+proc __lwr_agg_bytes, lwrsp, lwrinit, lwrty, lwrbuf
+	uses	rbx, r12, r13, r14
+	locals
+		slot lwroff, dd
+		slot lwrcnt, dd
+		slot lwrety, dd
+		slot lwrstr, dd
+		slot lwrsd,  dd
+		slot lwrfd,  dd
+		slot lwrnd,  dq
+		slot lwri,   dd
+		slot lwrw,   dd
+		slot lwrord, dd
+		slot lwrv,   dq
+		slot lwrsz2, dq
+		slot lwrcnt2, dd
+		endl
+	mov	rbx, [lwrsp]
+	mov	rdi, rbx
+	mov	esi, [lwrinit]
+	call	__lwr_nkind
+	cmp	eax, AST_ARRAYLIT
+	je	.arraylit
+	cmp	eax, AST_ARRAYREP
+	je	.arrayrep
+	jmp	.structlit
+  .arraylit:
+	mov	rdi, rbx
+	mov	esi, [lwrinit]
+	call	__lwr_array_ety
+	mov	[lwrety], eax
+	mov	[lwrstr], edx
+	mov	rdi, rbx
+	mov	esi, [lwrinit]
+	call	__lwr_node
+	rassert	rax ne 0
+	mov	r13, rax			; save node ptr (mov into eax clobbers rax)
+	mov	eax, [r13 + AstNode.a]
+	mov	[lwroff], eax
+	mov	eax, [r13 + AstNode.b]
+	mov	[lwrcnt], eax
+	xor	r12d, r12d			; element index
+  .alit:
+	cmp	r12d, [lwrcnt]
+	jge	.ardone
+	mov	rdi, rbx
+	mov	esi, [lwroff]
+	mov	edx, r12d
+	call	__lwr_listat
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, eax
+	call	ast_konst_get
+	mov	[lwrv], rax
+	mov	rdi, rbx
+	mov	esi, [lwrety]
+	call	lwr_ty_kind
+	cmp	eax, AST_TY_INT
+	jne	.badty
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, [lwrety]
+	call	ast_type_at
+	rassert	rax ne 0
+	mov	eax, [rax + AstType.width]
+	shr	eax, 3
+	mov	[lwrstr], eax			; elt width in bytes (reuse stride)
+	mov	eax, r12d
+	imul	eax, [lwrstr]
+	mov	r13, [lwrbuf]
+	add	r13, rax			; destination for this element
+	mov	rdi, rbx
+	mov	rsi, [lwrv]
+	mov	edx, [lwrstr]
+	mov	rcx, r13			; lwrdst (4th arg = rcx)
+	xor	r8d, r8d			; lwrord = NATIVUS (5th arg = r8)
+	call	__lwr_emit_const_bytes
+	inc	r12d
+	jmp	.alit
+  .ardone:
+	mov	rdi, rbx
+	mov	esi, [lwrty]
+	call	lwr_ty_size
+	return
+  .arrayrep:
+	mov	rdi, rbx
+	mov	esi, [lwrinit]
+	call	__lwr_array_ety
+	mov	[lwrety], eax
+	mov	[lwrstr], edx
+	mov	rdi, rbx
+	mov	esi, [lwrinit]
+	call	__lwr_node
+	rassert	rax ne 0
+	mov	r13, rax			; save node ptr
+	mov	r12d, [r13 + AstNode.a]		; the element node
+	mov	rdi, [rbx + LwrState.tree]
+	mov	rsi, r12
+	call	ast_konst_get
+	mov	[lwrv], rax
+	mov	rdi, rbx
+	mov	esi, [lwrety]
+	call	lwr_ty_kind
+	cmp	eax, AST_TY_INT
+	jne	.badty
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, [lwrety]
+	call	ast_type_at
+	rassert	rax ne 0
+	mov	eax, [rax + AstType.width]
+	shr	eax, 3
+	mov	[lwrstr], eax			; elt width in bytes
+	mov	rdi, rbx
+	mov	esi, [lwrty]
+	call	lwr_ty_size
+	mov	[lwrsz2], rax			; total size
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, [lwrty]
+	call	ast_type_at
+	rassert	rax ne 0
+	mov	eax, [rax + AstType.width]	; the element COUNT (spec 5.4)
+	mov	[lwrcnt2], eax
+	xor	r14d, r14d			; element index
+  .arep:
+	cmp	r14d, [lwrcnt2]
+	jge	.arepdone
+	mov	eax, r14d
+	imul	eax, [lwrstr]
+	mov	rcx, [lwrbuf]
+	add	rcx, rax			; byte offset of this element
+	mov	rdi, rbx
+	mov	rsi, [lwrv]
+	mov	edx, [lwrstr]
+	xor	r8d, r8d			; lwrord = NATIVUS (5th arg = r8)
+	call	__lwr_emit_const_bytes
+	inc	r14d
+	jmp	.arep
+  .arepdone:
+	mov	rax, [lwrsz2]
+	return
+  .structlit:
+	; zero the buffer first (unnamed fields stay zero -- defensive; the
+	; checker requires every field so this is unreachable today)
+	mov	rdi, rbx
+	mov	esi, [lwrty]
+	call	lwr_ty_size
+	mov	r13, rax			; total size
+	mov	rdi, [lwrbuf]
+	xor	al, al
+	mov	rcx, r13
+	rep	stosb
+	; walk the struct's field declarations; for each, find the literal's
+	; initialiser and write the bytes
+	mov	rdi, [rbx + LwrState.tree]
+	call	ast_decl_count
+	mov	[lwrnd], rax
+	mov	rdi, rbx
+	mov	esi, [lwrinit]
+	call	__lwr_nty
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, eax
+	call	ast_type_at
+	rassert	rax ne 0
+	mov	eax, [rax + AstType.a]
+	mov	[lwrsd], eax
+	mov	eax, [lwrsd]
+	inc	eax
+	mov	[lwrfd], eax
+  .sloop:
+	mov	eax, [lwrfd]
+	cmp	rax, [lwrnd]
+	ja	.sdone
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, [lwrfd]
+	call	ast_decl_at
+	rassert	rax ne 0
+	mov	r13, rax			; save decl ptr (movzx below clobbers rax)
+	mov	ecx, [r13 + AstDecl.parent]
+	cmp	ecx, [lwrsd]
+	jne	.sdone
+	movzx	eax, byte [r13 + AstDecl.kind]
+	cmp	eax, AST_D_FIELD
+	jne	.snext
+	mov	eax, [r13 + AstDecl.ty]
+	mov	[lwrety], eax
+	; find this field's initialiser in the literal's FieldInit list
+	mov	rdi, rbx
+	mov	esi, [lwrinit]
+	call	__lwr_node
+	rassert	rax ne 0
+	mov	r13, rax			; save node ptr
+	mov	r12d, [r13 + AstNode.b]		; FieldInit list offset
+	mov	eax, [r13 + AstNode.c]
+	mov	[lwrcnt], eax
+	xor	r14d, r14d
+  .sfind:
+	cmp	r14d, [lwrcnt]
+	jge	.snext			; not named: stays zero (defensive)
+	mov	rdi, rbx
+	mov	esi, r12d
+	mov	edx, r14d
+	call	__lwr_listat
+	mov	rdi, rbx
+	mov	esi, eax
+	call	__lwr_node
+	mov	ecx, [rax + AstNode.d]
+	cmp	ecx, [lwrfd]
+	jne	.sfindnext
+	; found: read the initialiser's konst
+	mov	rdi, rbx
+	mov	esi, r12d
+	mov	edx, r14d
+	call	__lwr_listat
+	mov	rdi, rbx
+	mov	esi, eax
+	call	__lwr_node
+	mov	r12d, [rax + AstNode.b]		; the initialiser node
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, r12d
+	call	ast_konst_get
+	mov	[lwrv], rax
+	; the field's place: byte offset, order, width
+	mov	rdi, rbx
+	mov	esi, [lwrfd]
+	call	__lwr_field_off
+	mov	r13, rax			; byte offset
+	mov	rdi, rbx
+	mov	esi, edx
+	shr	edx, 16
+	and	edx, 0xFF
+	mov	[lwrord], edx			; order byte
+	mov	rdi, rbx
+	mov	esi, [lwrety]
+	call	lwr_ty_kind
+	cmp	eax, AST_TY_INT
+	jne	.badty
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, [lwrety]
+	call	ast_type_at
+	rassert	rax ne 0
+	mov	eax, [rax + AstType.width]
+	shr	eax, 3
+	mov	[lwrw], eax
+	mov	rdi, rbx
+	mov	rsi, [lwrv]
+	mov	edx, [lwrw]
+	mov	rcx, r13
+	add	rcx, [lwrbuf]			; lwrdst (4th arg = rcx)
+	mov	eax, [lwrord]
+	mov	r8, rax				; lwrord (5th arg = r8)
+	call	__lwr_emit_const_bytes
+	jmp	.snext
+  .sfindnext:
+	inc	r14d
+	jmp	.sfind
+  .snext:
+	mov	eax, [lwrfd]
+	inc	eax
+	mov	[lwrfd], eax
+	jmp	.sloop
+  .sdone:
+	mov	rax, r13
+	return
+  .badty:
+	rassert	eax eq 0			; unreachable: __lwr_agg_is_const gated it
+	return
+endp
+
+; __lwr_module_globals(st) -- the aggregate-constant pre-pass. Walks the
+; module's item list in order; for each module-level `Binding` whose
+; initializer passes `__lwr_agg_is_const`, materializes one `data` global
+; and records decl id -> global id in `LwrState.gmap`. Runs ONCE, before
+; pass B (which declares functions), so a `Path` to an aggregate constant
+; resolves its `gaddr` with the global id already known.
+;
+; The pre-pass emits NO instructions and uses NO per-function state: it works
+; off `LwrState.iar` (module lifetime) and `LwrState.mdl`, both set by
+; `lwr_state_init`. It must run before `LwrState.cur` is ever set (it is,
+; by construction: `lwr_module` calls it before pass B).
+proc __lwr_module_globals, lwrsp
+	uses	rbx, r12, r13, r14
+	locals
+		slot lwrroot, dd
+		slot lwroff2, dd
+		slot lwrcnt2, dd
+		slot lwrit,  dd
+		slot lwrnode, dd
+		slot lwrinit, dd
+		slot lwrt,   dd
+		slot lwrsz,  dq
+		slot lwralg, dq
+		slot lwrbuf,  dq
+		slot lwrgid, dd
+		endl
+	mov	rbx, [lwrsp]
+	; Walk the module's ITEM LIST (not the decl table): a module-level
+	; `firma` Binding appears there as an AST_BINDING node whose AstNode.d
+	; is its declaration, whose AstNode.b is its initializer. The decl
+	; table walk is wrong because AstDecl.node for a Binding points at the
+	; Binding node, and reading AstNode.b of THAT gives the initializer --
+	; but only Binding nodes with initializers have one, and the decl
+	; table includes prelude declarations (24 of them) whose nodes are
+	; NOT Binding nodes, which is what segfaulted.
+	mov	rdi, [rbx + LwrState.tree]
+	mov	eax, [rdi + Ast.root]
+	mov	[lwrroot], eax
+	rassert	eax ne 0
+	mov	rdi, rbx
+	mov	esi, eax
+	call	__lwr_node
+	rassert	rax ne 0
+	mov	r13, rax			; save the node pointer (movzx below clobbers rax)
+	movzx	eax, word [rax + AstNode.kind]
+	rassert	eax eq AST_MODULE
+	mov	eax, [r13 + AstNode.a]
+	mov	[lwroff2], eax
+	mov	eax, [r13 + AstNode.b]
+	mov	[lwrcnt2], eax
+	xor	r12d, r12d			; item index
+  .loop:
+	cmp	r12d, [lwrcnt2]
+	jge	.done
+	mov	rdi, rbx
+	mov	esi, [lwroff2]
+	mov	edx, r12d
+	call	__lwr_listat
+	mov	[lwrit], eax
+	mov	rdi, rbx
+	mov	esi, eax
+	call	__lwr_nkind
+	cmp	eax, AST_BINDING
+	jne	.next
+	; a module-level Binding node: AstNode.b is the initializer (or 0),
+	; AstNode.d is the declaration
+	mov	rdi, rbx
+	mov	esi, [lwrit]
+	call	__lwr_node
+	rassert	rax ne 0
+	mov	r14, rax			; save the Binding node pointer
+	mov	eax, [r14 + AstNode.b]
+	mov	[lwrinit], eax
+	cmp	eax, 0
+	je	.next				; no initializer: nothing to do
+	mov	eax, [r14 + AstNode.d]		; the declaration id
+	rassert	eax ne 0
+	mov	[lwrnode], eax			; save the decl id for the map key
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, eax
+	call	ast_decl_at
+	rassert	rax ne 0
+	mov	r14, rax			; save the AstDecl pointer
+	movzx	ecx, byte [r14 + AstDecl.flags]
+	and	ecx, AST_F_MUTABILIS
+	rassert	ecx eq 0			; `mutabilis` at module level is E0500
+	mov	eax, [r14 + AstDecl.ty]
+	mov	[lwrt], eax
+	rassert	eax ne 0
+	mov	rdi, rbx
+	mov	esi, [lwrt]
+	call	lwr_ty_kind
+	cmp	eax, AST_TY_ACIES
+	je	.agg
+	cmp	eax, AST_TY_STRUCT
+	je	.agg
+	jmp	.next
+  .agg:
+	mov	rdi, rbx
+	mov	esi, [lwrinit]
+	call	__lwr_agg_is_const
+	test	eax, eax
+	jz	.next				; not a constant aggregate: [OPEN], traps at use
+	; size the buffer from the type. lwr_ty_size returns rax = size,
+	; rdx = alignment. Capture BOTH into locals BEFORE __lwr_agg_bytes,
+	; which clobbers r13/r14.
+	mov	rdi, rbx
+	mov	esi, [lwrt]
+	call	lwr_ty_size
+	mov	[lwrsz], rax			; total size
+	mov	[lwralg], rdx			; alignment
+	mov	rax, [lwralg]
+	rassert	rax ge 1
+	mov	rdi, [rbx + LwrState.iar]
+	mov	rsi, [lwrsz]
+	call	arena_alloc
+	mov	[lwrbuf], rax
+	; zero the buffer: the writer fills only the bytes it writes, and the
+	; tail (array padding, unnamed struct fields) must be zero, matching
+	; the reference's zero-filled global tail
+	mov	rdi, rax
+	mov	rsi, [lwrsz]
+	xor	al, al
+	mov	rcx, [lwrsz]
+	rep	stosb
+	mov	rdi, rbx
+	mov	esi, [lwrinit]
+	mov	edx, [lwrt]
+	mov	rcx, [lwrbuf]			; 4th arg = lwrbuf (r8 is the 5th)
+	call	__lwr_agg_bytes
+	mov	r13, rax
+	mov	rax, [lwrsz]
+	rassert	r13 eq rax
+	; create the global. bfa_global_new(module, gsize, galgn, gbytes, gn):
+	; rdi=module, rsi=gsize, rdx=galgn, rcx=gbytes, r8=gn.
+	mov	rdi, [rbx + LwrState.mdl]
+	mov	rsi, [lwrsz]
+	mov	rdx, [lwralg]			; galgn
+	mov	rcx, [lwrbuf]			; gbytes
+	mov	r8, [lwrsz]			; gn (all bytes present)
+	call	bfa_global_new
+	mov	[lwrgid], eax
+	; record decl id -> global id in gmap. The key is the Binding's
+	; declaration id (AstNode.d of the item, saved in lwrnode above),
+	; stored in 4 bytes of module-lifetime arena storage (map_insert
+	; borrows the key).
+	mov	rdi, [rbx + LwrState.iar]
+	mov	rsi, 4
+	call	arena_alloc
+	mov	r12, rax			; the 4-byte key storage
+	mov	eax, [lwrnode]
+	mov	[r12], eax			; the decl id as the 4-byte key
+	lea	rdi, [rbx + LwrState.gmap]
+	mov	rsi, r12			; key_ptr
+	mov	rdx, 4				; key_len
+	mov	ecx, [lwrgid]			; value = the global id
+	call	map_insert
+  .next:
+	mov	eax, r12d
+	inc	eax
+	mov	r12, rax
+	jmp	.loop
+  .done:
+	return
+endp
+
 ; __lwr_items(lwrsp, lwrn, lwrmode, lwroff, lwrcnt) -- walk `Module.items` (or
 ; an `Impl`'s, or an `externus` block's member list) in order. `lwrmode` 0
 ; declares (pass B), 1 lowers (pass C). The list is passed as (offset, count)
@@ -1228,6 +1927,20 @@ proc lwr_module, lwrtree, lwrmodp, lwriarn, lwrsarn
 	mov	[lwroff2], ecx
 	mov	ecx, [rax + AstNode.b]
 	mov	[lwrcnt2], ecx
+
+	; ---- the global map: created BEFORE the aggregate-global pre-pass,
+	; which fills it. Inline in LwrState (like ChkCtx.mods). ----
+	lea	rdi, [rbx + LwrState.gmap]
+	mov	rsi, [lwriarn]
+	mov	rdx, 16			; bucket count: power of two, sized for a
+					; handful of aggregate constants per module
+	call	map_init
+
+	; ---- the aggregate-global pre-pass (before pass B, which declares
+	; functions and would otherwise see a `Path` to an aggregate constant
+	; with no global id yet) ----
+	mov	rdi, rbx
+	call	__lwr_module_globals
 
 	; ---- pass B ----
 	mov	rdi, rbx

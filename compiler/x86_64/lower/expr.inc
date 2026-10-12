@@ -568,6 +568,7 @@ proc __lwr_path, lwrsp, lwrn
 		slot lwrd, dd
 		slot lwrk, dd
 		slot lwrt, dd
+		slot lwrgid, dd
 	endl
 	mov	rbx, [lwrsp]
 	mov	rdi, rbx
@@ -626,8 +627,15 @@ proc __lwr_path, lwrsp, lwrn
 	mov	rdi, rbx
 	mov	esi, [lwrd]
 	call	lwr_var_at
+	rassert	rax ne 0
 	movzx	ecx, byte [rax + LwrVar.vkind]
 	mov	[lwrk], ecx
+	; A Path that reaches here names a module-level `firma` (not a local,
+	; not a parameter -- those have vkind SSA/SLOT/AGGP above). The vars
+	; vec is zeroed for anything the walk never declares, so vkind reads
+	; as NONE for a module-level declaration too. That is EXPECTED, not a
+	; bug: the fallthrough below handles module-level constants. The old
+	; rassert here was wrong -- it fired for every scalar module constant.
 	mov	r12d, [rax + LwrVar.vval]
 
 	cmp	dword [lwrk], LWR_VK_SSA
@@ -636,9 +644,52 @@ proc __lwr_path, lwrsp, lwrn
 	je	.aggp
 	cmp	dword [lwrk], LWR_VK_SLOT
 	je	.slot
-	; not a local at all: a module-level `firma` with a literal
-	; initializer, the only constant a `Path` can name today (spec section
-	; 8.6 decision 5)
+	; not a local at all: a module-level `firma`. A SCALAR constant with a
+	; `Lit` initializer is inlined at the use (the only constant a `Path`
+	; named before 2026-10-11; spec section 8.6 decision 5). An AGGREGATE
+	; constant (`acies`/`structura` with a constant-aggregate initializer)
+	; was materialized as a `data` global by `__lwr_module_globals` and is
+	; read through a `gaddr` of it -- a `gaddr` value IS a `ptr`, which is
+	; what an aggregate `Path` returns anyway (lowering.md 2.8's aggregate
+	; arm). Anything else is `[OPEN]` and traps in `__lwr_module_const`.
+	; The decl's TYPE (not the decl itself, not the IR type id) is what
+	; lwr_ty_scalar wants. Read it from AstDecl.ty. The Path node's own
+	; type (via __lwr_nty) is the same value the checker wrote there.
+	mov	rdi, [rbx + LwrState.tree]
+	mov	esi, [lwrd]
+	call	ast_decl_at
+	mov	eax, [rax + AstDecl.ty]
+	mov	rdi, rbx
+	mov	esi, eax
+	call	lwr_ty_scalar
+	test	eax, eax
+	jnz	.scalarconst
+	; aggregate: look the global up by declaration id. The key is the
+	; 4-byte decl id; build it on the stack (map_get only reads it).
+	sub	rsp, 8
+	mov	eax, [lwrd]
+	mov	[rsp], eax
+	lea	rdi, [rbx + LwrState.gmap]
+	mov	rsi, rsp
+	mov	rdx, 4
+	call	map_get
+	add	rsp, 8
+	rassert	rax ne 0		; the pre-pass materialized it, or it was
+					; not a constant aggregate and the gate in
+					; __lwr_module_globals left it to trap
+					; here -- a miss is a compiler bug, not a
+					; source condition
+	mov	[lwrgid], eax
+	; emit `%v = gaddr N` in the CURRENT block and return the value id
+	mov	rdi, rbx
+	mov	esi, BFA_OP_GADDR
+	xor	rdx, rdx
+	mov	ecx, [rbx + LwrState.tptr]
+	mov	r8d, [lwrgid]
+	xor	r9, r9
+	call	lwr_emit
+	return
+  .scalarconst:
 	mov	rdi, rbx
 	mov	esi, [lwrd]
 	call	__lwr_module_const

@@ -227,6 +227,14 @@ struct LwrState
 				;    provider (`lwr_unprovided`), 0 if none. The
 				;    module's answer: `lwr_module` returns it
 	field badp,  dd
+	gmap   Map		; module-level aggregate `firma` declaration id
+				;    (4 key bytes) -> the global's id. Module
+				;    lifetime (created in `lwr_module` before the
+				;    aggregate-global pre-pass; not per-function).
+				;    Inline (like ChkCtx.mods), not a pointer, so
+				;    callers write `lea rdi, [rbx + LwrState.gmap]`.
+	field ginit, dd		; 1 once the pre-pass that materialises module-level
+				;    aggregate `firma` globals has run, 0 before
 end struct
 
 ; ============================================================================
