@@ -428,7 +428,7 @@ segment readable writeable
   db "    v2 = p1;", 10
   db "    v3 = s3;", 10
   db "    v4 = UINT64_C(4);", 10
-  db "    if (v2 >= v4) exsrt_abortus(1);", 10
+  db "    if (v2 >= v4) { exsrt_abortus(1); return 0; }", 10
   db "    v6 = (unsigned char *)((uintptr_t)v1 + (uintptr_t)v2 * 4);", 10
   db "    v7 = exsi_norm_u(exsi_ld_n(v6 + 0, 4), 32);", 10
   db "    (void)v7;", 10

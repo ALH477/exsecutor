@@ -21,10 +21,11 @@
 
 uint64_t triplicare(uint64_t x) { return x * 3; }
 
-_Noreturn void exsrt_abortus(unsigned kind)
+int exsrt_abortus(unsigned kind)
 {
     fprintf(stderr, "exsecutor: abortus %u\n", kind);
     exit(2);
+    return 0;             /* unreachable; satisfies the returning ABI (ADR 0020) */
 }
 
 uint64_t exs_initium(unsigned char *p0);

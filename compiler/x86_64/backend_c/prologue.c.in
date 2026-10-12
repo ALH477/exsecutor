@@ -74,8 +74,15 @@ _Static_assert(sizeof(unsigned) * CHAR_BIT >= 32, "exsecutor: unsigned holds a b
 /* The trap hook: the ONE symbol a library-mode unit imports. Whoever links
  * it supplies the body (c-backend.md D1). Kinds are prelude/README.md's:
  * 1 numeric (overflow, a shift count past the width, a failed chk),
- * 5 terminus. */
-_Noreturn void exsrt_abortus(unsigned kind);
+ * 5 terminus.
+ *
+ * ADR 0020: the ABI RETURNS a verdict (int, not _Noreturn void). A host
+ * that cannot return (the userspace shim, the reference prelude) keeps the
+ * old behaviour -- log, trap, never return. A host that can return (the
+ * kernel shim) returns a negative errno (-EPERM) and the emitted function
+ * returns 0 (admit) after the call. The 0-after-trap path is the fail-open
+ * direction; a fail-closed host never returns 0. */
+int exsrt_abortus(unsigned kind);
 
 /* Every integer value of any uN or iN is held in a uint64_t in canonical
  * form (ssa-ir.md 2.2): a uN zero-extended, an iN sign-extended. Every
@@ -245,36 +252,36 @@ static inline uint64_t exsi_ftoi_f(float a)
 
 static inline uint64_t exsi_add_u(uint64_t a, uint64_t b, unsigned n)
 { uint64_t t = a + b;
-  if (n == 64 ? t < a : t > exsi_mask(n)) exsrt_abortus(1);
+  if (n == 64 ? t < a : t > exsi_mask(n)) { exsrt_abortus(1); return 0; }
   return t; }
 static inline uint64_t exsi_add_i(uint64_t a, uint64_t b, unsigned n)
 { uint64_t t = a + b;
   if (n == 64 ? ((((a ^ t) & (b ^ t)) >> 63) != 0) : exsi_norm_i(t, n) != t)
-    exsrt_abortus(1);
+    { exsrt_abortus(1); return 0; }
   return t; }
 static inline uint64_t exsi_sub_u(uint64_t a, uint64_t b, unsigned n)
 { uint64_t t = a - b;
-  if (n == 64 ? a < b : t > exsi_mask(n)) exsrt_abortus(1);
+  if (n == 64 ? a < b : t > exsi_mask(n)) { exsrt_abortus(1); return 0; }
   return t; }
 static inline uint64_t exsi_sub_i(uint64_t a, uint64_t b, unsigned n)
 { uint64_t t = a - b;
   if (n == 64 ? ((((a ^ b) & (a ^ t)) >> 63) != 0) : exsi_norm_i(t, n) != t)
-    exsrt_abortus(1);
+    { exsrt_abortus(1); return 0; }
   return t; }
 /* mul checks by DIVISION at every width rather than in a wider type: GCC
  * provides __int128 only where __SIZEOF_INT128__ is defined, which excludes
  * 32-bit-pointer targets such as o64 (c-backend.md finding 5). b > M / a is
  * exact. */
 static inline uint64_t exsi_mul_u(uint64_t a, uint64_t b, unsigned n)
-{ if (n <= 32) { uint64_t t = a * b; if (t > exsi_mask(n)) exsrt_abortus(1); return t; }
-  if (a != 0 && b > exsi_mask(n) / a) exsrt_abortus(1);
+{ if (n <= 32) { uint64_t t = a * b; if (t > exsi_mask(n)) { exsrt_abortus(1); return 0; } return t; }
+  if (a != 0 && b > exsi_mask(n) / a) { exsrt_abortus(1); return 0; }
   return a * b; }
 static inline uint64_t exsi_mul_i(uint64_t a, uint64_t b, unsigned n)
 { uint64_t sa = a >> 63, sb = b >> 63;
   uint64_t ma = sa ? 0 - a : a, mb = sb ? 0 - b : b;   /* magnitudes; 2^63 stays 2^63 */
   uint64_t neg = sa ^ sb;
   uint64_t lim = neg ? UINT64_C(1) << (n - 1) : (UINT64_C(1) << (n - 1)) - 1;
-  if (ma != 0 && mb > lim / ma) exsrt_abortus(1);
+  if (ma != 0 && mb > lim / ma) { exsrt_abortus(1); return 0; }
   { uint64_t p = ma * mb; return neg ? 0 - p : p; } }   /* canonical by construction */
 
 /* div and rem -- spec 5.4 as decided 2026-09-25: the quotient TRUNCATED
@@ -327,19 +334,19 @@ static inline uint64_t exsi_mul_i(uint64_t a, uint64_t b, unsigned n)
  * row of the helper table, so the argument is passed and discarded the way
  * exsi_subs_u discards it. */
 static inline uint64_t exsi_div_u(uint64_t a, uint64_t b, unsigned n)
-{ (void)n; if (b == 0) exsrt_abortus(1); return a / b; }
+{ (void)n; if (b == 0) { exsrt_abortus(1); return 0; } return a / b; }
 static inline uint64_t exsi_rem_u(uint64_t a, uint64_t b, unsigned n)
-{ (void)n; if (b == 0) exsrt_abortus(1); return a % b; }
+{ (void)n; if (b == 0) { exsrt_abortus(1); return 0; } return a % b; }
 static inline uint64_t exsi_div_i(uint64_t a, uint64_t b, unsigned n)
-{ if (b == 0) exsrt_abortus(1);
-  if (a == 0 - (UINT64_C(1) << (n - 1)) && b == UINT64_MAX) exsrt_abortus(1);
+{ if (b == 0) { exsrt_abortus(1); return 0; }
+  if (a == 0 - (UINT64_C(1) << (n - 1)) && b == UINT64_MAX) { exsrt_abortus(1); return 0; }
   { uint64_t sa = a >> 63, sb = b >> 63;
     uint64_t ma = sa ? 0 - a : a, mb = sb ? 0 - b : b;   /* magnitudes; 2^63 stays 2^63 */
     uint64_t q = ma / mb;
     return (sa ^ sb) ? 0 - q : q; } }                    /* canonical by construction */
 static inline uint64_t exsi_rem_i(uint64_t a, uint64_t b, unsigned n)
-{ if (b == 0) exsrt_abortus(1);
-  if (a == 0 - (UINT64_C(1) << (n - 1)) && b == UINT64_MAX) exsrt_abortus(1);
+{ if (b == 0) { exsrt_abortus(1); return 0; }
+  if (a == 0 - (UINT64_C(1) << (n - 1)) && b == UINT64_MAX) { exsrt_abortus(1); return 0; }
   { uint64_t sa = a >> 63, sb = b >> 63;
     uint64_t ma = sa ? 0 - a : a, mb = sb ? 0 - b : b;
     uint64_t r = ma % mb;
@@ -363,16 +370,16 @@ static inline uint64_t exsi_subs_i(uint64_t a, uint64_t b, unsigned n)
  * defined. A negative iN count is a huge unsigned and traps, which is what
  * the reference's `jae` does too. */
 static inline uint64_t exsi_shl_u(uint64_t a, uint64_t c, unsigned n)
-{ if (c >= n) exsrt_abortus(1); return exsi_norm_u(a << c, n); }
+{ if (c >= n) { exsrt_abortus(1); return 0; } return exsi_norm_u(a << c, n); }
 static inline uint64_t exsi_shl_i(uint64_t a, uint64_t c, unsigned n)
-{ if (c >= n) exsrt_abortus(1); return exsi_norm_i(a << c, n); }
+{ if (c >= n) { exsrt_abortus(1); return 0; } return exsi_norm_i(a << c, n); }
 static inline uint64_t exsi_shr_u(uint64_t a, uint64_t c, unsigned n)
-{ if (c >= n) exsrt_abortus(1); return a >> c; }
+{ if (c >= n) { exsrt_abortus(1); return 0; } return a >> c; }
 /* arithmetic right shift without a signed shift: the sign replicated by a
  * mask. c == 0 is split out because (x << 64) would be a shift by the
  * type's width. */
 static inline uint64_t exsi_shr_i(uint64_t a, uint64_t c, unsigned n)
-{ if (c >= n) exsrt_abortus(1);
+{ if (c >= n) { exsrt_abortus(1); return 0; }
   return c == 0 ? a : (a >> c) | ((0 - (a >> 63)) << (64 - c)); }
 
 /* Byte-at-a-time, with explicit shifts: the emitted text depends on no

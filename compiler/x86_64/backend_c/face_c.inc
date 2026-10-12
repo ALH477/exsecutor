@@ -475,8 +475,10 @@ proc bfc_emit_face, module, arena, pubmask, facies
 	__bfc_emtxt "/* exsecutor: the C face of a library unit (exsc --emitte h). Generated,", 10
 	__bfc_emtxt " * never hand-edited: one prototype per `publica` function the unit defines,", 10
 	__bfc_emtxt " * spelled exactly as the unit's own prototype, then the one symbol the unit", 10
-	__bfc_emtxt " * imports. The host supplies exsrt_abortus; only a trap reaches it, and it", 10
-	__bfc_emtxt " * must not return. Above each prototype, its IR signature: a uint64_t carries", 10
+	__bfc_emtxt " * imports. The host supplies exsrt_abortus; only a trap reaches it.", 10
+	__bfc_emtxt " * ADR 0020: it RETURNS a verdict (int). A host that cannot return traps as", 10
+	__bfc_emtxt " * before; a host that can return (the kernel shim) returns -EPERM. Above", 10
+	__bfc_emtxt " * each prototype, its IR signature: a uint64_t carries", 10
 	__bfc_emtxt " * the named width in canonical form (a uN zero-extended, an iN sign-extended);", 10
 	__bfc_emtxt " * a value outside that width is outside the contract, and what the unit does", 10
 	__bfc_emtxt " * with one is unspecified. docs/design/c-backend.md D1, D5, D9. */", 10
@@ -501,7 +503,7 @@ proc bfc_emit_face, module, arena, pubmask, facies
 	je	.nodecl
 	__bfc_emtxt 10
   .nodecl:
-	__bfc_emtxt "_Noreturn void exsrt_abortus(unsigned kind);", 10
+	__bfc_emtxt "int exsrt_abortus(unsigned kind);", 10
 	__bfc_emtxt "#endif", 10
 	jmp	.out
 
@@ -511,9 +513,11 @@ proc bfc_emit_face, module, arena, pubmask, facies
 	__bfc_emtxt "// never hand-edited: one declaration per `publica` function the unit", 10
 	__bfc_emtxt "// defines, in the unit's own C ABI -- uint64_t is u64, unsigned char * is", 10
 	__bfc_emtxt "// *mut u8, float is f32, double is f64. The unit imports one symbol, which", 10
-	__bfc_emtxt "// the host supplies and which must not return:", 10
-	__bfc_emtxt "//     _Noreturn void exsrt_abortus(unsigned kind);", 10
-	__bfc_emtxt "//     #[no_mangle] pub extern ", '"', "C", '"', " fn exsrt_abortus(kind: u32) -> ! { ... }", 10
+	__bfc_emtxt "// the host supplies. ADR 0020: it RETURNS a verdict (int). A host that", 10
+	__bfc_emtxt "// cannot return traps as before; a host that can return (the kernel shim)", 10
+	__bfc_emtxt "// returns a negative errno:", 10
+	__bfc_emtxt "//     int exsrt_abortus(unsigned kind);", 10
+	__bfc_emtxt "//     #[no_mangle] pub extern ", '"', "C", '"', " fn exsrt_abortus(kind: u32) -> i32 { ... }", 10
 	__bfc_emtxt "// Above each declaration, its IR signature: a u64 carries the named width in", 10
 	__bfc_emtxt "// canonical form (a uN zero-extended, an iN sign-extended); a value outside", 10
 	__bfc_emtxt "// that width is outside the contract, and what the unit does with one is", 10

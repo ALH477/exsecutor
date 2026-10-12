@@ -241,8 +241,10 @@ segment readable writeable
   db "/* exsecutor: the C face of a library unit (exsc --emitte h). Generated,", 10
   db " * never hand-edited: one prototype per `publica` function the unit defines,", 10
   db " * spelled exactly as the unit's own prototype, then the one symbol the unit", 10
-  db " * imports. The host supplies exsrt_abortus; only a trap reaches it, and it", 10
-  db " * must not return. Above each prototype, its IR signature: a uint64_t carries", 10
+  db " * imports. The host supplies exsrt_abortus; only a trap reaches it.", 10
+  db " * ADR 0020: it RETURNS a verdict (int). A host that cannot return traps as", 10
+  db " * before; a host that can return (the kernel shim) returns -EPERM. Above", 10
+  db " * each prototype, its IR signature: a uint64_t carries", 10
   db " * the named width in canonical form (a uN zero-extended, an iN sign-extended);", 10
   db " * a value outside that width is outside the contract, and what the unit does", 10
   db " * with one is unspecified. docs/design/c-backend.md D1, D5, D9. */", 10
@@ -259,7 +261,7 @@ segment readable writeable
   db "/* (ptr) -> void */", 10
   db "void exs_Typus_2Em(unsigned char *p0);", 10
   db 10
-  db "_Noreturn void exsrt_abortus(unsigned kind);", 10
+  db "int exsrt_abortus(unsigned kind);", 10
   db "#endif", 10
   .len = $ - expected_h
 
@@ -268,9 +270,11 @@ segment readable writeable
   db "// never hand-edited: one declaration per `publica` function the unit", 10
   db "// defines, in the unit's own C ABI -- uint64_t is u64, unsigned char * is", 10
   db "// *mut u8, float is f32, double is f64. The unit imports one symbol, which", 10
-  db "// the host supplies and which must not return:", 10
-  db "//     _Noreturn void exsrt_abortus(unsigned kind);", 10
-  db "//     #[no_mangle] pub extern ", '"', "C", '"', " fn exsrt_abortus(kind: u32) -> ! { ... }", 10
+  db "// the host supplies. ADR 0020: it RETURNS a verdict (int). A host that", 10
+  db "// cannot return traps as before; a host that can return (the kernel shim)", 10
+  db "// returns a negative errno:", 10
+  db "//     int exsrt_abortus(unsigned kind);", 10
+  db "//     #[no_mangle] pub extern ", '"', "C", '"', " fn exsrt_abortus(kind: u32) -> i32 { ... }", 10
   db "// Above each declaration, its IR signature: a u64 carries the named width in", 10
   db "// canonical form (a uN zero-extended, an iN sign-extended); a value outside", 10
   db "// that width is outside the contract, and what the unit does with one is", 10

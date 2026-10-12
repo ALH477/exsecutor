@@ -129,8 +129,8 @@ void *memset(void *d, int c, usize n)
 
 
 /* ---- the trap hook ----------------------------------------------------- */
-_Noreturn void exsrt_abortus(unsigned kind);
-_Noreturn void exsrt_abortus(unsigned kind)
+int exsrt_abortus(unsigned kind);
+int exsrt_abortus(unsigned kind)
 {
     char b[32];
     const char *m = "exsecutor: abortus ";
@@ -142,6 +142,7 @@ _Noreturn void exsrt_abortus(unsigned kind)
     sys3(SYS_write, 2, (long)(usize)b, i);
     __asm__ volatile(".word 0");        /* reserved instruction -> SIGILL */
     for (;;) { }
+    return 0;             /* unreachable; satisfies the returning ABI (ADR 0020) */
 }
 
 /* ---- interface.inc part A, by literal offset --------------------------- */

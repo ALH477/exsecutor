@@ -2505,7 +2505,7 @@ proc __bfc_emit_chk, ctx, module, func, instid
 	mov	r8d, [fl]
 	and	r8d, 0x200
 	call	__bfc_emit_operand
-	__bfc_emtxt ") exsrt_abortus(1);", 10
+	__bfc_emtxt ") { exsrt_abortus(1); return 0; }", 10
 	return
 endp
 
@@ -4032,7 +4032,7 @@ proc __bfc_emit_trap, ctx, module, func, instid
 	call	__bfa_streq
 	test	eax, eax
 	jz	.unknown
-	__bfc_emtxt "    exsrt_abortus(5);", 10
+	__bfc_emtxt "    { exsrt_abortus(5); return 0; }", 10
 	return
   .unknown:
 	jmp	.after_msg

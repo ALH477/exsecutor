@@ -185,8 +185,8 @@ uint64_t exsrt_lector_lege_octetos(unsigned char *lp, unsigned char *b,
 static uint64_t *g_result;
 
 /* ---- the trap hook ----------------------------------------------------- */
-_Noreturn void exsrt_abortus(unsigned kind);
-_Noreturn void exsrt_abortus(unsigned kind)
+int exsrt_abortus(unsigned kind);
+int exsrt_abortus(unsigned kind)
 {
     /* The one line prelude/README.md promises, into the output buffer where
      * the host can read it (point 3). Best effort: whole or not at all. */
@@ -215,6 +215,7 @@ _Noreturn void exsrt_abortus(unsigned kind)
     }
     __builtin_trap();       /* s_trap on amdgcn: the runner's fault signal */
     for (;;) { }
+    return 0;             /* unreachable; satisfies the returning ABI (ADR 0020) */
 }
 
 /* ---- the {Mundus, ambitus} closure ------------------------------------- */

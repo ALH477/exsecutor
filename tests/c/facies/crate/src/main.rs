@@ -13,10 +13,11 @@
 include!(concat!(env!("OUT_DIR"), "/face.rs"));
 include!(concat!(env!("OUT_DIR"), "/consumer.rs"));
 
-/// The one symbol the unit imports (docs/design/c-backend.md D1). Reached
-/// only by a trap; it must not return.
+/// The one symbol the unit imports (docs/design/c-backend.md D1). ADR 0020:
+/// the ABI returns a verdict (i32). This host cannot return from a trap, so
+/// it exits; the `-> i32` return type satisfies the new ABI's signature.
 #[no_mangle]
-pub extern "C" fn exsrt_abortus(kind: u32) -> ! {
+pub extern "C" fn exsrt_abortus(kind: u32) -> i32 {
     eprintln!("exsecutor: abortus {kind}");
     std::process::exit(70)
 }

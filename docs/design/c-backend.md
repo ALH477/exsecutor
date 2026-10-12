@@ -314,7 +314,7 @@ _Static_assert(CHAR_BIT == 8, "exsecutor: CHAR_BIT must be 8");
 _Static_assert((-1 & 3) == 3, "exsecutor: two's complement");
 _Static_assert(sizeof(unsigned) * CHAR_BIT >= 32, "exsecutor: unsigned holds a byte and a shift");
 _Static_assert(sizeof(void *) == 8, "exsecutor: hospes x86_64-linux has 64-bit addresses");   /* per row of D2 */
-_Noreturn void exsrt_abortus(unsigned kind);
+int exsrt_abortus(unsigned kind);   /* ADR 0020: returns a verdict, not _Noreturn */
 /* exsi_* helpers follow: section 3 */
 ```
 
@@ -1066,10 +1066,10 @@ name. The Rust face re-spells the same `BfaSig` through a four-row table —
 `uint64_t` is `u64`, `unsigned char *` is `*mut u8`, `float` is `f32`,
 `double` is `f64`, a void result is no arrow — inside `unsafe extern "C"`,
 which rustc accepts in edition 2021 (since 1.82) and requires in 2024. The
-header also declares `_Noreturn void exsrt_abortus(unsigned kind);`; the
-Rust face names that import in a comment instead, because a Rust host
-DEFINES it (`#[no_mangle] pub extern "C" fn exsrt_abortus(kind: u32) -> !`),
-as `tests/c/facies/crate/src/main.rs` does.
+header also declares `int exsrt_abortus(unsigned kind);` (ADR 0020: the trap
+ABI returns a verdict); the Rust face names that import in a comment instead,
+because a Rust host DEFINES it (`#[no_mangle] pub extern "C" fn
+exsrt_abortus(kind: u32) -> i32`), as `tests/c/facies/crate/src/main.rs` does.
 
 **The IR signature rides along.** Above each declaration, a comment such as
 `/* (u64, u32) -> u64 */` — `print.inc`'s own type names. The carrier (D4)

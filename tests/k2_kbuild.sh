@@ -82,10 +82,11 @@ cat > "$OUT/shim.c" <<'EOF'
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-_Noreturn void exsrt_abortus(unsigned kind)
+int exsrt_abortus(unsigned kind)
 {
     fprintf(stderr, "exsecutor: abortus %u\n", kind);
     exit(2);
+    return 0;             /* unreachable; satisfies the returning ABI (ADR 0020) */
 }
 EOF
 

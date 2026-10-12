@@ -250,9 +250,9 @@ with no arguments prints its usage, its options, and its exit-status table.
 id: adr-count
 kind: glob_count
 glob: docs/decisions/0*.md
-equals: 20
+equals: 21
 -->
-`docs/decisions/` holds twenty ADRs — `0001` through `0019` plus the
+`docs/decisions/` holds twenty-one ADRs — `0001` through `0020` plus the
 companion `0017-refero-expression-form` — immutable once
 written; superseded, never edited (a status line and an Open list may be
 updated).

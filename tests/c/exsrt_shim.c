@@ -93,9 +93,16 @@ _Static_assert(offsetof(ExsTextus, len) == 8, "shim: textus.len at 8");
 /* prelude/README.md: "One shape for every runtime abort: the line
  * `exsecutor: abortus N` on fd 2". The kinds are 1 numeric/chk, 2 and 3 ARC,
  * 4 arena, 5 `terminus`. The English before it is not promised and is not
- * compared (D6); the line is. */
-_Noreturn void exsrt_abortus(unsigned kind);
-_Noreturn void exsrt_abortus(unsigned kind)
+ * compared (D6); the line is.
+ *
+ * ADR 0020: the ABI returns a verdict (int, not _Noreturn void). This shim
+ * is a userspace host that CANNOT return from a trap, so it keeps the old
+ * behaviour: write the line, __builtin_trap(). The _Noreturn qualifier is
+ * dropped from the declaration to match the emitted unit's prologue (which
+ * says `int exsrt_abortus(unsigned kind);`), but the body still never
+ * returns. */
+int exsrt_abortus(unsigned kind);
+int exsrt_abortus(unsigned kind)
 {
     char buf[64];
     int n = snprintf(buf, sizeof buf, "exsecutor: abortus %u\n", kind);
@@ -104,6 +111,7 @@ _Noreturn void exsrt_abortus(unsigned kind)
         (void)ignored;
     }
     __builtin_trap();     /* ud2 on x86-64 -> SIGILL, `signal 4` to check_run */
+    return 0;             /* unreachable; satisfies the returning ABI */
 }
 
 /* ---- the {Mundus, ambitus} closure ------------------------------------- */
