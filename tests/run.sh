@@ -188,7 +188,9 @@ IR_FIXTURE_FLOOR="${IR_FIXTURE_FLOOR:-78}"
 # because the differential phase links against tests/c/exsrt_shim.c, which
 # deliberately does not define the foreign `triplicare`; tests/c/ffi/run.sh
 # is its gate. Declared-ineligible does NOT raise DIFFERENTIAL_PROGRAM_FLOOR.
-PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-195}"
+# 195 -> 196 on 2026-10-11: module_const_agg/ (K2 item 4: module-scope
+# constant aggregates read through gaddr; five exit-code checks).
+PROGRAM_FIXTURE_FLOOR="${PROGRAM_FIXTURE_FLOOR:-196}"
 
 # The differential phase (run_differential_tests, below), which compiles the
 # C backend's emitted units and runs them against the same expectations the
@@ -2695,6 +2697,7 @@ SILENT_BY_DESIGN=(
   integri_minimi                   # integer test, exit-code only
   lector_campus_occultus           # expect-exit=1, refusal path
   lector_numerus                   # expect-exit=41, refusal path
+  module_const_agg                 # expect-exit=0, K2.4: five checks, exit-code
   phi_loops                        # expect-exit=77, refusal path
   receptio_caput                   # expect-exit=3, refusal path
   receptio_vec_awgn_exemplum_m12db_s1   # expect-exit=1, c-differentia=nightly-sweep

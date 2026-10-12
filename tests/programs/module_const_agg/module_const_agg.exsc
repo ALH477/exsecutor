@@ -1,0 +1,46 @@
+// K2 item 4: module-scope constant aggregates lower to `data` globals
+// and are read through `gaddr`. Before 2026-10-11 a module-level
+// `firma t: acies<u8, N> = [...]` materialized the global (the pre-pass
+// in __lwr_module_globals) but a `Path` to it in any function trapped
+// the compiler -- the map stored the global id 0, and Map values can
+// never be 0 (0 is the "not found" sentinel). The fix stores gid+1.
+//
+// The checks, in order:
+//   1   array literal indexed: t[2] == 3
+//   2   array rep indexed: r[3] == 7
+//   3   u16 array indexed and cast: u[1] sicut u8 == 200
+//   4   two constants alive at once: a[1] + b[0] == 50
+//   5   scalar module constant still inlined: c == 42
+//
+// Exit 0 means every check passed. Exit 10+n means check n+1 failed.
+
+firma t: acies<u8, 4> = [1, 2, 3, 4];
+firma r: acies<u8, 4> = [7; 4];
+firma u: acies<u16, 3> = [100, 200, 300];
+firma a: acies<u8, 2> = [10, 20];
+firma b: acies<u8, 2> = [30, 40];
+firma c: u8 = 42;
+
+publica functio initium(m: Mundus) -> u8 {
+    // 1: array literal
+    si t[2] ne 3 {
+        redde 11;
+    }
+    // 2: array rep
+    si r[3] ne 7 {
+        redde 12;
+    }
+    // 3: u16 array, cast down
+    si (u[1] sicut u8) ne 200 {
+        redde 13;
+    }
+    // 4: two constants
+    si (a[1] + b[0]) ne 50 {
+        redde 14;
+    }
+    // 5: scalar still works
+    si c ne 42 {
+        redde 15;
+    }
+    redde 0;
+}

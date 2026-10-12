@@ -1,0 +1,11 @@
+# K2 item 4: module-scope constant aggregates. The pre-pass in
+# __lwr_module_globals materializes each constant `firma` whose type is
+# `acies` or `structura` and whose initializer is all integer literals
+# as a `data` global; a `Path` to it in any function lowers to `gaddr N`.
+# The bug this guards: the map stored the raw global id, and global 0
+# (the first one) is 0 -- which Map reads back as "not found" (0 is the
+# miss sentinel). The fix stores gid+1. The five checks cover array
+# literal, array rep, wider element type, two constants alive at once,
+# and a scalar constant (the pre-2026-10-11 path, regression guard).
+# Exit 0 means all five passed; 11..15 names the first that failed.
+TEST: expect-exit=0

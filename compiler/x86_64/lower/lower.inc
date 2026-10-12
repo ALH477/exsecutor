@@ -1633,14 +1633,20 @@ proc __lwr_module_globals, lwrsp
 	mov	rdi, [rbx + LwrState.iar]
 	mov	rsi, 4
 	call	arena_alloc
-	mov	r12, rax			; the 4-byte key storage
+	rassert	rax ne 0
+	mov	[lwrbuf], rax		; reuse lwrbuf slot: the byte buffer is done
+	mov	r14, rax			; the 4-byte key storage
 	mov	eax, [lwrnode]
-	mov	[r12], eax			; the decl id as the 4-byte key
+	mov	[r14], eax			; the decl id as the 4-byte key
+	; save r12 (loop counter), call map_insert, restore r12
+	push	r12
 	lea	rdi, [rbx + LwrState.gmap]
-	mov	rsi, r12			; key_ptr
+	mov	rsi, r14			; key_ptr
 	mov	rdx, 4				; key_len
-	mov	ecx, [lwrgid]			; value = the global id
+	mov	ecx, [lwrgid]
+	inc	ecx				; store gid+1: map values must be non-zero
 	call	map_insert
+	pop	r12
   .next:
 	mov	eax, r12d
 	inc	eax

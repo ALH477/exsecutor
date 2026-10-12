@@ -679,6 +679,7 @@ proc __lwr_path, lwrsp, lwrn
 					; __lwr_module_globals left it to trap
 					; here -- a miss is a compiler bug, not a
 					; source condition
+	dec	eax				; stored as gid+1 (map values can't be 0)
 	mov	[lwrgid], eax
 	; emit `%v = gaddr N` in the CURRENT block and return the value id
 	mov	rdi, rbx

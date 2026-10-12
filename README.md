@@ -679,7 +679,7 @@ types, `nativus` order only, the value as its raw IEEE bit pattern
   so that any floor moving fails this bullet with it:
 
 ```bash truth:id=suite-floors truth:kind=command truth:expect_exit=0 truth:expect_stdout=9
-grep -cE "FLOOR:-(227|78|195|236|119|476|83|17|6)\}" tests/run.sh
+grep -cE "FLOOR:-(227|78|196|236|119|476|83|17|6)\}" tests/run.sh
 ```
 
 - `tests/run.sh --device=amdgcn` (measured 2026-09-21, not part of the
