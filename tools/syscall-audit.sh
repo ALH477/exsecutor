@@ -140,9 +140,11 @@
 #     no syscalls to the union until a routine exists.
 #
 # Unknown atom spelling: exit 2, matching this script's other usage errors.
-# Spellings are spec §4.6's eleven, case-sensitive, exactly as prelude.asm's
+# Spellings are spec §4.6's thirteen, case-sensitive, exactly as prelude.asm's
 # own `EXS_POTESTAS_*` guard requires all be defined: Mundus alloc sermo
-# horologium archivum rete fortuna ambitus Filum machina Crudum.
+# horologium archivum rete fortuna ambitus Filum machina Crudum nucleus
+# guardia (ADR 0021: the last two are kernel-side; no process-level syscalls
+# are admitted under either).
 #
 # Without --potestates, this script checks the compiler's own closed nine,
 # socket-family always a hard failure. Two changes reach default mode too,
@@ -244,10 +246,11 @@ READELF="${READELF:-readelf}"
 OBJDUMP="${OBJDUMP:-objdump}"
 PYTHON3="${PYTHON3:-python3}"
 
-# spec §4.6's eleven capability atoms, exactly as spelled there and as
-# prelude.asm's own EXS_POTESTAS_* guard requires all eleven be defined.
-# Case-sensitive.
-POTESTATES_VALID=(Mundus alloc sermo horologium archivum rete fortuna ambitus Filum machina Crudum)
+# spec §4.6's thirteen capability atoms, exactly as spelled there and as
+# prelude.asm's own EXS_POTESTAS_* guard requires all thirteen be defined.
+# Case-sensitive. ADR 0021: nucleus and guardia are kernel-side atoms
+# (no process-level syscalls admitted under either).
+POTESTATES_VALID=(Mundus alloc sermo horologium archivum rete fortuna ambitus Filum machina Crudum nucleus guardia)
 
 # Validates and canonicalizes a comma-separated --potestates atom list.
 # Prints the deduplicated list back out (insertion order preserved -- this
@@ -267,7 +270,7 @@ validate_potestates() {
     fi
     if [[ -z "${known[$atom]:-}" ]]; then
       echo "syscall-audit: unknown --potestates atom spelling: '$atom'" >&2
-      echo "spec §4.6's eleven, case-sensitive: ${POTESTATES_VALID[*]}" >&2
+      echo "spec §4.6's thirteen, case-sensitive: ${POTESTATES_VALID[*]}" >&2
       exit 2
     fi
     if [[ "$seen" != *",$atom,"* ]]; then

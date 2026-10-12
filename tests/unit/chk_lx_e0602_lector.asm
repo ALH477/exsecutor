@@ -210,7 +210,7 @@ segment readable writeable
 
   ; VERBATIM `--emitte ast` output for fx_rsrc
   fx_rej:
-	db 'astv 1 4 12 1 1 4 0 0 0 0', 10
+	db 'astv 1 4 14 1 1 4 0 0 0 0', 10
 	db 'x 1 3', 10
 	db 't 1 error 0 0 0 0 0 0', 10
 	db 'd 1 Fn 1 0 2 3 0 0 1 8 19', 10
@@ -225,6 +225,8 @@ segment readable writeable
 	db 'd 10 CapAtom 0 0 19 0 0 0 0 0 0', 10
 	db 'd 11 CapAtom 0 0 20 0 0 0 0 0 0', 10
 	db 'd 12 CapAtom 0 0 21 0 0 0 0 0 0', 10
+	db 'd 13 CapAtom 0 0 30 0 0 0 0 0 0', 10
+	db 'd 14 CapAtom 0 0 31 0 0 0 0 0 0', 10
 	db 'n 1 Sig 0 0 0 0 0 0 1 8 16', 10
 	db 'n 2 Block 0 0 0 0 0 0 1 25 2', 10
 	db 'n 3 Fn 1 0 1 2 0 1 1 8 19', 10
@@ -233,7 +235,7 @@ segment readable writeable
 
   ; VERBATIM `--emitte ast` output for fx_asrc
   fx_acc:
-	db 'astv 1 2 12 1 1 2 0 0 0 0', 10
+	db 'astv 1 2 14 1 1 2 0 0 0 0', 10
 	db 'x 1 1', 10
 	db 't 1 error 0 0 0 0 0 0', 10
 	db 'd 1 Struct 1 0 2 1 0 0 1 8 20', 10
@@ -248,6 +250,8 @@ segment readable writeable
 	db 'd 10 CapAtom 0 0 17 0 0 0 0 0 0', 10
 	db 'd 11 CapAtom 0 0 18 0 0 0 0 0 0', 10
 	db 'd 12 CapAtom 0 0 19 0 0 0 0 0 0', 10
+	db 'd 13 CapAtom 0 0 28 0 0 0 0 0 0', 10
+	db 'd 14 CapAtom 0 0 29 0 0 0 0 0 0', 10
 	db 'n 1 Struct 0 0 0 0 0 1 1 8 20', 10
 	db 'n 2 Module 0 0 1 1 0 0 1 0 29', 10
   FX_ACC_LEN = $ - fx_acc

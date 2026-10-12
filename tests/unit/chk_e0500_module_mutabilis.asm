@@ -254,7 +254,7 @@ segment readable writeable
 
   ; VERBATIM `--emitte ast` output for fx_rsrc
   fx_rej:
-	db 'astv 1 6 12 2 1 6 0 0 0 0', 10
+	db 'astv 1 6 14 2 1 6 0 0 0 0', 10
 	db 'x 1 1', 10
 	db 'x 2 5', 10
 	db 't 1 error 0 0 0 0 0 0', 10
@@ -270,6 +270,8 @@ segment readable writeable
 	db 'd 10 CapAtom 0 0 19 0 0 0 0 0 0', 10
 	db 'd 11 CapAtom 0 0 20 0 0 0 0 0 0', 10
 	db 'd 12 CapAtom 0 0 21 0 0 0 0 0 0', 10
+	db 'd 13 CapAtom 0 0 30 0 0 0 0 0 0', 10
+	db 'd 14 CapAtom 0 0 31 0 0 0 0 0 0', 10
 	db 'n 1 Seg 0 0 3 0 0 0 1 13 3', 10
 	db 'n 2 Path 0 0 1 1 0 0 1 13 3', 10
 	db 'n 3 TyPath 0 0 2 0 0 0 1 13 3', 10
@@ -280,7 +282,7 @@ segment readable writeable
 
   ; VERBATIM `--emitte ast` output for fx_asrc
   fx_acc:
-	db 'astv 1 6 12 2 1 6 0 0 0 0', 10
+	db 'astv 1 6 14 2 1 6 0 0 0 0', 10
 	db 'x 1 1', 10
 	db 'x 2 5', 10
 	db 't 1 error 0 0 0 0 0 0', 10
@@ -296,6 +298,8 @@ segment readable writeable
 	db 'd 10 CapAtom 0 0 19 0 0 0 0 0 0', 10
 	db 'd 11 CapAtom 0 0 20 0 0 0 0 0 0', 10
 	db 'd 12 CapAtom 0 0 21 0 0 0 0 0 0', 10
+	db 'd 13 CapAtom 0 0 30 0 0 0 0 0 0', 10
+	db 'd 14 CapAtom 0 0 31 0 0 0 0 0 0', 10
 	db 'n 1 Seg 0 0 3 0 0 0 1 9 3', 10
 	db 'n 2 Path 0 0 1 1 0 0 1 9 3', 10
 	db 'n 3 TyPath 0 0 2 0 0 0 1 9 3', 10

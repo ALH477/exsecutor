@@ -224,7 +224,7 @@ segment readable writeable
   FX_ASRC_LEN = $ - fx_asrc
 
   fx_rej:
-	db 'astv 1 10 13 4 1 10 0 0 0 0', 10
+	db 'astv 1 10 15 4 1 10 0 0 0 0', 10
 	db 'x 1 2', 10
 	db 'x 2 5', 10
 	db 'x 3 7', 10
@@ -243,6 +243,8 @@ segment readable writeable
 	db 'd 11 CapAtom 0 0 27 0 0 0 0 0 0', 10
 	db 'd 12 CapAtom 0 0 28 0 0 0 0 0 0', 10
 	db 'd 13 CapAtom 0 0 29 0 0 0 0 0 0', 10
+	db 'd 14 CapAtom 0 0 48 0 0 0 0 0 0', 10
+	db 'd 15 CapAtom 0 0 49 0 0 0 0 0 0', 10
 	db 'n 1 TyBit 32 0 0 0 0 0 1 21 3', 10
 	db 'n 2 Param 0 0 3 1 0 2 1 18 6', 10
 	db 'n 3 TyBit 32 0 0 0 0 0 1 29 3', 10
@@ -256,7 +258,7 @@ segment readable writeable
   FX_REJ_LEN = $ - fx_rej
 
   fx_acc:
-	db 'astv 1 10 13 4 1 10 0 0 0 0', 10
+	db 'astv 1 10 15 4 1 10 0 0 0 0', 10
 	db 'x 1 2', 10
 	db 'x 2 5', 10
 	db 'x 3 7', 10
@@ -275,6 +277,8 @@ segment readable writeable
 	db 'd 11 CapAtom 0 0 26 0 0 0 0 0 0', 10
 	db 'd 12 CapAtom 0 0 27 0 0 0 0 0 0', 10
 	db 'd 13 CapAtom 0 0 28 0 0 0 0 0 0', 10
+	db 'd 14 CapAtom 0 0 47 0 0 0 0 0 0', 10
+	db 'd 15 CapAtom 0 0 48 0 0 0 0 0 0', 10
 	db 'n 1 TyBit 32 0 0 0 0 0 1 21 3', 10
 	db 'n 2 Param 0 0 3 1 0 2 1 18 6', 10
 	db 'n 3 TyBit 32 0 0 0 0 0 1 29 3', 10

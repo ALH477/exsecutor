@@ -31,7 +31,8 @@
 ;                                          never assembles OUT itself)
 ;   format ELF64 executable 3
 ;   entry exsrt_start
-;   EXS_POTESTAS_MUNDUS     = 1            eleven constants, spec 4.6 order,
+;   EXS_POTESTAS_MUNDUS     = 1            thirteen constants, spec 4.6 order
+;   ...                                    (ADR 0021: + nucleus, guardia),
 ;   ...                                    from `potestates`, one bit each
 ;   EXS_MXCSR               = 0x1F80       runtime.md 2.7's image
 ;   segment readable executable
@@ -108,7 +109,9 @@ BFA_POTESTAS_AMBITUS     = 1 shl 7
 BFA_POTESTAS_FILUM       = 1 shl 8
 BFA_POTESTAS_MACHINA     = 1 shl 9
 BFA_POTESTAS_CRUDUM      = 1 shl 10
-BFA_POTESTAS_COUNT       = 11
+BFA_POTESTAS_NUCLEUS     = 1 shl 11
+BFA_POTESTAS_GUARDIA     = 1 shl 12
+BFA_POTESTAS_COUNT       = 13
 
 ; The three MXCSR images runtime.md 2.7 defines, named so a caller does not
 ; retype a bit pattern. Toward-zero (RC = 11) has no spec 5.4 word
@@ -118,10 +121,12 @@ BFA_MXCSR_AD_INFERIUS  = 0x3F80
 BFA_MXCSR_AD_SUPERIUS  = 0x5F80
 
 ; ---- constant names, pre-padded to one fixed column ----------------------
-; Twelve rows of 24 bytes: the name, space-padded to 23, then one space.
+; Fourteen rows of 24 bytes: the name, space-padded to 23, then one space.
 ; The row width is a property of the longest name (EXS_POTESTAS_HOROLOGIUM,
 ; 23 characters) and is baked in rather than computed, so the emitted
 ; alignment cannot drift with a formatting decision made elsewhere.
+; ADR 0021: rows 12 and 13 are nucleus and guardia. EXS_POTESTAS_NUCLEUS is
+; 19 chars, EXS_POTESTAS_GUARDIA is 19 chars -- both within the 23-char width.
 BFA_PROG_NAMEW = 24
 	jmp	__bfa_prog_names_end
 __bfa_prog_names:
@@ -136,6 +141,8 @@ __bfa_prog_names:
 	db	"EXS_POTESTAS_FILUM      "
 	db	"EXS_POTESTAS_MACHINA    "
 	db	"EXS_POTESTAS_CRUDUM     "
+	db	"EXS_POTESTAS_NUCLEUS    "
+	db	"EXS_POTESTAS_GUARDIA    "
 	db	"EXS_MXCSR               "
 __bfa_prog_names_end:
 

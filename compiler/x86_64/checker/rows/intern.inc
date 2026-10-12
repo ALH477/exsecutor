@@ -28,9 +28,9 @@
 ; A ROW IS A SET, AND THE SET IS TWO MASKS. typed-ast.md section 2.6 asks for
 ; items "sorted on (kind, id) before interning so `{alloc, rete}` and `{rete,
 ; alloc}` are one row id". After `potestas` flattening every kind-0 id is one
-; of spec §4.6's eleven atom declarations, and `ast_cap_push` makes those ids
+; of spec §4.6's thirteen atom declarations, and `ast_cap_push` makes those ids
 ; CONSECUTIVE (`N + k` for §4.6 ordinal `k`; 08b4a61) -- so the canonical form
-; of a row is an eleven-bit atom mask plus a 64-bit ordinal mask, the sort is
+; of a row is a thirteen-bit atom mask plus a 64-bit ordinal mask, the sort is
 ; a bit scan, and duplicate items collapse for free. That is checker.md
 ; finding 3's "the sort is a bit scan once atom ids are consecutive", built.
 ;
@@ -63,7 +63,7 @@
 ; rowdefs.inc, because it is a decision, not a mechanism.
 ;
 ; Spec: docs/spec/exsecutor-spec-v0.4.md §4.1 (rules 3-6), §4.2 (positional
-; substitution), §4.4 (the ceiling), §4.6 (the eleven atoms), §8.6 (`poscit
+; substitution), §4.4 (the ceiling), §4.6 (the thirteen atoms, ADR 0021), §8.6 (`poscit
 ; {}`); docs/design/checker.md sections 2.1, 2.3, 4, 6; docs/design/
 ; typed-ast.md section 2.6.
 ; -----------------------------------------------------------------------------
@@ -71,7 +71,7 @@
 include 'rowdefs.inc'
 
 ; ---- masks of an interned row ----------------------------------------------
-; rax = the eleven-bit atom mask, rdx = the 64-bit ordinal mask, for row
+; rax = the thirteen-bit atom mask, rdx = the 64-bit ordinal mask, for row
 ; `chkr_row`. Row 0 reads as the empty row (rowdefs.inc, "READING a 0 is
 ; permissive"). The masks are recomputed from `Ast.extra` on every call
 ; rather than cached: there is nowhere on the tree to cache them, and the
@@ -268,7 +268,7 @@ proc chk_row_of_masks, chkr_tree, chkr_ats, chkr_ors
 	mov	rcx, CHK_ROW_ATOM_MASK
 	not	rcx
 	and	rax, rcx
-	rassert	rax eq 0		; only the eleven §4.6 bits exist
+	rassert	rax eq 0		; only the thirteen §4.6 bits exist (ADR 0021)
 
 	; ---- already interned? ----
 	mov	r12, 1
@@ -472,7 +472,7 @@ proc chk_row_len, chkr_tree, chkr_row
 	return
 endp
 
-; rax = the eleven-bit atom mask, bit `k - 1` for §4.6 ordinal `k`. This is
+; rax = the thirteen-bit atom mask, bit `k - 1` for §4.6 ordinal `k`. This is
 ; the row as pass 3's fixpoint and IR 2.10's carrier list want it: the hidden
 ; arguments of a call are exactly these bits, in ascending order (checker.md
 ; section 2.8).
@@ -658,7 +658,7 @@ endp
 proc chk_row_of_node, chkr_tree, chkr_rn
 	uses	rbx, r12, r13, r14
 	locals
-		slot chkr_buf, 8 * 96
+		slot chkr_buf, 8 * 98
 		slot chkr_nn,  dq
 	endl
 	mov	rbx, [chkr_tree]
@@ -677,9 +677,10 @@ proc chk_row_of_node, chkr_tree, chkr_rn
   .item:
 	cmp	qword [chkr_nn], 0
 	jle	.intern
-	mov	rax, 96
-	rassert	r13 lt rax			; §4.6 has eleven atoms and
-						; CHK_ROW_ORD_MAX ordinals
+	mov	rax, 98
+	rassert	r13 lt rax			; §4.6 has thirteen atoms (ADR 0021)
+						; and CHK_ROW_ORD_MAX ordinals
+						; (13 + 64 + 1 = 78 < 98)
 	mov	rdi, rbx
 	mov	rsi, r14
 	call	ast_extra_at

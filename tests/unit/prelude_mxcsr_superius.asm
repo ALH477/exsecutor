@@ -70,6 +70,8 @@ EXS_POTESTAS_AMBITUS	= 0
 EXS_POTESTAS_FILUM	= 0
 EXS_POTESTAS_MACHINA	= 0
 EXS_POTESTAS_CRUDUM	= 0
+EXS_POTESTAS_NUCLEUS	= 0
+EXS_POTESTAS_GUARDIA	= 0
 EXS_MXCSR		= 0x5F80
 
 ; The image is a spec 5.4 statement, so state it as one at assembly time too.

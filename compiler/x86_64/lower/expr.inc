@@ -47,7 +47,7 @@ include 'ty.inc'
 ; scope frames, capability slots, release lists (lowering.md section 2.6)
 ; ============================================================================
 
-; lwr_frame_push(st) -- a new lexical scope: eleven zeroed capability slots
+; lwr_frame_push(st) -- a new lexical scope: thirteen zeroed capability slots (ADR 0021)
 ; (spec section 4.6's atom count) and an empty release list.
 proc lwr_frame_push, lwrsp
 	uses	rbx, r12
@@ -284,7 +284,7 @@ proc lwr_frame_release, lwrsp, lwri
 	return
 endp
 
-; lwr_frame_pop(st) -- drop the innermost frame's eleven capability slots and
+; lwr_frame_pop(st) -- drop the innermost frame's thirteen capability slots (ADR 0021) and
 ; its release list. The releases themselves are `lwr_frame_release`'s, because
 ; `redde` releases every frame without popping any of them.
 proc lwr_frame_pop, lwrsp

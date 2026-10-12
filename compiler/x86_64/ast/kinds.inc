@@ -691,9 +691,11 @@ AST_TKIND_NAMES_LEN = $ - ast_tkind_names
 ; capitalised -- `Mundus`, `Filum`, `Crudum` -- exactly as §4.6 writes them;
 ; §8.1's NFC rule makes byte comparison the whole of identity here.
 ;
-; A twelfth atom is a spec amendment to §4.6, not an edit to this table: §4.6
+; A new atom is a spec amendment to §4.6, not an edit to this table: §4.6
 ; closes with the standard streams belonging to `ambitus` "rather than
-; spending a root on a twelfth atom".
+; spending a root on a twelfth atom". ADR 0021 added `nucleus` (ordinal 12,
+; the kernel host) and `guardia` (ordinal 13, LSM authority) on 2026-10-11;
+; the existing eleven keep their ordinals.
 AST_CAP_MUNDUS		= 1
 AST_CAP_ALLOC		= 2
 AST_CAP_SERMO		= 3
@@ -705,7 +707,9 @@ AST_CAP_AMBITUS		= 8
 AST_CAP_FILUM		= 9
 AST_CAP_MACHINA		= 10
 AST_CAP_CRUDUM		= 11
-AST_CAP_COUNT		= 11
+AST_CAP_NUCLEUS		= 12
+AST_CAP_GUARDIA		= 13
+AST_CAP_COUNT		= 13
 
 ast_cap_names:
 	db 6,'Mundus'
@@ -719,6 +723,8 @@ ast_cap_names:
 	db 5,'Filum'
 	db 7,'machina'
 	db 6,'Crudum'
+	db 7,'nucleus'
+	db 7,'guardia'
 AST_CAP_NAMES_LEN = $ - ast_cap_names
 
 ; ---- ABI spellings ---------------------------------------------------------

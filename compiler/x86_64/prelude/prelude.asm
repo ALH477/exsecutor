@@ -112,7 +112,7 @@
 ; message saying why.
 
 if ~ defined EXS_POTESTAS_MUNDUS
-	err 'prelude: EXS_POTESTAS_MUNDUS is undefined -- the wrapper must define all eleven spec 4.6 atoms before including prelude.asm'
+	err 'prelude: EXS_POTESTAS_MUNDUS is undefined -- the wrapper must define all thirteen spec 4.6 atoms before including prelude.asm'
 end if
 if ~ defined EXS_POTESTAS_ALLOC
 	err 'prelude: EXS_POTESTAS_ALLOC is undefined'
@@ -143,6 +143,16 @@ if ~ defined EXS_POTESTAS_MACHINA
 end if
 if ~ defined EXS_POTESTAS_CRUDUM
 	err 'prelude: EXS_POTESTAS_CRUDUM is undefined'
+end if
+; ADR 0021: nucleus and guardia gate the KERNEL shim's symbols, not any
+; prelude routine. No prelude syscall sits under either atom; the guards
+; exist so a kernel-mode wrapper defines them (as 0) and the prelude
+; assembles. The kernel shim supplies its own symbols.
+if ~ defined EXS_POTESTAS_NUCLEUS
+	err 'prelude: EXS_POTESTAS_NUCLEUS is undefined'
+end if
+if ~ defined EXS_POTESTAS_GUARDIA
+	err 'prelude: EXS_POTESTAS_GUARDIA is undefined'
 end if
 if ~ defined EXS_MXCSR
 	err 'prelude: EXS_MXCSR is undefined -- spec 5.4 state is SET at entry, never assumed (runtime.md 2.7)'

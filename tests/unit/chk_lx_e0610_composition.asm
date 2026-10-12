@@ -273,7 +273,7 @@ segment readable writeable
 
   ; VERBATIM `--emitte ast` output for `publica functio conlege(x: u32, y: u32) -> u32 {}`
   fx_ok2:
-	db 'astv 1 9 14 3 1 9 0 0 0 0', 10
+	db 'astv 1 9 16 3 1 9 0 0 0 0', 10
 	db 'x 1 2', 10
 	db 'x 2 4', 10
 	db 'x 3 8', 10
@@ -291,7 +291,9 @@ segment readable writeable
 	db 'd 11 CapAtom 0 0 24 0 0 0 0 0 0', 10
 	db 'd 12 CapAtom 0 0 25 0 0 0 0 0 0', 10
 	db 'd 13 CapAtom 0 0 26 0 0 0 0 0 0', 10
-	db 'd 14 CapAtom 0 0 27 0 0 0 0 0 0', 10
+	db 'd 14 CapAtom 0 0 45 0 0 0 0 0 0', 10
+	db 'd 15 CapAtom 0 0 46 0 0 0 0 0 0', 10
+	db 'd 16 CapAtom 0 0 27 0 0 0 0 0 0', 10
 	db 'n 1 TyBit 32 0 0 0 0 0 1 27 3', 10
 	db 'n 2 Param 0 0 3 1 0 2 1 24 6', 10
 	db 'n 3 TyBit 32 0 0 0 0 0 1 35 3', 10
@@ -305,7 +307,7 @@ segment readable writeable
 
   ; VERBATIM `--emitte ast` output for `publica functio conlege(x: u32) -> u32 {}`
   fx_ok1:
-	db 'astv 1 7 13 2 1 7 0 0 0 0', 10
+	db 'astv 1 7 15 2 1 7 0 0 0 0', 10
 	db 'x 1 2', 10
 	db 'x 2 6', 10
 	db 't 1 error 0 0 0 0 0 0', 10
@@ -322,6 +324,8 @@ segment readable writeable
 	db 'd 11 CapAtom 0 0 23 0 0 0 0 0 0', 10
 	db 'd 12 CapAtom 0 0 24 0 0 0 0 0 0', 10
 	db 'd 13 CapAtom 0 0 25 0 0 0 0 0 0', 10
+	db 'd 14 CapAtom 0 0 44 0 0 0 0 0 0', 10
+	db 'd 15 CapAtom 0 0 45 0 0 0 0 0 0', 10
 	db 'n 1 TyBit 32 0 0 0 0 0 1 27 3', 10
 	db 'n 2 Param 0 0 3 1 0 2 1 24 6', 10
 	db 'n 3 TyBit 32 0 0 0 0 0 1 35 3', 10
@@ -333,7 +337,7 @@ segment readable writeable
 
   ; VERBATIM `--emitte ast` output for `publica interfacies conlegibilis { }`
   fx_ibilis:
-	db 'astv 1 2 12 1 1 2 0 0 0 0', 10
+	db 'astv 1 2 14 1 1 2 0 0 0 0', 10
 	db 'x 1 1', 10
 	db 't 1 error 0 0 0 0 0 0', 10
 	db 'd 1 Interface 1 0 6 1 0 0 1 8 28', 10
@@ -348,13 +352,15 @@ segment readable writeable
 	db 'd 10 CapAtom 0 0 17 0 0 0 0 0 0', 10
 	db 'd 11 CapAtom 0 0 18 0 0 0 0 0 0', 10
 	db 'd 12 CapAtom 0 0 19 0 0 0 0 0 0', 10
+	db 'd 13 CapAtom 0 0 20 0 0 0 0 0 0', 10
+	db 'd 14 CapAtom 0 0 21 0 0 0 0 0 0', 10
 	db 'n 1 Interface 0 0 0 0 0 1 1 8 28', 10
 	db 'n 2 Module 0 0 1 1 0 0 1 0 37', 10
   FX_IBILIS_LEN = $ - fx_ibilis
 
   ; VERBATIM `--emitte ast` output for `publica functio reconlege() {}`
   fx_three:
-	db 'astv 1 4 12 1 1 4 0 0 0 0', 10
+	db 'astv 1 4 14 1 1 4 0 0 0 0', 10
 	db 'x 1 3', 10
 	db 't 1 error 0 0 0 0 0 0', 10
 	db 'd 1 Fn 1 0 7 3 0 0 1 8 22', 10
@@ -369,6 +375,8 @@ segment readable writeable
 	db 'd 10 CapAtom 0 0 19 0 0 0 0 0 0', 10
 	db 'd 11 CapAtom 0 0 20 0 0 0 0 0 0', 10
 	db 'd 12 CapAtom 0 0 21 0 0 0 0 0 0', 10
+	db 'd 13 CapAtom 0 0 22 0 0 0 0 0 0', 10
+	db 'd 14 CapAtom 0 0 23 0 0 0 0 0 0', 10
 	db 'n 1 Sig 0 0 0 0 0 0 1 8 19', 10
 	db 'n 2 Block 0 0 0 0 0 0 1 28 2', 10
 	db 'n 3 Fn 1 0 1 2 0 1 1 8 22', 10

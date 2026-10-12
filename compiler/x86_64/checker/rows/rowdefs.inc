@@ -78,15 +78,16 @@ assert sizeof.ChkRowItem = 8
 ; signature's parameter count, because no parser has fed one to this pass.
 CHK_ROW_ORD_MAX	 = 64
 
-; The eleven §4.6 atoms as a bit set, bit `k - 1` for §4.6 ordinal `k`
+; The thirteen §4.6 atoms as a bit set, bit `k - 1` for §4.6 ordinal `k`
 ; (ast/kinds.inc's `AST_CAP_*`). Ascending bit index is ascending atom
 ; declaration id is ascending §4.6 order -- which is what makes the (kind, id)
 ; sort typed-ast.md section 2.6 asks for a BIT SCAN rather than a sort
 ; (checker.md finding 3, and ast/build.inc's `ast_cap_push` is what makes the
-; ids consecutive: 08b4a61).
-CHK_ROW_ATOM_MASK = 0x7FF
-assert AST_CAP_COUNT = 11
-assert CHK_ROW_ATOM_MASK + 1 = 2048
+; ids consecutive: 08b4a61). ADR 0021: 13 atoms (11 process-level + nucleus
+; + guardia); the mask is 0x1FFF (13 bits).
+CHK_ROW_ATOM_MASK = 0x1FFF
+assert AST_CAP_COUNT = 13
+assert CHK_ROW_ATOM_MASK + 1 = 8192
 
 ; A `potestas` may name another `potestas`; spec §8.6's `PotestasDecl` admits
 ; a `Path` and says nothing about what it resolves to. Flattening therefore

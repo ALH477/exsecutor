@@ -216,7 +216,7 @@ segment readable writeable
 
   ; VERBATIM `--emitte ast` output for `publica functio saluta() {}`
   fx_t1:
-	db 'astv 1 4 12 1 1 4 0 0 0 0', 10
+	db 'astv 1 4 14 1 1 4 0 0 0 0', 10
 	db 'x 1 3', 10
 	db 't 1 error 0 0 0 0 0 0', 10
 	db 'd 1 Fn 1 0 2 3 0 0 1 8 19', 10
@@ -231,6 +231,8 @@ segment readable writeable
 	db 'd 10 CapAtom 0 0 19 0 0 0 0 0 0', 10
 	db 'd 11 CapAtom 0 0 20 0 0 0 0 0 0', 10
 	db 'd 12 CapAtom 0 0 21 0 0 0 0 0 0', 10
+	db 'd 13 CapAtom 0 0 22 0 0 0 0 0 0', 10
+	db 'd 14 CapAtom 0 0 23 0 0 0 0 0 0', 10
 	db 'n 1 Sig 0 0 0 0 0 0 1 8 16', 10
 	db 'n 2 Block 0 0 0 0 0 0 1 25 2', 10
 	db 'n 3 Fn 1 0 1 2 0 1 1 8 19', 10
@@ -240,7 +242,7 @@ segment readable writeable
   ; VERBATIM `--emitte ast` output for `publica functio imprime_gutenbergio() {}`,
   ; NAME field hand-adjusted from 2 to 3 (id 2 is `saluta` from check 1).
   fx_t2:
-	db 'astv 1 4 12 1 1 4 0 0 0 0', 10
+	db 'astv 1 4 14 1 1 4 0 0 0 0', 10
 	db 'x 1 3', 10
 	db 't 1 error 0 0 0 0 0 0', 10
 	db 'd 1 Fn 1 0 3 3 0 0 1 8 32', 10
@@ -255,6 +257,8 @@ segment readable writeable
 	db 'd 10 CapAtom 0 0 19 0 0 0 0 0 0', 10
 	db 'd 11 CapAtom 0 0 20 0 0 0 0 0 0', 10
 	db 'd 12 CapAtom 0 0 21 0 0 0 0 0 0', 10
+	db 'd 13 CapAtom 0 0 22 0 0 0 0 0 0', 10
+	db 'd 14 CapAtom 0 0 23 0 0 0 0 0 0', 10
 	db 'n 1 Sig 0 0 0 0 0 0 1 8 29', 10
 	db 'n 2 Block 0 0 0 0 0 0 1 38 2', 10
 	db 'n 3 Fn 1 0 1 2 0 1 1 8 32', 10
@@ -265,7 +269,7 @@ segment readable writeable
   ; `publica functio initium(m: Mundus) -> u8 {}`, NAME fields hand-adjusted
   ; (`initium` 2->4, `m` 3->5, `Mundus` 4->6: ids 2, 3 already spent above).
   fx_t3:
-	db 'astv 1 9 13 3 1 9 0 0 0 0', 10
+	db 'astv 1 9 15 3 1 9 0 0 0 0', 10
 	db 'x 1 1', 10
 	db 'x 2 4', 10
 	db 'x 3 8', 10
@@ -283,6 +287,8 @@ segment readable writeable
 	db 'd 11 CapAtom 0 0 23 0 0 0 0 0 0', 10
 	db 'd 12 CapAtom 0 0 24 0 0 0 0 0 0', 10
 	db 'd 13 CapAtom 0 0 25 0 0 0 0 0 0', 10
+	db 'd 14 CapAtom 0 0 44 0 0 0 0 0 0', 10
+	db 'd 15 CapAtom 0 0 45 0 0 0 0 0 0', 10
 	db 'n 1 Seg 0 0 6 0 0 3 1 27 6', 10
 	db 'n 2 Path 0 0 1 1 0 3 1 27 6', 10
 	db 'n 3 TyPath 0 0 2 0 0 0 1 27 6', 10

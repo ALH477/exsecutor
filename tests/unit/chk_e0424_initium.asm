@@ -332,7 +332,7 @@ segment readable writeable
   FX_ASRC_LEN = $ - fx_asrc
 
   fx_rej:
-	db 'astv 1 21 15 8 1 21 0 0 0 0', 10
+	db 'astv 1 21 17 8 1 21 0 0 0 0', 10
 	db 'x 1 1', 10
 	db 'x 2 4', 10
 	db 'x 3 8', 10
@@ -355,8 +355,10 @@ segment readable writeable
 	db 'd 11 CapAtom 0 0 26 0 0 0 0 0 0', 10
 	db 'd 12 CapAtom 0 0 27 0 0 0 0 0 0', 10
 	db 'd 13 CapAtom 0 0 28 0 0 0 0 0 0', 10
-	db 'd 14 CapAtom 0 0 29 0 0 0 0 0 0', 10
-	db 'd 15 CapAtom 0 0 30 0 0 0 0 0 0', 10
+	db 'd 14 CapAtom 0 0 47 0 0 0 0 0 0', 10
+	db 'd 15 CapAtom 0 0 48 0 0 0 0 0 0', 10
+	db 'd 16 CapAtom 0 0 29 0 0 0 0 0 0', 10
+	db 'd 17 CapAtom 0 0 30 0 0 0 0 0 0', 10
 	db 'n 1 Seg 0 0 4 0 0 0 1 27 6', 10
 	db 'n 2 Path 0 0 1 1 0 0 1 27 6', 10
 	db 'n 3 TyPath 0 0 2 0 0 0 1 27 6', 10
@@ -381,7 +383,7 @@ segment readable writeable
   FX_REJ_LEN = $ - fx_rej
 
   fx_acc:
-	db 'astv 1 11 13 4 1 11 0 0 0 0', 10
+	db 'astv 1 11 15 4 1 11 0 0 0 0', 10
 	db 'x 1 1', 10
 	db 'x 2 4', 10
 	db 'x 3 8', 10
@@ -400,6 +402,8 @@ segment readable writeable
 	db 'd 11 CapAtom 0 0 27 0 0 0 0 0 0', 10
 	db 'd 12 CapAtom 0 0 28 0 0 0 0 0 0', 10
 	db 'd 13 CapAtom 0 0 29 0 0 0 0 0 0', 10
+	db 'd 14 CapAtom 0 0 48 0 0 0 0 0 0', 10
+	db 'd 15 CapAtom 0 0 49 0 0 0 0 0 0', 10
 	db 'n 1 Seg 0 0 4 0 0 0 1 27 6', 10
 	db 'n 2 Path 0 0 1 1 0 0 1 27 6', 10
 	db 'n 3 TyPath 0 0 2 0 0 0 1 27 6', 10
@@ -415,7 +419,7 @@ segment readable writeable
 
   ; an empty source file, verbatim
   fx_none:
-	db 'astv 1 1 11 0 1 1 0 0 0 0', 10
+	db 'astv 1 1 13 0 1 1 0 0 0 0', 10
 	db 't 1 error 0 0 0 0 0 0', 10
 	db 'd 1 CapAtom 0 0 2 0 0 0 0 0 0', 10
 	db 'd 2 CapAtom 0 0 3 0 0 0 0 0 0', 10
@@ -428,6 +432,8 @@ segment readable writeable
 	db 'd 9 CapAtom 0 0 10 0 0 0 0 0 0', 10
 	db 'd 10 CapAtom 0 0 11 0 0 0 0 0 0', 10
 	db 'd 11 CapAtom 0 0 12 0 0 0 0 0 0', 10
+	db 'd 12 CapAtom 0 0 13 0 0 0 0 0 0', 10
+	db 'd 13 CapAtom 0 0 14 0 0 0 0 0 0', 10
 	db 'n 1 Module 0 0 0 0 0 0 1 0 0', 10
   FX_NONE_LEN = $ - fx_none
 

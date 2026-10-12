@@ -314,7 +314,7 @@ segment readable writeable
   ; ---- T1/T2: tests/diagnostics/c20_nested_named_functio.exsc, verbatim
   ; `--emitte ast` (measured before pass 2 existed) -----------------------
   fx_t1:
-	db 'astv 1 15 13 5 1 15 0 0 0 0', 10
+	db 'astv 1 15 15 5 1 15 0 0 0 0', 10
 	db 'x 1 6', 10
 	db 'x 2 9', 10
 	db 'x 3 8', 10
@@ -334,6 +334,8 @@ segment readable writeable
 	db 'd 11 CapAtom 0 0 40 0 0 0 0 0 0', 10
 	db 'd 12 CapAtom 0 0 41 0 0 0 0 0 0', 10
 	db 'd 13 CapAtom 0 0 42 0 0 0 0 0 0', 10
+	db 'd 14 CapAtom 0 0 61 0 0 0 0 0 0', 10
+	db 'd 15 CapAtom 0 0 62 0 0 0 0 0 0', 10
 	db 'n 1 TyBit 64 0 0 0 0 0 1 672 3', 10
 	db 'n 2 Sig 0 0 0 0 1 0 1 650 25', 10
 	db 'n 3 TyBit 64 0 0 0 0 0 1 704 3', 10
@@ -361,7 +363,7 @@ segment readable writeable
   ; `__chk_is_nested_fn`'s "parent decl kind == AST_D_FN" reads decl 1's
   ; *kind*, so this is still the one fact the mechanism turns on.
   fx_t2:
-	db 'astv 1 15 13 5 1 15 0 0 0 0', 10
+	db 'astv 1 15 15 5 1 15 0 0 0 0', 10
 	db 'x 1 6', 10
 	db 'x 2 9', 10
 	db 'x 3 8', 10
@@ -381,6 +383,8 @@ segment readable writeable
 	db 'd 11 CapAtom 0 0 40 0 0 0 0 0 0', 10
 	db 'd 12 CapAtom 0 0 41 0 0 0 0 0 0', 10
 	db 'd 13 CapAtom 0 0 42 0 0 0 0 0 0', 10
+	db 'd 14 CapAtom 0 0 61 0 0 0 0 0 0', 10
+	db 'd 15 CapAtom 0 0 62 0 0 0 0 0 0', 10
 	db 'n 1 TyBit 64 0 0 0 0 0 1 672 3', 10
 	db 'n 2 Sig 0 0 0 0 1 0 1 650 25', 10
 	db 'n 3 TyBit 64 0 0 0 0 0 1 704 3', 10
@@ -401,7 +405,7 @@ segment readable writeable
   ; ---- T3/T4: tests/diagnostics/c14_english_habits_if_gt.exsc, verbatim
   ; `--emitte ast` (measured before pass 2 existed) -----------------------
   fx_t3:
-	db 'astv 1 21 13 12 1 21 0 0 0 0', 10
+	db 'astv 1 21 15 12 1 21 0 0 0 0', 10
 	db 'x 1 2', 10
 	db 'x 2 5', 10
 	db 'x 3 8', 10
@@ -428,6 +432,8 @@ segment readable writeable
 	db 'd 11 CapAtom 0 0 58 0 0 0 0 0 0', 10
 	db 'd 12 CapAtom 0 0 59 0 0 0 0 0 0', 10
 	db 'd 13 CapAtom 0 0 60 0 0 0 0 0 0', 10
+	db 'd 14 CapAtom 0 0 61 0 0 0 0 0 0', 10
+	db 'd 15 CapAtom 0 0 62 0 0 0 0 0 0', 10
 	db 'n 1 TyBit 64 0 0 0 0 0 1 1831 3', 10
 	db 'n 2 Param 0 0 3 1 0 2 1 1828 6', 10
 	db 'n 3 TyBit 64 0 0 0 0 0 1 1839 3', 10
@@ -454,7 +460,7 @@ segment readable writeable
   ; T4 = T3 with ONE field changed: node 11's kind, `Error` -> `Rumpe`
   ; (identical all-AST_R_NONE operand row -- typed-ast.md section 2.3).
   fx_t4:
-	db 'astv 1 21 13 12 1 21 0 0 0 0', 10
+	db 'astv 1 21 15 12 1 21 0 0 0 0', 10
 	db 'x 1 2', 10
 	db 'x 2 5', 10
 	db 'x 3 8', 10
@@ -481,6 +487,8 @@ segment readable writeable
 	db 'd 11 CapAtom 0 0 58 0 0 0 0 0 0', 10
 	db 'd 12 CapAtom 0 0 59 0 0 0 0 0 0', 10
 	db 'd 13 CapAtom 0 0 60 0 0 0 0 0 0', 10
+	db 'd 14 CapAtom 0 0 61 0 0 0 0 0 0', 10
+	db 'd 15 CapAtom 0 0 62 0 0 0 0 0 0', 10
 	db 'n 1 TyBit 64 0 0 0 0 0 1 1831 3', 10
 	db 'n 2 Param 0 0 3 1 0 2 1 1828 6', 10
 	db 'n 3 TyBit 64 0 0 0 0 0 1 1839 3', 10

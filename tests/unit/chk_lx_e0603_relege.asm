@@ -227,7 +227,7 @@ segment readable writeable
 
   ; VERBATIM `--emitte ast` output for fx_srcsame
   fx_same:
-	db 'astv 1 13 15 4 1 13 0 0 0 0', 10
+	db 'astv 1 13 17 4 1 13 0 0 0 0', 10
 	db 'x 1 2', 10
 	db 'x 2 8', 10
 	db 'x 3 6', 10
@@ -246,8 +246,10 @@ segment readable writeable
 	db 'd 11 CapAtom 0 0 22 0 0 0 0 0 0', 10
 	db 'd 12 CapAtom 0 0 23 0 0 0 0 0 0', 10
 	db 'd 13 CapAtom 0 0 24 0 0 0 0 0 0', 10
-	db 'd 14 CapAtom 0 0 25 0 0 0 0 0 0', 10
-	db 'd 15 CapAtom 0 0 26 0 0 0 0 0 0', 10
+	db 'd 14 CapAtom 0 0 43 0 0 0 0 0 0', 10
+	db 'd 15 CapAtom 0 0 44 0 0 0 0 0 0', 10
+	db 'd 16 CapAtom 0 0 25 0 0 0 0 0 0', 10
+	db 'd 17 CapAtom 0 0 26 0 0 0 0 0 0', 10
 	db 'n 1 TyBit 32 0 0 0 0 0 1 24 3', 10
 	db 'n 2 Param 0 0 3 1 0 2 1 21 6', 10
 	db 'n 3 TyBit 32 0 0 0 0 0 1 32 3', 10
@@ -265,7 +267,7 @@ segment readable writeable
 
   ; VERBATIM `--emitte ast` output for fx_srcdiff
   fx_diff:
-	db 'astv 1 15 16 5 1 15 0 0 0 0', 10
+	db 'astv 1 15 18 5 1 15 0 0 0 0', 10
 	db 'x 1 2', 10
 	db 'x 2 8', 10
 	db 'x 3 10', 10
@@ -285,9 +287,11 @@ segment readable writeable
 	db 'd 11 CapAtom 0 0 23 0 0 0 0 0 0', 10
 	db 'd 12 CapAtom 0 0 24 0 0 0 0 0 0', 10
 	db 'd 13 CapAtom 0 0 25 0 0 0 0 0 0', 10
-	db 'd 14 CapAtom 0 0 26 0 0 0 0 0 0', 10
-	db 'd 15 CapAtom 0 0 27 0 0 0 0 0 0', 10
-	db 'd 16 CapAtom 0 0 28 0 0 0 0 0 0', 10
+	db 'd 14 CapAtom 0 0 44 0 0 0 0 0 0', 10
+	db 'd 15 CapAtom 0 0 45 0 0 0 0 0 0', 10
+	db 'd 16 CapAtom 0 0 26 0 0 0 0 0 0', 10
+	db 'd 17 CapAtom 0 0 27 0 0 0 0 0 0', 10
+	db 'd 18 CapAtom 0 0 28 0 0 0 0 0 0', 10
 	db 'n 1 TyBit 32 0 0 0 0 0 1 24 3', 10
 	db 'n 2 Param 0 0 3 1 0 2 1 21 6', 10
 	db 'n 3 TyBit 32 0 0 0 0 0 1 32 3', 10

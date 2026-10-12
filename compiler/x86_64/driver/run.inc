@@ -541,7 +541,7 @@ proc __drv_drop_eof
 	return
 endp
 
-; __drv_potestates(drp_t) -> rax = the eleven-bit capability mask
+; __drv_potestates(drp_t) -> rax = the thirteen-bit capability mask
 ; `bfa_emit_program` wants, bit `k-1` set for spec 4.6 ordinal `k`. That is the
 ; SAME bit order as `BFA_POTESTAS_MUNDUS`..`BFA_POTESTAS_CRUDUM`
 ; (backend_fasmg/program.inc) and as `chk_row_atoms`'s own mask
@@ -550,7 +550,7 @@ endp
 ;
 ; THE CHECKER DOES NOT EXPOSE "THE CAPABILITY CLOSURE OF `initium`", AND THIS
 ; IS NOT IT. Said first and plainly, because docs/design/runtime.md section 2.1
-; says the eleven constants come "from the checker's computed closure of
+; says the thirteen constants come "from the checker's computed closure of
 ; initium (spec 10.3)" and no such call exists. What the checker does expose,
 ; and what was tried:
 ;
@@ -575,7 +575,7 @@ endp
 ;     for. It lives in the checker's scratch arena, is not written anywhere
 ;     that outlives `chk_rows`, and has no accessor. REQUESTED, exactly:
 ;
-;         chk_row_of_decl(chk_c, declid) -> rax = the eleven-bit atom mask
+;         chk_row_of_decl(chk_c, declid) -> rax = the thirteen-bit atom mask
 ;         pass 3 computed for declaration `declid`, or 0.
 ;
 ;     One `__chk_row_g4(wrat, declid)` behind a `proc`, plus somewhere for the
@@ -605,7 +605,7 @@ endp
 ; table -- so the emitted program never lacks a routine it needs, which is
 ; the failure that would show up as a broken build rather than as a weakened
 ; contract. `[UNTESTED]` beyond the hello world and the two fixtures below it.
-; __drv_cap_of_ty(drp_t2, drp_ty) -> rax = the eleven-bit mask ONE type id
+; __drv_cap_of_ty(drp_t2, drp_ty) -> rax = the thirteen-bit mask ONE type id
 ; contributes: a capability type contributes its own atom, an `fn` or `dyn`
 ; type contributes its row's atoms, and everything else contributes nothing.
 ; `drp_base` is `ast_cap_base`'s answer, passed in rather than re-derived per
@@ -688,7 +688,7 @@ proc __drv_cap_of_ty, drp_t2, drp_ty, drp_base
 	return
 endp
 
-; __drv_potestates(drp_t) -> rax = the eleven-bit capability mask
+; __drv_potestates(drp_t) -> rax = the thirteen-bit capability mask
 ; `bfa_emit_program` wants, bit `k-1` set for spec 4.6 ordinal `k`. That is the
 ; SAME bit order as `BFA_POTESTAS_MUNDUS`..`BFA_POTESTAS_CRUDUM`
 ; (backend_fasmg/program.inc) and as `chk_row_atoms`'s mask
@@ -697,7 +697,7 @@ endp
 ;
 ; THE CHECKER DOES NOT EXPOSE "THE CAPABILITY CLOSURE OF `initium`", AND THIS
 ; IS NOT IT. Said first and plainly, because docs/design/runtime.md section 2.1
-; says the eleven constants come "from the checker's computed closure of
+; says the thirteen constants come "from the checker's computed closure of
 ; initium (spec §10.3)" and no such call exists. Three things were tried; two
 ; of them are traps and are recorded so nobody re-finds them:
 ;
@@ -722,7 +722,7 @@ endp
 ;     in the checker's scratch arena, is written nowhere that outlives
 ;     `chk_rows`, and has no accessor. REQUESTED, exactly:
 ;
-;         chk_row_of_decl(chk_c, declid) -> rax = the eleven-bit atom mask
+;         chk_row_of_decl(chk_c, declid) -> rax = the thirteen-bit atom mask
 ;         pass 3 computed for declaration `declid`, or 0 if it computed none.
 ;
 ;     One `__chk_row_g4(wrat, declid)` behind a `proc`, plus somewhere for that
@@ -743,11 +743,11 @@ endp
 ;
 ; THE ELEVEN ATOM DECLARATIONS THEMSELVES ARE SKIPPED, and that is not
 ; tidiness -- it is the whole difference between this working and being
-; vacuous. `ast_cap_push` appends all eleven §4.6 atoms to EVERY tree, and
+; vacuous. `ast_cap_push` appends all thirteen §4.6 atoms to EVERY tree, and
 ; Stage 2 gives each one a capability type, so the interned type table
-; (`Ast.types`) holds all eleven capability types in every module ever
+; (`Ast.types`) holds all thirteen capability types in every module ever
 ; compiled. Scanning that table was the first version of this routine and it
-; emitted `EXS_POTESTAS_* = 1` eleven times for the hello world -- a mask that
+; emitted `EXS_POTESTAS_* = 1` thirteen times for the hello world -- a mask that
 ; grants everything, which would have made §10.3's audit meaningless while
 ; looking like it worked. Measured, then fixed. `AST_D_CAPATOM` declarations
 ; are the only ones skipped, and a program that actually uses an atom reaches
@@ -790,8 +790,8 @@ proc __drv_potestates, drp_t
 	movzx	ecx, byte [rax + AstDecl.kind]
 	cmp	ecx, AST_D_CAPATOM
 	je	.dnext			; see this proc's header: every tree has
-					; all eleven, so counting them grants all
-					; eleven
+					; all thirteen, so counting them grants all
+					; thirteen
 	mov	r13d, [rax + AstDecl.ty]
 	mov	rdi, rbx
 	mov	rsi, r13
@@ -998,7 +998,7 @@ proc drv_aedifica, argc, argv
 		slot drvd0,  dq		; DrvCtx.diags length before it
 		slot drvent, dq		; -> its DrvSrc
 		slot drvmdl, dq		; -> BfaModule, the lowered IR (`-o` only)
-		slot drvpot, dq		; the eleven-bit capability mask
+		slot drvpot, dq		; the thirteen-bit capability mask
 		slot drvhos, dd		; the accepted DRV_HOSPES_* row
 		slot drvop,  dq		; -> OUT's bytes }  bfa_emit_program's
 		slot drvol,  dq		; ... and how many }  two return values
@@ -1566,7 +1566,7 @@ proc drv_aedifica, argc, argv
 	test	rax, rax
 	jnz	.lower_refused
 
-	; ---- the eleven constants and the MXCSR image ------------------------
+	; ---- the thirteen constants and the MXCSR image ------------------------
 	; `potestates` is spec 10.3's capability closure; `__drv_potestates`
 	; above says at length what it actually computes and what it asked the
 	; checker for. `mxcsr` is not a choice: `Ast.numeri` is all-zero -- the

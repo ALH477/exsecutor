@@ -364,17 +364,17 @@ proc __ast_v_decls, tree
 	return
 endp
 
-; ---- the eleven capability atoms -------------------------------------------
+; ---- the thirteen capability atoms (ADR 0021) -------------------------------------------
 ; What a tree carrying spec §4.6's atoms must look like, checked as a
 ; STRUCTURE rather than trusted from whoever built it -- `ast_cap_push`
-; (ast/build.inc) is one way in, `ast_load` reading eleven `CapAtom` lines is
+; (ast/build.inc) is one way in, `ast_load` reading thirteen `CapAtom` lines is
 ; the other, and only this routine sees both.
 ;
 ;   - an atom declaration has NO introducing node (`node` 0), NO enclosing
 ;     declaration (`parent` 0), NO flags, and a real name;
-;   - the atoms are ALL ELEVEN or NONE -- ten is not a smaller capability set,
+;   - the atoms are ALL THIRTEEN or NONE -- ten is not a smaller capability set,
 ;     it is a tree in which some §4.6 ordinal silently names the wrong atom;
-;   - they are the LAST eleven declarations, which is what makes
+;   - they are the LAST thirteen declarations, which is what makes
 ;     `ast_cap_base` a bounds check instead of a scan and what makes
 ;     checker.md section 2.2's `N + k` true;
 ;   - their names are DISTINCT. Two atoms sharing a name id would make
@@ -382,7 +382,7 @@ endp
 ;     entirely.
 ;
 ; WHAT IT DELIBERATELY DOES NOT CHECK: that atom `k`'s name is the `k`-th
-; entry of `ast_cap_names`. That would mean interning eleven strings from
+; entry of `ast_cap_names`. That would mean interning thirteen strings from
 ; inside a verifier -- a side effect on the caller's interner, and a
 ; guaranteed trap on any hand-built tree whose interner does not happen to
 ; hold them (`ast_load` restores name IDS from a dump, never bytes). The
@@ -429,15 +429,15 @@ proc __ast_v_caps, tree
 	test	rax, rax
 	jz	.done			; a tree with no atoms is well-formed
 	mov	rcx, AST_CAP_COUNT
-	rassert	rax eq rcx		; all eleven, or none
+	rassert	rax eq rcx		; all thirteen, or none (ADR 0021)
 	mov	rax, [rbx + Ast.decls.len]
 	sub	rax, AST_CAP_COUNT
 	inc	rax
 	mov	rcx, [vc_first]
-	rassert	rcx eq rax		; ... and they are the last eleven,
+	rassert	rcx eq rax		; ... and they are the last thirteen,
 					; hence consecutive
 
-	; distinct names: eleven of them, so the quadratic scan is 55 integer
+	; distinct names: thirteen of them, so the quadratic scan is 78 integer
 	; comparisons and needs no map (and could not use one: a map here
 	; would be a second thing to size against a fixed arena).
 	mov	r12, [vc_first]

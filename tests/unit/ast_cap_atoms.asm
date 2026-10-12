@@ -297,6 +297,8 @@ segment readable
   fx_c_filum	db 'Filum'
   fx_c_machina	db 'machina'
   fx_c_crudum	db 'Crudum'
+  fx_c_nucleus	db 'nucleus'
+  fx_c_guardia	db 'guardia'
 fx_cap_tab:
 	dq fx_c_mundus,  6
 	dq fx_c_alloc,   5
@@ -309,6 +311,8 @@ fx_cap_tab:
 	dq fx_c_filum,   5
 	dq fx_c_machina, 7
 	dq fx_c_crudum,  6
+	dq fx_c_nucleus, 7
+	dq fx_c_guardia, 7
 fx_cap_tab_end:
   ; A table that measured short would make the loop pass by not running.
   ; fasmg's NATIVE assemble-time `assert`, not `rassert`.

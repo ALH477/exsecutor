@@ -143,10 +143,11 @@ struct LwrInc
 	field idone, dd		; 1 once sealBlock has filled it
 end struct
 
-; A lexical scope. `fcapb` is the base index of this frame's ELEVEN capability
+; A lexical scope. `fcapb` is the base index of this frame's THIRTEEN capability
 ; slots in `LwrState.caps` (spec section 4.6's atom count); `frelb`/`freln`
 ; delimit its release list in `LwrState.rels`, in initialisation order.
-LWR_CAP_N = 11
+; ADR 0021: 13 atoms (11 process-level + nucleus + guardia).
+LWR_CAP_N = 13
 struct LwrFrame
 	field fcapb, dd
 	field frelb, dd
@@ -194,7 +195,7 @@ struct LwrState
 	field lps,   dq		; -> Vec<LwrLoop>
 	field accs,  dq		; -> Vec<LwrAcc>, the `contrahe` handles of every
 				;    enclosing reduction loop (section 2.5)
-	field caps,  dq		; -> Vec<dd>, 11 per frame
+	field caps,  dq		; -> Vec<dd>, 13 per frame (ADR 0021)
 	field rels,  dq		; -> Vec<dd>, decl ids in initialisation order
 	field tmpv,  dq		; -> Vec<dd>, phi-operand staging (stack
 				;    discipline: record len, push, truncate)

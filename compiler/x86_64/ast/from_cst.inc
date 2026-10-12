@@ -5416,8 +5416,8 @@ proc ast_from_cst, tree, t, file_id
 	call	ast_set_root
 
 	; PASS 0 OF THE CHECKER, RUN HERE (checker.md section 2.2, and
-	; ast/build.inc's `ast_cap_push` for why here). Spec §4.6's eleven
-	; atoms have no declaration site in §8.6's grammar, so the eleven
+	; ast/build.inc's `ast_cap_push` for why here). Spec §4.6's thirteen
+	; atoms have no declaration site in §8.6's grammar, so the thirteen
 	; declarations that `Seg.d`, `RowItem.d` and `sub`'s `Decl.ty` will
 	; name have to be pushed by somebody. Here they land AFTER every
 	; source declaration and nothing pushes another, which is what makes

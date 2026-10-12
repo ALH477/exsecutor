@@ -34,7 +34,7 @@
 ; THE KILL CRITERION (spec §16: "if `sub` resolution needs a search algorithm,
 ; redesign"). checker.md section 2.1's answer is implemented literally here:
 ; a stack of frames, one per open `Block` / `Fn` root / `Lambda` root, each
-; holding `caps[11]` -- one slot per spec §4.6 atom, in that section's own
+; holding `caps[13]` -- one slot per spec §4.6 atom (ADR 0021), in that section's own
 ; order, holding the declaration that PROVIDES that atom in that scope, or 0.
 ; A draw is one outward walk over those slots. There is no candidate set, no
 ; unification and no backtracking; the cost is lexical depth.
@@ -259,9 +259,9 @@ struct ChkFrame
 	field kind,  db		; CHK_FR_*
 	field pad0,  db
 	field pad1,  dw
-	caps dd 11 dup ?
+	caps dd 13 dup ?		; ADR 0021: 13 atoms (was 11)
 end struct
-assert sizeof.ChkFrame = 60
+assert sizeof.ChkFrame = 68
 
 ; ---- a buffered diagnostic -------------------------------------------------
 ; 80 bytes. Everything `diag_init` / `diag_note_set` / `diag_rel_set` and one

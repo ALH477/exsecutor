@@ -206,6 +206,8 @@ segment readable writeable
   db "EXS_POTESTAS_FILUM      = 0", 10
   db "EXS_POTESTAS_MACHINA    = 0", 10
   db "EXS_POTESTAS_CRUDUM     = 0", 10
+  db "EXS_POTESTAS_NUCLEUS    = 0", 10
+  db "EXS_POTESTAS_GUARDIA    = 0", 10
   db "EXS_MXCSR               = 0x1F80", 10
   db "segment readable executable", 10
   file '../../compiler/x86_64/prelude/prelude.asm'

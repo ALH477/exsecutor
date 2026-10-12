@@ -250,9 +250,9 @@ with no arguments prints its usage, its options, and its exit-status table.
 id: adr-count
 kind: glob_count
 glob: docs/decisions/0*.md
-equals: 21
+equals: 22
 -->
-`docs/decisions/` holds twenty-one ADRs — `0001` through `0020` plus the
+`docs/decisions/` holds twenty-two ADRs — `0001` through `0021` plus the
 companion `0017-refero-expression-form` — immutable once
 written; superseded, never edited (a status line and an Open list may be
 updated).
@@ -261,7 +261,7 @@ updated).
 ```text truth:ignore
 compiler/           the compiler: x86_64/ is the machine-specific body, shared/ is not
 docs/spec/          the specification -- source of truth
-docs/decisions/     ADRs 0001-0019 plus 0017-refero-expression-form, immutable once written; superseded, never edited (a status line and an Open list may be updated)
+docs/decisions/     ADRs 0001-0021 plus 0017-refero-expression-form, immutable once written; superseded, never edited (a status line and an Open list may be updated)
 docs/design/        design documents: hypotheses with a status line, built against, and amended by what building found
 docs/asm-conventions.md   the binding rules for every line of assembly here
 examples/           the hello world, its golden output, HydraModem's transmitter and receiver, and their READMEs
